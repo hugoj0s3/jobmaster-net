@@ -1,10 +1,10 @@
 # JobMaster .Net
 ## Distributed job orchestration engine for .NET. Oriented to horizontal scaling and flexibility.
 
-JobMaster is a framework designed to manage and execute background tasks across a distributed cluster of nodes. By decoupling coordination from execution, it allows developers to scale their infrastructure horizontally based on workload demands.
+JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. By decoupling coordination from execution, it allows developers to scale their infrastructure horizontally based on workload demands.
 
 ## Overview
-JobMaster provides a architecture to handle job lifecycles. It is built to be transport-agnostic, supporting RDBMS (PostgreSQL, SQL Server, MySQL) and Message Brokers (NATS JetStream). Its primary goal is to ensure that jobs are processed reliably, even if specific nodes in the cluster fail.
+JobMaster provides a architecture to handle job lifecycles. It is built to be transport-agnostic, supporting RDBMS (PostgreSQL, SQL Server, MySQL) and Message Brokers (NATS JetStream).
 
 ### Getting Started
 
