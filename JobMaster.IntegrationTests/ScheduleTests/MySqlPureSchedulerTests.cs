@@ -1,0 +1,48 @@
+using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.MySqlPure;
+using Xunit.Abstractions;
+
+namespace JobMaster.IntegrationTests.ScheduleTests;
+
+[Collection("MySqlPureScheduler")]
+public class MySqlPureSchedulerTests : JobMasterSchedulerTestsBase<MySqlPureSchedulerFixture>
+{
+    public MySqlPureSchedulerTests(MySqlPureSchedulerFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+    
+    [Theory]
+    [InlineData(250, false, 2)]
+    [InlineData(250, true, 4)]
+    // 1000 jobs
+    [InlineData(1000, false, 4)]
+    [InlineData(1000, true, 8)]
+    // 2500 jobs
+    // [InlineData(2500, false, 6)]
+    // [InlineData(2500, true, 10)]
+    // // 5000 jobs
+    // [InlineData(5000, false, 8)]
+    // [InlineData(5000, true, 12)]
+    public async Task SchedulerTest(int qtyJobs, bool scheduleAfter, int timeoutInMinutes)
+    {
+        await RunExecutionTest(qtyJobs, scheduleAfter, timeoutInMinutes);
+    }
+
+    [Theory]
+    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 2, 5)]   // Every 5 seconds for 1 minute
+    [InlineData("TimeSpanInterval", "00:00:10", 120, 12, 2, 10)]  // Every 10 seconds for 2 minutes
+    [InlineData("TimeSpanInterval", "00:01:00", 300, 5, 1, 60)]   // Every 1 minute for 5 minutes
+    public async Task RecurringScheduleTest(
+        string expressionTypeId, 
+        string expression, 
+        int durationSeconds,
+        int qtyOfJobsExpected, 
+        int discrepancyAllow,
+        int frequencySeconds)
+    {
+        await RunRecurringScheduleTest(
+            expressionTypeId, 
+            expression, 
+            TimeSpan.FromSeconds(durationSeconds),
+            qtyOfJobsExpected,
+            discrepancyAllow,
+            TimeSpan.FromSeconds(frequencySeconds));
+    }
+}

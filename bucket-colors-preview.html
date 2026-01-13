@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JobMaster Bucket Colors Preview</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 30px;
+        }
+        
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+        
+        .colors-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        
+        .color-card {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            transition: transform 0.2s, box-shadow 0.2s;
+            background: white;
+        }
+        
+        .color-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+        
+        .color-sample {
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+            font-size: 1.1em;
+        }
+        
+        .color-info {
+            padding: 15px;
+            text-align: center;
+        }
+        
+        .color-name {
+            font-weight: bold;
+            font-size: 1.1em;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .color-hex {
+            color: #666;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9em;
+        }
+        
+        .dashboard-preview {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .dashboard-title {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .bucket-items {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+        }
+        
+        .bucket-item {
+            padding: 8px 16px;
+            border-radius: 20px;
+            color: white;
+            font-weight: 500;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.3);
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 JobMaster Bucket Colors</h1>
+        
+        <div class="colors-grid" id="colorsGrid">
+            <!-- Colors will be populated by JavaScript -->
+        </div>
+        
+        <div class="dashboard-preview">
+            <div class="dashboard-title">📊 Dashboard Preview</div>
+            <div class="bucket-items" id="bucketPreview">
+                <!-- Bucket items will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Distinct bucket color definitions (12 colors)
+        const bucketColors = {
+            'Red': '#DC3545',
+            'Brown': '#8B4513',
+            'DarkBlue': '#000080',
+            'Teal': '#008080',
+            'SkyBlue': '#00BFFF',
+            'Olive': '#808000',
+            'Green': '#228B22',      // Uses Forest hex color
+            'Tomato': '#FF6347',
+            'Blue': '#007BFF',
+            'Purple': '#800080',
+            'Pink': '#FF1493',       // Uses DeepPink hex color
+            'Charcoal': '#333333'
+        };
+
+        // Populate colors grid
+        const colorsGrid = document.getElementById('colorsGrid');
+        Object.entries(bucketColors).forEach(([name, hex]) => {
+            const colorCard = document.createElement('div');
+            colorCard.className = 'color-card';
+
+            const textColor = isLightColor(hex) ? '#000000' : '#FFFFFF';
+
+            colorCard.innerHTML = `
+            <div class="color-sample" style="background-color: ${hex}; color: ${textColor};">
+                ${name}
+            </div>
+            <div class="color-info">
+                <div class="color-name">${name}</div>
+                <div class="color-hex">${hex}</div>
+            </div>
+        `;
+
+            colorsGrid.appendChild(colorCard);
+        });
+
+        // Populate dashboard preview
+        const bucketPreview = document.getElementById('bucketPreview');
+        const sampleBuckets = [
+            'Email Processing', 'Data Analytics', 'File Upload', 'Report Generation',
+            'User Notifications', 'Image Processing', 'Backup Tasks', 'API Sync',
+            'Database Cleanup', 'Log Analysis', 'Cache Refresh', 'Security Scan'
+        ];
+
+        const colorNames = Object.keys(bucketColors);
+        sampleBuckets.forEach((bucketName, index) => {
+            const colorName = colorNames[index % colorNames.length];
+            const colorHex = bucketColors[colorName];
+
+            const bucketItem = document.createElement('div');
+            bucketItem.className = 'bucket-item';
+            bucketItem.style.backgroundColor = colorHex;
+            bucketItem.textContent = bucketName;
+
+            bucketPreview.appendChild(bucketItem);
+        });
+
+        function isLightColor(hex) {
+            const r = parseInt(hex.substr(1, 2), 16);
+            const g = parseInt(hex.substr(3, 2), 16);
+            const b = parseInt(hex.substr(5, 2), 16);
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            return brightness > 128;
+        }
+    </script>
+
+</body>
+</html>

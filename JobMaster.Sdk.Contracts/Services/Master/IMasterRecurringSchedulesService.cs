@@ -1,0 +1,21 @@
+using JobMaster.Contracts.StaticRecurringSchedules;
+using JobMaster.Sdk.Contracts.Ioc.Markups;
+using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
+
+namespace JobMaster.Sdk.Contracts.Services.Master;
+
+public interface IMasterRecurringSchedulesService : IJobMasterClusterAwareService
+{
+    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
+    void Upsert(RecurringScheduleRawModel scheduleRaw);
+    void UpsertStatic(StaticRecurringScheduleDefinition definition);
+    IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
+    Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);
+    Task<IList<Guid>> QueryIdsAsync(RecurringScheduleQueryCriteria queryCriteria);
+    long Count(RecurringScheduleQueryCriteria queryCriteria);
+    RecurringScheduleRawModel? Get(Guid recurringScheduleId);
+    Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId);
+    bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt);
+    void BulkUpdateStaticDefinitionLastEnsured(IList<string> staticDefinitionIds, DateTime ensuredAt);
+    Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff);
+}

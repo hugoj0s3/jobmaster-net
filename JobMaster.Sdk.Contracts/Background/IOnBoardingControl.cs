@@ -1,0 +1,17 @@
+using System;
+using System.Collections.Generic;
+
+namespace JobMaster.Sdk.Contracts.Background;
+
+public interface IOnBoardingControl<T>
+{
+    bool Contains(string id);
+    int CountAvailability();
+    bool Push(T item, string id, DateTime departureTime, DateTime departureDeadline);
+    void ForcePush(T item, string id, DateTime departureTime, DateTime departureDeadline);
+    int Count();
+    IList<T> PruneDeadlinedItems();
+    IList<T> GetReadyItems(DateTime now, int limit);
+    DateTime? PeekNextDepartureTime();
+    IList<T> Shutdown();
+}
