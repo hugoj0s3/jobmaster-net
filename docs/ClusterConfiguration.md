@@ -35,7 +35,9 @@ The upper bound for serialized job payloads used as a pre-dispatch safety check.
 
 #### `IanaTimeZoneId` (Default: System Local)
 The source of truth for interpreting recurring schedules (e.g., "Daily at 12:00 PM").
+If not set and all instance of your application runs under the same timezone, it will use the system local timezone. 
 * **Consistency:** In distributed clusters spanning multiple regions, explicitly setting this (e.g., `America/Sao_Paulo`) ensures that a cron job runs at the same moment regardless of where the physical server is located.
+
 
 #### `DataRetentionTtl` (Default: 30 days)
 Controls the automatic lifecycle of job history and audit logs in the Master database.
