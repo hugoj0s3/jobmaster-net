@@ -10,6 +10,7 @@ public sealed class WorkerDefinition
     public string? WorkerLane { get; set; } = null;
     public int BatchSize { get; set; } = 250;
     public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
+    public double ParallelismFactor { get; set; } = 1;
     public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>()
     {
         { JobMasterPriority.VeryLow, 1 },

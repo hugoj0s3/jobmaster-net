@@ -108,7 +108,11 @@ Horizontal Scaling: You can spin up as many worker instances as needed to handle
 
 - **Cluster, Agent Connections, and Workers Configuration**
   - Cluster setup, agent connections, workers, lanes, buckets, batch sizing
-  - See: [docs/Configuration.md](docs/Configuration.md)
+  - See:
+    - [docs/BucketsConfiguration.md](docs/BucketsConfiguration.md)
+    - [docs/WorkersConfiguration.md](docs/WorkersConfiguration.md)
+    - [docs/AgentsConfiguration.md](docs/AgentsConfiguration.md)
+    - [docs/ClusterConfiguration.md](docs/ClusterConfiguration.md)
 
 - **Repositories / Transport Providers**
   - Postgres, MySQL, SQL Server, NATS JetStream

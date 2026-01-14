@@ -14,7 +14,7 @@ public class ClusterConfigurationModel : JobMasterBaseModel
 
     public TimeSpan DefaultJobTimeout { get; set; } = TimeSpan.FromMinutes(5);
     
-    public TimeSpan TransientThreshold { get; set; } = TimeSpan.FromMinutes(30);
+    public TimeSpan TransientThreshold { get; set; } = TimeSpan.FromMinutes(10);
     public int DefaultMaxOfRetryCount { get; set; } = 3;
     
     public ClusterMode ClusterMode { get; set; } = ClusterMode.Active;

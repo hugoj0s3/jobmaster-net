@@ -291,9 +291,10 @@ public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
         return AddAgentConnectionConfig(agentConnectionName, repoType, cnnString, null);
     }
 
-    public void ClusterMode(ClusterMode mode)
+    public IClusterConfigSelector ClusterMode(ClusterMode mode)
     {
         clusterDefinition.ClusterMode = mode;
+        return this;
     }
 
     public IAgentConnectionConfigSelector AddAgentConnectionConfig(string agentConnectionName, string? repoType, string? cnnString, JobMasterConfigDictionary? additionalConnConfig)

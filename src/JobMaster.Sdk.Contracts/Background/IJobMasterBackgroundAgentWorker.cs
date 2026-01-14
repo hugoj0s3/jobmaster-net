@@ -41,6 +41,8 @@ public interface IJobMasterBackgroundAgentWorker
     T GetClusterAwareRepository<T>() where T : class, IJobMasterClusterAwareMasterRepository;
     T GetClusterAwareComponent<T>() where T : class, IJobMasterClusterAwareComponent;
     
+    double ParallelismFactor { get; }
+    
     IWorkerClusterOperations WorkerClusterOperations { get; }
     
     IList<IJobMasterRunner> Runners { get; }

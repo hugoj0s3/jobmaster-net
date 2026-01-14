@@ -59,8 +59,7 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.OnBoardingControl = new OnBoardingControl<JobRawModel>(backgroundAgentWorker.BatchSize);
         this.TaskQueueControl = TaskQueueControl<JobRawModel>.Create(
             priority, 
-            backgroundAgentWorker.BatchSize, 
-            factor: 1,
+            factor: backgroundAgentWorker.ParallelismFactor,
             preEnqueueAction: this.EnqueuedAsync);
     }
     

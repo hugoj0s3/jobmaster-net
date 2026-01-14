@@ -24,5 +24,5 @@ public interface IClusterConfigSelector
         string? repoType = null,
         string? cnnString = null);
 
-    void ClusterMode(ClusterMode mode);
+    IClusterConfigSelector ClusterMode(ClusterMode mode);
 }

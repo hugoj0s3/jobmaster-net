@@ -35,23 +35,14 @@ public class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
     private readonly Func<T, Task<bool>>? preEnqueueAction;
     
     private bool isShuttingDown = false;
-
-    public TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, Task<bool>>? preEnqueueAction = null)
-    {
-        this.preEnqueueAction = preEnqueueAction;
-        Tasks = new ITaskQueueItem<T>?[runCapacity];
-        WaitingQueue = new Queue<ITaskQueueItem<T>>();
-        WaitingQueueCapacity = waitingQueueCapacity;
-    }
     
 
     public static TaskQueueControl<T> Create(
         JobMasterPriority priority, 
-        int batchSize, 
         double factor = 1, 
         Func<T, Task<bool>>? preEnqueueAction = null)
     {
-        var taskContainerCount = priority switch
+        var runCapacity = priority switch
         {
             JobMasterPriority.VeryLow => 2,
             JobMasterPriority.Low => 3,
@@ -60,13 +51,21 @@ public class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
             JobMasterPriority.Critical => 6,
             _ => 1
         };
-
-        // Allow scaling the baseline run capacity by a factor (minimum 1)
-        if (factor < 1) factor = 1;
         
-        taskContainerCount = (int)Math.Round(taskContainerCount * factor, 0);
+        runCapacity = (int)Math.Round(runCapacity * factor, 0);
+        if (runCapacity < 1) runCapacity = 1;
 
-        return new TaskQueueControl<T>(taskContainerCount, batchSize, preEnqueueAction);
+        var waitingQueueCapacity = runCapacity * 5;
+
+        return new TaskQueueControl<T>(runCapacity, waitingQueueCapacity,  preEnqueueAction);
+    }
+    
+    private TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, Task<bool>>? preEnqueueAction = null)
+    {
+        this.preEnqueueAction = preEnqueueAction;
+        Tasks = new ITaskQueueItem<T>?[runCapacity];
+        WaitingQueue = new Queue<ITaskQueueItem<T>>();
+        WaitingQueueCapacity = waitingQueueCapacity;
     }
     
     public bool StartQueuedTasksIfHasSlotAvailable()

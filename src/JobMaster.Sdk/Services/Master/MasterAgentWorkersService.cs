@@ -71,18 +71,18 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         return ToModel(worker);
     }
 
-    public async Task<string> RegisterWorkerAsync(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode)
+    public async Task<string> RegisterWorkerAsync(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
     {
-        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode);
+        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
         await masterGenericRecordRepository.InsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, workerName, worker));
         NotifyChanges();
         
         return worker.Id;
     }
 
-    public string RegisterWorker(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode)
+    public string RegisterWorker(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
     {
-        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode);
+        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
         masterGenericRecordRepository.Insert(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker));
         NotifyChanges();
         
@@ -186,7 +186,12 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         }).ToList();
     }
     
-    private AgentWorkerRecord CreateValidatedWorker(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode)
+    private AgentWorkerRecord CreateValidatedWorker(
+        string agentConnectionId, 
+        string workerName, 
+        string? workerLane, 
+        AgentWorkerMode mode,
+        double parallelismFactor)
     {
         if (workerLane != null && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
             throw new ArgumentException($"Invalid worker lane format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. Received: '{workerLane}'", nameof(workerLane));
@@ -213,7 +218,8 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
             Id = workerId,
             Mode = mode,
             WorkerLane = workerLane,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            ParallelismFactor = parallelismFactor
         };
         
         if (!worker.ToModel(DateTime.UtcNow, true).IsValid())
@@ -244,6 +250,8 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
         
         public string? WorkerLane { get; set; }
+        
+        public double ParallelismFactor { get; set; } = 1;
 
         public AgentWorkerModel ToModel(DateTime lastHeartbeat, bool isAlive)
         {
@@ -257,6 +265,7 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
                 CreatedAt = CreatedAt,
                 WorkerLane = WorkerLane,
                 Mode = Mode,
+                ParallelismFactor = ParallelismFactor,
             };
         }
     }

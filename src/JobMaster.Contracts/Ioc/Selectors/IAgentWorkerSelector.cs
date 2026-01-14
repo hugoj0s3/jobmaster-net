@@ -11,4 +11,5 @@ public interface IAgentWorkerSelector
     IAgentWorkerSelector BucketQtyConfig(JobMasterPriority priority, int qty);
     IAgentWorkerSelector SetWorkerMode(AgentWorkerMode mode);
     IAgentWorkerSelector SkipWarmUpTime();
+    IAgentWorkerSelector ParallelismFactor(double factor);
 }

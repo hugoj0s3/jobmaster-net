@@ -75,6 +75,8 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
     
     public DateTime? StopRequestedAt { get; private set; }
     
+    public double ParallelismFactor { get; private set; } = 1;
+    
     private readonly object mutex = new object();
     private JobMasterLockKeys lockKeys = null!;
     
@@ -155,7 +157,7 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
         
         
         var agentConnectionString = clusterConfig.GetAgentConnectionConfig(agentConnName);
-        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName.NotNull(), workerLane, mode);
+        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, mode, workerDefinition.ParallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
@@ -173,6 +175,7 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
             Mode = mode,
             WorkerLane = workerLane,
             SkipWarmUpTime = workerDefinition.SkipWarmUpTime,
+            ParallelismFactor = workerDefinition.ParallelismFactor,
         };
         background.lockKeys = new JobMasterLockKeys(clusterConfig.ClusterId);
         

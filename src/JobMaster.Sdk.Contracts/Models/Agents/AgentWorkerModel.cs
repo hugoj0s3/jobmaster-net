@@ -22,5 +22,7 @@ public class AgentWorkerModel : JobMasterBaseModel
     
     public string? WorkerLane { get; set; }
     
+    public double ParallelismFactor { get; set; } = 1;
+    
     public override bool IsValid() => base.IsValid() && JobMasterStringUtils.IsValidForId(Name) && JobMasterStringUtils.IsValidForId(Id);
 }

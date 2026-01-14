@@ -7,7 +7,7 @@ To process work, you must implement the `IJobHandler` interface. Handlers are th
 ```csharp
 public sealed class HelloJobHandler : IJobHandler
 {
-    public async Task ExecuteAsync(JobContext ctx)
+    public Task HandleAsync(JobContext job)
     {
         var name = ctx.MsgData.TryGetStringValue("Name") ?? "World";
         Console.WriteLine($"Hello {name}");

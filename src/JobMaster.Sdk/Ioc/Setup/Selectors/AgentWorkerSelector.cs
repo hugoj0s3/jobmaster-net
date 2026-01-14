@@ -55,4 +55,10 @@ internal sealed class AgentWorkerSelector : IAgentWorkerSelector
         worker.SkipWarmUpTime = true;
         return this;
     }
+    
+    public IAgentWorkerSelector ParallelismFactor(double factor)
+    {
+        worker.ParallelismFactor = factor;
+        return this;
+    }
 }

@@ -239,6 +239,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
+                            .ParallelismFactor(2)
                             .WorkerBatchSize(1000)
                             .SkipWarmUpTime();
                     }
