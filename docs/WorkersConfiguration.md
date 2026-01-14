@@ -153,3 +153,5 @@ A key design principle of JobMaster is maintaining a tight synchronization betwe
 
 > [!TIP]
 > **Performance Scaling:** If your workers are sitting idle while work remains in the database, increase the `WorkerBatchSize`. If your workers are hitting memory limits or taking too long to sync, decrease the batch size to reduce the local memory footprint.
+
+See: [AgentsConfiguration](AgentsConfiguration.md)

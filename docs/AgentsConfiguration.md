@@ -60,3 +60,7 @@ This separation allows for independent scaling of your infrastructure. You can h
 2. The job bypasses the `HeldOnMaster` status if it is scheduled within the `TransientThreshold` window.
 3. It is automatically set to `AssignedToBucket`, allowing the next available Agent Worker to pick it up and move it to Queued within milliseconds.
 
+
+See: [ClusterConfiguration](ClusterConfiguration.md)
+
+

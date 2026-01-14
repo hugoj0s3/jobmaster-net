@@ -86,3 +86,5 @@ If an **Agent Worker** crashes or loses network connectivity, JobMaster heals th
 2.  **Takeover:** A healthy **Agent Worker** claims the orphaned bucket.
 3.  **Redistribution:** The healthy worker enters **`Draining`** mode, moving all unfinished jobs back to the Master Database.
 4.  **Re-Onboarding:** These jobs return to the **`HeldOnMaster`** status, where they will be naturally picked up by active buckets on other healthy workers.
+
+See: [WorkersConfiguration](WorkersConfiguration.md)
