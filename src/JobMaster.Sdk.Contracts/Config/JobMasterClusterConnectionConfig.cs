@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using JobMaster.Contracts.Utils;
+using JobMaster.Sdk.Contracts.Models.Logs;
 
 namespace JobMaster.Sdk.Contracts.Config;
 
@@ -50,6 +51,9 @@ public class JobMasterClusterConnectionConfig
     public string ClusterId { get;  }
     public string ConnectionString { get; private set; }
     public string RepositoryTypeId { get; private set; }
+    
+    public Action<LogItem>? MirrorLog { get; private set; }
+    
     public bool IsActive { get; private set; }
     
     public int? RuntimeDbOperationThrottleLimit { get; private set; }
@@ -57,6 +61,11 @@ public class JobMasterClusterConnectionConfig
     public void SetRuntimeDbOperationThrottleLimit(int? value)
     {
         RuntimeDbOperationThrottleLimit = value;
+    }
+    
+    public void SetMirrorLog(Action<LogItem>? mirrorLog)
+    {
+        MirrorLog = mirrorLog;
     }
 
     public void AddAgentConnectionString(

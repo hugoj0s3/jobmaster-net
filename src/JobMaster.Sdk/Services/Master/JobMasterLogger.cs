@@ -36,7 +36,7 @@ public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMaster
     private volatile bool disposed;
     
     
-    public static Action<string?, LogItem>? OnLog;
+    private Action<LogItem>? MirrorLog { get; }
 
     public JobMasterLogger(
         JobMasterClusterConnectionConfig clusterConnConfig,
@@ -46,6 +46,8 @@ public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMaster
         
         // Optimization: Use static delegate to avoid closure allocation
         this.timer = new Timer(static state => _ = ((JobMasterLogger)state!).SafeFlushAsync(), this, FlushInterval, FlushInterval);
+        
+        MirrorLog = clusterConnConfig.MirrorLog;
     }
 
     public void Log(
@@ -61,6 +63,7 @@ public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMaster
         
         var item = new LogItem
         {
+            ClusterId = this.ClusterConnConfig.ClusterId,
             Level = level,
             Message = message ?? string.Empty,
             SubjectType = subjectType,
@@ -69,7 +72,7 @@ public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMaster
             Host = Environment.MachineName,
             SourceMember = sourceMember,
             SourceFile = sourceFile,
-            SourceLine = sourceLine
+            SourceLine = sourceLine,
         };
         
         if (exception != null)
@@ -78,8 +81,8 @@ public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMaster
             item.Message += $"{Environment.NewLine}Exception:{Environment.NewLine}{exception}";
         }
         
-        var callback = OnLog;
-        callback?.Invoke(ClusterConnConfig.ClusterId, item);
+        var callback = MirrorLog;
+        callback?.Invoke(item);
         
         if (disposed) return;
 

@@ -11,6 +11,7 @@ public interface IOnBoardingControl<T>
     void ForcePush(T item, string id, DateTime departureTime, DateTime departureDeadline);
     int Count();
     IList<T> PruneDeadlinedItems();
+    IList<T> PruneOldDepartureItems(int limit);
     IList<T> GetReadyItems(DateTime now, int limit);
     DateTime? PeekNextDepartureTime();
     IList<T> Shutdown();

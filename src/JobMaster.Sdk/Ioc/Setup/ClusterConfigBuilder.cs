@@ -26,6 +26,7 @@ using JobMaster.Sdk.Contracts;
 using JobMaster.Sdk.Contracts.Background;
 using JobMaster.Sdk.Contracts.Ioc;
 using JobMaster.Sdk.Contracts.Ioc.Selectors;
+using JobMaster.Sdk.Contracts.Models.Logs;
 
 namespace JobMaster.Sdk.Ioc.Setup;
 
@@ -55,7 +56,13 @@ public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
         this.clusterId = clusterId;
         this.services = serviceProvider;
     }
-    
+
+    public IClusterConfigSelector EnableMirrorLog(Action<LogItem> mirrorLog)
+    {
+        clusterDefinition.MirrorLog = mirrorLog;
+        return this;
+    }
+
     public void Finish()
     {
         var finalClusterId = clusterId;
@@ -106,6 +113,8 @@ public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
             clusterConnString!, 
             isDefault: this.clusterIsDefault ?? false, 
             runtimeDbOperationThrottleLimit: this.clusterRuntimeDbOperationThrottleLimit);
+
+        clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
         // Apply cluster custom connection config (optional)
         clusterCnnConfig.SetJobMasterConfigDictionary(clusterAdditionalConnConfig);
@@ -242,12 +251,6 @@ public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
         return this;
     }
 
-    public IClusterConfigSelector ClusterDbOperationThrottleLimit(int dbOperationThrottleLimit)
-    {
-        this.clusterRuntimeDbOperationThrottleLimit = dbOperationThrottleLimit;
-        return this;
-    }
-
     public IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit)
     {
         this.clusterRuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
@@ -282,7 +285,16 @@ public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
         this.clusterAdditionalConfig.SetValue(namespaceKey, key, value);
         return this;
     }
-    
+
+    public IClusterConfigSelector DebugJsonlFileLogger(string filePath, int maxBufferItems = 500, TimeSpan? flushInterval = null)
+    {
+        clusterDefinition.MirrorLogFilePath = filePath;
+        clusterDefinition.MirrorLogMaxBufferItems = maxBufferItems;
+        clusterDefinition.MirrorLogFlushInterval = flushInterval;
+        clusterDefinition.MirrorLog = JsonlFileLogger.LogMirror;
+        return this;
+    }
+
     public IAgentConnectionConfigSelector AddAgentConnectionConfig(
         string agentConnectionName, 
         string? repoType = null,

@@ -2,6 +2,7 @@ namespace JobMaster.Sdk.Contracts.Models.Logs;
 
 public class LogItem
 {
+    public string ClusterId { get; set; } = string.Empty;
     public JobMasterLogLevel Level { get; set; }
     public string Message { get; set; } = string.Empty;
     public JobMasterLogSubjectType? SubjectType { get; set; }

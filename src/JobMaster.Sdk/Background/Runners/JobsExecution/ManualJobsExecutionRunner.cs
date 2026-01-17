@@ -15,10 +15,11 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
 public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
 {
-    private IJobsExecutionEngine? jobExecutionEngine { get; set; }
+    private IJobsExecutionEngine? JobExecutionEngine { get; set; }
     private IWorkerClusterOperations ClusterOperations { get; } = null!;
     
     private DateTime lastOnBoardingRunAtUtc = DateTime.MinValue;
+    private readonly IMasterBucketsService masterBucketsService;
     private IAgentJobsDispatcherService AgentJobsDispatcherService { get; } = null!;
 
     public override TimeSpan SucceedInterval => TimeSpan.FromMilliseconds(250);
@@ -27,6 +28,7 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
     {
         this.ClusterOperations = backgroundAgentWorker.WorkerClusterOperations;
         AgentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
+        this.masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -38,12 +40,12 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
             return await Task.FromResult(OnTickResult.Skipped(this));
         }
 
-        if (jobExecutionEngine is null)
+        if (JobExecutionEngine is null)
         {
-            jobExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(Priority, BucketId!);
+            JobExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(Priority, BucketId!);
         }
         
-        await jobExecutionEngine.PulseAsync();
+        await JobExecutionEngine.PulseAsync();
         
         var nowUtc = DateTime.UtcNow;
         if ((nowUtc - lastOnBoardingRunAtUtc) >= TimeSpan.FromSeconds(3))
@@ -57,7 +59,18 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
 
     private async Task OnBoardingJobs(CancellationToken ct)
     {
-        var countAvailability = jobExecutionEngine!.OnBoardingControl.CountAvailability();
+        var bucket = this.masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket is null)
+        {
+            return;
+        }
+
+        if (bucket.Status != BucketStatus.Active && bucket.Status != BucketStatus.Completing)
+        {
+            return;
+        }
+        
+        var countAvailability = JobExecutionEngine!.OnBoardingControl.CountAvailability();
         
         if (countAvailability == 0)
         {
@@ -70,12 +83,16 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
         }
         
         var jobs = 
-            await AgentJobsDispatcherService.DequeueToProcessingAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, countAvailability, DateTime.UtcNow.Add(JobMasterConstants.OnBoardingWindow));
+            await AgentJobsDispatcherService.DequeueToProcessingAsync(
+                BackgroundAgentWorker.AgentConnectionId, 
+                BucketId!, 
+                countAvailability, 
+                DateTime.UtcNow.Add(JobMasterConstants.OnBoardingWindow));
         
         // Perform queue maintenance (abort timeouts, start queued) and decide if we should skip
         foreach (var job in jobs)
         {
-            var result = await jobExecutionEngine.TryOnBoardingJobAsync(job);
+            var result = await JobExecutionEngine.TryOnBoardingJobAsync(job);
             logger.Debug($"JobId {job.Id} OnBoardingResult {result} ", JobMasterLogSubjectType.Job, job.Id);
             if (result == OnBoardingResult.Accepted)
             {
@@ -86,6 +103,7 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
             {
                 job.MarkAsHeldOnMaster();
                 await ClusterOperations.ExecWithRetryAsync(async (o) => await o.UpsertAsync(job));
+                logger.Warn($"JobId {job.Id} TooEarly {job.ScheduledAt:O} now {DateTime.UtcNow:O}", JobMasterLogSubjectType.Job, job.Id);
                 continue;
             }
             
@@ -95,32 +113,7 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
             }
         }
     }
-
-    /// <summary>
-    /// Configures the runner for a specific bucket and priority, setting up appropriate resource allocation.
-    /// </summary>
-    /// <param name="bucketId">The unique identifier of the bucket this runner will process</param>
-    /// <param name="priority">The job priority level that determines resource allocation</param>
-    /// <exception cref="ArgumentNullException">Thrown when bucketId is null or empty</exception>
-    /// <exception cref="InvalidOperationException">Thrown when BucketId is already defined</exception>
-    /// <remarks>
-    /// <para>
-    /// This method must be called before the runner can process jobs. It configures:
-    /// </para>
-    /// <list type="bullet">
-    /// <item><description>Task container capacity based on priority level</description></item>
-    /// <item><description>Semaphore limits for concurrent job execution</description></item>
-    /// <item><description>Priority-specific processing characteristics</description></item>
-    /// </list>
-    /// <para>
-    /// Resource allocation by priority:
-    /// - VeryLow: 3 tasks, 1 concurrent execution
-    /// - Low: 3 tasks, 2 concurrent executions
-    /// - Medium: 4 tasks, 3 concurrent executions
-    /// - High: 5 tasks, 4 concurrent executions
-    /// - Critical: 8 tasks, 5 concurrent executions
-    /// </para>
-    /// </remarks>
+    
     public void DefineBucketId(string bucketId, JobMasterPriority priority)
     {
         if (string.IsNullOrEmpty(bucketId))
@@ -141,12 +134,12 @@ public class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
     
     public override async Task OnStopAsync()
     {
-        if (jobExecutionEngine is null)
+        if (JobExecutionEngine is null)
         {
             return;
         }
         
-        await jobExecutionEngine.FlushToMasterAsync();
+        await JobExecutionEngine.FlushToMasterAsync();
     }
 }
 

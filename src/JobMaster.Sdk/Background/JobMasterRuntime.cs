@@ -96,6 +96,11 @@ public class JobMasterRuntime : IJobMasterRuntime
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
 
+            if (clusterCnnCfg.MirrorLog == JsonlFileLogger.LogMirror)
+            {
+                JsonlFileLogger.AddLogger(clusterCnnCfg.ClusterId, clusterDefinition.MirrorLogFilePath!, clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
+            }
+
             if (clusterDefinition.IanaTimeZoneId != null && modelToSave.IanaTimeZoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
             {
                 throw new InvalidOperationException(

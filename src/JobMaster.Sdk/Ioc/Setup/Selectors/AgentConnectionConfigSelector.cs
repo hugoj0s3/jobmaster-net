@@ -3,6 +3,7 @@ using JobMaster.Sdk.Contracts.Config;
 using JobMaster.Sdk.Contracts.Ioc.Definitions;
 using JobMaster.Sdk.Contracts.Ioc.Selectors;
 using JobMaster.Sdk.Contracts.Keys;
+using JobMaster.Sdk.Contracts.Models.Logs;
 
 namespace JobMaster.Sdk.Ioc.Setup.Selectors;
 
@@ -35,7 +36,7 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         return this;
     }
 
-    public IAgentConnectionConfigSelector AgentDbOperationThrottleLimit(int limit)
+    public IAgentConnectionConfigSelector RuntimeDbOperationThrottleLimit(int limit)
     {
         def.RuntimeDbOperationThrottleLimit = limit;
         return this;

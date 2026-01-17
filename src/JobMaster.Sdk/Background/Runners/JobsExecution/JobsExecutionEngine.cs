@@ -70,7 +70,7 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
     {
         var now = DateTime.UtcNow;
         
-        if (payload.ExceedProcessDeadline() )
+        if (payload.ExceedProcessDeadline())
         {
             logger.Warn($"ExceedProcessDeadline. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
             
@@ -117,7 +117,7 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
             return OnBoardingResult.TooEarly;
         }
         
-        if (payload.ProcessDeadline is null || payload.Status != JobMasterJobStatus.AssignedToBucket)
+        if (payload.ProcessDeadline is null || !payload.Status.IsBucketStatus())
         {
             logger.Error($"Bad data", JobMasterLogSubjectType.Job, payload.Id); // TODO improve logo.
             return OnBoardingResult.Invalid;
@@ -153,9 +153,6 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
 
     public async Task PulseAsync()
     {
-        // Proactively clean up finished tasks and start queued ones every tick
-        TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
-        
         var abortedCount = TaskQueueControl.AbortTimeoutTasks();
         var started = TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
         var shouldSkip = TaskQueueControl.CountAvailability() <= 0;
@@ -187,6 +184,22 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             return;
         }
+
+        var bucket = this.masterBucketsService.Get(bucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket?.Status != BucketStatus.Active)
+        {
+            var oldDepartureItems = OnBoardingControl.PruneOldDepartureItems(this.backgroundAgentWorker.BatchSize);
+            foreach (var job in oldDepartureItems)
+            {
+                if (job.ExceedProcessDeadline())
+                {
+                    continue;
+                }
+                
+                job.MarkAsHeldOnMaster();
+                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+            }
+        }
         
         var expiredJobs = OnBoardingControl.PruneDeadlinedItems();
         foreach (var job in expiredJobs)
@@ -198,6 +211,11 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
                 job.MarkAsHeldOnMaster();
                 await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
             }
+        }
+        
+        if (bucket?.Status != BucketStatus.Active)
+        {
+            return;
         }
         
         var departureCapacity = TaskQueueControl.CountAvailability();

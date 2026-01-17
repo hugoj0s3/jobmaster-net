@@ -1,5 +1,6 @@
 using JobMaster.Contracts.Models;
 using JobMaster.Sdk.Contracts.Config;
+using JobMaster.Sdk.Contracts.Models.Logs;
 
 namespace JobMaster.Sdk.Contracts.Ioc.Definitions;
 
@@ -18,8 +19,6 @@ public sealed class ClusterDefinition
     public string? IanaTimeZoneId { get; set; }
     public TimeSpan? TransientThreshold { get; set; }
     
-    public int? DbOperationThrottleLimit { get; set; }
-    
     public int? RuntimeDbOperationThrottleLimit { get; set; }
     
     public ClusterMode? ClusterMode { get; set; }
@@ -28,4 +27,8 @@ public sealed class ClusterDefinition
     
     public IList<AgentConnectionDefinition> AgentConnections { get; set; } = new List<AgentConnectionDefinition>();
     public IList<WorkerDefinition> Workers { get; set; } = new List<WorkerDefinition>();
+    public Action<LogItem>? MirrorLog { get; set; }
+    public string? MirrorLogFilePath { get; set; }
+    public int? MirrorLogMaxBufferItems { get; set; }
+    public TimeSpan? MirrorLogFlushInterval { get; set; }
 }

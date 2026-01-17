@@ -10,6 +10,7 @@ using JobMaster.Sdk.Services.Master;
 using JobMaster.Sql;
 using JobMaster.SqlServer;
 using JobMaster.NatJetStreams;
+using JobMaster.Sdk.Contracts.Ioc.Selectors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -82,7 +83,6 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
             .Get<string[]>()
             ?? Array.Empty<string>();
         
-        JobMasterLogger.OnLog = OnLog;
         this.WorkerLanes = workerLanes.ToList();
         
         var services = new ServiceCollection();
@@ -149,11 +149,6 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
 
             services.AddJobMasterCluster(c.ClusterName, cfg =>
             {
-                // if (this.IsDrainingModeTest)
-                // {
-                //     cfg.ClusterDbOperationThrottleLimit(25);
-                // }
-                
                 switch (c.DbProvider)
                 {
                     case DbProvider.Postgres:
@@ -178,8 +173,10 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                 }
 
                 cfg.ClusterTransientThreshold(TimeSpan.FromMinutes(1));
-
-               // cfg.ClusterDbOperationThrottleLimit(10);
+                
+                // cfg.DebugJsonlFileLogger("/home/hugo/log/");
+                
+                ((IClusterConfigSelectorAdvanced)cfg).EnableMirrorLog((lItem) => OnLog(lItem));
 
                 var defaultAgentTablePrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
                     ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
@@ -193,11 +190,6 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                     }
 
                     var agentCfg = cfg.AddAgentConnectionConfig(a.AgentName);
-                    // if (IsDrainingModeTest)
-                    // {
-                    //     agentCfg.AgentDbOperationThrottleLimit(25);
-                    // }
-                    
                     
                     switch (a.DbProvider)
                     {
@@ -239,7 +231,6 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .ParallelismFactor(2)
                             .WorkerBatchSize(1000)
                             .SkipWarmUpTime();
                     }
@@ -323,9 +314,9 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         return Task.CompletedTask;
     }
     
-    private void OnLog(string? clusterId, LogItem logItem)
+    private void OnLog(LogItem logItem)
     {
-        var cid = clusterId ?? "default";
+        var cid = logItem.ClusterId;
         var list = Dictionarylogs.GetOrAdd(cid, _ => new List<LogItem>());
     
         lock (list)

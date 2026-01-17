@@ -13,8 +13,8 @@ public static class ConfigExtensions
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
     {
-        agentConfigSelector.AgentConnString(connectionString);
-        agentConfigSelector.AgentRepoType(NatJetStreamConstants.RepositoryTypeId);
+        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentConnString(connectionString);
+        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(NatJetStreamConstants.RepositoryTypeId);
         
         var advancedSelector = (IAgentConnectionConfigSelectorAdvanced) agentConfigSelector;
         if (authOpts is not null)

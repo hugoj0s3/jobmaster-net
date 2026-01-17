@@ -7,9 +7,9 @@ namespace JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatJetStream;
 
 public sealed class NatJetStreamSchedulerFixture : JobMasterBaseSchedulerFixture
 {
-    public override string IncludeWildcards => "*-natjetstream";
+    public override string IncludeWildcards => "*-postgres-natjetstream";
     public override string ExcludeWildcards => "";
-    public override string DefaultClusterId => "cluster-sqlserver-natjetstream";
+    public override string DefaultClusterId => "cluster-postgres-natjetstream";
 
     public new async Task InitializeAsync()
     {

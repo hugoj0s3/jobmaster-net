@@ -23,29 +23,6 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddJobMasterCluster(config =>
 {
-    config.ClusterId("My-Cluster")
-        .UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=...")
-        .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
-        .ClusterMode(ClusterMode.Active)
-        .ClusterDefaultJobTimeout(TimeSpan.FromMinutes(1))
-        .ClusterIanaTimeZoneId("America/Sao_Paulo")
-        .ClusterTransientThreshold(TimeSpan.FromMinutes(20))
-        .ClusterDefaultMaxRetryCount(3)
-        .ClusterMaxMessageByteSize(256 * 1024)
-        .SetAsDefault();
-    
-    config.AddWorker()
-        .AgentConnName("Postgres-1")
-        .WorkerName("Worker-1")
-        .WorkerLane("Lane-1")
-        .WorkerBatchSize(1000)
-        .ParallelismFactor(2)
-        .SetWorkerMode(AgentWorkerMode.Standalone)
-        .BucketQtyConfig(JobMasterPriority.Critical, 3);
-});
-
-builder.Services.AddJobMasterCluster(config =>
-{
     config.ClusterId("Cluster-1")
         .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
         .ClusterMode(ClusterMode.Active);
@@ -67,12 +44,8 @@ builder.Services.AddJobMasterCluster(config =>
     {
         config.AddWorker()
             .AgentConnName("Postgres-1")
-            .BucketQtyConfig(JobMasterPriority.Low, 3)
-            .BucketQtyConfig(JobMasterPriority.Low, 2)
-            .BucketQtyConfig(JobMasterPriority.Medium, 2)
-            .BucketQtyConfig(JobMasterPriority.High, 3)
-            .BucketQtyConfig(JobMasterPriority.Critical, 5);
-            
+            .BucketQtyConfig(JobMasterPriority.Medium, 1)
+            .SetWorkerMode(AgentWorkerMode.Standalone);
     
         config.AddWorker()
             .WorkerName("Postgres-2")

@@ -131,6 +131,29 @@ public class OnBoardingControl<T> : IOnBoardingControl<T>
         return expiredItems;
     }
 
+    public IList<T> PruneOldDepartureItems(int limit)
+    {
+        List<T> pruneItems = new List<T>();
+        lock(syncLock)
+        {
+            if (isShuttingDown) return pruneItems;
+            
+            for (int i = holdingPen.Count - 1; i >= 0; i--) 
+            {
+                pruneItems.Add(holdingPen[i].Item);
+                itemIds.Remove(holdingPen[i].Id);
+                holdingPen.RemoveAt(i);
+                
+                if (pruneItems.Count >= limit)
+                {
+                    break;
+                }
+            }
+        }
+        
+        return pruneItems;
+    }
+
     private void DoPush(T item, string itemId, DateTime departureTime, DateTime departureDeadline)
     {
         var wrapper = new ItemWrapper(item, itemId, departureTime, departureDeadline);
