@@ -48,7 +48,7 @@ public class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRunn
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
         {
             var count = masterRecurringSchedulesService.Count(recurringScheduleQueryCriteria);
-            var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountAliveWorkersAsync();
+            var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
             if (workerCount <= 0)
             {
                 workerCount = 1;

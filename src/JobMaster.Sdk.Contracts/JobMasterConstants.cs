@@ -35,7 +35,7 @@ public static class JobMasterConstants
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(30);
 
     public const int MaxBatchSizeForBulkOperation = 50;
-    public static readonly TimeSpan DurationToStopFriendly = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan DefaultGracefulStopPeriod = TimeSpan.FromMinutes(15);
     
     /// <summary>
     /// The default process deadline duration for jobs.

@@ -28,6 +28,8 @@ public interface IJobMasterBackgroundAgentWorker
     
     DateTime? StopRequestedAt { get; }
     
+    TimeSpan? StopGracePeriod { get; }
+    
     CancellationTokenSource CancellationTokenSource { get; }
     
     IBucketRunnersFactory BucketRunnersFactory { get; }

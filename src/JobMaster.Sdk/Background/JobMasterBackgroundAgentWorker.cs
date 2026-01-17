@@ -74,6 +74,7 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
     public bool StopImmediatelyRequested { get; internal set; } = false;
     
     public DateTime? StopRequestedAt { get; private set; }
+    public TimeSpan? StopGracePeriod { get; private set; }
     
     public double ParallelismFactor { get; private set; } = 1;
     
@@ -374,7 +375,18 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
 
     public void RequestStop()
     {
-        this.StopRequestedAt = DateTime.UtcNow;
+        
+        var workerModel = this.masterAgentWorkersService.GetWorker(this.AgentWorkerId);
+        if (workerModel == null)
+        {
+            this.StopRequestedAt = DateTime.UtcNow;
+            this.StopGracePeriod = JobMasterConstants.DefaultGracefulStopPeriod;
+        }
+        else
+        {
+            this.StopRequestedAt = workerModel.StopRequestedAt ?? DateTime.UtcNow;
+            this.StopGracePeriod = workerModel.StopGracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
+        }
         
         foreach (var bucket in this.BucketsCreatedOnRuntime)
         {

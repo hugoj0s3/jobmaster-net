@@ -7,36 +7,6 @@ using JobMaster.Sdk.Contracts.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
-/// <summary>
-/// Coordinates both friendly and immediate stop operations for workers via distributed locks.
-/// This runner monitors distributed lock signals from external systems to initiate graceful or immediate shutdowns,
-/// manages the safe destruction of empty buckets during friendly stop operations, and handles self-destruction
-/// of its own worker when stop operations are requested.
-/// </summary>
-/// <remarks>
-/// <para><strong>Execution Interval:</strong> 30 seconds (when no stop requested), varies during stop process</para>
-/// <para><strong>Lifecycle:</strong> Global runner (useIndependentLifecycle: false, useSemaphore: true)</para>
-/// <para><strong>Self-Destruction Capability:</strong></para>
-/// <list type="bullet">
-/// <item><strong>External Control:</strong> Other systems/workers can trigger this worker's shutdown by creating distributed locks</item>
-/// <item><strong>Self-Monitoring:</strong> Continuously checks for stop signals targeting its own worker ID</item>
-/// <item><strong>Graceful Self-Shutdown:</strong> Coordinates its own worker's death through proper cleanup sequences</item>
-/// </list>
-/// <para><strong>Stop Operations:</strong></para>
-/// <list type="bullet">
-/// <item><strong>Immediate Stop:</strong> Checks WorkerImmediateStopLock(AgentWorkerId) → calls StopImmediatelyAsync()</item>
-/// <item><strong>Friendly Stop:</strong> Checks WorkerFriendlyStopLock(AgentWorkerId) → calls RequestStop()</item>
-/// <item><strong>Bucket Destruction:</strong> Safely destroys empty buckets after TransientThreshold during friendly stop</item>
-/// </list>
-/// <para><strong>Safety Features:</strong></para>
-/// <list type="bullet">
-/// <item>Uses agentJobsDispatcherService.HasJob() to verify buckets are empty before destruction</item>
-/// <item>Respects TransientThreshold grace period for job completion</item>
-/// <item>Prevents duplicate stop operations with internal flags</item>
-/// <item>Immediate stop takes precedence over friendly stop</item>
-/// </list>
-/// <para><strong>Architecture:</strong> Enables distributed worker management - external systems control worker lifecycles by creating distributed locks rather than direct method calls</para>
-/// </remarks>
 public class WorkerStopCoordinatorRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
@@ -66,7 +36,7 @@ public class WorkerStopCoordinatorRunner : JobMasterRunner
             return OnTickResult.Success(TimeSpan.Zero); // Stop immediately
         }
 
-        if (masterDistributedLockerService.IsLocked(lockKeys.WorkerFriendlyStopLock(BackgroundAgentWorker.AgentWorkerId)) && !BackgroundAgentWorker.StopRequested)
+        if (masterDistributedLockerService.IsLocked(lockKeys.WorkerGracefulStopLock(BackgroundAgentWorker.AgentWorkerId)) && !BackgroundAgentWorker.StopRequested)
         {
             BackgroundAgentWorker.RequestStop();
             return OnTickResult.Success(TimeSpan.Zero);
@@ -84,7 +54,7 @@ public class WorkerStopCoordinatorRunner : JobMasterRunner
         }
         
         // Check if enough time has passed since stop was requested
-        var stopDeadline = BackgroundAgentWorker.StopRequestedAt!.Value.Add(JobMasterConstants.DurationToStopFriendly);
+        var stopDeadline = BackgroundAgentWorker.StopRequestedAt!.Value.Add(BackgroundAgentWorker.StopGracePeriod!.Value);
         if (DateTime.UtcNow < stopDeadline)
         {
             return OnTickResult.Success(TimeSpan.FromSeconds(30));

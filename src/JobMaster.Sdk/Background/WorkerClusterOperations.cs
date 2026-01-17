@@ -7,6 +7,7 @@ using JobMaster.Sdk.Contracts.Config;
 using JobMaster.Sdk.Contracts.Exceptions;
 using JobMaster.Sdk.Contracts.Extensions;
 using JobMaster.Sdk.Contracts.Keys;
+using JobMaster.Sdk.Contracts.Models.Agents;
 using JobMaster.Sdk.Contracts.Models.Buckets;
 using JobMaster.Sdk.Contracts.Models.Jobs;
 using JobMaster.Sdk.Contracts.Models.Logs;
@@ -174,10 +175,11 @@ public class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorkerCl
         this.masterDistributedLockerService.ReleaseLock(lockKeys.MarkBucketAsLostLock(bucket.Id), lockToken);
     }
     
-    public async Task<int> CountAliveWorkersAsync()
+    public async Task<int> CountActiveCoordinatorWorkersAsync()
     {
         var workers = await masterAgentWorkersService.GetWorkersAsync();
-        return workers.Count(x => x.IsAlive);
+        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && 
+                                  (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Standalone));
     }
     
     public void CancelRecurringSchedule(Guid id)

@@ -18,7 +18,7 @@ public class JobMasterLockKeys : JobMasterKeyManager
     
     public string ProcessDeadlineTimeoutLock(int lockId) => CreateKey($"ProcessDeadlineTimeout:{lockId}");
     
-    public string WorkerFriendlyStopLock(string workerId) => CreateKey($"WorkerFriendlyStop:{workerId}");
+    public string WorkerGracefulStopLock(string workerId) => CreateKey($"WorkerFriendlyStop:{workerId}");
     public string WorkerImmediateStopLock(string workerId) => CreateKey($"WorkerImmediateStop:{workerId}");
 
     public string RecurringSchedulerLock(int lockId) => CreateKey($"RecurringSchedulerLock:{lockId}");

@@ -69,7 +69,7 @@ public class AssignJobsToBucketsRunner : JobMasterRunner
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
         {
             var countJobs = masterJobsService.Count(jobQueryCriteria);
-            var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountAliveWorkersAsync();
+            var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
             if (workerCount <= 0)
             {
                 workerCount = 1;

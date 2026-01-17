@@ -57,7 +57,7 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
 
     public AgentWorkerModel? GetWorker(string workerId)
     {
-        var all = GetAllAgentWorkers();
+        var all = GetAllAgentWorkers(useCache: false);
         var worker = all.FirstOrDefault(x => x.Id == workerId);
 
         return ToModel(worker);
@@ -74,7 +74,7 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
     public async Task<string> RegisterWorkerAsync(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
     {
         var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
-        await masterGenericRecordRepository.InsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, workerName, worker));
+        await masterGenericRecordRepository.InsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker));
         NotifyChanges();
         
         return worker.Id;
@@ -119,6 +119,32 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         }
         
         await masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentWorker, workerId);
+    }
+
+    public async Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null)
+    {
+        var wokder = await this.GetWorkerAsync(workerId);
+        if (wokder == null)
+        {
+            throw new InvalidOperationException($"Worker with id {workerId} does not exist.");
+        }
+        
+        wokder.StopRequestedAt = DateTime.UtcNow;
+        wokder.StopGracePeriod = gracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
+        var record = new AgentWorkerRecord(ClusterConnConfig.ClusterId)
+        {
+            AgentConnectionId = wokder.AgentConnectionId.IdValue,
+            Name = wokder.Name,
+            Id = wokder.Id,
+            Mode = wokder.Mode,
+            WorkerLane = wokder.WorkerLane,
+            ParallelismFactor = wokder.ParallelismFactor,
+            StopRequestedAt = wokder.StopRequestedAt,
+            StopGracePeriod = wokder.StopGracePeriod,
+        };
+       
+        await masterGenericRecordRepository.UpdateAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
+        NotifyChanges();
     }
 
     private IList<AgentWorkerRecord> GetAllAgentWorkers(bool useCache = true)
@@ -252,6 +278,9 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         public string? WorkerLane { get; set; }
         
         public double ParallelismFactor { get; set; } = 1;
+        
+        public DateTime? StopRequestedAt { get; set; }
+        public TimeSpan? StopGracePeriod { get; set; }
 
         public AgentWorkerModel ToModel(DateTime lastHeartbeat, bool isAlive)
         {

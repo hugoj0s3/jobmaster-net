@@ -18,7 +18,7 @@ public interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task MarkBucketAsLostAsync(string bucketId);
     Task MarkBucketAsLostIfNotDrainingAsync(string bucketId);
     void MarkBucketAsLost(BucketModel bucket);
-    Task<int> CountAliveWorkersAsync();
+    Task<int> CountActiveCoordinatorWorkersAsync();
     void CancelRecurringSchedule(Guid id);
     
     Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200);

@@ -4,6 +4,7 @@ using JobMaster.Contracts.Utils;
 using JobMaster.Sdk.Contracts.Background;
 using JobMaster.Sdk.Contracts.Extensions;
 using JobMaster.Sdk.Contracts.Keys;
+using JobMaster.Sdk.Contracts.Models.Agents;
 using JobMaster.Sdk.Contracts.Models.Buckets;
 using JobMaster.Sdk.Contracts.Models.Logs;
 using JobMaster.Sdk.Contracts.Services.Master;
@@ -50,7 +51,7 @@ public class AssignedLostBucketsRunner : JobMasterRunner
             .Where(b => b.Status == BucketStatus.Lost);
         
         var workers = await masterAgentWorkersService.GetWorkersAsync(useCache: false);
-        var workersAlive = workers.Where(x => x.IsAlive).ToList();
+        var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
         
         foreach (var bucket in lostBuckets)
         {
@@ -62,7 +63,11 @@ public class AssignedLostBucketsRunner : JobMasterRunner
                 continue;
             }
             
-            var workerToSelect = workersAlive.Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue && x.Mode != AgentWorkerMode.Coordinator).ToList();
+            var workerToSelect = workersAlive
+                .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
+                .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Standalone) // Only drain and standalone workers can be assigned to lost buckets.
+                .ToList();
+            
             if (!workerToSelect.Any())
             {
                 logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogSubjectType.Bucket, bucket.Id);
