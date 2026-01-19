@@ -9,21 +9,13 @@ namespace JobMaster.SampleWeb;
 [JobMasterDefinitionId("HelloJob")]
 [JobMasterTimeout(10)]
 [JobMasterMaxNumberOfRetries(3)]
-[JobMasterPriority(JobMasterPriority.Low)]
+[JobMasterPriority(JobMasterPriority.Medium)]
 public class HelloJobHandler : IJobHandler
 {
     public static int Counter = 0;
     
     public HelloJobHandler()
     {
-        IJobMasterScheduler scheduler = null!;
-        var metadata = WritableMetadata.New()
-            .SetStringValue("MyMetadata", "MyValue");
-        scheduler.OnceNowAsync<HelloJobHandler>(metadata: metadata);
-        
-        scheduler.RecurringAsync<HelloJobHandler>(TimeSpanIntervalExprCompiler.TypeId, "00:00:05");
-        
-        scheduler.RecurringAsync<HelloJobHandler>(TimeSpan.FromMinutes(5));
     }
 
     public Task HandleAsync(JobContext job)

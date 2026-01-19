@@ -16,6 +16,7 @@ builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
           .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
           .ClusterMode(ClusterMode.Active);
 
     // Master database (must be SQL)
@@ -39,31 +40,31 @@ builder.Services.AddJobMasterCluster(config =>
     if (isConsumer)
     {
         // Worker bound to Postgres agent
-        config.AddWorker()
-              .WorkerName("worker-pg")
-              .AgentConnName("Pg-1")
-              .BucketQtyConfig(JobMasterPriority.Medium, 1)
-              .SetWorkerMode(AgentWorkerMode.Standalone);
-
-        // Worker bound to MySQL agent
-        config.AddWorker()
-              .WorkerName("worker-mysql")
-              .AgentConnName("My-1")
-              .BucketQtyConfig(JobMasterPriority.Medium, 1)
-              .SetWorkerMode(AgentWorkerMode.Standalone);
-
-        // Worker bound to SQL Server agent
-        config.AddWorker()
-              .WorkerName("worker-sqlserver")
-              .AgentConnName("Sql-1")
-              .BucketQtyConfig(JobMasterPriority.Medium, 1)
-              .SetWorkerMode(AgentWorkerMode.Standalone);
+       //  config.AddWorker()
+       //        .WorkerName("worker-pg")
+       //        .AgentConnName("Pg-1")
+       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
+       //        .SetWorkerMode(AgentWorkerMode.Standalone);
+       //
+       // // Worker bound to MySQL agent
+       //  config.AddWorker()
+       //        .WorkerName("worker-mysql")
+       //        .AgentConnName("My-1")
+       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
+       //        .SetWorkerMode(AgentWorkerMode.Standalone);
+       //  
+       //  // Worker bound to SQL Server agent
+       //  config.AddWorker()
+       //        .WorkerName("worker-sqlserver")
+       //        .AgentConnName("Sql-1")
+       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
+       //        .SetWorkerMode(AgentWorkerMode.Standalone);
         
-        // config.AddWorker()
-        //       .WorkerName("worker-nats")
-        //       .AgentConnName("Nats-1")
-        //       .BucketQtyConfig(JobMasterPriority.Medium, 1)
-        //       .SetWorkerMode(AgentWorkerMode.Standalone);
+        config.AddWorker()
+              .WorkerName("worker-nats")
+              .AgentConnName("Nats-1")
+              .BucketQtyConfig(JobMasterPriority.Medium, 1)
+              .SetWorkerMode(AgentWorkerMode.Standalone);
     }
 });
 
@@ -91,21 +92,29 @@ app.UseHttpsRedirection();
 
 app.MapPost("/schedule-job", async (int qty, string? lane, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>
 {
-    var tasks = new List<Task>();
-    for (var i = 0; i < qty; i++)
+    if (string.IsNullOrWhiteSpace(lane)) lane = null;
+
+    var meta = WritableMetadata.New().SetStringValue("MyMetadata", "MyValue");
+    var degree = Math.Max(1, Environment.ProcessorCount * 4);
+    using var sem = new SemaphoreSlim(degree);
+
+    var tasks = Enumerable.Range(0, qty).Select(async _ =>
     {
-        var writableMetadata = WritableMetadata.New().SetStringValue("MyMetadata", "MyMetadataValue");
-        if (!delay.HasValue)
+        await sem.WaitAsync();
+        try
         {
-            tasks.Add(jobScheduler.OnceNowAsync<HelloJobHandler>(WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata, workerLane: lane));
+            var data = WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName());
+            if (delay.HasValue)
+                await jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, data, metadata: meta, workerLane: lane);
+            else
+                await jobScheduler.OnceNowAsync<HelloJobHandler>(data, metadata: meta, workerLane: lane);
         }
-        else
+        finally
         {
-            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata, workerLane: lane));
+            sem.Release();
         }
-    }
-    
-    
+    });
+
     await Task.WhenAll(tasks);
     
     return "Qty of scheduled jobs: " + qty;
