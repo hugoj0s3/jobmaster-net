@@ -73,6 +73,8 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
     
     public bool StopImmediatelyRequested { get; internal set; } = false;
     
+    public bool IsInitialized { get; private set; } = false;
+    
     public DateTime? StopRequestedAt { get; private set; }
     public TimeSpan? StopGracePeriod { get; private set; }
     
@@ -224,16 +226,19 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
             await LoadBucketsForExecution();
         }
         
-        logger.Info("Started JobMasterBackgroundAgentWorker", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
+        // Mark as initialized after all buckets and runners are created
+        IsInitialized = true;
+        logger.Info("Started JobMasterBackgroundAgentWorker - Initialization complete", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
     }
     
     private async Task LoadStandaloneRunnersAsync()
     {
-        // Standalone must cover coordination, drain management, and execution buckets
-        await LoadCoordinatorRunnersAsync();
-        // Use longer intervals for drain-related runners in standalone
-        await LoadDrainJobsRunnerAsync(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        // Load buckets first to avoid deadlocks with maintenance runners
         await LoadBucketsForExecution();
+        
+        // Then load coordination and drain runners after buckets are created
+        await LoadCoordinatorRunnersAsync();
+        await LoadDrainJobsRunnerAsync(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
 
 
@@ -398,19 +403,6 @@ public class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundA
         }
         
         this.StopRequested = true;
-    }
-
-    public IJobsExecutionEngine? SafeGetOrCreateEngine(JobMasterPriority priority, string bucketId)
-    {
-        // Check if the bucket belongs to this worker
-        var bucket = BucketsCreatedOnRuntime.FirstOrDefault(b => b.Id == bucketId);
-        if (bucket is null)
-        {
-            return null;
-        }
-        
-        // Use factory to get or create the engine
-        return jobsExecutionEngineFactory.GetOrCreate(this, priority, bucketId);
     }
 
     public IJobsExecutionEngine? GetEngine(string bucketId)

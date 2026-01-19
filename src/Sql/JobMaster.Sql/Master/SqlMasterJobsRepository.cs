@@ -333,6 +333,21 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
         }
     }
 
+    public void ClearPartitionLock(Guid jobId)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        var t = TableName();
+
+        var sqlText = @$"
+        UPDATE {t} SET 
+            {Col(x => x.PartitionLockId)} = NULL, 
+            {Col(x => x.PartitionLockExpiresAt)} = NULL,
+            {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+        WHERE {Col(x => x.Id)} = @JobId";
+
+        conn.Execute(sqlText, new { JobId = jobId });
+    }
+
     public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -419,11 +434,11 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
 
                 // Delete Metadata associated
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.JobMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
 
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 

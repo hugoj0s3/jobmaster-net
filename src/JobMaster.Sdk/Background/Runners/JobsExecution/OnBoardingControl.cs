@@ -91,8 +91,6 @@ public class OnBoardingControl<T> : IOnBoardingControl<T>
                 var existingItem = this.holdingPen.Find(x => x.Id == id);
                 this.holdingPen.Remove(existingItem!);
                 itemIds.Remove(id);
-                
-                DoPush(item, id, departureTime, departureDeadline);
             }
 
             DoPush(item, id, departureTime, departureDeadline);

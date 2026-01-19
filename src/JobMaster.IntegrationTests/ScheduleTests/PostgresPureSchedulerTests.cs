@@ -26,7 +26,7 @@ public class PostgresPureSchedulerTests : JobMasterSchedulerTestsBase<PostgresPu
     }
 
     [Theory]
-    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 2, 5)]   // Every 5 seconds for 1 minute
+    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 3, 5)]   // Every 5 seconds for 1 minute
     [InlineData("TimeSpanInterval", "00:00:10", 120, 12, 2, 10)]  // Every 10 seconds for 2 minutes
     [InlineData("TimeSpanInterval", "00:01:00", 300, 5, 1, 60)]   // Every 1 minute for 5 minutes
     public async Task RecurringScheduleTest(

@@ -407,10 +407,10 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
 
                 // Delete associated metadata
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.RecurringScheduleMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 

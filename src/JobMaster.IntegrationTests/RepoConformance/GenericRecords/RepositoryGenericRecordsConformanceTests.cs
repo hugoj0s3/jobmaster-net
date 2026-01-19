@@ -141,7 +141,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         var baseTime = DateTime.UtcNow.AddHours(-1);
 
-        var e1 = NewEntry(groupId, "e1-" + Guid.NewGuid().ToString("N"));
+        var e1 = NewEntry(groupId, "e1_" + Guid.NewGuid().ToString("N"));
         e1.SubjectType = subjectType;
         e1.SubjectId = "S1";
         e1.CreatedAt = baseTime.AddMinutes(1);
@@ -152,7 +152,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["n"] = 10L,
         };
 
-        var e2 = NewEntry(groupId, "e2-" + Guid.NewGuid().ToString("N"));
+        var e2 = NewEntry(groupId, "e2_" + Guid.NewGuid().ToString("N"));
         e2.SubjectType = subjectType;
         e2.SubjectId = "S2";
         e2.CreatedAt = baseTime.AddMinutes(2);
@@ -163,7 +163,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["n"] = 20L,
         };
 
-        var e3 = NewEntry(groupId, "e3-" + Guid.NewGuid().ToString("N"));
+        var e3 = NewEntry(groupId, "e3_" + Guid.NewGuid().ToString("N"));
         e3.SubjectType = subjectType;
         e3.SubjectId = "S1";
         e3.CreatedAt = baseTime.AddMinutes(3);
@@ -220,7 +220,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         var q5 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
             CreatedAtFrom = baseTime.AddMinutes(2),
-            CreatedAtTo = baseTime.AddMinutes(3),
+            CreatedAtTo = baseTime.AddMinutes(3).AddSeconds(1),
             IncludeExpired = true
         });
         Assert.Contains(q5, x => x.EntryId == e2.EntryId);
@@ -267,7 +267,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
-        var a = NewEntry(groupId, "a-" + Guid.NewGuid().ToString("N"));
+        var a = NewEntry(groupId, "a_" + Guid.NewGuid().ToString("N"));
         a.SubjectType = subjectType;
         a.SubjectId = "S1";
         a.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -277,7 +277,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["dt"] = t0,
         };
 
-        var b = NewEntry(groupId, "b-" + Guid.NewGuid().ToString("N"));
+        var b = NewEntry(groupId, "b_" + Guid.NewGuid().ToString("N"));
         b.SubjectType = subjectType;
         b.SubjectId = "S2";
         b.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -287,7 +287,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["dt"] = t0.AddDays(1),
         };
 
-        var c = NewEntry(groupId, "c-" + Guid.NewGuid().ToString("N"));
+        var c = NewEntry(groupId, "c_" + Guid.NewGuid().ToString("N"));
         c.SubjectType = subjectType;
         c.SubjectId = "S3";
         c.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -329,7 +329,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task BulkInsert_DeleteExpired_DeleteByCreatedAt_ShouldWork()
+    public async Task BulkInsert_ShouldInsertMultipleRecords()
     {
         var groupId = "GenericRecordTestGroup_Bulk";
         var baseTime = DateTime.UtcNow.AddHours(-10);
@@ -340,7 +340,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         {
             var e = NewEntry(groupId, $"e{i}-" + Guid.NewGuid().ToString("N"));
             e.CreatedAt = baseTime.AddMinutes(i);
-            e.ExpiresAt = i % 2 == 0 ? baseTime.AddMinutes(-1) : baseTime.AddHours(5);
+            e.ExpiresAt = baseTime.AddHours(5);
             e.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
             {
                 ["i"] = (long)i
@@ -350,17 +350,128 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         await Fixture.MasterGenericRecords.BulkInsertAsync(entries);
 
-        var deletedExpired = await Fixture.MasterGenericRecords.DeleteExpiredAsync(DateTime.UtcNow, limit: 100);
-        Assert.True(deletedExpired >= 1);
+        var remaining = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
+        Assert.True(remaining.Count >= 5);
+    }
 
-        var remaining1 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
-        Assert.True(remaining1.Count <= 5);
+    [Fact]
+    public async Task DeleteExpiredAsync_ShouldDelete_OnlyExpiredRecords()
+    {
+        var groupId = "GR_DelExp_" + Guid.NewGuid().ToString("N");
+        var now = DateTime.UtcNow;
 
-        var deletedByCreated = await Fixture.MasterGenericRecords.DeleteByCreatedAtAsync(groupId, baseTime.AddMinutes(2), limit: 100);
-        Assert.True(deletedByCreated >= 0);
+        var expired1 = NewEntry(groupId, "expired1_" + Guid.NewGuid().ToString("N"));
+        expired1.ExpiresAt = now.AddMinutes(-10);
+        expired1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "expired" };
 
-        var remaining2 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
-        Assert.True(remaining2.Count <= remaining1.Count);
+        var expired2 = NewEntry(groupId, "expired2_" + Guid.NewGuid().ToString("N"));
+        expired2.ExpiresAt = now.AddMinutes(-5);
+        expired2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "expired" };
+
+        var notExpired = NewEntry(groupId, "notExpired_" + Guid.NewGuid().ToString("N"));
+        notExpired.ExpiresAt = now.AddHours(1);
+        notExpired.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "active" };
+
+        var noExpiry = NewEntry(groupId, "noExpiry_" + Guid.NewGuid().ToString("N"));
+        noExpiry.ExpiresAt = null;
+        noExpiry.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "permanent" };
+
+        await Fixture.MasterGenericRecords.InsertAsync(expired1);
+        await Fixture.MasterGenericRecords.InsertAsync(expired2);
+        await Fixture.MasterGenericRecords.InsertAsync(notExpired);
+        await Fixture.MasterGenericRecords.InsertAsync(noExpiry);
+
+        var deleted = await Fixture.MasterGenericRecords.DeleteExpiredAsync(now, limit: 100);
+        Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
+        Assert.DoesNotContain(remaining, r => r.EntryId == expired1.EntryId);
+        Assert.DoesNotContain(remaining, r => r.EntryId == expired2.EntryId);
+        Assert.Contains(remaining, r => r.EntryId == notExpired.EntryId);
+        Assert.Contains(remaining, r => r.EntryId == noExpiry.EntryId);
+    }
+
+    [Fact]
+    public async Task DeleteExpiredAsync_ShouldRespect_Limit()
+    {
+        var groupId = "GR_DelExpLim_" + Guid.NewGuid().ToString("N");
+        var now = DateTime.UtcNow;
+
+        for (var i = 0; i < 10; i++)
+        {
+            var e = NewEntry(groupId, $"expired{i}_" + Guid.NewGuid().ToString("N"));
+            e.ExpiresAt = now.AddMinutes(-i - 1);
+            e.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["i"] = (long)i };
+            await Fixture.MasterGenericRecords.InsertAsync(e);
+        }
+
+        var deleted = await Fixture.MasterGenericRecords.DeleteExpiredAsync(now, limit: 3);
+        Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
+        Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
+        Assert.True(remaining.Count >= 7, $"Expected at least 7 remaining, got {remaining.Count}");
+    }
+
+    [Fact]
+    public async Task DeleteByCreatedAtAsync_ShouldDelete_OnlyRecordsOlderThanCutoff()
+    {
+        var groupId = "GR_DelByCreated_" + Guid.NewGuid().ToString("N");
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(5);
+
+        var old1 = NewEntry(groupId, "old1_" + Guid.NewGuid().ToString("N"));
+        old1.CreatedAt = baseTime.AddMinutes(1);
+        old1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "old" };
+
+        var old2 = NewEntry(groupId, "old2_" + Guid.NewGuid().ToString("N"));
+        old2.CreatedAt = baseTime.AddMinutes(3);
+        old2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "old" };
+
+        var recent1 = NewEntry(groupId, "recent1_" + Guid.NewGuid().ToString("N"));
+        recent1.CreatedAt = baseTime.AddMinutes(10);
+        recent1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "recent" };
+
+        var recent2 = NewEntry(groupId, "recent2_" + Guid.NewGuid().ToString("N"));
+        recent2.CreatedAt = baseTime.AddMinutes(20);
+        recent2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "recent" };
+
+        await Fixture.MasterGenericRecords.InsertAsync(old1);
+        await Fixture.MasterGenericRecords.InsertAsync(old2);
+        await Fixture.MasterGenericRecords.InsertAsync(recent1);
+        await Fixture.MasterGenericRecords.InsertAsync(recent2);
+
+        var deleted = await Fixture.MasterGenericRecords.DeleteByCreatedAtAsync(groupId, cutoff, limit: 100);
+        Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
+        Assert.DoesNotContain(remaining, r => r.EntryId == old1.EntryId);
+        Assert.DoesNotContain(remaining, r => r.EntryId == old2.EntryId);
+        Assert.Contains(remaining, r => r.EntryId == recent1.EntryId);
+        Assert.Contains(remaining, r => r.EntryId == recent2.EntryId);
+    }
+
+    [Fact]
+    public async Task DeleteByCreatedAtAsync_ShouldRespect_Limit()
+    {
+        var groupId = "GR_DelCreatedLim_" + Guid.NewGuid().ToString("N");
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        for (var i = 0; i < 10; i++)
+        {
+            var e = NewEntry(groupId, $"old{i}_" + Guid.NewGuid().ToString("N"));
+            e.CreatedAt = baseTime.AddMinutes(i);
+            e.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["i"] = (long)i };
+            await Fixture.MasterGenericRecords.InsertAsync(e);
+        }
+
+        var deleted = await Fixture.MasterGenericRecords.DeleteByCreatedAtAsync(groupId, cutoff, limit: 4);
+        Assert.True(deleted <= 4, $"Expected at most 4 deleted, got {deleted}");
+        Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria { IncludeExpired = true });
+        Assert.True(remaining.Count >= 6, $"Expected at least 6 remaining, got {remaining.Count}");
     }
 
     protected async Task AssertGenericFilter(string groupId, string? subjectType, GenericRecordValueFilter filter, params string[] expectedEntryIds)

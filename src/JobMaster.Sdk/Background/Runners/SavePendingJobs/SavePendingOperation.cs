@@ -9,6 +9,7 @@ using JobMaster.Sdk.Contracts.Services.Agent;
 using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Contracts.Exceptions;
 using JobMaster.Sdk.Contracts.Models;
+using JobMaster.Sdk.Contracts.Models.Buckets;
 
 namespace JobMaster.Sdk.Background.Runners.SavePendingJobs;
 
@@ -120,9 +121,12 @@ public class SavePendingOperation
             return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
         }
 
+        var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         var engine = backgroundAgentWorker.GetEngine(bucketId);
+        // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
         if (engine is not null && 
             jobRaw.Status == JobMasterJobStatus.SavePending && 
+            currentBucket?.Status == BucketStatus.Active &&
             jobRaw.IsOnBoarding() && 
             engine.OnBoardingControl.CountAvailability() > 0)
         {
@@ -163,12 +167,12 @@ public class SavePendingOperation
             }
         }
 
-        var bucket = await masterBucketsService.SelectBucketAsync(
+        var selectedBucket = await masterBucketsService.SelectBucketAsync(
             JobMasterConstants.BucketFastAllowDiscrepancy,
             jobRaw.Priority,
             jobRaw.WorkerLane);
 
-        if (bucket == null)
+        if (selectedBucket == null)
         {
             jobRaw.MarkAsHeldOnMaster();
             try
@@ -184,8 +188,8 @@ public class SavePendingOperation
             return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterNoBucket);
         }
 
-        var agentWorkerId = bucket.AgentWorkerId.NotNull();
-        jobRaw.AssignToBucket(bucket.AgentConnectionId, agentWorkerId, bucket.Id);
+        var agentWorkerId = selectedBucket.AgentWorkerId.NotNull();
+        jobRaw.AssignToBucket(selectedBucket.AgentConnectionId, agentWorkerId, selectedBucket.Id);
         try
         {
             await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
@@ -198,25 +202,25 @@ public class SavePendingOperation
         
         try
         {
-            logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {bucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
+            logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
             
-            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, bucket.AgentConnectionId, bucket.Id, jobRaw);
+            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, selectedBucket.AgentConnectionId, selectedBucket.Id, jobRaw);
             
-            return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: bucket.Id, publishedMessageId: publishedMessageId);
+            return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: selectedBucket.Id, publishedMessageId: publishedMessageId);
         }
         catch (PublishOutcomeUnknownException ex)
         { 
             logger.Error("Publish outcome unknown for job; will hold on master", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
             jobRaw.MarkAsHeldOnMaster();
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-            return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterPublishedUnknown, bucketId: bucket.Id, publishedMessageId: ex.SupposedPublishedId, exception: ex);
+            return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterPublishedUnknown, bucketId: selectedBucket.Id, publishedMessageId: ex.SupposedPublishedId, exception: ex);
         }
         catch (Exception e)
         { 
             logger.Error("Failed to add job to processing", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
             jobRaw.MarkAsHeldOnMaster();
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: bucket.Id, exception: e);
+            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
         }
     }
 }

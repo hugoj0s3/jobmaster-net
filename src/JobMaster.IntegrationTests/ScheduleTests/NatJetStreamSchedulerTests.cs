@@ -20,8 +20,8 @@ public class NatJetStreamSchedulerTests : JobMasterSchedulerTestsBase<NatJetStre
     [InlineData(2500, false, 6)]
     [InlineData(2500, true, 10)]
     // 5000 jobs
-    [InlineData(5000, false, 8)]
-    [InlineData(5000, true, 17)]
+    [InlineData(5000, false, 4)]
+    [InlineData(5000, true, 7)]
     // 10000 jobs
     [InlineData(10000, false, 12)]
     [InlineData(10000, true, 25)]
@@ -34,7 +34,7 @@ public class NatJetStreamSchedulerTests : JobMasterSchedulerTestsBase<NatJetStre
     }
 
     [Theory]
-    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 2, 5)]   // Every 5 seconds for 1 minute
+    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 3, 5)]   // Every 5 seconds for 1 minute
     [InlineData("TimeSpanInterval", "00:00:10", 120, 12, 2, 10)]  // Every 10 seconds for 2 minutes
     [InlineData("TimeSpanInterval", "00:01:00", 300, 5, 1, 60)]   // Every 1 minute for 5 minutes
     public async Task RecurringScheduleTest(

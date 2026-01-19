@@ -1,6 +1,6 @@
 using JobMaster.Sdk.Contracts.Keys;
 
-namespace JobMaster.NatJetStreams;
+namespace JobMaster.NatJetStream;
 
 public class JobMasterNatJetStreamLockKeys : JobMasterKeyManager
 {

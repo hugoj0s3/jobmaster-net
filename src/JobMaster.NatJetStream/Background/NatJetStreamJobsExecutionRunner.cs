@@ -12,11 +12,11 @@ using JobMaster.Sdk.Contracts.Models.Logs;
 using JobMaster.Sdk.Contracts.Serialization;
 using JobMaster.Sdk.Repositories;
 
-namespace JobMaster.NatJetStreams.Background;
+namespace JobMaster.NatJetStream.Background;
 
 internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawModel>, IJobsExecutionRunner
 {
-    private JobsExecutionEngine? jobsExecutionOperation;
+    private IJobsExecutionEngine? jobsExecutionOperation;
     private readonly Stopwatch lifetimeSw = new();
     
     public NatJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
@@ -44,7 +44,7 @@ internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawMo
         var now = DateTime.UtcNow;
         if (jobsExecutionOperation is null)
         {
-            throw new InvalidOperationException("JobsExecutionOperation is not initialized.");
+            jobsExecutionOperation = this.BackgroundAgentWorker.GetOrCreateEngine(this.Priority, this.BucketId!);
         }
         
         var onBoardingResult = await jobsExecutionOperation.TryOnBoardingJobAsync(payload);
@@ -68,7 +68,20 @@ internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawMo
             }
             
             var target = payload.ScheduledAt - JobMasterConstants.OnBoardingWindow;
+            var priorityOffset = payload.Priority switch
+            {
+                JobMasterPriority.Critical => TimeSpan.FromSeconds(5),
+                JobMasterPriority.High => TimeSpan.FromSeconds(5),
+                JobMasterPriority.Medium => TimeSpan.FromSeconds(15),
+                JobMasterPriority.Low => TimeSpan.FromSeconds(20),
+                JobMasterPriority.VeryLow => TimeSpan.FromSeconds(20),
+                _ => TimeSpan.FromSeconds(10)
+            };
+            var jitter = TimeSpan.FromSeconds(JobMasterRandomUtil.GetInt(1, 6));
+            target = target - priorityOffset - jitter;
+            
             var delay = target > now ? target - now : TimeSpan.Zero;
+            
             await ackGuard.TryNakAsync(delay);
             
             logger.Debug($"{GetRunnerDescription()}: ScheduledAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
@@ -88,8 +101,6 @@ internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawMo
     {
         this.DefineBucketId(bucketId);
         this.Priority = priority;
-        
-        jobsExecutionOperation = new JobsExecutionEngine(this.BackgroundAgentWorker, this.BucketId!, this.Priority);
         
         logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogSubjectType.Bucket, bucketId);
     }

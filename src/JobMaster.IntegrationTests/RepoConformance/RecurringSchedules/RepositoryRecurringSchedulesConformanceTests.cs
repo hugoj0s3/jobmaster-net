@@ -563,6 +563,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             IsJobCancellationPending = s.IsJobCancellationPending,
             StaticDefinitionLastEnsured = s.StaticDefinitionLastEnsured,
             WorkerLane = s.WorkerLane,
+            Version = s.Version
         };
     }
 
@@ -644,5 +645,112 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         }
 
         Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public async Task PurgeTerminatedAsync_ShouldDelete_OnlyTerminatedSchedulesOlderThanCutoff()
+    {
+        var def = "defPurge-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(5);
+
+        var oldInactive = NewSchedule(jobDefinitionId: def);
+        oldInactive.Status = RecurringScheduleStatus.Inactive;
+        oldInactive.TerminatedAt = baseTime.AddMinutes(1);
+        oldInactive.CreatedAt = baseTime.AddMinutes(1);
+
+        var oldCanceled = NewSchedule(jobDefinitionId: def);
+        oldCanceled.Status = RecurringScheduleStatus.Canceled;
+        oldCanceled.TerminatedAt = baseTime.AddMinutes(3);
+        oldCanceled.CreatedAt = baseTime.AddMinutes(3);
+
+        var recentInactive = NewSchedule(jobDefinitionId: def);
+        recentInactive.Status = RecurringScheduleStatus.Inactive;
+        recentInactive.TerminatedAt = baseTime.AddMinutes(10);
+        recentInactive.CreatedAt = baseTime.AddMinutes(10);
+
+        var active = NewSchedule(jobDefinitionId: def);
+        active.Status = RecurringScheduleStatus.Active;
+        active.TerminatedAt = null;
+        active.CreatedAt = baseTime.AddMinutes(1);
+
+        await Fixture.MasterRecurringSchedules.AddAsync(oldInactive);
+        await Fixture.MasterRecurringSchedules.AddAsync(oldCanceled);
+        await Fixture.MasterRecurringSchedules.AddAsync(recentInactive);
+        await Fixture.MasterRecurringSchedules.AddAsync(active);
+
+        var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 100);
+        Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+
+        Assert.DoesNotContain(remaining, s => s.Id == oldInactive.Id);
+        Assert.DoesNotContain(remaining, s => s.Id == oldCanceled.Id);
+        Assert.Contains(remaining, s => s.Id == recentInactive.Id);
+        Assert.Contains(remaining, s => s.Id == active.Id);
+    }
+
+    [Fact]
+    public async Task PurgeTerminatedAsync_ShouldRespect_Limit()
+    {
+        var def = "defPurgeLimit-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        for (var i = 0; i < 10; i++)
+        {
+            var s = NewSchedule(jobDefinitionId: def);
+            s.Status = RecurringScheduleStatus.Inactive;
+            s.TerminatedAt = baseTime.AddMinutes(i);
+            s.CreatedAt = baseTime.AddMinutes(i);
+            await Fixture.MasterRecurringSchedules.AddAsync(s);
+        }
+
+        var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 3);
+        Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
+        Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+        Assert.True(remaining.Count >= 7, $"Expected at least 7 remaining, got {remaining.Count}");
+    }
+
+    [Fact]
+    public async Task PurgeTerminatedAsync_ShouldNotDelete_ActiveSchedules()
+    {
+        var def = "defPurgeActive-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        var activeOld = NewSchedule(jobDefinitionId: def);
+        activeOld.Status = RecurringScheduleStatus.Active;
+        activeOld.TerminatedAt = null;
+        activeOld.CreatedAt = baseTime.AddMinutes(1);
+
+        var pendingSaveOld = NewSchedule(jobDefinitionId: def);
+        pendingSaveOld.Status = RecurringScheduleStatus.PendingSave;
+        pendingSaveOld.TerminatedAt = null;
+        pendingSaveOld.CreatedAt = baseTime.AddMinutes(2);
+
+        await Fixture.MasterRecurringSchedules.AddAsync(activeOld);
+        await Fixture.MasterRecurringSchedules.AddAsync(pendingSaveOld);
+
+        var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 100);
+
+        var remaining = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+
+        Assert.Contains(remaining, s => s.Id == activeOld.Id);
+        Assert.Contains(remaining, s => s.Id == pendingSaveOld.Id);
     }
 }

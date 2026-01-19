@@ -36,7 +36,7 @@ public sealed class RecurringScheduleDefinitionCollection
     public IReadOnlyList<StaticRecurringScheduleDefinition> ToReadOnly() => items;
     
     
-    public RecurringScheduleDefinitionCollection AddExpr<TH>(
+    public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
         string? defId = null,
@@ -45,13 +45,13 @@ public sealed class RecurringScheduleDefinitionCollection
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
-        where TH : class, IJobHandler
+        where Th : class, IJobHandler
     {
         var compiled = RecurrenceExprCompiler.Compile(expressionType, expression);
-        return AddCompiledExpr<TH>(compiled, defId, priority, timeout, startAfter, endBefore, metadata);
+        return Add<Th>(compiled, defId, priority, timeout, startAfter, endBefore, metadata);
     }
     
-    public RecurringScheduleDefinitionCollection AddCompiledExpr<TH>(
+    public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,
         JobMasterPriority? priority = null,
@@ -59,15 +59,15 @@ public sealed class RecurringScheduleDefinitionCollection
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
-        where TH : class, IJobHandler
+        where Th : class, IJobHandler
     {
         if (!string.IsNullOrEmpty(defId) && !JobMasterStringUtils.IsValidForId(defId!))
         {
             throw new ArgumentException("Invalid DefinitionId", nameof(defId));
         }
         
-        var jobDefinitionId = typeof(TH).GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? typeof(TH).FullName!;
-        var id = GenerateUniqueId(typeof(TH), defId);
+        var jobDefinitionId = typeof(Th).GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? typeof(Th).FullName!;
+        var id = GenerateUniqueId(typeof(Th), defId);
         var definition = new StaticRecurringScheduleDefinition(
             clusterId: string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId,
             jobDefinitionId,

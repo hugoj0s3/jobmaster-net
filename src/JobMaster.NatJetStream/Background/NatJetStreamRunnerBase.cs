@@ -18,7 +18,7 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using Nito.AsyncEx;
 
-namespace JobMaster.NatJetStreams.Background;
+namespace JobMaster.NatJetStream.Background;
 
 internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
@@ -29,8 +29,12 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private Task? consumptionTask;
     private CancellationTokenSource? consumerCts;
     private int invalidBucketStatusTickCount = 0;
+    private DateTime? taskCreatedAt = null;
+    private DateTime? lastMessageReceivedAt = null;
 
     private int processCycleCount = 0;
+    private int totalMessagesProcessed = 0;
+    private TaskStatus? lastReportedTaskStatus = null;
 
     private AgentConnectionId agentConnectionId = null!;
     private INatsJSConsumer? consumer;
@@ -97,10 +101,18 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // 4. Subscriber Startup & Watchdog
         if (consumptionTask == null)
         {
-            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogSubjectType.Bucket, BucketId);
             consumerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var consumerToken = consumerCts.Token;
-            consumptionTask = Task.Run(async () => { await ListenMsgsAsync(consumerToken, consumer!); }, consumerToken);
+            
+            // Publish initial heartbeat message to ensure consumer activates immediately
+            await PublishHeartbeatAsync(fullBucketAddressId, ct);
+            
+            consumptionTask = Task.Run(async () => await ListenMsgsAsync(consumerToken, consumer!), consumerToken);
+            
+            taskCreatedAt = DateTime.UtcNow;
+            lastReportedTaskStatus = null;
+            totalMessagesProcessed = 0;
         }
         else if (IsTaskDead(consumptionTask))
         {
@@ -119,7 +131,37 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         else
         {
-            logger.Debug($"{GetRunnerDescription()}: Subscriber for bucket {BucketId} is running. Status={consumptionTask.Status}", JobMasterLogSubjectType.Bucket, BucketId);
+            var currentStatus = consumptionTask.Status;
+            
+            // Log status transitions (excluding WaitingForActivation as it's expected)
+            if (lastReportedTaskStatus != currentStatus)
+            {
+                logger.Debug($"{GetRunnerDescription()}: Subscriber status changed for bucket {BucketId}. Status: {lastReportedTaskStatus} -> {currentStatus}, TotalMsgsProcessed={totalMessagesProcessed}", JobMasterLogSubjectType.Bucket, BucketId);
+                lastReportedTaskStatus = currentStatus;
+            }
+        }
+
+        // Heartbeat monitoring: publish heartbeat if no message received recently
+        if (consumptionTask != null && !IsTaskDead(consumptionTask))
+        {
+            var timeSinceLastMessage = lastMessageReceivedAt.HasValue 
+                ? DateTime.UtcNow - lastMessageReceivedAt.Value 
+                : DateTime.UtcNow - taskCreatedAt!.Value;
+            
+            // Publish heartbeat if no message received in last 10 seconds
+            if (timeSinceLastMessage > TimeSpan.FromSeconds(10))
+            {
+                await PublishHeartbeatAsync(fullBucketAddressId, ct);
+            }
+            
+            // Stop runner if no message received for 90 seconds
+            if (timeSinceLastMessage > TimeSpan.FromSeconds(90))
+            {
+                logger.Error($"{GetRunnerDescription()}: No messages received for {timeSinceLastMessage.TotalSeconds:F0}s, stopping runner for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(BucketId!);
+                await this.StopAsync();
+                return OnTickResult.Failed(TimeSpan.FromMinutes(1));
+            }
         }
 
         await OnTickAfterSetupAsync(ct);
@@ -134,6 +176,7 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
     private async Task ListenMsgsAsync(CancellationToken ct, INatsJSConsumer consumer)
     {
+        logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
         try
         {
             await foreach (var msg in consumer.ConsumeAsync<byte[]>(cancellationToken: ct))
@@ -143,6 +186,30 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     if (ct.IsCancellationRequested)
                     {
                         break;
+                    }
+                    
+                    // Update last message received timestamp for any message
+                    lastMessageReceivedAt = DateTime.UtcNow;
+                    
+                    
+                    
+                    // Check if this is a heartbeat message and skip processing
+                    var isHeartbeat = msg.Headers?.TryGetValue(NatJetStreamConstants.HeaderHeartbeat, out _) == true;
+                    if (isHeartbeat)
+                    {
+                        var signatureIsTaken = msg.Headers?.TryGetValue(NatJetStreamConstants.HeaderSignature, out var signatureValue);
+                        
+                        if ((signatureIsTaken == true && signatureValue != NatJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
+                        {
+                            LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
+
+                            await msg.AckTerminateAsync(cancellationToken: ct).ConfigureAwait(false);
+                            return;
+                        }
+                        
+                        logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                        await msg.AckAsync(cancellationToken: ct).ConfigureAwait(false);
+                        continue;
                     }
 
                     await ProcessMessageAsync(msg, ct).ConfigureAwait(false);
@@ -155,6 +222,7 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 finally
                 {
                     Interlocked.Increment(ref processCycleCount);
+                    Interlocked.Increment(ref totalMessagesProcessed);
                     if (processCycleCount >= BackgroundAgentWorker.BatchSize)
                     {
                         Interlocked.Exchange(ref processCycleCount, 0);
@@ -188,6 +256,31 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
     protected virtual TimeSpan LongDelayAfterBatchSize() => TimeSpan.FromSeconds(2.5);
 
     protected virtual Task OnTickAfterSetupAsync(CancellationToken ct) => Task.CompletedTask;
+
+    private async Task PublishHeartbeatAsync(string fullBucketAddressId, CancellationToken ct)
+    {
+        try
+        {
+            var (_, jsContext, _) = NatJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            var subjectName = NatJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
+            var data = Encoding.UTF8.GetBytes(string.Empty);
+            
+            using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var headers = new NatsHeaders
+            {
+                [NatJetStreamConstants.HeaderSignature] = NatJetStreamConfigKey.NamespaceUniqueKey.ToString(),
+                [NatJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString(),
+                [NatJetStreamConstants.HeaderHeartbeat] = "true",
+            };
+            await jsContext!.PublishAsync(subjectName, data, headers: headers, cancellationToken: pubCts.Token);
+            
+            logger.Debug($"{GetRunnerDescription()}: Published heartbeat message for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+        }
+        catch (Exception ex)
+        {
+            logger.Warn($"{GetRunnerDescription()}: Failed to publish heartbeat message for bucket {BucketId}: {ex.Message}", JobMasterLogSubjectType.Bucket, BucketId);
+        }
+    }
 
 
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)

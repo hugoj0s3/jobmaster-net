@@ -156,7 +156,8 @@ public class AssignJobsToBucketsRunner : JobMasterRunner
             
             if (bucket is null)
             {
-                logger.Warn($"No bucket available for job {job.Id}. WorkerLane={job.WorkerLane} Priority={job.Priority} ScheduledAt={job.ScheduledAt:O}", JobMasterLogSubjectType.Job, job.Id);
+                logger.Warn($"No bucket available for job {job.Id}. WorkerLane={job.WorkerLane} Priority={job.Priority} ScheduledAt={job.ScheduledAt:O}. Clearing partition lock.", JobMasterLogSubjectType.Job, job.Id);
+                masterJobsService.ClearPartitionLock(job.Id);
                 continue;
             }
             
@@ -187,8 +188,7 @@ public class AssignJobsToBucketsRunner : JobMasterRunner
 
             try
             {
-                await BackgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(this.BackgroundAgentWorker, job, bucket), maxRetries: 3, millisecondsToDelay: 100);
+                await BackgroundAgentWorker.WorkerClusterOperations.AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(this.BackgroundAgentWorker, job, bucket);
             }
             catch (Exception e)
             {

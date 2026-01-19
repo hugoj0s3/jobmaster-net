@@ -559,6 +559,130 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.True(JsonElement.DeepEquals(expectedDoc.RootElement, actualDoc.RootElement));
     }
 
+    [Fact]
+    public async Task PurgeFinalByScheduledAtAsync_ShouldDelete_OnlyFinalJobsOlderThanCutoff()
+    {
+        var def = "defPurgeFinal-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(5);
+
+        var oldSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(1));
+        oldSucceeded.SucceedExecutedAt = baseTime.AddMinutes(1);
+
+        var oldFailed = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Failed, scheduledAt: baseTime.AddMinutes(3));
+        oldFailed.SucceedExecutedAt = baseTime.AddMinutes(3);
+
+        var recentSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(10));
+        recentSucceeded.SucceedExecutedAt = baseTime.AddMinutes(10);
+
+        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1));
+
+        await Fixture.MasterJobs.AddAsync(oldSucceeded);
+        await Fixture.MasterJobs.AddAsync(oldFailed);
+        await Fixture.MasterJobs.AddAsync(recentSucceeded);
+        await Fixture.MasterJobs.AddAsync(heldOnMaster);
+
+        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+        Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+
+        Assert.DoesNotContain(remaining, j => j.Id == oldSucceeded.Id);
+        Assert.DoesNotContain(remaining, j => j.Id == oldFailed.Id);
+        Assert.Contains(remaining, j => j.Id == recentSucceeded.Id);
+        Assert.Contains(remaining, j => j.Id == heldOnMaster.Id);
+    }
+
+    [Fact]
+    public async Task PurgeFinalByScheduledAtAsync_ShouldRespect_Limit()
+    {
+        var def = "defPurgeFinalLimit-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        for (var i = 0; i < 10; i++)
+        {
+            var j = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(i));
+            j.SucceedExecutedAt = baseTime.AddMinutes(i);
+            await Fixture.MasterJobs.AddAsync(j);
+        }
+
+        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 3);
+        Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
+        Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+        Assert.True(remaining.Count >= 7, $"Expected at least 7 remaining, got {remaining.Count}");
+    }
+
+    [Fact]
+    public async Task PurgeFinalByScheduledAtAsync_ShouldNotDelete_NonFinalJobs()
+    {
+        var def = "defPurgeNonFinal-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1));
+        var assignedToBucket = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.AssignedToBucket, scheduledAt: baseTime.AddMinutes(2));
+        var processing = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Processing, scheduledAt: baseTime.AddMinutes(3));
+        var pendingRetry = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Queued, scheduledAt: baseTime.AddMinutes(4));
+
+        await Fixture.MasterJobs.AddAsync(heldOnMaster);
+        await Fixture.MasterJobs.AddAsync(assignedToBucket);
+        await Fixture.MasterJobs.AddAsync(processing);
+        await Fixture.MasterJobs.AddAsync(pendingRetry);
+
+        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+
+        var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+
+        Assert.Contains(remaining, j => j.Id == heldOnMaster.Id);
+        Assert.Contains(remaining, j => j.Id == assignedToBucket.Id);
+        Assert.Contains(remaining, j => j.Id == processing.Id);
+        Assert.Contains(remaining, j => j.Id == pendingRetry.Id);
+    }
+
+    [Fact]
+    public async Task PurgeFinalByScheduledAtAsync_ShouldDelete_AllFinalStatuses()
+    {
+        var def = "defPurgeAllFinal-" + Guid.NewGuid();
+        var baseTime = DateTime.UtcNow.AddHours(-10);
+        var cutoff = baseTime.AddMinutes(50);
+
+        var succeeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(1));
+        var failed = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Failed, scheduledAt: baseTime.AddMinutes(2));
+        var canceled = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Cancelled, scheduledAt: baseTime.AddMinutes(3));
+
+        await Fixture.MasterJobs.AddAsync(succeeded);
+        await Fixture.MasterJobs.AddAsync(failed);
+        await Fixture.MasterJobs.AddAsync(canceled);
+
+        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+        Assert.True(deleted >= 3, $"Expected at least 3 deleted, got {deleted}");
+
+        var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100
+        });
+
+        Assert.DoesNotContain(remaining, j => j.Id == succeeded.Id);
+        Assert.DoesNotContain(remaining, j => j.Id == failed.Id);
+        Assert.DoesNotContain(remaining, j => j.Id == canceled.Id);
+    }
+
     private static JobRawModel Clone(JobRawModel job)
     {
         return new JobRawModel(job.ClusterId)

@@ -4,19 +4,37 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
-        <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
-        <Version>0.0.0</Version>
+
+        <PackageId>JobMaster</PackageId>
+        <VersionPrefix>0.0.1</VersionPrefix>
+        <VersionSuffix>alpha</VersionSuffix>
+        <Authors>Hugo Silva</Authors>
+        <Company>Hugo Silva</Company>
+        <Copyright>Copyright 2026 Hugo Silva</Copyright>
+
+        <Description>JobMaster is a framework designed to manage and execute background tasks across a distributed cluster.</Description>
+        <PackageProjectUrl>https://github.com/hugoj0s3/jobmaster-net</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
+
+        <PackageReadmeFile>JobMaster.NuGet.README.md</PackageReadmeFile>
+        
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
 
-    <!-- Shared packages -->
     <ItemGroup>
+        <PackageReference Include="JobMaster.Contracts" Version="0.0.1-alpha" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
         <PackageReference Include="TimeZoneConverter" Version="7.1.0" />
         <PackageReference Include="System.Text.Json" Version="9.0.2"/>
     </ItemGroup>
-    
+
     <ItemGroup>
-      <ProjectReference Include="..\JobMaster.Contracts\JobMaster.Contracts.csproj" />
-      <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all"/>
+        <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <None Include="JobMaster.NuGet.README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 </Project>

@@ -58,29 +58,44 @@ public class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorkerCl
         }
 
         var agentWorkerId = bucket.AgentWorkerId.NotNull();
+        var originalStatus = jobRaw.Status;
         jobRaw.AssignToBucket(bucket.AgentConnectionId, agentWorkerId, bucket.Id);
 
         await masterJobsService.UpsertAsync(jobRaw);
         
-        // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
-        var engine = backgroundAgentWorker.SafeGetOrCreateEngine(bucket.Priority, bucket.Id);
-        if (engine != null && jobRaw.IsOnBoarding() && engine.OnBoardingControl.CountAvailability() > 0)
+        try
         {
-            var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
-            if (result == OnBoardingResult.Accepted)
+            // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
+            var engine = backgroundAgentWorker.GetEngine(bucket.Id);
+            if (engine != null && 
+                jobRaw.IsOnBoarding() && 
+                engine.OnBoardingControl.CountAvailability() > 0)
             {
-                logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
-                return;
+                var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
+                if (result == OnBoardingResult.Accepted)
+                {
+                    logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    return;
+                }
+                
+                if (result == OnBoardingResult.MovedToMaster)
+                {
+                    logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    return;
+                }
+                
+                logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
             }
             
-            if (result == OnBoardingResult.MovedToMaster)
-            {
-                logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
-                return;
-            }
+            await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, bucket.AgentConnectionId, bucket.Id, jobRaw);
         }
-        
-        await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, bucket.AgentConnectionId, bucket.Id, jobRaw);
+        catch (Exception ex)
+        {
+            logger.Error($"Failed to add job {jobRaw.Id} to processing for bucket {bucket.Id}. Reverting to {originalStatus}", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+            jobRaw.MarkAsHeldOnMaster();
+            await masterJobsService.UpsertAsync(jobRaw);
+            throw;
+        }
     }
 
     public void MarkAsHeldOnMaster(Guid jobId)

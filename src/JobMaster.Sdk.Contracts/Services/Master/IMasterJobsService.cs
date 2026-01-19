@@ -11,6 +11,7 @@ public interface IMasterJobsService : IJobMasterClusterAwareService
     Task UpsertAsync(JobRawModel jobRaw);
     void Upsert(JobRawModel jobRaw);
     bool BulkUpdatePartitionLockId(IList<Guid> jobIds, int lockId, DateTime expiresAt);
+    void ClearPartitionLock(Guid jobId);
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);

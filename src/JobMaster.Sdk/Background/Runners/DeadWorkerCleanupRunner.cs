@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using JobMaster.Sdk.Contracts;
 using JobMaster.Sdk.Contracts.Background;
 using JobMaster.Sdk.Contracts.Extensions;
 using JobMaster.Sdk.Contracts.Keys;
+using JobMaster.Sdk.Contracts.Models.Agents;
 using JobMaster.Sdk.Contracts.Models.Logs;
 using JobMaster.Sdk.Contracts.Services.Master;
 
@@ -38,7 +40,7 @@ public class DeadWorkerCleanupRunner : JobMasterRunner
     private readonly JobMasterLockKeys lockKeys;
     
     public override TimeSpan SucceedInterval => TimeSpan.FromMinutes(5);
-
+    
     public DeadWorkerCleanupRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) 
         : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
@@ -61,6 +63,13 @@ public class DeadWorkerCleanupRunner : JobMasterRunner
             {
                 // Skip if it's the current worker (shouldn't happen, but safety check)
                 if (deadWorker.Id == BackgroundAgentWorker.AgentWorkerId)
+                {
+                    continue;
+                }
+                
+                var stopDeadline = (deadWorker.StopRequestedAt ?? deadWorker.LastHeartbeat)
+                    .Add(deadWorker.StopGracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod);
+                if (DateTime.UtcNow.AddMinutes(5) < stopDeadline)
                 {
                     continue;
                 }

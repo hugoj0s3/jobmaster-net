@@ -119,6 +119,14 @@ public abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
+            // Skip execution during worker initialization (except KeepAliveRunner)
+            // This prevents deadlocks during bucket creation
+            if (!BackgroundAgentWorker.IsInitialized && this.GetType() != typeof(KeepAliveRunner))
+            {
+                await RunnerDelayUtil.DelayAsync(TimeSpan.FromSeconds(5), ct);
+                continue;
+            }
+            
             SemaphoreSlim? semaphoreSlimToRelease = null;
             
             if (useSemaphore)
@@ -178,7 +186,7 @@ public abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 plannedDelay = OnTickResult.Failed(this).Delay;
                 plannedEarlyReleaseChance = 0.0;
 
-                logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row. {ex.StackTrace}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
             }
             finally
             {

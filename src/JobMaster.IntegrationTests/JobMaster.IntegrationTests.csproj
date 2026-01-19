@@ -31,7 +31,7 @@
 
     <ItemGroup>
       <ProjectReference Include="..\JobMaster.Contracts\JobMaster.Contracts.csproj" />
-      <ProjectReference Include="..\JobMaster.NatJetStreams\JobMaster.NatJetStreams.csproj" />
+      <ProjectReference Include="..\JobMaster.NatJetStream\JobMaster.NatJetStream.csproj" />
       <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" />
       <ProjectReference Include="..\JobMaster.Sdk\JobMaster.Sdk.csproj" />
       <ProjectReference Include="..\JobMaster\JobMaster.csproj" />

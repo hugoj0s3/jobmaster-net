@@ -1,5 +1,6 @@
 using JobMaster.IntegrationTests.Fixtures;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture;
+using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.PostgresPure;
 using JobMaster.Sdk.Contracts;
 using JobMaster.Sdk.Contracts.Config;
 using JobMaster.Sdk.Contracts.Services.Master;
@@ -10,9 +11,9 @@ namespace JobMaster.IntegrationTests;
 [Collection("JobMasterIntegration")]
 public class JobMasterClusterStartupTests
 {
-    private readonly JobMasterBaseSchedulerFixture fixture;
+    private readonly PostgresPureSchedulerFixture fixture;
 
-    public JobMasterClusterStartupTests(JobMasterBaseSchedulerFixture fixture)
+    public JobMasterClusterStartupTests(PostgresPureSchedulerFixture fixture)
     {
         this.fixture = fixture;
     }

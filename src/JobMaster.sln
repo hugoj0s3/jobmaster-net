@@ -26,7 +26,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "JobM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatJetStreams", "JobMaster.NatJetStreams\JobMaster.NatJetStreams.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatJetStream", "JobMaster.NatJetStream\JobMaster.NatJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

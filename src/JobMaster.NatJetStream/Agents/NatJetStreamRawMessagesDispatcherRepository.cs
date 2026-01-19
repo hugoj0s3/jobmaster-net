@@ -16,9 +16,9 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using Nito.AsyncEx;
 
-namespace JobMaster.NatJetStreams.Agents;
+namespace JobMaster.NatJetStream.Agents;
 
-internal class NatJetStreamsRawMessagesDispatcherRepository : 
+internal class NatJetStreamRawMessagesDispatcherRepository : 
     JobMasterClusterAwareComponent, 
     IAgentRawMessagesDispatcherRepository
 {
@@ -32,7 +32,7 @@ internal class NatJetStreamsRawMessagesDispatcherRepository :
     
     protected JobMasterAgentConnectionConfig config = null!;
     
-    public NatJetStreamsRawMessagesDispatcherRepository(JobMasterClusterConnectionConfig clusterConnConfig, IJobMasterLogger logger) : base(clusterConnConfig)
+    public NatJetStreamRawMessagesDispatcherRepository(JobMasterClusterConnectionConfig clusterConnConfig, IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.logger = logger;
     }
@@ -47,6 +47,7 @@ internal class NatJetStreamsRawMessagesDispatcherRepository :
         logger.Debug($"Pushing message to bucket {fullBucketAddressId} correlationId {correlationId}");
         
         await EnsureStreamAsync();
+        await EnsureConsumerAsync(fullBucketAddressId);
     
         var subject = GetSubjectName(fullBucketAddressId);
     
@@ -56,8 +57,6 @@ internal class NatJetStreamsRawMessagesDispatcherRepository :
     public async Task<IList<string>> BulkPushMessageAsync(string fullBucketAddressId, IList<(string payload, DateTime referenceTime, string correlationId)> messages)
     {
         await EnsureStreamAsync();
-        await EnsureConsumerAsync(fullBucketAddressId);
-        
         var subject = GetSubjectName(fullBucketAddressId);
 
         var results = new List<string>();
@@ -192,6 +191,9 @@ internal class NatJetStreamsRawMessagesDispatcherRepository :
         await EnsureStreamAsync(); 
         
         await NatJetStreamConnector.GetOrCreateConsumerAsync(config, fullBucketAddressId);
+        
+        // Update cache after successful consumer creation
+        ensuredConsumers[fullBucketAddressId] = true;
     }
     
     private void EnsureNamesAreValid(string fullBucketAddressId)

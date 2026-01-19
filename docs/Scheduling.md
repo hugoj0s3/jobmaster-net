@@ -128,24 +128,16 @@ Note: We currently support TimeSpanIntervalExprCompiler. Support for CronExprCom
 For system-wide routines like backups or maintenance, you can define "Static" profiles. These do not transport message data and are typically used for global background tasks.
 
 ```csharp
-public class MaintenanceProfile : IStaticRecurringSchedulesProfile
+public class MaintenanceProfile : StaticRecurringSchedulesProfile
 {
-    public static string ProfileId => "MaintenanceProfile";
-    public static string WorkerLane => "SystemLane"; // Route to specific workers
-    
-    public static void Config(RecurringScheduleDefinitionCollection collection)
+    public override void Configure(RecurringScheduleDefinitionCollection schedules)
     {
-        // Database backup routine every 24 hours
-        collection.AddExpr<BackupJobHandler>(
-            TimeSpanIntervalExprCompiler.TypeId, 
-            "24:00:00"
-        );
-
-        // Natural language schedule (Coming Soon)
-        collection.AddExpr<SyncJobHandler>(
-            NaturalCronExprCompiler.TypeId, 
-            "every day at 12pm"
-        );
+        schedules
+            // Automatically ID: cluster:maint:CleanupHandler
+            .Add<CleanupHandler>(TimeSpan.FromDays(1)) 
+            
+            // Explicit ID: cluster:maint:HourlySync
+            .Add<SyncHandler>(TimeSpan.FromHours(1), defId: "HourlySync"); 
     }
 }
 ```

@@ -109,6 +109,11 @@ public class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsServ
         return operationThrottler.Exec(() => masterJobsRepository.BulkUpdatePartitionLockId(jobIds, lockId, expiresAt));
     }
 
+    public void ClearPartitionLock(Guid jobId)
+    {
+        operationThrottler.Exec(() => masterJobsRepository.ClearPartitionLock(jobId));
+    }
+
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Query(queryCriteria));

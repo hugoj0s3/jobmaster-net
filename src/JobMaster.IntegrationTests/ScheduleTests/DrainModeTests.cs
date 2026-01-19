@@ -14,7 +14,8 @@ public class NatJetStreamDrainModeTests : JobMasterSchedulerTestsBase<NatJetStre
 
     [Theory]
     [InlineData(100000, 10, 30)]
-    [InlineData(1000000, 30, 30)]
+    [InlineData(300000, 30, 30)]
+    [InlineData(1000000, 50, 30)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
@@ -28,7 +29,8 @@ public class PostgresDrainModeTests : JobMasterSchedulerTestsBase<PostgresDrainM
 
     [Theory]
     [InlineData(100000, 10, 30)]
-    [InlineData(1000000, 30, 30)]
+    [InlineData(300000, 30, 30)]
+    [InlineData(1000000, 50, 30)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
@@ -42,7 +44,8 @@ public class SqlServerDrainModeTests : JobMasterSchedulerTestsBase<SqlServerDrai
 
     [Theory]
     [InlineData(100000, 10, 30)]
-    [InlineData(1000000, 30, 30)]
+    [InlineData(300000, 30, 30)]
+    [InlineData(1000000, 50, 30)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, 3);
@@ -56,7 +59,8 @@ public class MySqlDrainModeTests : JobMasterSchedulerTestsBase<MySqlDrainModeFix
 
     [Theory]
     [InlineData(100000, 10, 30)]
-    [InlineData(1000000, 30, 30)]
+    [InlineData(300000, 30, 30)]
+    [InlineData(1000000, 50, 30)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
@@ -70,7 +74,8 @@ public class MixedDrainModeTests : JobMasterSchedulerTestsBase<MixedDrainModeFix
 
     [Theory]
     [InlineData(100000, 10, 30)]
-    [InlineData(1000000, 30, 30)]
+    [InlineData(300000, 30, 30)]
+    [InlineData(1000000, 50, 30)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);

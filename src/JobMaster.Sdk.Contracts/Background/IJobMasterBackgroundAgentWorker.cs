@@ -50,8 +50,8 @@ public interface IJobMasterBackgroundAgentWorker
     IList<IJobMasterRunner> Runners { get; }
     
     bool IsOnWarmUpTime();
-    
-    IJobsExecutionEngine? SafeGetOrCreateEngine(JobMasterPriority priority, string bucketId);
     IJobsExecutionEngine? GetEngine(string bucketId);
     IJobsExecutionEngine  GetOrCreateEngine(JobMasterPriority priority, string bucketId);
+    
+    bool IsInitialized { get; }
 }

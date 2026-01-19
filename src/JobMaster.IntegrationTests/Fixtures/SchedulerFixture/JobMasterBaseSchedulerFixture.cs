@@ -9,7 +9,7 @@ using JobMaster.Sdk.Contracts.Models.Logs;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.Sql;
 using JobMaster.SqlServer;
-using JobMaster.NatJetStreams;
+using JobMaster.NatJetStream;
 using JobMaster.Sdk.Contracts.Ioc.Selectors;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -59,12 +59,29 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
     public IList<string> WorkerLanes { get; private set; } = new List<string>();
     
     public ConcurrentDictionary<string, List<LogItem>> Dictionarylogs = new(StringComparer.OrdinalIgnoreCase);
+    public string CurrentTestExecutionId { get; set; } = string.Empty;
+    
+    private readonly ConcurrentDictionary<string, DateTime> lastFlushTime = new(StringComparer.OrdinalIgnoreCase);
+    private readonly System.Threading.Timer flushTimer;
+    private const int FlushIntervalSeconds = 10;
+    private const int FlushThresholdCount = 1000;
     
     // Abstract filter/default settings to be provided by concrete fixtures
     public abstract string IncludeWildcards { get; }
     public abstract string ExcludeWildcards { get; }
     public abstract string DefaultClusterId { get; }
     public virtual bool IsDrainingModeTest => false;
+    
+    public JobMasterBaseSchedulerFixture()
+    {
+        // Start periodic flush timer
+        flushTimer = new System.Threading.Timer(
+            _ => FlushAllLogs(),
+            null,
+            TimeSpan.FromSeconds(FlushIntervalSeconds),
+            TimeSpan.FromSeconds(FlushIntervalSeconds)
+        );
+    }
     
     public async Task InitializeAsync()
     {
@@ -322,6 +339,62 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         lock (list)
         {
             list.Add(logItem);
+            
+            // Flush if threshold reached
+            if (list.Count >= FlushThresholdCount)
+            {
+                FlushLogsForCluster(cid);
+            }
+        }
+    }
+    
+    private void FlushAllLogs()
+    {
+        foreach (var clusterId in ClusterIds)
+        {
+            FlushLogsForCluster(clusterId);
+        }
+    }
+    
+    private void FlushLogsForCluster(string clusterId)
+    {
+        if (string.IsNullOrEmpty(CurrentTestExecutionId))
+        {
+            return; // No test running, skip flush
+        }
+        
+        if (!Dictionarylogs.TryGetValue(clusterId, out var list))
+        {
+            return;
+        }
+        
+        List<LogItem> logsToFlush;
+        lock (list)
+        {
+            if (list.Count == 0)
+            {
+                return;
+            }
+            
+            logsToFlush = new List<LogItem>(list);
+            list.Clear();
+        }
+        
+        lastFlushTime[clusterId] = DateTime.UtcNow;
+        
+        // Group by level and write to files
+        var logsByLevel = logsToFlush.GroupBy(l => l.Level);
+        var rootDir = Path.Combine(AppContext.BaseDirectory, "jobmaster-test-logs", CurrentTestExecutionId);
+        Directory.CreateDirectory(rootDir);
+        
+        foreach (var levelGroup in logsByLevel)
+        {
+            var level = levelGroup.Key.ToString().ToLower();
+            var filePath = Path.Combine(rootDir, $"{clusterId}-{level}.log");
+            
+            var logLines = levelGroup.Select(l => l.ToString());
+            
+            File.AppendAllLines(filePath, logLines);
         }
     }
 

@@ -5,39 +5,36 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
-        <PackageId>JobMaster.Postgres</PackageId>
+        <PackageId>JobMaster.NatJetStream</PackageId>
         <VersionPrefix>0.0.1</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
         <Copyright>Copyright 2026 Hugo Silva</Copyright>
-        <Description>JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. This package provides PostgreSQL integration.</Description>
+        <Description>JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. This package provides NATS JetStream integration.</Description>
         <PackageProjectUrl>https://github.com/hugoj0s3/jobmaster-net</PackageProjectUrl>
         <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
 
-        <PackageReadmeFile>JobMaster.Postgress.NuGet.README.md</PackageReadmeFile>
+        <PackageReadmeFile>JobMaster.NatJetStream.NuGet.README.md</PackageReadmeFile>
 
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
 
-    <ItemGroup>
-        <ProjectReference Include="..\..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all"/>
-        <ProjectReference Include="..\..\JobMaster.Sdk\JobMaster.Sdk.csproj" PrivateAssets="all"/>
-      <ProjectReference Include="..\JobMaster.Sql\JobMaster.Sql.csproj" />
+   <ItemGroup>
+       <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all" />
+       <ProjectReference Include="..\JobMaster.Sdk\JobMaster.Sdk.csproj" PrivateAssets="all"/>
     </ItemGroup>
 
-    <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-      <PackageReference Include="Npgsql" Version="9.0.4" />
-    </ItemGroup>
-    
-    <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
-      <PackageReference Include="Npgsql" Version="8.0.8" />
-    </ItemGroup>
-    
     <ItemGroup>
-      <None Include="JobMaster.Postgress.NuGet.README.md">
+      <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
+      <PackageReference Include="NATS.Client.JetStream" Version="2.7.0" />
+      <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="JobMaster.NatJetStream.NuGet.README.md">
         <Pack>true</Pack>
         <PackagePath>/</PackagePath>
       </None>

@@ -5,15 +5,13 @@ using JobMaster.Sdk.Contracts.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
-/// <summary>
-/// Periodically deletes expired GenericRecord entries for the current cluster.
-/// Not bucket-aware and uses the base semaphore to serialize execution.
-/// </summary>
 public sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
 {
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private readonly JobMasterLockKeys lockKeys;
+    
+    private readonly ConsecutiveBurstLimiter burstLimiter;
 
     public DeleteExpiredGenericRecordsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
         : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
@@ -21,6 +19,7 @@ public sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
         masterGenericRecordRepository = backgroundAgentWorker.GetClusterAwareRepository<IMasterGenericRecordRepository>();
         masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
+        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.BatchSize);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -45,7 +44,7 @@ public sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
         {
             // Delete up to BatchSize expired records each tick
             var deleted = await masterGenericRecordRepository.DeleteExpiredAsync(DateTime.UtcNow, BackgroundAgentWorker.BatchSize);
-            var next = deleted >= BackgroundAgentWorker.BatchSize ? burstNext : desiredNext;
+            var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }
         finally

@@ -37,7 +37,9 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         int scheduleParallelLimit = 10)
     {
         var fromTimestamp = DateTime.UtcNow;
-        var testExecutionId = Guid.NewGuid().ToString();
+        var testExecutionId = Guid.NewGuid().ToString("N");
+        fixture.CurrentTestExecutionId = testExecutionId;
+        
         var sessionMetadataFilters = new List<GenericRecordValueFilter>()
         {
             new GenericRecordValueFilter()
@@ -428,6 +430,18 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         var fromTimestamp = DateTime.UtcNow.AddMinutes(-1);
         var testExecutionId = Guid.NewGuid().ToString();
         
+        // Set current test execution ID for log flushing
+        fixture.CurrentTestExecutionId = testExecutionId;
+        
+        // Clear dictionary logs from previous tests to prevent memory accumulation
+        foreach (var kvp in fixture.Dictionarylogs)
+        {
+            lock (kvp.Value)
+            {
+                kvp.Value.Clear();
+            }
+        }
+        
         // Start performance monitoring (sample every 500ms)
         using var perfMonitor = new PerformanceMonitor(TimeSpan.FromMilliseconds(500));
         string? logRootDir = null;
@@ -739,6 +753,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
     {
         var fromTimestamp = DateTime.UtcNow.AddMinutes(-1);
         var testExecutionId = Guid.NewGuid().ToString();
+        fixture.CurrentTestExecutionId = testExecutionId;
         
         // Start performance monitoring (sample every 500ms)
         using var perfMonitor = new PerformanceMonitor(TimeSpan.FromMilliseconds(500));
@@ -1003,70 +1018,38 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
     {
         try
         {
-            var allLogs = fixture.Dictionarylogs.SelectMany(x => x.Value).ToList();
-            output.WriteLine($"Total logs: {allLogs.Count}");
-
-            var rootDir = Path.Combine(AppContext.BaseDirectory, "jobmaster-test-logs", DateTime.UtcNow.ToString("yyyyMMdd-HHmmss"));
-            Directory.CreateDirectory(rootDir);
-
-            foreach (var fixtureClusterId in fixture.ClusterIds)
+            // Flush any remaining logs before reporting
+            if (!string.IsNullOrEmpty(fixture.CurrentTestExecutionId))
             {
-                var factory = JobMasterClusterAwareComponentFactories.GetFactory(fixtureClusterId);
-                var logger = factory.GetComponent<IJobMasterLogger>();
-
-
-                var logs = await logger.QueryAsync(new LogItemQueryCriteria
+                foreach (var clusterId in fixture.ClusterIds)
                 {
-                    FromTimestamp = fromTimestamp,
-                    CountLimit = int.MaxValue,
-                });
-
-                List<LogItem> fromDict;
-                if (fixture.Dictionarylogs.TryGetValue(fixtureClusterId, out var logsFromDict))
-                {
-                    // Take a thread-safe snapshot to avoid "array not long enough" error during enumeration
-                    lock (logsFromDict)
+                    if (fixture.Dictionarylogs.TryGetValue(clusterId, out var list))
                     {
-                        fromDict = logsFromDict.ToList();
+                        lock (list)
+                        {
+                            output.WriteLine($"Remaining logs in memory for {clusterId}: {list.Count}");
+                        }
                     }
                 }
-                else
+            }
+            
+            var rootDir = Path.Combine(AppContext.BaseDirectory, "jobmaster-test-logs", fixture.CurrentTestExecutionId);
+            
+            if (Directory.Exists(rootDir))
+            {
+                output.WriteLine($"Logs directory: {rootDir}");
+                
+                var logFiles = Directory.GetFiles(rootDir, "*.log");
+                foreach (var logFile in logFiles)
                 {
-                    fromDict = new List<LogItem>();
+                    var fileInfo = new FileInfo(logFile);
+                    var lineCount = File.ReadLines(logFile).Count();
+                    output.WriteLine($"  {Path.GetFileName(logFile)}: {lineCount} lines, {fileInfo.Length / 1024.0:F2} KB");
                 }
-                if (fromDict.Count(x => x.Level != JobMasterLogLevel.Debug) != logs.Count)
-                {
-                    output.WriteLine($"Logs from dictionary are more than logs from master for cluster {fixtureClusterId}");
-                    output.WriteLine($"Logs from dictionary: {fromDict.Count(x => x.Level != JobMasterLogLevel.Debug)}");
-                    output.WriteLine($"Logs from master: {fromDict.Count(x => x.Level != JobMasterLogLevel.Debug)}");
-                }
-                else
-                {
-                    output.WriteLine($"Logs from dictionary are equal to logs from master for cluster {fixtureClusterId}");
-                }
-
-                logs = fromDict;
-
-                Directory.CreateDirectory(rootDir);
-
-                foreach (var grp in logs
-                             .OrderBy(x => x.TimestampUtc)
-                             .GroupBy(x => x.Level)
-                             .OrderBy(x => x.Key))
-                {
-                    var levelName = grp.Key.ToString().ToLowerInvariant();
-                    var filePath = $"{rootDir}/{fixtureClusterId}-{levelName}.log";
-
-                    var sb = new StringBuilder();
-                    foreach (var x in grp)
-                    {
-                        sb.AppendLine(
-                            $"{x.TimestampUtc:O} [{x.Level}] {x.SubjectType}/{x.SubjectId} | {x.SourceMember} ({x.SourceFile}:{x.SourceLine}) | {x.Message}");
-                    }
-
-                    await File.WriteAllTextAsync(filePath, sb.ToString());
-                    output.WriteLine($"Logs written: Cluster={fixtureClusterId} Level={grp.Key} Count={grp.Count()} Path={filePath}");
-                }
+            }
+            else
+            {
+                output.WriteLine($"No logs directory found at: {rootDir}");
             }
 
             return rootDir;

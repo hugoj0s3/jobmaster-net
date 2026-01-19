@@ -60,7 +60,7 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.TaskQueueControl = TaskQueueControl<JobRawModel>.Create(
             priority, 
             factor: backgroundAgentWorker.ParallelismFactor,
-            preEnqueueAction: this.EnqueuedAsync);
+            preEnqueueAction: this.PreEnqueuedAsync);
     }
     
     public string BucketId => this.bucketId;
@@ -162,20 +162,14 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
             logger.Debug($"Aborted {abortedCount} tasks due to timeout", JobMasterLogSubjectType.AgentWorker, backgroundAgentWorker.AgentWorkerId);
         }
         
+        // Only log when tasks are actually started to reduce noise during idle periods
         if (started)
         {
             logger.Debug($"Started tasks this tick. running: {TaskQueueControl.CountRunning()}, waiting: {TaskQueueControl.CountWaiting()}, available: {TaskQueueControl.CountAvailability()}", JobMasterLogSubjectType.Bucket, BucketId);
         }
-        else
-        {
-            logger.Debug($"No tasks started this tick. running: {TaskQueueControl.CountRunning()}, waiting: {TaskQueueControl.CountWaiting()}, available: {TaskQueueControl.CountAvailability()}", JobMasterLogSubjectType.Bucket, BucketId);
-        }
         
-        if (OnBoardingControl.Count() == 0)
-        {
-            logger.Debug($"No jobs in onBoarding", JobMasterLogSubjectType.Bucket, BucketId);
-        }
-        else
+        // Only log when there are jobs in onboarding to reduce noise during idle periods
+        if (OnBoardingControl.Count() > 0)
         {
             logger.Debug($"OnBoarding Count: {OnBoardingControl.Count()}", JobMasterLogSubjectType.Bucket, BucketId);
         }
@@ -471,8 +465,15 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
     }
     
-    public async Task<bool> EnqueuedAsync(JobRawModel jobRawModel)
+    public async Task<bool> PreEnqueuedAsync(JobRawModel jobRawModel)
     {
+        if (!jobRawModel.Status.IsBucketStatus())
+        {
+            logger.Error($"Job is not in a bucket status. Status: {jobRawModel.Status}", JobMasterLogSubjectType.Job, jobRawModel.Id);
+            return false;
+        }
+        
+        var originalStatus = jobRawModel.Status;
         jobRawModel.Enqueued();
         try
         {
@@ -481,6 +482,8 @@ public sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
         catch (JobMasterVersionConflictException)
         {
+            jobRawModel.Status = originalStatus;
+            
             var existingJob = await masterJobsService.GetAsync(jobRawModel.Id);
             if (existingJob?.Status == JobMasterJobStatus.Cancelled)
             {

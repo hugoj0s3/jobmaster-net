@@ -8,16 +8,10 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\JobMaster\JobMaster.csproj" />
-        <ProjectReference Include="..\JobMaster.UI\JobMaster.UI.csproj" />
-        <ProjectReference Include="..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Faker.Net" Version="2.0.163" />
-        <PackageReference Include="Hangfire" Version="1.8.18" />
-        <PackageReference Include="Hangfire.Core" Version="1.8.18" />
-        <PackageReference Include="Hangfire.SqlServer" Version="1.8.18" />
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.14"/>
         <PackageReference Include="Serilog" Version="4.2.0" />
         <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />

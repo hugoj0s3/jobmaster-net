@@ -15,6 +15,6 @@
     
     <ItemGroup>
       <ProjectReference Include="..\JobMaster.Contracts\JobMaster.Contracts.csproj" />
-      <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" />
+      <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all" />
     </ItemGroup>
 </Project>

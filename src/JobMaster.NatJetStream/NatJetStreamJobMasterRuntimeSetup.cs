@@ -6,7 +6,7 @@ using JobMaster.Sdk.Contracts.Config;
 using JobMaster.Sdk.Contracts.Ioc.Definitions;
 using JobMaster.Sdk.Contracts.Models;
 
-namespace JobMaster.NatJetStreams;
+namespace JobMaster.NatJetStream;
 
 internal class NatJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
