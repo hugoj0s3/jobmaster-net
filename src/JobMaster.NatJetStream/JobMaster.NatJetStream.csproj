@@ -21,14 +21,12 @@
 
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
-
-   <ItemGroup>
-       <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all" />
-       <ProjectReference Include="..\JobMaster.Sdk\JobMaster.Sdk.csproj" PrivateAssets="all"/>
-    </ItemGroup>
+    
 
     <ItemGroup>
       <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
+      <PackageReference Include="JobMaster.Sdk" Version="0.0.1-alpha" />
+      <PackageReference Include="JobMaster.Sdk.Contracts" Version="0.0.1-alpha" />
       <PackageReference Include="NATS.Client.JetStream" Version="2.7.0" />
       <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
     </ItemGroup>

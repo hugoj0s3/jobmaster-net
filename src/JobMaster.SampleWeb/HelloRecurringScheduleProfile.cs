@@ -7,7 +7,7 @@ public class HelloRecurringScheduleProfile : IStaticRecurringSchedulesProfile
 {
     public static string ProfileId => "HelloRecurringScheduleProfile";
     
-    public static string WorkerLane => "Lane2";
+    public static string WorkerLane => "Nats-1";
     
     public static void Config(RecurringScheduleDefinitionCollection collection)
     {

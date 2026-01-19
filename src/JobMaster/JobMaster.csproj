@@ -22,16 +22,15 @@
         
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
-
+    <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+        <PackageReference Include="CryptoRandom" Version="1.0.9"  />
+    </ItemGroup>
     <ItemGroup>
         <PackageReference Include="JobMaster.Contracts" Version="0.0.1-alpha" />
+        <PackageReference Include="JobMaster.Sdk.Contracts" Version="0.0.1-alpha"/>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
         <PackageReference Include="TimeZoneConverter" Version="7.1.0" />
         <PackageReference Include="System.Text.Json" Version="9.0.2"/>
-    </ItemGroup>
-
-    <ItemGroup>
-        <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" PrivateAssets="all" />
     </ItemGroup>
 
     <ItemGroup>

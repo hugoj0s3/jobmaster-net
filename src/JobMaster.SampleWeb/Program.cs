@@ -1,83 +1,72 @@
-using Hangfire;
 using JobMaster.Contracts;
 using JobMaster.Contracts.Models;
 using JobMaster.Ioc.Extensions;
+using JobMaster.MySql;
+using JobMaster.NatJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
-using JobMaster.UI;
+using JobMaster.SqlServer;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
-// builder.UseJobMasterServer(config =>
-// {
-//     ConfigBuilderExtensions.UseSqlServer((AgentConfigBuilder)config.AgentConfig
-//         .AgentConnectionId("Test"), "Server=localhost;Initial Catalog=JobAgent;user=sa;pwd=Password#123;TrustServerCertificate=true");
-//     
-//     ConfigBuilderExtensions.UseSqlServer((MasterConfigBuilder)config.MasterConfig, "Server=localhost;Initial Catalog=JobMaster;user=sa;pwd=Password#123;TrustServerCertificate=true");
-//     var qtyBucketsStr = Environment.GetEnvironmentVariable("QTY_BUCKETS");
-//     var qtyBuckets = qtyBucketsStr != null ? int.Parse(qtyBucketsStr) : 0;
-//     config.BucketNumbersConfig.SetQtyBucketsPerPriority(0, qtyBuckets, 0);
-// });
 
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
-        .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
-        .ClusterMode(ClusterMode.Active);
-    
-    config.UsePostgresForMaster("Host=localhost;Port=5432;Database=master;Username=postgres;Password=postgres;Maximum Pool Size=300");
+          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .ClusterMode(ClusterMode.Active);
 
-    config.AddAgentConnectionConfig("Postgres-1")
-        .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_1;Username=postgres;Password=postgres;");
+    // Master database (must be SQL)
+    config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
+
+    // Agent connection pools using different providers
+    config.AddAgentConnectionConfig("Pg-1")
+          .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
+
+    config.AddAgentConnectionConfig("My-1")
+          .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
+
+    config.AddAgentConnectionConfig("Sql-1")
+        .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
+
     
-    config.AddAgentConnectionConfig("Postgres-2")
-        .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_2;Username=postgres;Password=postgres;");
-    
-    config.AddAgentConnectionConfig("Postgres-3")
-        .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_3;Username=postgres;Password=postgres;");
-    
+    config.AddAgentConnectionConfig("Nats-1")
+          .UseNatJetStream("nats://jmuser:jmpass@localhost:4222");
+
     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
-    
     if (isConsumer)
     {
+        // Worker bound to Postgres agent
         config.AddWorker()
-            .AgentConnName("Postgres-1")
-            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-            .SetWorkerMode(AgentWorkerMode.Standalone);
-    
-        config.AddWorker()
-            .WorkerName("Postgres-2")
-            .AgentConnName("Postgres-2")
-            .WorkerLane("Lane1")
-            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-            .SetWorkerMode(AgentWorkerMode.Standalone);
-    
-        config.AddWorker()
-            .AgentConnName("Postgres-3")
-            .WorkerLane("Lane2")
-            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-            .SetWorkerMode(AgentWorkerMode.Standalone);
-    }
-   
+              .WorkerName("worker-pg")
+              .AgentConnName("Pg-1")
+              .BucketQtyConfig(JobMasterPriority.Medium, 1)
+              .SetWorkerMode(AgentWorkerMode.Standalone);
 
-    // config.AddWorker("Postgres-2")
-    //     .SetWorkerBucketQtyConfig(JobMasterPriority.VeryLow, 1)
-    //     .SetWorkerBucketQtyConfig(JobMasterPriority.Low, 2)
-    //     .SetWorkerBucketQtyConfig(JobMasterPriority.Medium, 3)
-    //     .SetWorkerBucketQtyConfig(JobMasterPriority.High, 4)
-    //     .SetWorkerBucketQtyConfig(JobMasterPriority.Critical, 5);
+        // Worker bound to MySQL agent
+        config.AddWorker()
+              .WorkerName("worker-mysql")
+              .AgentConnName("My-1")
+              .BucketQtyConfig(JobMasterPriority.Medium, 1)
+              .SetWorkerMode(AgentWorkerMode.Standalone);
+
+        // Worker bound to SQL Server agent
+        config.AddWorker()
+              .WorkerName("worker-sqlserver")
+              .AgentConnName("Sql-1")
+              .BucketQtyConfig(JobMasterPriority.Medium, 1)
+              .SetWorkerMode(AgentWorkerMode.Standalone);
+        
+        // config.AddWorker()
+        //       .WorkerName("worker-nats")
+        //       .AgentConnName("Nats-1")
+        //       .BucketQtyConfig(JobMasterPriority.Medium, 1)
+        //       .SetWorkerMode(AgentWorkerMode.Standalone);
+    }
 });
 
-//
-// builder.Services.AddHangfire(configuration => configuration
-//     .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
-//     .UseSimpleAssemblyNameTypeSerializer()
-//     .UseRecommendedSerializerSettings()
-//     .UseSqlServerStorage("Server=localhost;Initial Catalog=Hangfire;user=sa;pwd=Password#123;TrustServerCertificate=true"));
-//
-// builder.Services.AddHangfireServer();
 
 
 builder.Services.AddEndpointsApiExplorer();
@@ -100,7 +89,7 @@ app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpsRedirection();
 
-app.MapPost("/schedule-job", async (int qty, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>
+app.MapPost("/schedule-job", async (int qty, string? lane, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>
 {
     var tasks = new List<Task>();
     for (var i = 0; i < qty; i++)
@@ -108,11 +97,11 @@ app.MapPost("/schedule-job", async (int qty, TimeSpan? delay, IJobMasterSchedule
         var writableMetadata = WritableMetadata.New().SetStringValue("MyMetadata", "MyMetadataValue");
         if (!delay.HasValue)
         {
-            tasks.Add(jobScheduler.OnceNowAsync<HelloJobHandler>(WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata));
+            tasks.Add(jobScheduler.OnceNowAsync<HelloJobHandler>(WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata, workerLane: lane));
         }
         else
         {
-            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata));
+            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: writableMetadata, workerLane: lane));
         }
     }
     
@@ -123,40 +112,10 @@ app.MapPost("/schedule-job", async (int qty, TimeSpan? delay, IJobMasterSchedule
     
 }).WithOpenApi();
 
-app.MapPost("/schedule-job", async (IJobMasterScheduler jobScheduler) =>
-{
-    var msg = WriteableMessageData.New().SetStringValue("Name", "John Doe");
-    await jobScheduler.OnceNowAsync<HelloJobHandler>(msg);
-    
-}).WithOpenApi();
 
-app.MapPost("/schedule-job2", (int qty, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>
+app.MapPost("/recurring-schedule-job", (string expressionType, string expression, string? lane, IJobMasterScheduler jobScheduler) =>
 {
-    for (var i = 0; i < qty; i++)
-    {
-        // if (i % 10 == 0)
-        // {
-        //     Thread.Sleep(50);
-        // }
-        
-        if (!delay.HasValue)
-        {
-            jobScheduler.OnceNow<HelloJobHandler2>(WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("MyMetadata", "MyMetadataValue"));
-        }
-        else
-        {
-            jobScheduler.OnceAfter<HelloJobHandler2>(delay.Value, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("MyMetadata", "MyMetadataValue"));
-        }
-    }
-    
-    return "Qty of scheduled jobs: " + qty;
-    
-}).WithOpenApi();
-
-
-app.MapPost("/recurring-schedule-job", (string expressionType, string expression, IJobMasterScheduler jobScheduler) =>
-{
-    jobScheduler.Recurring<HelloJobHandler>(expressionType, expression, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression));
+    jobScheduler.Recurring<HelloJobHandler>(expressionType, expression, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
     
 }).WithOpenApi();
 
