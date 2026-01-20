@@ -23,7 +23,7 @@ public class HelloJobHandler : IJobHandler
         var name = job.MsgData.TryGetStringValue("Name") ?? string.Empty;
         if (string.IsNullOrWhiteSpace(name))
         {
-            name = Faker.Name.FullName();
+            name = "World";
         }
         
         SayHello(name, job.ScheduledAt);
@@ -42,7 +42,7 @@ public class HelloJobHandler : IJobHandler
     public static void SayHello(string name, DateTime scheduledAt)
     {
         var delay = DateTime.UtcNow - scheduledAt;
-        
+
         Console.WriteLine($"Hello {name} at {DateTime.UtcNow}, scheduled at {scheduledAt}. Count: {++Counter}, Delay: {delay}");
         
         Console.ResetColor();

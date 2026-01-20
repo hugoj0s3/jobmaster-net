@@ -9,6 +9,6 @@ public class HelloRecurringScheduleProfile : IStaticRecurringSchedulesProfile
     
     public static void Config(RecurringScheduleDefinitionCollection collection)
     {
-        collection.Add<HelloJobHandler>(TimeSpanIntervalExprCompiler.TypeId, "00:00:25");
+        // collection.Add<HelloJobHandler>(TimeSpanIntervalExprCompiler.TypeId, "00:00:25");
     }
 }
