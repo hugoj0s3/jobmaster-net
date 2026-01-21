@@ -1,7 +1,7 @@
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sql.Scripts;
 

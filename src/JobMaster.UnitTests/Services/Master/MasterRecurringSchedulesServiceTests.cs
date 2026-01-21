@@ -1,9 +1,9 @@
 using FluentAssertions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Repositories.Master;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Services.Master;
 
 namespace JobMaster.UnitTests.Services.Master;

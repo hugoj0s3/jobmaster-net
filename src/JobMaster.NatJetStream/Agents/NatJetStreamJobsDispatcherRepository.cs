@@ -1,5 +1,5 @@
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.NatJetStream.Agents;

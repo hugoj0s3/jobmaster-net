@@ -2,19 +2,19 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Text;
 using Dapper;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Connections;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Repositories.Agent;
+using JobMaster.Internals;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Connections;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sql.Connections;
 using JobMaster.Sql.Scripts;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sql.Internals.Utils;
 
 namespace JobMaster.Sql.Agents;
 

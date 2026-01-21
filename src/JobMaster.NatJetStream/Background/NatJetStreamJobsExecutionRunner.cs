@@ -1,15 +1,16 @@
-using JobMaster.Contracts.Models;
 using System.Diagnostics;
-using JobMaster.Contracts.Utils;
+using JobMaster.Abstractions.Models;
+using JobMaster.NatJetStream.Internals;
+using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Background;
-using JobMaster.Sdk.Contracts.Background.Runners;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Models.Buckets;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Serialization;
 using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.NatJetStream.Background;

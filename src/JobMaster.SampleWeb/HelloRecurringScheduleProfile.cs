@@ -1,5 +1,4 @@
-using JobMaster.Contracts.RecurrenceExpressions;
-using JobMaster.Contracts.StaticRecurringSchedules;
+using JobMaster.Abstractions.StaticRecurringSchedules;
 
 namespace JobMaster.SampleWeb;
 

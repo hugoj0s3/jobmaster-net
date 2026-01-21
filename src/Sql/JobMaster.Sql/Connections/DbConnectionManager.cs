@@ -1,12 +1,8 @@
 using System.Collections.Concurrent;
 using System.Data;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Contracts.Utils;
-using JobMaster.Sdk.Connections;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Connections;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Connections;
+using JobMaster.Sql.Internals.Utils;
 
 namespace JobMaster.Sql.Connections;
 

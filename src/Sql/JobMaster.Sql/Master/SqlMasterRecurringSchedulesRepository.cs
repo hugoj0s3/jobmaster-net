@@ -2,17 +2,18 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Contracts.Models;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Exceptions;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Abstractions.Models;
+using JobMaster.Internals;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sql.Connections;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sql.Internals.Utils;
 using JobMaster.Sql.Scripts;
 
 namespace JobMaster.Sql.Master;
@@ -63,7 +64,7 @@ public abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAw
         trans.Commit();
         
         // Update the in-memory model with the new version
-        scheduleRaw.Version = rec.Version;
+        scheduleRaw.SetVersion(rec.Version);
     }
 
     public async Task AddAsync(RecurringScheduleRawModel scheduleRaw)
@@ -93,7 +94,7 @@ public abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAw
         trans.Commit();
         
         // Update the in-memory model with the new version
-        scheduleRaw.Version = rec.Version;
+        scheduleRaw.SetVersion(rec.Version);
     }
 
     public void Update(RecurringScheduleRawModel scheduleRaw)
@@ -126,7 +127,7 @@ public abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAw
         }
         
         // Update the in-memory model with the new version
-        scheduleRaw.Version = rec.Version;
+        scheduleRaw.SetVersion(rec.Version);
 
         if (rec.Metadata is not null)
         {
@@ -174,7 +175,7 @@ public abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAw
         }
         
         // Update the in-memory model with the new version
-        scheduleRaw.Version = rec.Version;
+        scheduleRaw.SetVersion(rec.Version);
 
         if (rec.Metadata is not null)
         {
@@ -730,7 +731,7 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
             GenericRecordEntry? metadata = null;
             if (kvs.Count > 0 && !string.IsNullOrEmpty(groupId) && !string.IsNullOrEmpty(entryId))
             {
-                var metaWritable = new Metadata(kvs);
+                var metaWritable = WritableMetadata.FromDictionary(kvs);
                 metadata = GenericRecordEntry.FromWritableMetadata(ClusterConnConfig.ClusterId, groupId!, entryId!, metaWritable);
             }
 

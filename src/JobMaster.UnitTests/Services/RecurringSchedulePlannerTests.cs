@@ -1,12 +1,9 @@
 using FluentAssertions;
-using JobMaster.Contracts;
-using JobMaster.Contracts.RecurrenceExpressions;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Services;
-using JobMaster.Sdk.Contracts.Services.Agent;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Services;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
 using Moq;
 using Xunit;

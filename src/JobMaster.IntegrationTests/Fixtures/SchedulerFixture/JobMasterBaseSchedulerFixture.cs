@@ -1,16 +1,16 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using JobMaster.Contracts.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Utils;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.Postgres;
-using JobMaster.Sdk.Contracts.Models.Logs;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.Sql;
 using JobMaster.SqlServer;
 using JobMaster.NatJetStream;
-using JobMaster.Sdk.Contracts.Ioc.Selectors;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

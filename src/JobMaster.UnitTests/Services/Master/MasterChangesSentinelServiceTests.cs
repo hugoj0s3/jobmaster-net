@@ -1,11 +1,11 @@
 using FluentAssertions;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.LocalCache;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using Moq;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Keys;
-using JobMaster.Sdk.Contracts.LocalCache;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Repositories.Master;
 using JobMaster.Sdk.Services.Master;
 
 namespace JobMaster.UnitTests.Services.Master;

@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sql.Scripts;
 

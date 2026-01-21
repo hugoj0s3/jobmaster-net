@@ -1,7 +1,6 @@
 using System.Data;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sql.Connections;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Services.Master;
 using Microsoft.Data.SqlClient;
 
 namespace JobMaster.SqlServer;

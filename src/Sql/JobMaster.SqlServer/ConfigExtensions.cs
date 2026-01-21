@@ -1,5 +1,5 @@
-using JobMaster.Contracts.Ioc.Selectors;
-using JobMaster.Sdk.Contracts.Ioc.Selectors;
+using JobMaster.Abstractions.Ioc.Selectors;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
 namespace JobMaster.SqlServer;
 

@@ -1,13 +1,6 @@
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
 using JobMaster.Ioc.Extensions;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models.Agents;
-using JobMaster.Sdk.Contracts.Repositories.Agent;
-using JobMaster.Sdk.Contracts.Repositories.Master;
 using JobMaster.Sql;
 using JobMaster.IntegrationTests.Utils;
 using Microsoft.Extensions.Configuration;
@@ -15,6 +8,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit.Sdk;
 using Npgsql;
 using Dapper;
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 

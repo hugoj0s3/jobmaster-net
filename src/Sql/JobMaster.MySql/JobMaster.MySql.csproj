@@ -23,9 +23,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="JobMaster.Sdk" Version="0.0.1-alpha" />
-        <PackageReference Include="JobMaster.Sdk.Contracts" Version="0.0.1-alpha"  />
-        <PackageReference Include="JobMaster.Sql" Version="0.0.1-alpha" />
+        <ProjectReference Include="..\JobMaster.Sql\JobMaster.Sql.csproj" />
     </ItemGroup>
 
     <ItemGroup>

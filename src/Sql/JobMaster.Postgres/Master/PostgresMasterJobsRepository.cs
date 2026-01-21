@@ -1,6 +1,6 @@
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sql.Connections;
 using JobMaster.Sql.Master;
-using JobMaster.Sdk.Contracts.Config;
 using Npgsql;
 
 namespace JobMaster.Postgres.Master;

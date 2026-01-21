@@ -1,18 +1,18 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Contracts.Utils;
+using JobMaster.Internals;
+using JobMaster.NatJetStream.Internals;
+using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners.DrainRunners;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Background;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Models.Agents;
-using JobMaster.Sdk.Contracts.Models.Buckets;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Serialization;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Repositories;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -23,7 +23,7 @@ namespace JobMaster.NatJetStream.Background;
 internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
-    private JobMaster.Sdk.Contracts.OperationThrottler ackThrottler = null!;
+    private OperationThrottler ackThrottler = null!;
 
     private bool hasInitialized;
     private Task? consumptionTask;

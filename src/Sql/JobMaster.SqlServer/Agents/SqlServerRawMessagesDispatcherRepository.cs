@@ -1,10 +1,9 @@
 using System.Data;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sql.Agents;
 using JobMaster.Sql.Connections;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlServer.Agents;

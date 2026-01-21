@@ -1,7 +1,6 @@
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
-using JobMaster.Contracts.Models.Attributes;
-using JobMaster.Contracts.RecurrenceExpressions;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models.Attributes;
 
 namespace JobMaster.SampleWeb;
 

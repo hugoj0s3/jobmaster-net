@@ -1,7 +1,7 @@
 using Dapper;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sql.Connections;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sql.Master;
 
 namespace JobMaster.MySql.Master;

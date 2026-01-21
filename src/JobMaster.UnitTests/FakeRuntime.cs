@@ -1,5 +1,5 @@
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Background;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Background;
 
 namespace JobMaster.UnitTests;
 

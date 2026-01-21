@@ -1,5 +1,5 @@
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.NatJetStream;

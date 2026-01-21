@@ -1,5 +1,3 @@
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc.Definitions;
 using JobMaster.Sql;
 
 namespace JobMaster.Postgres;

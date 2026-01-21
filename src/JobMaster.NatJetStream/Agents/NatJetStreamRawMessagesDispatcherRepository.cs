@@ -1,16 +1,15 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Text;
-using JobMaster.Contracts.Utils;
+using JobMaster.NatJetStream.Internals;
+using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Extensions;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Repositories.Agent;
-using JobMaster.Sdk.Contracts.Exceptions;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -148,7 +147,7 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
             {
                 if (attempt < maxAttempts)
                 {
-                    var jitter = JobMaster.Contracts.Utils.JobMasterRandomUtil.GetInt(0, 200);
+                    var jitter = JobMasterRandomUtil.GetInt(0, 200);
                     var backoffMs = Math.Min(400 * (1 << (attempt - 1)), 2500) + jitter;
                     logger.Error($"JetStream publish transient failure ({ex.GetType().Name}): '{ex.Message}'. Attempt {attempt}/{maxAttempts}. Retrying in {backoffMs}ms.");
                     await Task.Delay(backoffMs);

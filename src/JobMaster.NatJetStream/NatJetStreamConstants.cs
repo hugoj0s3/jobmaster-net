@@ -1,5 +1,5 @@
 using System;
-using JobMaster.Sdk.Contracts;
+using JobMaster.Sdk.Abstractions;
 
 namespace JobMaster.NatJetStream;
 

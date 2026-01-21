@@ -1,7 +1,7 @@
 using JobMaster.NatJetStream.Agents;
 using JobMaster.NatJetStream.Background;
 using JobMaster.Sdk;
-using JobMaster.Sdk.Contracts.Background.Runners;
+using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Ioc.Setup;
 
 namespace JobMaster.NatJetStream;

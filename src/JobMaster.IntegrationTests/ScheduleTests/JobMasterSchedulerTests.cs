@@ -1,17 +1,15 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
-using JobMaster.Contracts;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Contracts.Models;
-using JobMaster.Contracts.Utils;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture;
 using JobMaster.IntegrationTests.Utils;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Internals;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit.Abstractions;
 
@@ -99,7 +97,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     _ = worker.StopImmediatelyAsync(); // Fire and forget
                     
                     // Quick succession for first batch (100-500ms between stops)
-                    var delayMs = JobMasterRandomUtil.GetInt(100, 500);
+                    var delayMs = Random.Shared.Next(100, 500);
                     await Task.Delay(delayMs);
                 }
                 

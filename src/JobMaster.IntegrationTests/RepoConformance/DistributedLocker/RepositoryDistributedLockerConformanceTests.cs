@@ -1,5 +1,5 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;

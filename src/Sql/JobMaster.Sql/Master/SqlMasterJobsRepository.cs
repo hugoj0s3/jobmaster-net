@@ -2,17 +2,18 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Contracts.Models;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Exceptions;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Abstractions.Models;
+using JobMaster.Internals;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sql.Connections;
+using JobMaster.Sql.Internals.Utils;
 using JobMaster.Sql.Scripts;
 
 namespace JobMaster.Sql.Master;
@@ -67,7 +68,7 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
             trans.Commit();
             
             // Update the in-memory model with the new version
-            jobRaw.Version = rec.Version;
+            jobRaw.SetVersion(rec.Version);
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
@@ -105,7 +106,7 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
             trans.Commit();
             
             // Update the in-memory model with the new version
-            jobRaw.Version = rec.Version;
+            jobRaw.SetVersion(rec.Version);
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
@@ -143,7 +144,7 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
         }
         
         // Update the in-memory model with the new version
-        jobRaw.Version = rec.Version;
+        jobRaw.SetVersion(rec.Version);
 
         if (rec.Metadata is not null)
         {
@@ -191,7 +192,7 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
         }
         
         // Update the in-memory model with the new version
-        jobRaw.Version = rec.Version;
+        jobRaw.SetVersion(rec.Version);
 
         if (rec.Metadata is not null)
         {
@@ -717,7 +718,7 @@ ORDER BY {order}";
             // build via Contracts.Models.Metadata which implements IWritable/IReadable.
             if (kvs.Count > 0 && !string.IsNullOrEmpty(groupId) && !string.IsNullOrEmpty(entryId))
             {
-                var metaWritable = new Metadata(kvs);
+                var metaWritable = WritableMetadata.FromDictionary(kvs);
                 metadata = GenericRecordEntry.FromWritableMetadata(
                     ClusterConnConfig.ClusterId,
                     groupId!,

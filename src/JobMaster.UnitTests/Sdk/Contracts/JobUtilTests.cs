@@ -1,9 +1,9 @@
 using FluentAssertions;
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
-using JobMaster.Contracts.Models.Attributes;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models.Attributes;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 

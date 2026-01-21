@@ -1,14 +1,14 @@
 using System.Reflection;
 using FluentAssertions;
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc;
-using JobMaster.Sdk.Contracts.Models;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Services;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Services;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 
 namespace JobMaster.UnitTests;

@@ -16,12 +16,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.MySql", "Sql\JobM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlServer", "Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj", "{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Sdk", "JobMaster.Sdk\JobMaster.Sdk.csproj", "{15415C67-F880-4B76-8424-4CFDC07442E2}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Contracts", "JobMaster.Contracts\JobMaster.Contracts.csproj", "{97E01F39-A67B-43E1-947B-A17262CE6292}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Sdk.Contracts", "JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj", "{A56DB072-CD5D-4391-A073-DB7E2C021F6C}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "JobMaster.UnitTests\JobMaster.UnitTests.csproj", "{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
@@ -62,18 +56,6 @@ Global
 		{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}.Release|Any CPU.Build.0 = Release|Any CPU
-		{15415C67-F880-4B76-8424-4CFDC07442E2}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{15415C67-F880-4B76-8424-4CFDC07442E2}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{15415C67-F880-4B76-8424-4CFDC07442E2}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{15415C67-F880-4B76-8424-4CFDC07442E2}.Release|Any CPU.Build.0 = Release|Any CPU
-		{97E01F39-A67B-43E1-947B-A17262CE6292}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{97E01F39-A67B-43E1-947B-A17262CE6292}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{97E01F39-A67B-43E1-947B-A17262CE6292}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{97E01F39-A67B-43E1-947B-A17262CE6292}.Release|Any CPU.Build.0 = Release|Any CPU
-		{A56DB072-CD5D-4391-A073-DB7E2C021F6C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A56DB072-CD5D-4391-A073-DB7E2C021F6C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A56DB072-CD5D-4391-A073-DB7E2C021F6C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A56DB072-CD5D-4391-A073-DB7E2C021F6C}.Release|Any CPU.Build.0 = Release|Any CPU
 		{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}.Release|Any CPU.ActiveCfg = Release|Any CPU

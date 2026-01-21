@@ -2,7 +2,7 @@ using JobMaster.Postgres.Agents;
 using JobMaster.Postgres.Master;
 using JobMaster.Sql.Connections;
 using JobMaster.Sdk;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
 using Microsoft.Extensions.DependencyInjection;
 

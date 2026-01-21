@@ -1,4 +1,4 @@
-using JobMaster.Contracts.Models;
+using JobMaster.Abstractions.Models;
 
 namespace JobMaster.IntegrationTests;
 

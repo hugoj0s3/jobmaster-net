@@ -1,6 +1,6 @@
-using JobMaster.Sdk.Contracts.Models.Agents;
-using JobMaster.Sdk.Contracts.Repositories.Agent;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 

@@ -1,13 +1,13 @@
 using FluentAssertions;
-using JobMaster.Contracts.Models;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models;
-using JobMaster.Sdk.Contracts.Models.Agents;
-using JobMaster.Sdk.Contracts.Models.Buckets;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Services.Agent;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Services.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
 using Moq;
 

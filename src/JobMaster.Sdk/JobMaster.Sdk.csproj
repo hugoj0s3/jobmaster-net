@@ -23,9 +23,4 @@
     <ItemGroup>
       <InternalsVisibleTo Include="JobMaster.UnitTests" />
     </ItemGroup>
-    
-    
-    <ItemGroup>
-      <PackageReference Include="JobMaster.Sdk.Contracts" Version="0.0.1-alpha" />
-    </ItemGroup>
 </Project>

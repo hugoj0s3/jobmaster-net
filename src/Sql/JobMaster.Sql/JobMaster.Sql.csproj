@@ -22,9 +22,19 @@
 
     <ItemGroup>
       <PackageReference Include="Dapper" Version="2.1.66" />
-      <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
-      <PackageReference Include="JobMaster.Contracts" Version="0.0.1-alpha" />
-      <PackageReference Include="JobMaster.Sdk" Version="0.0.1-alpha"  />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+    </ItemGroup>
+
+    <PropertyGroup>
+        <DefineConstants>$(DefineConstants);SQLPROV</DefineConstants>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Include="..\..\JobMaster.Internals\**\*.cs"
+                 Link="Internals\%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
 </Project>

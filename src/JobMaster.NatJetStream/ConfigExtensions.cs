@@ -1,6 +1,5 @@
-using JobMaster.Contracts.Ioc.Selectors;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc.Selectors;
+using JobMaster.Abstractions.Ioc.Selectors;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using NATS.Client.Core;
 
 namespace JobMaster.NatJetStream;

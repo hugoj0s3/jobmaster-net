@@ -1,10 +1,10 @@
-using JobMaster.Contracts.Models;
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.Jobs;
 using System.Text.Json;
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Xunit;
-using JobMaster.Sdk.Contracts.Exceptions;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 

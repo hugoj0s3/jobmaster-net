@@ -1,13 +1,12 @@
 using System.Reflection;
 using FluentAssertions;
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
-using JobMaster.Contracts.RecurrenceExpressions;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.Agents;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Serialization;
+using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 

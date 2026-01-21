@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using JobMaster.Sdk.Contracts.Ioc;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc.Definitions;
-using JobMaster.Sdk.Contracts.Models;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.NatJetStream;
 

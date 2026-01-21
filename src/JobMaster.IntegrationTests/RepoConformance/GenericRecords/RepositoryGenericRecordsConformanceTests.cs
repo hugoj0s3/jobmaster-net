@@ -1,6 +1,6 @@
-using JobMaster.Contracts.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.GenericRecords;

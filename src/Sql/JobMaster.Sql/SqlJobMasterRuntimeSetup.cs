@@ -1,10 +1,10 @@
 using System.Data;
 using Dapper;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sql.Connections;
 using JobMaster.Sql.Scripts;
 using Microsoft.Extensions.DependencyInjection;

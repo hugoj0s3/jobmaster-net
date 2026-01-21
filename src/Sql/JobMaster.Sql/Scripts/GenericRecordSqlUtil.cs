@@ -1,8 +1,9 @@
 using System.Data;
 using System.Text;
 using Dapper;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sql.Scripts;
 
@@ -667,7 +668,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
                 default:
                     try
                     {
-                        var json = JobMaster.Sdk.Contracts.Serialization.InternalJobMasterSerializer.Serialize(val);
+                        var json = InternalJobMasterSerializer.Serialize(val);
                         row.ValueText = json;
                     }
                     catch

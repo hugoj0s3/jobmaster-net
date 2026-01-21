@@ -1,11 +1,11 @@
 using System.Reflection;
 using FluentAssertions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Repositories.Agent;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.UnitTests.Repositories;

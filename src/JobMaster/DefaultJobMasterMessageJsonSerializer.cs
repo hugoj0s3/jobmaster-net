@@ -1,6 +1,6 @@
 using System;
 using System.Text.Json;
-using JobMaster.Contracts.Serialization;
+using JobMaster.Abstractions.Serialization;
 
 namespace JobMaster;
 

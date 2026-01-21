@@ -2,9 +2,8 @@ using System;
 using System.Data;
 using System.Diagnostics;
 using Dapper;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sql.Connections;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Services.Master;
 using MySqlConnector;
 
 namespace JobMaster.MySql;

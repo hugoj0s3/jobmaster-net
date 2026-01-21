@@ -1,6 +1,6 @@
 using System.Data;
 using Dapper;
-using JobMaster.Sdk.Connections;
+using JobMaster.Sdk.Abstractions.Connections;
 
 namespace JobMaster.Sql.Connections;
 

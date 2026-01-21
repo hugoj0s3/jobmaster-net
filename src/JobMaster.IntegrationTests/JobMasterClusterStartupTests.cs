@@ -1,9 +1,9 @@
 using JobMaster.IntegrationTests.Fixtures;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.PostgresPure;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.IntegrationTests;

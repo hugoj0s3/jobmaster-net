@@ -3,11 +3,10 @@ using Moq;
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using JobMaster.Contracts.Models;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.Logs;
-using JobMaster.Sdk.Contracts.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Services.Master;
 
 namespace JobMaster.UnitTests.Services.Master;

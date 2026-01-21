@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Contracts.Keys;
+using JobMaster.Sdk.Abstractions.Keys;
 using NATS.Client.Core;
 
 namespace JobMaster.NatJetStream;

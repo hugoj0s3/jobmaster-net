@@ -25,14 +25,7 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\JobMaster.Contracts\JobMaster.Contracts.csproj" />
-      <ProjectReference Include="..\JobMaster.Sdk.Contracts\JobMaster.Sdk.Contracts.csproj" />
-      <ProjectReference Include="..\JobMaster.Sdk\JobMaster.Sdk.csproj" />
       <ProjectReference Include="..\JobMaster\JobMaster.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Services\Master\" />
     </ItemGroup>
 
 </Project>

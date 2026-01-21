@@ -1,7 +1,7 @@
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
-using JobMaster.Sdk.Contracts.Config;
+using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sql.Scripts;
 

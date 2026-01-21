@@ -1,3 +1,3 @@
 using System.Runtime.CompilerServices;
 
-[assembly: InternalsVisibleTo("JobMaster.IntegrationTests")]
+// [assembly: InternalsVisibleTo("JobMaster.IntegrationTests")]

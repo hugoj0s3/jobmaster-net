@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 

@@ -1,6 +1,5 @@
 using System.Reflection;
-using JobMaster.Contracts.Extensions;
-using JobMaster.Sdk.Contracts;
+using JobMaster.Sdk.Abstractions;
 
 namespace JobMaster.Ioc.Extensions;
 

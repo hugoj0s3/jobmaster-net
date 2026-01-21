@@ -1,10 +1,10 @@
-using JobMaster.Contracts.RecurrenceExpressions;
-using JobMaster.Contracts.Models;
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
-using JobMaster.Sdk.Contracts.Models.GenericRecords;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Serialization;
 using System.Text.Json;
+using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Serialization;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;

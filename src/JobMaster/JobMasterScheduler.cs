@@ -1,13 +1,13 @@
-using JobMaster.Contracts;
-using JobMaster.Contracts.Models;
-using JobMaster.Contracts.RecurrenceExpressions;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Config;
-using JobMaster.Sdk.Contracts.Jobs;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Models.RecurringSchedules;
-using JobMaster.Sdk.Contracts.Services;
-using JobMaster.Sdk.Contracts.Services.Master;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Services;
+using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster;
 

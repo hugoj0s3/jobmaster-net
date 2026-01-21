@@ -1,8 +1,8 @@
-using JobMaster.Contracts.Ioc.Selectors;
-using JobMaster.Contracts.Serialization;
-using JobMaster.Sdk.Contracts;
-using JobMaster.Sdk.Contracts.Ioc.Definitions;
-using JobMaster.Sdk.Contracts.Ioc.Selectors;
+using JobMaster.Abstractions.Ioc.Selectors;
+using JobMaster.Abstractions.Serialization;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Ioc.Extensions;

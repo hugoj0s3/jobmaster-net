@@ -1,12 +1,13 @@
-using JobMaster.Contracts.Models;
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
+using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.SavePendingJobs;
-using JobMaster.Sdk.Contracts.Background;
-using JobMaster.Sdk.Contracts.Background.Runners;
-using JobMaster.Sdk.Contracts.Keys;
-using JobMaster.Sdk.Contracts.Models.Buckets;
-using JobMaster.Sdk.Contracts.Models.Jobs;
-using JobMaster.Sdk.Contracts.Serialization;
-using JobMaster.Sdk.Contracts.Services.Master;
 using JobMaster.Sdk.Repositories;
 using NATS.Client.JetStream;
 
