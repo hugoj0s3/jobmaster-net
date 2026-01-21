@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobQueryCriteria
 {
     public JobMasterJobStatus? Status { get; set; }

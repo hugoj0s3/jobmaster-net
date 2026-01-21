@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class BootstrapBlueprintDefinitions
 {
     public static readonly IList<ClusterDefinition> Clusters = new List<ClusterDefinition>();

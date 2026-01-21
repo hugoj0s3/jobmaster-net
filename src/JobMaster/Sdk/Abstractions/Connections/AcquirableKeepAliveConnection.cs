@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Connections;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class AcquirableKeepAliveConnection<T> : IAcquirableKeepAliveConnection<T>
 {
     private readonly SemaphoreSlim? semaphoreToRelease;

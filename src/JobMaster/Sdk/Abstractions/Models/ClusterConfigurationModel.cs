@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sdk.Abstractions.Models;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class ClusterConfigurationModel : JobMasterBaseModel
 {
     public ClusterConfigurationModel(string clusterId) : base(clusterId)

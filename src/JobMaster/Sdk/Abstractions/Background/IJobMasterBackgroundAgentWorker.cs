@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
@@ -5,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IJobMasterBackgroundAgentWorker
 {
     AgentConnectionId AgentConnectionId { get; }

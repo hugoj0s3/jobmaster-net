@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Abstractions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class OperationThrottler
 {
     private readonly IJobMasterLogger? logger;

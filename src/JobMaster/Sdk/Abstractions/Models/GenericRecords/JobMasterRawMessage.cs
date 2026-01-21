@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
@@ -10,6 +11,7 @@ namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 /// - EnqueuedAt: UTC timestamp when the message was enqueued (for diagnostics/latency).
 /// - CorrelationId: optional application-level correlation identifier for tracing/idempotency.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobMasterRawMessage
 {
     public JobMasterRawMessage(string clusterId, string messageId, string payload, DateTime referenceTime, string correlationId)
@@ -102,6 +104,7 @@ public class JobMasterRawMessage
     }
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobMasterRawMessagePersistenceRecord
 {
     public string MessageId { get; set; } = null!;

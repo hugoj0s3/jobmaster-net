@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Sdk.Abstractions.Repositories.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepository
 {
     void Add(JobRawModel jobRaw);

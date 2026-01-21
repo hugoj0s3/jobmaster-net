@@ -16,11 +16,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.MySql", "Sql\JobM
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlServer", "Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj", "{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "JobMaster.UnitTests\JobMaster.UnitTests.csproj", "{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "Tests\JobMaster.UnitTests\JobMaster.UnitTests.csproj", "{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "Tests\JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatJetStream", "JobMaster.NatJetStream\JobMaster.NatJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -74,5 +76,7 @@ Global
 		{AA3B3FC7-618B-4BF2-8510-C89EED4B377C} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
 		{7D15A0BB-133F-4CA8-9B8A-7FA96CC0F6AF} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
 		{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
+		{CAA7533D-78B0-49DE-A482-D90AEAD7BE70} = {B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}
+		{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7} = {B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}
 	EndGlobalSection
 EndGlobal

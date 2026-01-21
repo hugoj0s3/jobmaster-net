@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class ClusterConfigSelectorAdvancedFactory
 {
     public static IClusterConfigSelectorAdvanced Create(string? clusterId, IServiceCollection serviceCollection)

@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.Logs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum JobMasterLogLevel
 {
     Debug = 0,
@@ -9,6 +11,7 @@ public enum JobMasterLogLevel
     Critical
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum JobMasterLogSubjectType
 {
     Job = 1,

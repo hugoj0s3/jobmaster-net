@@ -415,7 +415,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         }
         finally
         {
-            logRootDir = await DumpLogsAsync(fromTimestamp);
+            logRootDir = DumpLogs();
         }
     }
 
@@ -716,7 +716,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         }
         finally
         {
-            logRootDir = await DumpLogsAsync(fromTimestamp);
+            logRootDir =  DumpLogs();
             
             // Write performance report to file
             if (logRootDir != null)
@@ -999,7 +999,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         }
         finally
         {
-            logRootDir = await DumpLogsAsync(fromTimestamp);
+            logRootDir = DumpLogs();
             
             // Write performance report to file
             if (logRootDir != null)
@@ -1012,7 +1012,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         }
     }
 
-    private async Task<string?> DumpLogsAsync(DateTime fromTimestamp)
+    private string? DumpLogs()
     {
         try
         {

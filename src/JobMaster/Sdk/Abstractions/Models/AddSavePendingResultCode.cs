@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum AddSavePendingResultCode
 {
     Published = 1,
@@ -10,6 +12,7 @@ public enum AddSavePendingResultCode
     AlreadyExists = 6
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum SaveDrainResultCode
 {
     Success = 1,

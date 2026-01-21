@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Repositories.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareMasterRepository
 {
     void Add(RecurringScheduleRawModel scheduleRaw);

@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using System.Collections.Concurrent;
 using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobMasterClusterConnectionConfig
 {
     private static readonly object StaticLock = new();

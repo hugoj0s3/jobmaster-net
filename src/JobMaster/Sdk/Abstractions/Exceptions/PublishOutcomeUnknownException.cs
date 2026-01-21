@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Exceptions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class PublishOutcomeUnknownException : Exception
 {
     public string SupposedPublishedId { get; }

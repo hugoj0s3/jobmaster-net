@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Internals;
 
 namespace JobMaster.Sdk.Abstractions.Models.Agents;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class AgentWorkerModel : JobMasterBaseModel
 {
     public AgentWorkerModel(string clusterId) : base(clusterId)

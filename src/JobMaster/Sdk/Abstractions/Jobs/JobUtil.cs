@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class JobUtil
 {
     public static string GetJobDefinitionId(Type jobHandlerType)

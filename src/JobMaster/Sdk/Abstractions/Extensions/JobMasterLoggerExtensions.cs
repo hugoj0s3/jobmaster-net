@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Abstractions.Extensions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class JobMasterLoggerExtensions
 {
     public static void Debug(

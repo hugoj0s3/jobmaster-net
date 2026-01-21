@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Background;
 
 namespace JobMaster.Sdk.Abstractions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IJobMasterRuntime
 {
     bool Started { get; }

@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IBucketRunnersFactory : IJobMasterClusterAwareComponent
 {
     IDrainJobsRunner NewDrainJobsRunner(

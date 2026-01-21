@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class WorkerDefinition
 {
     public string ClusterId { get; set; } = string.Empty;

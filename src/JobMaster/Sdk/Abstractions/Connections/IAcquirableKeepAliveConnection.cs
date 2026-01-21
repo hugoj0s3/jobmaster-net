@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Connections;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IAcquirableKeepAliveConnection<T> : IDisposable
 {
     string ConnectionId { get; }

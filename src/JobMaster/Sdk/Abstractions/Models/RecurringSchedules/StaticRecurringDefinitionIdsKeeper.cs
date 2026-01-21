@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Collections.Concurrent;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;

@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Keys;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public struct JobMasterNamespaceUniqueKey
 {
     public string NamespaceKey { get; private set; }

@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Repositories.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMasterGenericRecordRepository : IJobMasterClusterAwareMasterRepository
 {
     GenericRecordEntry? Get(string groupId, string entryId, bool includeExpired = false);

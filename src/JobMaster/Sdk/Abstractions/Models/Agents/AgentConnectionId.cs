@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sdk.Abstractions.Models.Agents;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class AgentConnectionId
 {
     [JsonInclude]

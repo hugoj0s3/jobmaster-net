@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Internals;
 
 namespace JobMaster.Sdk.Abstractions.Connections;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public abstract class AcquirableKeepAliveConnectionTimer<T> : IDisposable
 {
     private bool isDisposed = false;

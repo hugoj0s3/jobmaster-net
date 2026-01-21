@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class MasterBucketQueryCriteria
 {
     public string? AgentConnectionId { get; set; }

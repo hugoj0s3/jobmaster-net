@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class RecurringScheduleQueryCriteria
 {
     public RecurringScheduleStatus? Status { get; set; }

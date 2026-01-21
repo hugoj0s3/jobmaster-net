@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IJobMasterLogger : IJobMasterClusterAwareService
 {
     void Log(

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -10,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class SavePendingOperation
 {
     

@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Keys;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IAgentConnectionConfigSelectorAdvanced : IAgentConnectionConfigSelector
 {
     public IAgentConnectionConfigSelector AgentAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig);

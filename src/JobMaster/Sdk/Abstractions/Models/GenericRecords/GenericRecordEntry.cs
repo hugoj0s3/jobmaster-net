@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
@@ -9,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class MasterGenericRecordGroupIds
 {
     public const string Bucket = "Bucket";
@@ -20,6 +22,8 @@ public static class MasterGenericRecordGroupIds
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
 }
+
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class GenericRecordEntry : JobMasterBaseModel
 {
     public string RecordUniqueId { get; private set; } = string.Empty;

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
@@ -6,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobRawModel : JobMasterBaseModel
 {
     public JobRawModel(string clusterId) : base(clusterId)

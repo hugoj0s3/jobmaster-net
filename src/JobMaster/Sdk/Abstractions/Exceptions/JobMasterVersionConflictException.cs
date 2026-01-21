@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Exceptions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobMasterVersionConflictException : Exception
 {
     public Guid Id { get; }

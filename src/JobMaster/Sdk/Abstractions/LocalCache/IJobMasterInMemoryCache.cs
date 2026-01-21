@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.LocalCache;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IJobMasterInMemoryCache
 {
     JobMasterInMemoryCacheItem<T>? Get<T>(string key);

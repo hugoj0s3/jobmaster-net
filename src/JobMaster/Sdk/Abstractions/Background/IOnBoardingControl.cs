@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IOnBoardingControl<T>
 {
     bool Contains(string id);

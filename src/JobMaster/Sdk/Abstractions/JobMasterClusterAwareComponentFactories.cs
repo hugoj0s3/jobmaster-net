@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc;
 
 namespace JobMaster.Sdk.Abstractions;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class JobMasterClusterAwareComponentFactories
 {
     private static readonly object StaticLock = new();

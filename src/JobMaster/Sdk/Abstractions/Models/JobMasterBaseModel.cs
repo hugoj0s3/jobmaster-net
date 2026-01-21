@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Internals;
 
 namespace JobMaster.Sdk.Abstractions.Models;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public abstract class JobMasterBaseModel
 {
     [JsonInclude]

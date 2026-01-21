@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -5,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IClusterConfigSelectorAdvanced : IClusterConfigSelector
 {
     public IAgentConnectionConfigSelector AddAgentConnectionConfig(

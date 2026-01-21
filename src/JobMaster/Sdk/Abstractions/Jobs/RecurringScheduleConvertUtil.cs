@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -10,6 +11,8 @@ namespace JobMaster.Sdk.Abstractions.Jobs;
 /// <summary>
 /// Centralized conversions among RecurringSchedule, RecurringScheduleRawModel, RecurringScheduleContext, and persistence records.
 /// </summary>
+
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class RecurringScheduleConvertUtil
 {
     // Raw -> Entity

@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -5,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMasterBucketsService : IJobMasterClusterAwareService
 {
     Task DestroyAsync(string bucketId);

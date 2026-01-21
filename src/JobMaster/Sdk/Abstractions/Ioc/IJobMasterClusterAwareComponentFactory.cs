@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 
 namespace JobMaster.Sdk.Abstractions.Ioc;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IJobMasterClusterAwareComponentFactory
 {
     string ClusterId { get; }

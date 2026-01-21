@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class GenericRecordQueryCriteria
 {
     public IList<string> EntryIds { get; set; } = new List<string>();
@@ -22,6 +24,7 @@ public sealed class GenericRecordQueryCriteria
     public GenericRecordQueryOrderByTypeId OrderBy { get; set; } = GenericRecordQueryOrderByTypeId.CreatedAtDesc;
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public enum GenericRecordQueryOrderByTypeId
 {
     CreatedAtAsc = 1,

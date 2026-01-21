@@ -30,11 +30,11 @@
     </ItemGroup>
 
     <ItemGroup>
-      <ProjectReference Include="..\JobMaster\JobMaster.csproj" />
-      <ProjectReference Include="..\JobMaster.NatJetStream\JobMaster.NatJetStream.csproj" />
-      <ProjectReference Include="..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />
-      <ProjectReference Include="..\Sql\JobMaster.MySql\JobMaster.MySql.csproj" />
-      <ProjectReference Include="..\Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
+      <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+      <ProjectReference Include="..\..\JobMaster.NatJetStream\JobMaster.NatJetStream.csproj" />
+      <ProjectReference Include="..\..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />
+      <ProjectReference Include="..\..\Sql\JobMaster.MySql\JobMaster.MySql.csproj" />
+      <ProjectReference Include="..\..\Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
     </ItemGroup>
 
     <ItemGroup>

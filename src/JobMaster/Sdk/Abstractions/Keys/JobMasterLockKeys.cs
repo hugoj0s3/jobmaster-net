@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Keys;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class JobMasterLockKeys : JobMasterKeyManager
 {
     public JobMasterLockKeys(string clusterId) : base("Lock", clusterId)

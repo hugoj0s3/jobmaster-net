@@ -1,9 +1,11 @@
+using System.ComponentModel;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public interface IMasterRecurringSchedulesService : IJobMasterClusterAwareService
 {
     Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);

@@ -1,5 +1,7 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.Logs;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class LogItem
 {
     public string ClusterId { get; set; } = string.Empty;
@@ -20,6 +22,7 @@ public class LogItem
     }
 }
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class LogItemQueryCriteria
 {
     public JobMasterLogLevel? Level { get; set; }

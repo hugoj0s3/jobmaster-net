@@ -1,9 +1,11 @@
+using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions;
 
 /// <summary>
 /// Defines system-wide constants for JobMaster infrastructure.
 /// These values are not configurable and represent core system behavior.
 /// </summary>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class JobMasterConstants
 {
     /// <summary>

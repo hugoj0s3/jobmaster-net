@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 // Portable persistence DTO for repositories. Public setters for easy mapping.
+[EditorBrowsable(EditorBrowsableState.Never)]
 public class RecurringSchedulePersistenceRecord
 {
     public string ClusterId { get; set; } = string.Empty;

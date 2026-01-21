@@ -1,7 +1,9 @@
+using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
+[EditorBrowsable(EditorBrowsableState.Never)]
 public abstract class BucketAwareRunner : JobMasterRunner, IBucketAwareRunner
 {
     public string? BucketId { get; set; }
