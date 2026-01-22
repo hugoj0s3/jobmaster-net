@@ -9,6 +9,13 @@
 
 JobMaster is a high-performance framework designed to manage and execute background tasks across a distributed cluster. By decoupling coordination from execution, it allows developers to scale compute resources horizontally based on real-time workload demands without compromising system stability.
 
+## 📦 Installation & NuGet
+
+```bash
+dotnet add package JobMaster --version 0.0.2-alpha
+```
+
+
 ## 🏗 Core Architecture
 
 To achieve true resilience and massive scale, JobMaster utilizes a **three-layer architecture**:
@@ -82,15 +89,6 @@ var msg = WriteableMessageData.New().SetStringValue("UserId", "user_123");
 await scheduler.RecurringAsync<NotificationHandler>(
     TimeSpan.FromHours(24), 
     msg);
-```
-
-
-## 📦 Installation & NuGet
-
-JobMaster .Net is available as a NuGet package. You can install it using the .NET CLI:
-
-```bash
-dotnet add package JobMasterNet --version 0.0.1-alpha
 ```
 
 ## 🛠 Advanced Features
