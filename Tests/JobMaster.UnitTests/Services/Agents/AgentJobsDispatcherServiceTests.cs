@@ -60,7 +60,8 @@ public class AgentJobsDispatcherServiceTests
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
         repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
         repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
-        repo.Setup(x => x.PushSavePendingJob(It.IsAny<JobRawModel>()));
+        repo.Setup(x => x.PushSavePendingJob(It.IsAny<JobRawModel>()))
+            .Returns("job-id-1");
 
         var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
@@ -104,7 +105,8 @@ public class AgentJobsDispatcherServiceTests
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
         repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
         repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
-        repo.Setup(x => x.PushToProcessing(It.IsAny<JobRawModel>()));
+        repo.Setup(x => x.PushToProcessing(It.IsAny<JobRawModel>()))
+            .Returns("job-id-2");
 
         var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
@@ -152,7 +154,7 @@ public class AgentJobsDispatcherServiceTests
         repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
 
         repo.Setup(x => x.BulkPushSavePendingJobAsync(bucketId, It.IsAny<IList<JobRawModel>>()))
-            .Returns(() => Task.FromResult(new List<string>()));
+            .ReturnsAsync(() => new List<string>(new[] { "job-id-1", "job-id-2" }));
 
         var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);

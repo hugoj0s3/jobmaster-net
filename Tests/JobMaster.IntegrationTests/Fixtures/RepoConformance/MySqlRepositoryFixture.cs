@@ -2,7 +2,7 @@ using JobMaster.IntegrationTests.Utils;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.MySql.Agents;
-using JobMaster.Sql;
+using JobMaster.SqlBase;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit.Sdk;

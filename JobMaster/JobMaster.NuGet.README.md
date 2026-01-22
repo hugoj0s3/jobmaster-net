@@ -1,6 +1,8 @@
 > [!WARNING]
-> **ALPHA VERSION:** This package is in early development.
-> APIs are subject to breaking changes. Not recommended for production environments.
+> **Experimental Alpha Release**
+>
+> This package is in an early stage and subject to significant changes before 1.0.
+> Features and APIs may evolve, and stability is not guaranteed. Not recommended for production environments.
 
 # JobMaster .Net
 ## Distributed job orchestration engine for .NET. Built for horizontal scale.

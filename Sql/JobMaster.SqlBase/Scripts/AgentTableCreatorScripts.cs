@@ -1,6 +1,6 @@
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
-namespace JobMaster.Sql.Scripts;
+namespace JobMaster.SqlBase.Scripts;
 
 public class AgentTableCreatorScripts
 {

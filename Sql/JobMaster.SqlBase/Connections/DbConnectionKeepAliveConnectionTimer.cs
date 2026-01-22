@@ -2,7 +2,7 @@ using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Connections;
 
-namespace JobMaster.Sql.Connections;
+namespace JobMaster.SqlBase.Connections;
 
 public class DbConnectionKeepAliveConnectionTimer : AcquirableKeepAliveConnectionTimer<IDbConnection>
 {

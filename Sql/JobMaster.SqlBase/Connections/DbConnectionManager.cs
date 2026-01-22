@@ -2,9 +2,9 @@ using System.Collections.Concurrent;
 using System.Data;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Connections;
-using JobMaster.Sql.Internals.Utils;
+using JobMaster.SqlBase.Internals.Utils;
 
-namespace JobMaster.Sql.Connections;
+namespace JobMaster.SqlBase.Connections;
 
 public interface IDbConnectionManager : IAcquirableKeepAliveConnectionManager<IDbConnection>
 {

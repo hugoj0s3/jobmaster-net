@@ -1,6 +1,6 @@
 using System.Data;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sql.Connections;
+using JobMaster.SqlBase.Connections;
 using Microsoft.Data.SqlClient;
 
 namespace JobMaster.SqlServer;

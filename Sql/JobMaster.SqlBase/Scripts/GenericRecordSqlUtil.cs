@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Serialization;
 
-namespace JobMaster.Sql.Scripts;
+namespace JobMaster.SqlBase.Scripts;
 
 public class GenericRecordSqlUtil
 {

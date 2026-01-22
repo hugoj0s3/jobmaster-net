@@ -56,6 +56,8 @@ public class RecurringSchedule : JobMasterBaseModel
     
     public DateTime? StaticDefinitionLastEnsured { get; internal set; }
     
+    public string? Version { get; internal set; }
+    
     public static RecurringSchedule New<T>(
         string clusterId,
         IWriteableMessageData? values, 

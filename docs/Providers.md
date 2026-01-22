@@ -9,20 +9,39 @@ JobMaster separates the Master database (authoritative state) from the Agent tra
 - Use when you want transactional semantics with good throughput and simple ops.
 - Setup:
 ```csharp
-cfg.AddAgentConnectionConfig("Postgres-1")
-   .UsePostgresForAgent("Host=...;Username=...;Password=...;Database=...");
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("Cluster-1")
+          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .ClusterMode(ClusterMode.Active);
+    
+    config.UsePostgresForMaster("Host=...");
+
+    config.AddAgentConnectionConfig("Postgres-1")
+          .UsePostgresForAgent("Host=...");
+});
 ```
 - Notes:
   - Ensure sufficient connection pool.
-  - Prefer UUID/JSONB support where available.
+  - Prefer UUID support where available.
 
 ## MySQL
 
 - Use when your infra standardizes on MySQL-compatible engines.
 - Setup:
 ```csharp
-cfg.AddAgentConnectionConfig("MySql-1")
-   .UseMySqlForAgent("Server=...;Uid=...;Pwd=...;Database=...;");
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("Cluster-1")
+          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .ClusterMode(ClusterMode.Active);
+    
+    config.UseMySqlForMaster("Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True;");
+    
+    // Agent connection
+    config.AddAgentConnectionConfig("Postgres-1")
+          .UseMySqlForAgent("Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True;");
+});
 ```
 - Notes:
   - Tune innodb_buffer_pool_size and connection pooling.
@@ -33,11 +52,43 @@ cfg.AddAgentConnectionConfig("MySql-1")
 - Use when your environment is Microsoft-first or needs SQL Server features.
 - Setup:
 ```csharp
-cfg.AddAgentConnectionConfig("SqlServer-1")
-   .UseSqlServerForAgent("Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True;");
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("Cluster-1")
+          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .ClusterMode(ClusterMode.Active);
+    
+    config.UseSqlServerForMaster("Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True;");
+    
+    // Agent connection
+    config.AddAgentConnectionConfig("Postgres-1")
+          .UseSqlServerForAgent("Server=...;Database=...;User Id=...;Password=...;TrustServerCertificate=True;");
+});
 ```
-- Notes:
-  - Align isolation levels with your ops policy.
+
+
+## SQL providers
+Any sql provider allow you config the table prefix for the master and agent db by default is "jm_"
+Also is possible to skip the table provision for the entire cluster by **.DisableAutoProvisionSqlSchema()**
+
+- Use when you want to implement your own sql database provider.
+- Setup:
+```csharp
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("Cluster-1")
+          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .ClusterMode(ClusterMode.Active);
+    
+    config.UseSqlTablePrefixForMaster("jm_custom_")
+          .DisableAutoProvisionSqlSchema();
+    
+    // Agent connection
+    config.AddAgentConnectionConfig("Postgres-1")
+          .UseSqlTablePrefixForAgent("jm_agent_");
+});
+```
+
 
 ## NATS JetStream
 

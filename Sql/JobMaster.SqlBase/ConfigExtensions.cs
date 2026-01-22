@@ -2,7 +2,7 @@ using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
-namespace JobMaster.Sql;
+namespace JobMaster.SqlBase;
 
 public static class ConfigExtensions
 {

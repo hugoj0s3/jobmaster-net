@@ -1,6 +1,6 @@
  
 
-namespace JobMaster.Sql;
+namespace JobMaster.SqlBase;
 
 public class SqlGenericRecordEntry
 {

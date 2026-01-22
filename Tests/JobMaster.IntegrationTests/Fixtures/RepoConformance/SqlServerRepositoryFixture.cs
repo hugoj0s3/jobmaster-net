@@ -1,6 +1,6 @@
 using JobMaster.IntegrationTests.Utils;
 using JobMaster.Ioc.Extensions;
-using JobMaster.Sql;
+using JobMaster.SqlBase;
 using JobMaster.SqlServer;
 using JobMaster.SqlServer.Agents;
 using Microsoft.Extensions.Configuration;

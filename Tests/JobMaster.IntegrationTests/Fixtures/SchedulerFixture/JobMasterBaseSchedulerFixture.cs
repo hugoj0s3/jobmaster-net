@@ -6,7 +6,7 @@ using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.Postgres;
 using JobMaster.Sdk.Services.Master;
-using JobMaster.Sql;
+using JobMaster.SqlBase;
 using JobMaster.SqlServer;
 using JobMaster.NatJetStream;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;

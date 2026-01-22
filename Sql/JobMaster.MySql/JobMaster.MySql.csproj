@@ -23,11 +23,8 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <ProjectReference Include="..\JobMaster.Sql\JobMaster.Sql.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
       <PackageReference Include="MySqlConnector" Version="2.3.7" />
+      <PackageReference Include="JobMaster.SqlBase" Version="0.0.1-alpha" />
     </ItemGroup>
 
     <ItemGroup>

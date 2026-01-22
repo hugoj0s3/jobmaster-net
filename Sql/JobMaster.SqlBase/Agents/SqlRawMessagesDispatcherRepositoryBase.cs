@@ -11,12 +11,12 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.Sql.Connections;
-using JobMaster.Sql.Scripts;
 using JobMaster.Sdk.Services.Master;
-using JobMaster.Sql.Internals.Utils;
+using JobMaster.SqlBase.Internals.Utils;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Scripts;
 
-namespace JobMaster.Sql.Agents;
+namespace JobMaster.SqlBase.Agents;
 
 public abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
 {

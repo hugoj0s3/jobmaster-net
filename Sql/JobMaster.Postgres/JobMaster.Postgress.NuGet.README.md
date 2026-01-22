@@ -1,6 +1,8 @@
 > [!WARNING]
-> **ALPHA VERSION:** This package is in early development.
-> APIs are subject to breaking changes. Not recommended for production environments.
+> **Experimental Alpha Release**
+>
+> This package is in an early stage and subject to significant changes before 1.0.
+> Features and APIs may evolve, and stability is not guaranteed. Not recommended for production environments.
 
 # JobMaster.Postgres
 ### PostgreSQL storage provider for JobMaster .Net.
@@ -12,6 +14,7 @@ This package provides the PostgreSQL implementation for the **JobMaster .Net** e
 Install the package via the .NET CLI:
 
 ```bash
+dotnet add package JobMaster
 dotnet add package JobMaster.Postgres
 ```
 

@@ -3,7 +3,7 @@ using System.Reflection;
 using System.Text;
 using JobMaster.Sdk.Abstractions.Config;
 
-namespace JobMaster.Sql.Scripts;
+namespace JobMaster.SqlBase.Scripts;
 
 public interface ISqlGenerator
 {

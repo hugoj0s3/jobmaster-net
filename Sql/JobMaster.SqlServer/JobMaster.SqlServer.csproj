@@ -23,10 +23,8 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="JobMaster.SqlBase" Version="0.0.1-alpha" />
       <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
-    </ItemGroup>
-    <ItemGroup>
-        <ProjectReference Include="..\JobMaster.Sql\JobMaster.Sql.csproj" />
     </ItemGroup>
 
     <ItemGroup>

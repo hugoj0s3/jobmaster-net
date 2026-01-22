@@ -28,7 +28,7 @@ public sealed class FakeRuntime : IJobMasterRuntime
 
     public OperationThrottler GetOperationThrottlerForAgent(string clusterId, string agentConnectionIdOrName)
     {
-        return new OperationThrottler(null);
+        return new OperationThrottler(int.MaxValue);
     }
 
     public int CountWorkersForCluster(string clusterId) => 1;

@@ -7,11 +7,11 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.Sql.Connections;
-using JobMaster.Sql;
-using JobMaster.Sql.Scripts;
+using JobMaster.SqlBase;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Scripts;
 
-namespace JobMaster.Sql.Master;
+namespace JobMaster.SqlBase.Master;
 
 public abstract class SqlMasterGenericRecordRepository : JobMasterClusterAwareRepository, IMasterGenericRecordRepository
 {

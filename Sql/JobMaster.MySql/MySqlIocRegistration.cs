@@ -1,6 +1,6 @@
 using JobMaster.MySql.Agents;
 using JobMaster.MySql.Master;
-using JobMaster.Sql.Connections;
+using JobMaster.SqlBase.Connections;
 using JobMaster.Sdk;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;

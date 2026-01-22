@@ -64,14 +64,7 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
 
         foreach (var bucket in bucketsToMarkAsLost)
         {
-            var bucketLockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromMinutes(5));
-            if (bucketLockToken == null)
-            {
-                continue;
-            }
-            
             await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(bucket.Id);
-            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
         }
         
         this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);

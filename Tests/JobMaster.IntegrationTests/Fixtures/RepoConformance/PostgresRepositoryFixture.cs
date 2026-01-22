@@ -1,7 +1,7 @@
 using JobMaster.Ioc.Extensions;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
-using JobMaster.Sql;
+using JobMaster.SqlBase;
 using JobMaster.IntegrationTests.Utils;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

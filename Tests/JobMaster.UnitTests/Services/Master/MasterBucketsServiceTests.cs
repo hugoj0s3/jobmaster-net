@@ -35,7 +35,7 @@ public class MasterBucketsServiceTests
         var selector = NewSelectorMock();
         var logger = new Mock<IJobMasterLogger>();
 
-        workers.Setup(x => x.GetWorker("w")).Returns((AgentWorkerModel?)null);
+        workers.Setup(x => x.GetWorkerAsync("w")).ReturnsAsync((AgentWorkerModel?)null);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -78,7 +78,7 @@ public class MasterBucketsServiceTests
             WorkerLane = "lane"
         };
 
-        workers.Setup(x => x.GetWorker("w")).Returns(worker);
+        workers.Setup(x => x.GetWorkerAsync("w")).ReturnsAsync(worker);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -125,11 +125,13 @@ public class MasterBucketsServiceTests
             WorkerLane = "lane"
         };
 
+        workers.Setup(x => x.GetWorkerAsync("w")).ReturnsAsync(worker);
         workers.Setup(x => x.GetWorker("w")).Returns(worker);
 
         GenericRecordEntry? inserted = null;
-        repo.Setup(x => x.Insert(It.IsAny<GenericRecordEntry>()))
-            .Callback<GenericRecordEntry>(gr => inserted = gr);
+        repo.Setup(x => x.InsertAsync(It.IsAny<GenericRecordEntry>()))
+            .Callback<GenericRecordEntry>(gr => inserted = gr)
+            .Returns(Task.CompletedTask);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -247,7 +249,7 @@ public class MasterBucketsServiceTests
 
         await sut.DestroyAsync(bucket.Id);
 
-        repo.Verify(x => x.Delete(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Once);
+        repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Once);
         dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == agent.IdValue), bucket.Id), Times.Once);
 
         var keys = new JobMasterSentinelKeys(clusterId);

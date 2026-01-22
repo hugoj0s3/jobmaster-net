@@ -1,7 +1,7 @@
 using JobMaster.Sdk;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
-using JobMaster.Sql.Connections;
+using JobMaster.SqlBase.Connections;
 using JobMaster.SqlServer.Agents;
 using JobMaster.SqlServer.Master;
 using Microsoft.Extensions.DependencyInjection;

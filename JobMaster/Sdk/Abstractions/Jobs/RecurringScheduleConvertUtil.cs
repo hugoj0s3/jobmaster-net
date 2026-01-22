@@ -67,6 +67,9 @@ public static class RecurringScheduleConvertUtil
             entity.Metadata = new Metadata();
         }
         
+        // Version is persisted at the raw/persistence layers; propagate to the entity when present
+        entity.Version = raw.Version;
+
         return entity;
     }
 
@@ -103,6 +106,7 @@ public static class RecurringScheduleConvertUtil
             IsJobCancellationPending = s.IsJobCancellationPending,
             WorkerLane = s.WorkerLane,
             StaticDefinitionLastEnsured = s.StaticDefinitionLastEnsured,
+            Version = s.Version
         };
         
         return result;

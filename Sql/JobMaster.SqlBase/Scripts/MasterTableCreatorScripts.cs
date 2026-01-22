@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
-namespace JobMaster.Sql.Scripts;
+namespace JobMaster.SqlBase.Scripts;
 
 public static class MasterTableCreatorScripts
 {

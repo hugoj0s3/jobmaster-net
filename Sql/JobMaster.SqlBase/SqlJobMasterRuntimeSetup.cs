@@ -5,11 +5,11 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
-using JobMaster.Sql.Connections;
-using JobMaster.Sql.Scripts;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Scripts;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace JobMaster.Sql;
+namespace JobMaster.SqlBase;
 
 public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {

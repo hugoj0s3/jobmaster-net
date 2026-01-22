@@ -6,7 +6,7 @@ namespace JobMaster.Internals;
 #elif NATJS
 namespace JobMaster.NatJetStream.Internals.Utils;
 #elif SQLPROV
-namespace JobMaster.Sql.Internals.Utils;
+namespace JobMaster.SqlBase.Internals.Utils;
 #else
 namespace JobMaster.Internal.Utils;
 #endif

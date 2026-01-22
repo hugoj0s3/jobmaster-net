@@ -24,6 +24,7 @@
     
 
     <ItemGroup>
+      <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
       <PackageReference Include="NATS.Client.JetStream" Version="2.7.0" />
       <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
     </ItemGroup>
@@ -33,10 +34,6 @@
         <Pack>true</Pack>
         <PackagePath>/</PackagePath>
       </None>
-    </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="..\JobMaster\JobMaster.csproj" />
     </ItemGroup>
 
     <PropertyGroup>

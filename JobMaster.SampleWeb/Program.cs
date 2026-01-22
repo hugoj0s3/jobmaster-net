@@ -6,6 +6,7 @@ using JobMaster.NatJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
+using JobMaster.SqlBase;
 using JobMaster.SqlServer;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
@@ -21,16 +22,15 @@ builder.Services.AddJobMasterCluster(config =>
 
     // Master database (must be SQL)
     config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
-
-    // Agent connection pools using different providers
-    // config.AddAgentConnectionConfig("Pg-1")
-    //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
-    //
-    // config.AddAgentConnectionConfig("My-1")
-    //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
-    //
-    // config.AddAgentConnectionConfig("Sql-1")
-    //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
+    
+    config.AddAgentConnectionConfig("Pg-1")
+          .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
+    
+    config.AddAgentConnectionConfig("My-1")
+          .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
+    
+    config.AddAgentConnectionConfig("Sql-1")
+        .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
 
     
     config.AddAgentConnectionConfig("Nats-1")
@@ -39,43 +39,17 @@ builder.Services.AddJobMasterCluster(config =>
     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
     if (isConsumer)
     {
-        // Worker bound to Postgres agent
-       //  config.AddWorker()
-       //        .WorkerName("worker-pg")
-       //        .AgentConnName("Pg-1")
-       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
-       //        .SetWorkerMode(AgentWorkerMode.Standalone);
-       //
-       // // Worker bound to MySQL agent
-       //  config.AddWorker()
-       //        .WorkerName("worker-mysql")
-       //        .AgentConnName("My-1")
-       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
-       //        .SetWorkerMode(AgentWorkerMode.Standalone);
-       //  
-       //  // Worker bound to SQL Server agent
-       //  config.AddWorker()
-       //        .WorkerName("worker-sqlserver")
-       //        .AgentConnName("Sql-1")
-       //        .BucketQtyConfig(JobMasterPriority.Medium, 1)
-       //        .SetWorkerMode(AgentWorkerMode.Standalone);
-        
-        config.AddWorker()
-              .WorkerName("worker-nats-1")
-              .AgentConnName("Nats-1")
-              .BucketQtyConfig(JobMasterPriority.Medium, 1)
-              .WorkerBatchSize(10000)
-              .SetWorkerMode(AgentWorkerMode.Standalone)
-              .SkipWarmUpTime();
-        
-        config.AddWorker()
-            .WorkerName("worker-nats-2")
-            .AgentConnName("Nats-1")
-            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-            .WorkerBatchSize(1000)
-            .SetWorkerMode(AgentWorkerMode.Drain)
-            .SetWorkerMode(AgentWorkerMode.Standalone)
-            .SkipWarmUpTime();
+       config.AddWorker()
+           .AgentConnName("Nats-1")
+           .BucketQtyConfig(JobMasterPriority.Medium, 1)
+           .WorkerBatchSize(1000)
+           .SetWorkerMode(AgentWorkerMode.Standalone);
+
+       config.AddWorker()
+           .AgentConnName("Nats-1")
+           .BucketQtyConfig(JobMasterPriority.Medium, 1)
+           .WorkerBatchSize(1000)
+           .SetWorkerMode(AgentWorkerMode.Drain);
     }
 });
 
@@ -106,25 +80,15 @@ app.MapPost("/schedule-job", async (int qty, string? lane, TimeSpan? delay, IJob
     if (string.IsNullOrWhiteSpace(lane)) lane = null;
 
     var meta = WritableMetadata.New().SetStringValue("MyMetadata", "MyValue");
-    var degree = Math.Max(1, Environment.ProcessorCount * 4);
-    using var sem = new SemaphoreSlim(degree);
-
-    var tasks = Enumerable.Range(0, qty).Select(async _ =>
+    var tasks = new List<Task>();
+    for (int i = 0; i < qty; i++)
     {
-        await sem.WaitAsync();
-        try
-        {
-            var data = WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName());
-            if (delay.HasValue)
-                await jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, data, metadata: meta, workerLane: lane);
-            else
-                await jobScheduler.OnceNowAsync<HelloJobHandler>(data, metadata: meta, workerLane: lane);
-        }
-        finally
-        {
-            sem.Release();
-        }
-    });
+        var data = WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName());
+        if (delay.HasValue)
+            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, data, metadata: meta, workerLane: lane));
+        else
+            tasks.Add(jobScheduler.OnceNowAsync<HelloJobHandler>(data, metadata: meta, workerLane: lane));
+    }
 
     await Task.WhenAll(tasks);
     

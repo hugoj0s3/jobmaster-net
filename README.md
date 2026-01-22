@@ -72,32 +72,32 @@ To achieve true horizontal scaling and resilience, JobMaster divides responsibil
 #### The Cluster Database (Master)
 The Cluster Database is the Source of Truth for the entire ecosystem.
 
-Coordination: It manages agent registrations and coordinates workload distribution across the cluster.
+**Coordination**: It manages agent registrations and coordinates workload distribution across the cluster.
 
-Persistence: It stores jobs permanently or for long periods, providing a full audit trail of execution history.
+**Persistence**: It stores jobs permanently or for long periods, providing a full audit trail of execution history.
 
-Configuration: Centralized storage for cluster-wide settings and job definitions.
+**Configuration**: Centralized storage for cluster-wide settings and job definitions.
 
 #### Agents (Transport Layer)
 
 Agents act as the Ephemeral Storage (or Transport) for jobs that are ready for immediate or near-future execution.
 
-High-Speed Buffering: Agents only store tasks that are "in-flight" or waiting for a worker to pick them up.
+**High-Speed Buffering**: Agents only store tasks that are "in-flight" or waiting for a worker to pick them up.
 
-Versatility: An agent can be a database (Postgres/SQL Server) for persistence-heavy tasks or a message broker (NATS JetStream) for ultra-low latency scenarios.
+**Versatility**: An agent can be a database (Postgres/SQL Server) for persistence-heavy tasks or a message broker (NATS JetStream) for ultra-low latency scenarios.
 
-Transient Nature: Once a job is completed or moved back to the Master, its record in the Agent is typically cleared.
+**Transient Nature**: Once a job is completed or moved back to the Master, its record in the Agent is typically cleared.
 
-Performance Buffering (Save Pending): New jobs are initially persisted directly into the Agent storage to allow for near-instant execution and better throughput. The system then asynchronously synchronizes these records back to the Master Database for long-term persistence.
+**Performance Buffering (Save Pending)**: New jobs are initially persisted directly into the Agent storage to allow for near-instant execution and better throughput. The system then asynchronously synchronizes these records back to the Master Database for long-term persistence.
 
 ### Workers (Execution Layer)
 Workers are the Compute Power of the system.
 
-Job Execution: They monitor specific Agents, claim available jobs using atomic locks, and run the handler logic.
+**Job Execution**: They monitor specific Agents, claim available jobs using atomic locks, and run the handler logic.
 
-State Synchronization: Workers communicate with the Master Database to update job statuses (Succeeded, Failed, Retrying) and persist execution logs.
+**State Synchronization:** Workers communicate with the Master Database to update job statuses (Succeeded, Failed, Retrying) and persist execution logs.
 
-Horizontal Scaling: You can spin up as many worker instances as needed to handle your current workload without reconfiguring the Cluster Database.
+**Horizontal Scaling**: You can spin up as many worker instances as needed to handle your current workload without reconfiguring the Cluster Database.
 
 
 ## Documentation
@@ -116,7 +116,13 @@ Horizontal Scaling: You can spin up as many worker instances as needed to handle
 
 - **Repositories / Transport Providers**
   - Postgres, MySQL, SQL Server, NATS JetStream
-  - See: [docs/Transports.md](docs/Transports.md)
+  - See: [docs/Providers.md](docs/Providers.md)
+
+- **Internal Debugging**
+  - Easy way to see the logs while we don't have UI/Api. Cluster level config.
+  ```csharp
+  .DebugJsonlFileLogger("[path-to-dir]")
+  ```
 
 
 

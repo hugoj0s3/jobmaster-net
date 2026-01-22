@@ -56,6 +56,7 @@ public class JobMasterSchedulerClusterAwareTests
                 m.AgentWorkerId == bucket.AgentWorkerId &&
                 m.AgentConnectionId != null &&
                 m.AgentConnectionId.IdValue == agentConnId.IdValue)))
+            .Returns("job-id-1")
             .Verifiable();
 
         var sut = new JobMasterSchedulerClusterAware(

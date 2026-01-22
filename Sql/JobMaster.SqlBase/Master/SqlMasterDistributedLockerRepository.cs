@@ -8,10 +8,10 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.Sql.Connections;
-using JobMaster.Sql.Scripts;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Scripts;
 
-namespace JobMaster.Sql.Master;
+namespace JobMaster.SqlBase.Master;
 
 public abstract class SqlMasterDistributedLockerRepository : JobMasterClusterAwareRepository, IMasterDistributedLockerRepository, IDisposable
 {

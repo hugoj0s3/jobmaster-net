@@ -1,6 +1,6 @@
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sql.Connections;
-using JobMaster.Sql.Master;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Master;
 
 namespace JobMaster.MySql.Master;
 

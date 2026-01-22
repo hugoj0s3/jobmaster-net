@@ -8,7 +8,7 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sql", "Sql", "{560B68EA-EED
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UI", "JobMaster.UI\JobMaster.UI.csproj", "{3D031491-1F1E-43DA-89C2-311CBA100255}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Sql", "Sql\JobMaster.Sql\JobMaster.Sql.csproj", "{F30A538D-FA41-4692-A858-509CB4566B1A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlBase", "Sql\JobMaster.SqlBase\JobMaster.SqlBase.csproj", "{F30A538D-FA41-4692-A858-509CB4566B1A}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Postgres", "Sql\JobMaster.Postgres\JobMaster.Postgres.csproj", "{AA3B3FC7-618B-4BF2-8510-C89EED4B377C}"
 EndProject

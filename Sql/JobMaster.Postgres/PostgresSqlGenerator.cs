@@ -1,4 +1,4 @@
-using JobMaster.Sql.Scripts;
+using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.Postgres;
 

@@ -3,7 +3,7 @@ using System.Data;
 using System.Diagnostics;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sql.Connections;
+using JobMaster.SqlBase.Connections;
 using MySqlConnector;
 
 namespace JobMaster.MySql;

@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
-        <PackageId>JobMaster.Sql</PackageId>
+        <PackageId>JobMaster.SqlBase</PackageId>
         <VersionPrefix>0.0.1</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
@@ -18,14 +18,12 @@
         <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
 
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
+        <PackageReadmeFile>JobMaster.SqlBase.NuGet.README.md</PackageReadmeFile>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="Dapper" Version="2.1.66" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+      <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
     </ItemGroup>
 
     <PropertyGroup>
@@ -35,6 +33,13 @@
     <ItemGroup>
         <Compile Include="..\..\JobMaster.Internals\**\*.cs"
                  Link="Internals\%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <None Include="JobMaster.SqlBase.NuGet.README.md">
+        <Pack>true</Pack>
+        <PackagePath>/</PackagePath>
+      </None>
     </ItemGroup>
 
 </Project>
