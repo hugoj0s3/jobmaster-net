@@ -99,7 +99,7 @@ Workers are the Compute Power of the system.
 
 **State Synchronization:** Workers communicate with the Master Database to update job statuses (Succeeded, Failed, Retrying) and persist execution logs.
 
-**Horizontal Scaling**: You can spin up as many worker instances as needed to handle your current workload without reconfiguring the Cluster Database.
+**Horizontal Scaling**: You can spin up as many worker instances as needed to handle your current workload with no downtime.
 
 ### Recurrence Expressions
 
