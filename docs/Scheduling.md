@@ -106,23 +106,45 @@ await scheduler.OnceNowAsync<HelloJobHandler>(clusterId: "sales-microservice-clu
 
 
 ## Recurring schedules
-JobMaster provides a flexible system for recurring tasks. You can define schedules using time intervals, Cron expressions, or even natural language.
+JobMaster provides a flexible system for recurring tasks. You can define schedules using:
+* Time intervals (TimeSpan)
+* Natural language expressions (NaturalCron)
+
+### Providers
+The scheduler accepts compiled expressions from different providers (by TypeId):
+* TimeSpanInterval: simple intervals like every N seconds/minutes/hours.
+* NaturalCron: human-friendly schedules with rich rules and optional timezone.
+
+Both dynamic (created at runtime) and static (code-defined profiles) are supported.
 
 ### Dynamic Recurring Jobs
 Dynamic schedules are tied to specific data (e.g., a specific subscription renewal or a per-user cleanup task).
+
 ```csharp
-// Using the built-in TimeSpanInterval provider (runs every 5 minutes)
+// 1) Using the built-in TimeSpanInterval provider (runs every 5 minutes)
 await scheduler.RecurringAsync<HelloJobHandler>(TimeSpan.FromMinutes(5));
 
-// Passing specific data to a recurring job
+// 2) Using NaturalCron via expression TypeId
 var data = WriteableMessageData.New().SetStringValue("SubscriptionId", "sub_123");
 await scheduler.RecurringAsync<RenewalHandler>(
-    NaturalCronExprCompiler.TypeId, 
-    "every year", 
-    data: data
-);
+    NaturalCronExprCompiler.TypeId,
+    "every day between mon and fri at 18:00",
+    data: data);
+
+// 3) Using NaturalCron fluent builder
+var schedule = NaturalCronBuilder
+    .Every(30).Minutes()
+    .In(NaturalCronMonth.Jan)
+    .Between("09:00", "18:00")
+    .Build();
+await scheduler.RecurringAsync<HelloJobHandler>(schedule);
 ```
-Note: We currently support TimeSpanIntervalExprCompiler. Support for CronExprCompiler and NaturalCronExprCompiler is coming soon as optional extensions.
+
+#### Timezone handling (NaturalCron)
+If your NaturalCron expression includes a timezone (IANA id) like `in America/New_York`, the engine computes occurrences in that zone and schedules jobs in the timezone specified on the expression. If no timezone is present, the cluster’s configured IANA timezone is used.
+
+#### Planning window
+The planner generates occurrences within a moving horizon (configurable). Dates are produced strictly after the base time and on/before the planning horizon. End boundaries (`endBefore`) and start delays (`startAfter`) are respected.
  
 ### Static Recurring Profiles (System Jobs)
 For system-wide routines like backups or maintenance, you can define "Static" profiles. These do not transport message data and are typically used for global background tasks.
@@ -133,11 +155,15 @@ public class MaintenanceProfile : StaticRecurringSchedulesProfile
     public override void Configure(RecurringScheduleDefinitionCollection schedules)
     {
         schedules
+            // Using TimeSpanInterval
             // Automatically ID: cluster:maint:CleanupHandler
-            .Add<CleanupHandler>(TimeSpan.FromDays(1)) 
-            
-            // Explicit ID: cluster:maint:HourlySync
-            .Add<SyncHandler>(TimeSpan.FromHours(1), defId: "HourlySync"); 
+            .Add<CleanupHandler>(TimeSpan.FromDays(1))
+
+            // Using NaturalCron expression (TypeId + string)
+            .Add<SyncHandler>(
+                NaturalCronExprCompiler.TypeId,
+                "every 1 hour between 09:00 and 18:00",
+                defId: "HourlySync");
     }
 }
 ```

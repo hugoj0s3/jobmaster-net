@@ -2,7 +2,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 
-namespace JobMaster.RecurrenceExpressions;
+namespace JobMaster.RecurrenceExpressions.TimeSpanInterval;
 
 public static class TimeSpanIntervalCompiledExprExtensions
 {

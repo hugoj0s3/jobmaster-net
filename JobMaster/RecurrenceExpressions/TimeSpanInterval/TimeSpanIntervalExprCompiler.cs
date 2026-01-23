@@ -1,6 +1,6 @@
 using JobMaster.Abstractions.RecurrenceExpressions;
 
-namespace JobMaster.RecurrenceExpressions;
+namespace JobMaster.RecurrenceExpressions.TimeSpanInterval;
 
 public sealed class TimeSpanIntervalExprCompiler : IRecurrenceExprCompiler
 {

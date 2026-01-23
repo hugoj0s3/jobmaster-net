@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <PackageId>JobMaster.SqlBase</PackageId>
-        <VersionPrefix>0.0.1</VersionPrefix>
+        <VersionPrefix>0.0.3</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
@@ -23,7 +23,7 @@
 
     <ItemGroup>
       <PackageReference Include="Dapper" Version="2.1.66" />
-      <PackageReference Include="JobMaster" Version="0.0.1-alpha" />
+      <PackageReference Include="JobMaster" Version="0.0.3-alpha" />
     </ItemGroup>
 
     <PropertyGroup>

@@ -239,7 +239,6 @@ public class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecurri
             if (!nextInTimeZone.HasValue) break;
             
             var next = TimeZoneUtils.ConvertDateTimeTzToUtc(nextInTimeZone.Value, ianaTimeZoneId);
-            
 
             // If we have prior scheduled items (due to a failed plan), skip
             // occurrences that are within ±1s of already-scheduled dates.

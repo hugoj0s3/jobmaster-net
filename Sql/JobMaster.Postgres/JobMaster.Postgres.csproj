@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <PackageId>JobMaster.Postgres</PackageId>
-        <VersionPrefix>0.0.1</VersionPrefix>
+        <VersionPrefix>0.0.3</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
@@ -39,7 +39,7 @@
     </ItemGroup>
     
     <ItemGroup>
-      <PackageReference Include="JobMaster.SqlBase" Version="0.0.1-alpha" />
+      <PackageReference Include="JobMaster.SqlBase" Version="0.0.3-alpha" />
     </ItemGroup>
 
 </Project>

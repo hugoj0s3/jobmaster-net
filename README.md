@@ -68,7 +68,7 @@ Inject IJobMasterScheduler into your endpoints to trigger background work instan
     }).WithOpenApi();
 ```
 
-### 3. Core Architecture Concepts Overview
+### Core Architecture Concepts Overview
 To achieve true horizontal scaling and resilience, JobMaster divides responsibilities into three distinct layers:
 
 #### The Cluster Database (Master)
@@ -92,7 +92,7 @@ Agents act as the Ephemeral Storage (or Transport) for jobs that are ready for i
 
 **Performance Buffering (Save Pending)**: New jobs are initially persisted directly into the Agent storage to allow for near-instant execution and better throughput. The system then asynchronously synchronizes these records back to the Master Database for long-term persistence.
 
-### Workers (Execution Layer)
+#### Workers (Execution Layer)
 Workers are the Compute Power of the system.
 
 **Job Execution**: They monitor specific Agents, claim available jobs using atomic locks, and run the handler logic.
@@ -101,6 +101,18 @@ Workers are the Compute Power of the system.
 
 **Horizontal Scaling**: You can spin up as many worker instances as needed to handle your current workload without reconfiguring the Cluster Database.
 
+### Recurrence Expressions
+
+JobMaster supports recurrence expressions using the [NaturalCron](https://github.com/hugoj0s3/NaturalCron) library.
+
+```csharp
+// FLuent build
+var schedule = NaturalCronBuilder.Every(1).Minutes().Build();
+jobScheduler.Recurring<HelloJobHandler>(schedule, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
+
+// Via expression string
+jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1 minutes", WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
+```
 
 ## Documentation
 

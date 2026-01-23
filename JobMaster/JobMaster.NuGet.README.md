@@ -82,7 +82,7 @@ app.MapPost("/send-welcome", async (IJobMasterScheduler scheduler) =>
 
 ### Recurring Schedules (Static & Dynamic)
 JobMaster supports both code-defined (Static) and runtime-defined (Dynamic) recurring tasks.
-
+#### Simple Interval
 ```csharp
 var msg = WriteableMessageData.New().SetStringValue("UserId", "user_123");
 
@@ -91,10 +91,39 @@ await scheduler.RecurringAsync<NotificationHandler>(
     msg);
 ```
 
+#### NaturalCron
+
+```csharp
+using NaturalCron;
+using JobMaster.RecurrenceExpressions.NaturalCron;
+
+var msg = WriteableMessageData.New().SetStringValue("UserId", "user_123");
+// Via Expression
+await scheduler.RecurringAsync<NotificationHandler>(
+    NaturalCronExprCompiler.TypeId,
+    "every day between mon and fri at 18:00",
+    msg);
+
+// Via fluent builder
+NaturalCronExpr schedule = NaturalCronBuilder
+.Every(30).Minutes()
+.In(NaturalCronMonth.Jan)
+.Between("09:00", "18:00")
+.Build();
+
+await scheduler.RecurringAsync<NotificationHandler>(
+    schedule,
+    msg);
+```
+See [NaturalCron](https://github.com/hugoj0s3/NaturalCron)
+
+ 
 ## 🛠 Advanced Features
 
 * **Transport Agnostic:** Seamlessly switch between RDBMS (Postgres, MySQL, SQL Server) and Message Brokers (NATS JetStream) without changing your business logic.
 * **Performance Buffering:** New jobs are instantly persisted to the Agent for immediate execution, then asynchronously synced to the Master for long-term auditing.
 * **Atomic Locking:** Built-in protection to ensure that even in a multi-node cluster, a job is never executed by more than one worker simultaneously.
 * **Static & Dynamic Scheduling:** Support for code-defined "Static Profiles" that sync on startup and "Dynamic Schedules" created at runtime via API.
-* **Horizontal Scaling:** Add or remove worker instances on the fly to handle traffic spikes without reconfiguring your Master database.
+* **Horizontal Scaling**: You can spin up as many worker instances as needed to handle your current workload without reconfiguring the Cluster Database.
+
+
