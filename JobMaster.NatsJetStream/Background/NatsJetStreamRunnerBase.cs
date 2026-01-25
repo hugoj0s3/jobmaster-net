@@ -20,7 +20,7 @@ using Nito.AsyncEx;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
+internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
     private OperationThrottler ackThrottler = null!;
@@ -41,7 +41,7 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
     
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> processingMessages = new();
 
-    protected NatJetStreamRunnerBase(IJobMasterBackgroundAgentWorker backgroundAgentWorker)  : base(backgroundAgentWorker)
+    protected NatsJetStreamRunnerBase(IJobMasterBackgroundAgentWorker backgroundAgentWorker)  : base(backgroundAgentWorker)
     {
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
     }
@@ -84,9 +84,9 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // 2. Transport Initialization
         if (!hasInitialized)
         {
-            NatJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
-            await NatJetStreamConnector.EnsureStreamAsync(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
-            consumer = await NatJetStreamConnector.CreateOrUpdateConsumerAsync(
+            NatsJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            await NatsJetStreamConnector.EnsureStreamAsync(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
                 this.BackgroundAgentWorker.JobMasterAgentConnectionConfig,
                 fullBucketAddressId,
                 BackgroundAgentWorker.BatchSize,
@@ -194,12 +194,12 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     
                     
                     // Check if this is a heartbeat message and skip processing
-                    var isHeartbeat = msg.Headers?.TryGetValue(NatJetStreamConstants.HeaderHeartbeat, out _) == true;
+                    var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
                     if (isHeartbeat)
                     {
-                        var signatureIsTaken = msg.Headers?.TryGetValue(NatJetStreamConstants.HeaderSignature, out var signatureValue);
+                        var signatureIsTaken = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
                         
-                        if ((signatureIsTaken == true && signatureValue != NatJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
+                        if ((signatureIsTaken == true && signatureValue != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
                         {
                             LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
 
@@ -261,16 +261,16 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
     {
         try
         {
-            var (_, jsContext, _) = NatJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
-            var subjectName = NatJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
+            var (_, jsContext, _) = NatsJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            var subjectName = NatsJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
             var data = Encoding.UTF8.GetBytes(string.Empty);
             
             using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
             var headers = new NatsHeaders
             {
-                [NatJetStreamConstants.HeaderSignature] = NatJetStreamConfigKey.NamespaceUniqueKey.ToString(),
-                [NatJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString(),
-                [NatJetStreamConstants.HeaderHeartbeat] = "true",
+                [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
+                [NatsJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString(),
+                [NatsJetStreamConstants.HeaderHeartbeat] = "true",
             };
             await jsContext!.PublishAsync(subjectName, data, headers: headers, cancellationToken: pubCts.Token);
             
@@ -285,15 +285,15 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)
     {
-        var (signature, correlationId, referenceTimeUtc, messageId) = NatJetStreamUtils.GetHeaderValues(msg.Headers);
+        var (signature, correlationId, referenceTimeUtc, messageId) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
         var ackGuard = new MsgAckGuard(msg, messageId ?? Guid.NewGuid().ToString());
         var attempts = ackGuard.FailureCount;
         var natsDeliveryCount = msg.Metadata?.NumDelivered ?? 0;
         
         // Safety check: NATS delivery count exceeds MaxAckPending threshold
-        if (natsDeliveryCount > NatJetStreamConstants.MaxDeliver - 1)
+        if (natsDeliveryCount > NatsJetStreamConstants.MaxDeliver - 1)
         {
-            var preview = msg.Data != null ? NatJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data), 128) : "null";
+            var preview = msg.Data != null ? NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data), 128) : "null";
             LogCriticalOrError($"{GetRunnerDescription()}: NATS delivery count exceeded MaxAckPending threshold. NumDelivered={natsDeliveryCount} Preview: {preview} CorrId={correlationId} MsgId={messageId}");
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
             return;
@@ -311,9 +311,9 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
 
         var json = Encoding.UTF8.GetString(msg.Data);
-        if (signature is null || signature != NatJetStreamConfigKey.NamespaceUniqueKey.ToString())
+        if (signature is null || signature != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString())
         {
-            var preview = NatJetStreamUtils.LogPreview(json, 128);
+            var preview = NatsJetStreamUtils.LogPreview(json, 128);
             LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch. Preview: {preview} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}");
 
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
@@ -327,7 +327,7 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         catch (JsonException jex)
         {
-            var preview = NatJetStreamUtils.LogPreview(json, 128);
+            var preview = NatsJetStreamUtils.LogPreview(json, 128);
             LogCriticalOrError($"{GetRunnerDescription()}: malformed JSON. Preview: {preview} MsgId={messageId}", jex);
 
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
@@ -373,13 +373,13 @@ internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
         catch (Exception ex)
         {
             
-            var (sig, corr, rtime, mid) = NatJetStreamUtils.GetHeaderValues(msg.Headers);
-            ulong maxRetries = LostRisk() ? NatJetStreamConstants.MaxMsgRetriesForLostRisk : NatJetStreamConstants.MaxMsgRetriesForNoLostRisk;
+            var (sig, corr, rtime, mid) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
+            ulong maxRetries = LostRisk() ? NatsJetStreamConstants.MaxMsgRetriesForLostRisk : NatsJetStreamConstants.MaxMsgRetriesForNoLostRisk;
             
             // Check current failure count before incrementing
             if (ackGuard.FailureCount >= maxRetries)
             {
-                var preview = NatJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data ?? Array.Empty<byte>()), 128);
+                var preview = NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data ?? Array.Empty<byte>()), 128);
                 LogCriticalOrError($"{GetRunnerDescription()}: exhausted retries. Preview: {preview} CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", ex);
                 await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
                 this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogSubjectType.Bucket, BucketId);

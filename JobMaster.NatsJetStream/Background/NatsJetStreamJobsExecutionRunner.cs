@@ -15,12 +15,12 @@ using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawModel>, IJobsExecutionRunner
+internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRawModel>, IJobsExecutionRunner
 {
     private IJobsExecutionEngine? jobsExecutionOperation;
     private readonly Stopwatch lifetimeSw = new();
     
-    public NatJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public NatsJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         lifetimeSw.Start();
     }
@@ -54,13 +54,13 @@ internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawMo
         {
             // Job was cancelled (e.g., recurring schedule cancelled) - ACK to remove from queue
             logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id} Status={payload.Status}", JobMasterLogSubjectType.Job, payload.Id);
-            return; // Message will be ACK'd automatically by NatJetStreamRunnerBase
+            return; // Message will be ACK'd automatically by NatsJetStreamRunnerBase
         }
         
         if (onBoardingResult == OnBoardingResult.TooEarly)
         {
             // Scheduling guard: avoid onboarding too early
-            if (payload.ScheduledAt > now + NatJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
+            if (payload.ScheduledAt > now + NatsJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));

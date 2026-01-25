@@ -11,12 +11,12 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal sealed class NatJetStreamDrainSavePendingRecurringScheduleRunner
-    : NatJetStreamRunnerBase<RecurringScheduleRawModel>, IDrainSavePendingRecurringScheduleRunner
+internal sealed class NatsJetStreamDrainSavePendingRecurringScheduleRunner
+    : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, IDrainSavePendingRecurringScheduleRunner
 {
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
 
-    public NatJetStreamDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
+    public NatsJetStreamDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
         : base(backgroundAgentWorker)
     {
         masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();

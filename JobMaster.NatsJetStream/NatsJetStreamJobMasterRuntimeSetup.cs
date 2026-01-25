@@ -8,14 +8,14 @@ using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.NatsJetStream;
 
-internal class NatJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
+internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
     public Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
         var natAgentConfigs = JobMasterClusterConnectionConfig
             .GetAllConfigs()
             .SelectMany(x => x.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == NatJetStreamConstants.RepositoryTypeId)
+            .Where(a => a.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId)
             .ToList();
         
         var errors = new List<string>();
@@ -30,11 +30,11 @@ internal class NatJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             }
             
             var clusterTransientThreshold = clusterDefinition.TransientThreshold ?? new ClusterConfigurationModel(string.Empty).TransientThreshold;
-            if (clusterTransientThreshold > NatJetStreamConstants.MaxThreshold)
+            if (clusterTransientThreshold > NatsJetStreamConstants.MaxThreshold)
             {
                 errors.Add($@"
-The transient threshold has to be defined and be less than {NatJetStreamConstants.MaxThreshold} for cluster {agentConfig.ClusterId}. 
-NatJetStream requires a transient threshold of less than {NatJetStreamConstants.MaxThreshold}");
+The transient threshold has to be defined and be less than {NatsJetStreamConstants.MaxThreshold} for cluster {agentConfig.ClusterId}. 
+NatsJetStream requires a transient threshold of less than {NatsJetStreamConstants.MaxThreshold}");
             }
         }
         
@@ -43,18 +43,18 @@ NatJetStream requires a transient threshold of less than {NatJetStreamConstants.
 
     public Task OnStartingAsync(IServiceProvider mainServiceProvider)
     {
-        // Set default runtime throttle limit for agents using NatJetStream repository
+        // Set default runtime throttle limit for agents using NatsJetStream repository
         var natAgentConfigs = JobMasterClusterConnectionConfig
             .GetAllConfigs()
             .SelectMany(x => x.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == NatJetStreamConstants.RepositoryTypeId)
+            .Where(a => a.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId)
             .ToList();
 
         foreach (var agentConfig in natAgentConfigs)
         {
             if (!agentConfig.RuntimeDbOperationThrottleLimit.HasValue)
             {
-                agentConfig.SetRuntimeDbOperationThrottleLimit(NatJetStreamConstants.DefaultDbOperationThrottleLimitForAgent);
+                agentConfig.SetRuntimeDbOperationThrottleLimit(NatsJetStreamConstants.DefaultDbOperationThrottleLimitForAgent);
             }
         }
 

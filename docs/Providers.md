@@ -113,7 +113,7 @@ builder.Services.AddJobMasterCluster(config =>
 - Install:
 ```bash
 dotnet add package JobMaster --version 0.0.2-alpha
-dotnet add package JobMaster.NatJetStream --version 0.0.1-alpha
+dotnet add package JobMaster.NatsJetStream --version 0.0.4-alpha
 ```
 - Setup:
 ```csharp
@@ -124,14 +124,14 @@ builder.Services.AddJobMasterCluster(config =>
           .ClusterMode(ClusterMode.Active);
 
     config.AddAgentConnectionConfig("Nats-1")
-          .UseNatJetStream("nats://localhost:4222");
+          .UseNatsJetStream("nats://localhost:4222");
 });
 ```
 - Notes:
   - Consider stream retention and ack policies.
   - Persistent audit trail still lives in the Master DB.
   - If you decide to use NATS as agent provider you need to TransientThreshold to a lower or equal to 2 minutes.
-- NuGet: https://www.nuget.org/packages/JobMaster.NatJetStream
+- NuGet: https://www.nuget.org/packages/JobMaster.NatsJetStream
 
 ## Choosing a transport
 

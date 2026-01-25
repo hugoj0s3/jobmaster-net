@@ -17,7 +17,7 @@ using Nito.AsyncEx;
 
 namespace JobMaster.NatsJetStream.Agents;
 
-internal class NatJetStreamRawMessagesDispatcherRepository : 
+internal class NatsJetStreamRawMessagesDispatcherRepository : 
     JobMasterClusterAwareComponent, 
     IAgentRawMessagesDispatcherRepository
 {
@@ -31,7 +31,7 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
     
     protected JobMasterAgentConnectionConfig config = null!;
     
-    public NatJetStreamRawMessagesDispatcherRepository(JobMasterClusterConnectionConfig clusterConnConfig, IJobMasterLogger logger) : base(clusterConnConfig)
+    public NatsJetStreamRawMessagesDispatcherRepository(JobMasterClusterConnectionConfig clusterConnConfig, IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.logger = logger;
     }
@@ -95,7 +95,7 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
     public void Initialize(JobMasterAgentConnectionConfig config)
     {
         this.config = config;
-        (_, jsContext, streamName) = NatJetStreamConnector.GetOrCreateConnection(config);
+        (_, jsContext, streamName) = NatsJetStreamConnector.GetOrCreateConnection(config);
     }
     
     public async Task DestroyBucketAsync(string fullBucketAddressId)
@@ -119,18 +119,18 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
     }
 
     public bool IsAutoDequeue => true;
-    public string AgentRepoTypeId => NatJetStreamConstants.RepositoryTypeId;
+    public string AgentRepoTypeId => NatsJetStreamConstants.RepositoryTypeId;
     
     protected async Task EnsureStreamAsync()
     {
-        await NatJetStreamConnector.EnsureStreamAsync(config);
+        await NatsJetStreamConnector.EnsureStreamAsync(config);
     }
     
     private async Task<string> DoPublishAsync(string subject, string payload, DateTime referenceTime, string correlationId)
     {
         var headers = BuildHeaders(referenceTime, correlationId);
         var data = Encoding.UTF8.GetBytes(payload);
-        var supposedId = headers[NatJetStreamConstants.HeaderMessageId];
+        var supposedId = headers[NatsJetStreamConstants.HeaderMessageId];
 
         const int maxAttempts = 3;
         int attempt = 0;
@@ -170,11 +170,11 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
     {
         var headers = new NatsHeaders
         {
-            [NatJetStreamConstants.HeaderCorrelationId] = correlationId,
-            [NatJetStreamConstants.HeaderReferenceTime] = referenceTime.ToUniversalTime().ToString("O"),
-            [NatJetStreamConstants.HeaderSignature] = NatJetStreamConfigKey.NamespaceUniqueKey.ToString(),
+            [NatsJetStreamConstants.HeaderCorrelationId] = correlationId,
+            [NatsJetStreamConstants.HeaderReferenceTime] = referenceTime.ToUniversalTime().ToString("O"),
+            [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
             // Keep internal correlation id header
-            [NatJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString()
+            [NatsJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString()
         };
         
         return headers;
@@ -189,7 +189,7 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
 
         await EnsureStreamAsync(); 
         
-        await NatJetStreamConnector.GetOrCreateConsumerAsync(config, fullBucketAddressId);
+        await NatsJetStreamConnector.GetOrCreateConsumerAsync(config, fullBucketAddressId);
         
         // Update cache after successful consumer creation
         ensuredConsumers[fullBucketAddressId] = true;
@@ -216,8 +216,8 @@ internal class NatJetStreamRawMessagesDispatcherRepository :
         }
     }
 
-    private string GetSubjectName(string fullBucketAddressId) => NatJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
+    private string GetSubjectName(string fullBucketAddressId) => NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
     
-    private string GetConsumerName(string steamName) => NatJetStreamUtils.GetConsumerName(steamName);
+    private string GetConsumerName(string steamName) => NatsJetStreamUtils.GetConsumerName(steamName);
 }
 

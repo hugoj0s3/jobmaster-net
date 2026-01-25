@@ -13,12 +13,12 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal class NatJetStreamDrainSavePendingJobsRunner : NatJetStreamRunnerBase<JobRawModel>, IDrainSavePendingJobsRunner
+internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase<JobRawModel>, IDrainSavePendingJobsRunner
 {
     private readonly IMasterJobsService masterJobsService;
     private SavePendingOperation? savePendingOperation;
     
-    public NatJetStreamDrainSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, IMasterJobsService masterJobsService) : base(backgroundAgentWorker)
+    public NatsJetStreamDrainSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, IMasterJobsService masterJobsService) : base(backgroundAgentWorker)
     {
         this.masterJobsService = masterJobsService;
     }
@@ -48,7 +48,7 @@ internal class NatJetStreamDrainSavePendingJobsRunner : NatJetStreamRunnerBase<J
         var resultCode = await savePendingOperation.SaveDrainSavePendingAsync(payload);
         if (resultCode == SaveDrainResultCode.Failed)
         {
-            var messageId = NatJetStreamUtils.GetHeaderMessageId(ackGuard.Msg.Headers);
+            var messageId = NatsJetStreamUtils.GetHeaderMessageId(ackGuard.Msg.Headers);
             await ackGuard.TryNakFailAsync(messageId!);
         }
     }

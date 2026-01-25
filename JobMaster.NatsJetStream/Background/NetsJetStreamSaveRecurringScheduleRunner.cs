@@ -13,13 +13,13 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal class NetJetStreamSaveRecurringScheduleRunner : NatJetStreamRunnerBase<RecurringScheduleRawModel>, ISaveRecurringSchedulerRunner
+internal class NetsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, ISaveRecurringSchedulerRunner
 {
     private IMasterRecurringSchedulesService masterRecurringSchedulesService;
     private IRecurringSchedulePlanner recurringSchedulePlanner;
     private IWorkerClusterOperations workerClusterOperations;
     
-    public NetJetStreamSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public NetsJetStreamSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         masterRecurringSchedulesService = BackgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
         workerClusterOperations = backgroundAgentWorker.GetClusterAwareService<IWorkerClusterOperations>();

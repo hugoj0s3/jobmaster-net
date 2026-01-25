@@ -13,14 +13,14 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal class NatJetStreamDrainProcessingRunner : NatJetStreamRunnerBase<JobRawModel>, IDrainProcessingJobsRunner
+internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobRawModel>, IDrainProcessingJobsRunner
 {
     private IMasterDistributedLockerService masterDistributedLockerService;
     private JobMasterLockKeys jobmasterBaseLockKeys = null!;
     private readonly IMasterJobsService masterJobsService;
     private SavePendingOperation? savePendingOperation;
 
-    public NatJetStreamDrainProcessingRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public NatsJetStreamDrainProcessingRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         jobmasterBaseLockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);

@@ -3,23 +3,25 @@ using Microsoft.Extensions.Configuration;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 
-namespace JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatJetStream;
+namespace JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatsJetStream;
 
-public sealed class NatJetStreamDrainModeFixture : JobMasterBaseSchedulerFixture
+public sealed class NatsJetStreamSchedulerFixture : JobMasterBaseSchedulerFixture
 {
-    public override string IncludeWildcards => "*postgres-natjetstream";
+    public override string IncludeWildcards => "*-postgres-natsjetstream";
     public override string ExcludeWildcards => "";
-    public override string DefaultClusterId => "cluster-postgres-natjetstream";
-    public override bool IsDrainingModeTest => true;
+    public override string DefaultClusterId => "cluster-postgres-natsjetstream";
 
     public new async Task InitializeAsync()
     {
         await base.InitializeAsync();
+        // base.InitializeAsync already builds Services and starts runtime; for a true pre-start cleanup
+        // you'd override the base flow. To keep it minimal, perform a best-effort cleanup before tests run next time.
         await CleanupJetStreamAsync();
     }
 
     private static async Task CleanupJetStreamAsync()
     {
+        // Load integration test config directly to identify NatsJetStream agents
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
@@ -33,7 +35,7 @@ public sealed class NatJetStreamDrainModeFixture : JobMasterBaseSchedulerFixture
             foreach (var agent in agents)
             {
                 var dbProvider = agent.GetValue<string>("DbProvider");
-                if (!string.Equals(dbProvider, "NatJetStream", StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(dbProvider, "NatsJetStream", StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 var agentId = agent.GetValue<string>("AgentName") ?? string.Empty;
@@ -41,7 +43,7 @@ public sealed class NatJetStreamDrainModeFixture : JobMasterBaseSchedulerFixture
                 if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(conn))
                     continue;
 
-                var streamName = NatJetStreamUtils.GetStreamName(agentId);
+                var streamName = NatsJetStreamUtils.GetStreamName(agentId);
                 try
                 {
                     var opts = NatsOpts.Default with { Url = conn, Name = $"cleanup_{streamName}" };

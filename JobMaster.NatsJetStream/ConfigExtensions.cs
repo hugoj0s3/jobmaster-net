@@ -6,30 +6,30 @@ namespace JobMaster.NatsJetStream;
 
 public static class ConfigExtensions
 {
-    public static IAgentConnectionConfigSelector UseNatJetStream(
+    public static IAgentConnectionConfigSelector UseNatsJetStream(
         this IAgentConnectionConfigSelector agentConfigSelector, 
         string connectionString,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
     {
         ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentConnString(connectionString);
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(NatJetStreamConstants.RepositoryTypeId);
+        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(NatsJetStreamConstants.RepositoryTypeId);
         
         var advancedSelector = (IAgentConnectionConfigSelectorAdvanced) agentConfigSelector;
         if (authOpts is not null)
         {
-            advancedSelector.AppendAdditionalConnConfigValue(NatJetStreamConfigKey.NamespaceUniqueKey, NatJetStreamConfigKey.NatsAuthOptsKey, authOpts);
+            advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey, authOpts);
         }
         
         if (tlsOpts is not null)
         {
-            advancedSelector.AppendAdditionalConnConfigValue(NatJetStreamConfigKey.NamespaceUniqueKey, NatJetStreamConfigKey.NatsTlsOptsKey, tlsOpts);
+            advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey, tlsOpts);
         }
         
         return agentConfigSelector;
     }
     
-    public static IAgentConnectionConfigSelector UseNatJetStream(
+    public static IAgentConnectionConfigSelector UseNatsJetStream(
         this IAgentConnectionConfigSelector agentConfigSelector, 
         string url, 
         string userName, 
@@ -39,10 +39,10 @@ public static class ConfigExtensions
     {
         var connectionString = BuildConnectionString(url, userName, password);
 
-        return agentConfigSelector.UseNatJetStream(connectionString, authOpts, connOpts);
+        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, connOpts);
     }
     
-    public static IAgentConnectionConfigSelector UseNatJetStream(
+    public static IAgentConnectionConfigSelector UseNatsJetStream(
         this IAgentConnectionConfigSelector agentConfigSelector, 
         (
             string url, 
@@ -52,17 +52,17 @@ public static class ConfigExtensions
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
     {
-        return agentConfigSelector.UseNatJetStream( connectionStrings.Select(x => BuildConnectionString(x.url, x.userName, x.password)).ToArray(), authOpts, tlsOpts);
+        return agentConfigSelector.UseNatsJetStream( connectionStrings.Select(x => BuildConnectionString(x.url, x.userName, x.password)).ToArray(), authOpts, tlsOpts);
     }
 
-    public static IAgentConnectionConfigSelector UseNatJetStream(
+    public static IAgentConnectionConfigSelector UseNatsJetStream(
         this IAgentConnectionConfigSelector agentConfigSelector, 
         string[] connectionStrings,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
     {
         var connectionString = string.Join(",", connectionStrings);
-        return agentConfigSelector.UseNatJetStream(connectionString, authOpts, tlsOpts);
+        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, tlsOpts);
     }
     
     // Normalize base URL

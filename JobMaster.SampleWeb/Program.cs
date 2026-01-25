@@ -2,7 +2,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
-using JobMaster.NatJetStream;
+using JobMaster.NatsJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
@@ -34,7 +34,7 @@ builder.Services.AddJobMasterCluster(config =>
 
     
     config.AddAgentConnectionConfig("Nats-1")
-          .UseNatJetStream("nats://jmuser:jmpass@localhost:4222");
+          .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
 
     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
     if (isConsumer)

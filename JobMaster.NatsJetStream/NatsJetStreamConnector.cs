@@ -11,7 +11,7 @@ using System.Threading.Tasks;
 using NATS.Client.JetStream.Models;
 using Nito.AsyncEx;
 
-internal sealed class NatJetStreamConnector
+internal sealed class NatsJetStreamConnector
 #if NET8_0_OR_GREATER
     : IAsyncDisposable
 #else
@@ -31,9 +31,9 @@ internal sealed class NatJetStreamConnector
 
     private readonly ConcurrentDictionary<string, Entry> entries = new();
     private static readonly SemaphoreSlim GlobalSetupLock = new(1, 1);
-    private static readonly NatJetStreamConnector Instance = new();
+    private static readonly NatsJetStreamConnector Instance = new();
 
-    private NatJetStreamConnector() { }
+    private NatsJetStreamConnector() { }
 
     // Static facade to preserve current call sites
     public static (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnection(JobMasterAgentConnectionConfig config)
@@ -73,13 +73,13 @@ internal sealed class NatJetStreamConnector
                 return (existing.Nats, existing.Js, existing.StreamName);
             }
 
-            NatsAuthOpts? authOpts = config.AdditionalConnConfig.TryGetValue<NatsAuthOpts>(NatJetStreamConfigKey.NamespaceUniqueKey, NatJetStreamConfigKey.NatsAuthOptsKey);
-            NatsTlsOpts? tlsOpts = config.AdditionalConnConfig.TryGetValue<NatsTlsOpts>(NatJetStreamConfigKey.NamespaceUniqueKey, NatJetStreamConfigKey.NatsTlsOptsKey);
+            NatsAuthOpts? authOpts = config.AdditionalConnConfig.TryGetValue<NatsAuthOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey);
+            NatsTlsOpts? tlsOpts = config.AdditionalConnConfig.TryGetValue<NatsTlsOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey);
 
             // Build options (TLS/auth customizations can be added later)
             var url = config.ConnectionString;
-            var clientName = NatJetStreamUtils.GetStreamName(config.Id);
-            var streamNameInit = NatJetStreamUtils.GetStreamName(config.Id);
+            var clientName = NatsJetStreamUtils.GetStreamName(config.Id);
+            var streamNameInit = NatsJetStreamUtils.GetStreamName(config.Id);
 
             var opts = NatsOpts.Default with { Url = url, Name = clientName };
             if (authOpts is not null)
@@ -131,7 +131,7 @@ internal sealed class NatJetStreamConnector
             }
             catch (NatsJSApiException)
             {
-                var cfg = new StreamConfig(e.StreamName, new[] { $"{NatJetStreamConstants.Prefix}{config.Id}.>" })
+                var cfg = new StreamConfig(e.StreamName, new[] { $"{NatsJetStreamConstants.Prefix}{config.Id}.>" })
                 {
                     DuplicateWindow = TimeSpan.FromMinutes(2),
                 };
@@ -184,8 +184,8 @@ internal sealed class NatJetStreamConnector
                 using var cts = ct == default ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
                 var token = cts?.Token ?? ct;
 
-                var consumerName = NatJetStreamUtils.GetConsumerName(fullBucketAddressId);
-                var subject = NatJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
+                var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
+                var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
 
                 actualBatchSize ??= new WorkerDefinition().BatchSize; // Get default batch size if not specified.
 
@@ -196,8 +196,8 @@ internal sealed class NatJetStreamConnector
                     AckPolicy = ConsumerConfigAckPolicy.Explicit,
                     DeliverPolicy = ConsumerConfigDeliverPolicy.All,
                     MaxAckPending = actualBatchSize.Value, 
-                    AckWait = NatJetStreamConstants.ConsumerAckWait,
-                    MaxDeliver = NatJetStreamConstants.MaxDeliver,
+                    AckWait = NatsJetStreamConstants.ConsumerAckWait,
+                    MaxDeliver = NatsJetStreamConstants.MaxDeliver,
                 };
 
                 // 3. API call to NATS JetStream to create/update the durable consumer

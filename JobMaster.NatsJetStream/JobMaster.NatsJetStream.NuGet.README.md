@@ -4,7 +4,7 @@
 > This package is in an early stage and subject to significant changes before 1.0.
 > Features and APIs may evolve, and stability is not guaranteed. Not recommended for production environments.
 
-# JobMaster.NatJetStream
+# JobMaster.NatsJetStream
 ### NATS JetStream transport provider for JobMaster .Net.
 
 This package provides the NATS JetStream implementation for the **JobMaster .Net** engine's **Agent (Transport) layer only**. 
@@ -17,7 +17,7 @@ Install the package via the .NET CLI:
 
 ```bash
 dotnet add package JobMaster
-dotnet add package JobMaster.NatJetStream
+dotnet add package JobMaster.NatsJetStream
 ```
 
 ## 🚀 Getting Started

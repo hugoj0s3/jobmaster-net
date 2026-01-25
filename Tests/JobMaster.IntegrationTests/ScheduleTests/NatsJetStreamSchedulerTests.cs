@@ -1,12 +1,12 @@
-using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatJetStream;
+using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatsJetStream;
 using Xunit.Abstractions;
 
 namespace JobMaster.IntegrationTests.ScheduleTests;
 
-[Collection("NatJetStreamScheduler")]
-public class NatJetStreamSchedulerTests : JobMasterSchedulerTestsBase<NatJetStreamSchedulerFixture>
+[Collection("NatsJetStreamScheduler")]
+public class NatsJetStreamSchedulerTests : JobMasterSchedulerTestsBase<NatsJetStreamSchedulerFixture>
 {
-    public NatJetStreamSchedulerTests(NatJetStreamSchedulerFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+    public NatsJetStreamSchedulerTests(NatsJetStreamSchedulerFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
     
     [Theory]
     [InlineData(50, false, 2)]

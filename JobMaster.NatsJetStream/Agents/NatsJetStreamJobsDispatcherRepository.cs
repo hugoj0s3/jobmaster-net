@@ -4,17 +4,17 @@ using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.NatsJetStream.Agents;
 
-internal class NatJetStreamJobsDispatcherRepository : AgentJobsDispatcherRepository<NatJetStreamRawMessagesDispatcherRepository, NatJetStreamRawMessagesDispatcherRepository>
+internal class NatsJetStreamJobsDispatcherRepository : AgentJobsDispatcherRepository<NatsJetStreamRawMessagesDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository>
 {
-    public NatJetStreamJobsDispatcherRepository(
+    public NatsJetStreamJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,
         IMasterClusterConfigurationService masterClusterConfigurationService,
         IJobMasterLogger jobMasterLogger,
-        NatJetStreamRawMessagesDispatcherRepository savePendingRepository,
-        NatJetStreamRawMessagesDispatcherRepository processingRepository)
+        NatsJetStreamRawMessagesDispatcherRepository savePendingRepository,
+        NatsJetStreamRawMessagesDispatcherRepository processingRepository)
         : base(connectionConfig, masterClusterConfigurationService, savePendingRepository, processingRepository, jobMasterLogger)
     {
     }
 
-    public override string AgentRepoTypeId => NatJetStreamConstants.RepositoryTypeId;
+    public override string AgentRepoTypeId => NatsJetStreamConstants.RepositoryTypeId;
 }

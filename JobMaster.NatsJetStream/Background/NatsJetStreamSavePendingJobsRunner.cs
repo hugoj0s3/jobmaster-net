@@ -18,14 +18,14 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal sealed class NatJetStreamSavePendingJobsRunner : NatJetStreamRunnerBase<JobRawModel>, ISavePendingJobsRunner
+internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBase<JobRawModel>, ISavePendingJobsRunner
 {
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
     private SavePendingOperation? savePendingOperation;
 
 
-    public NatJetStreamSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public NatsJetStreamSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();

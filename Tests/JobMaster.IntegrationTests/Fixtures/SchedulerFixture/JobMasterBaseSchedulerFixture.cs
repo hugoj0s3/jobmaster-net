@@ -23,7 +23,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         Postgres,
         MySql,
         SqlServer,
-        NatJetStream
+        NatsJetStream
     }
 
     private sealed class TestClusterDefinition
@@ -219,8 +219,8 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                         case DbProvider.SqlServer:
                             agentCfg.UseSqlServerForAgent(a.ConnectionString);
                             break;
-                        case DbProvider.NatJetStream:
-                            agentCfg.UseNatJetStream(a.ConnectionString);
+                        case DbProvider.NatsJetStream:
+                            agentCfg.UseNatsJetStream(a.ConnectionString);
                             break;
                     }
 
@@ -317,7 +317,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                     case DbProvider.SqlServer:
                         await SqlServerTestDbUtil.DropAgentTablesAsync(a.ConnectionString, agentPrefix);
                         break;
-                    case DbProvider.NatJetStream:
+                    case DbProvider.NatsJetStream:
                         break;
                 }
             }
@@ -434,11 +434,6 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
 
     private static bool IsMatchAny(string value, IList<string> wildcardPatterns)
     {
-        if (value.Contains("natjetstream"))
-        {
-            new object();
-        }
-        
         foreach (var wildcardPattern in wildcardPatterns)
         {
             var regexPattern = "^" + System.Text.RegularExpressions.Regex.Escape(wildcardPattern)
