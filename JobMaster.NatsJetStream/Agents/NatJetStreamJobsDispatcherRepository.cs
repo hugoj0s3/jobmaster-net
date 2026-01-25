@@ -2,7 +2,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Repositories;
 
-namespace JobMaster.NatJetStream.Agents;
+namespace JobMaster.NatsJetStream.Agents;
 
 internal class NatJetStreamJobsDispatcherRepository : AgentJobsDispatcherRepository<NatJetStreamRawMessagesDispatcherRepository, NatJetStreamRawMessagesDispatcherRepository>
 {

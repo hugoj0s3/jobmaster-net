@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using JobMaster.Abstractions.Models;
-using JobMaster.NatJetStream.Internals;
-using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.NatsJetStream.Internals;
+using JobMaster.NatsJetStream.Internals.Utils;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -13,7 +13,7 @@ using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Repositories;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal class NatJetStreamJobsExecutionRunner : NatJetStreamRunnerBase<JobRawModel>, IJobsExecutionRunner
 {

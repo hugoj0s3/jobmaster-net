@@ -5,7 +5,7 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
-        <PackageId>JobMaster.NatJetStream</PackageId>
+        <PackageId>JobMaster.NatsJetStream</PackageId>
         <VersionPrefix>0.0.3</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>

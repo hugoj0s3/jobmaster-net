@@ -8,7 +8,7 @@ using JobMaster.Postgres;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.SqlBase;
 using JobMaster.SqlServer;
-using JobMaster.NatJetStream;
+using JobMaster.NatsJetStream;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using Microsoft.Extensions.Configuration;

@@ -1,7 +1,7 @@
 using System;
 using JobMaster.Sdk.Abstractions;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 internal class NatJetStreamConstants
 {

@@ -6,7 +6,7 @@ using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Models;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 internal class NatJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {

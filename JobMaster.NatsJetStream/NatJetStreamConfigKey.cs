@@ -1,7 +1,7 @@
 using JobMaster.Sdk.Abstractions.Keys;
 using NATS.Client.Core;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 internal static class NatJetStreamConfigKey
 {

@@ -9,7 +9,7 @@ using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Repositories;
 using NATS.Client.JetStream;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal sealed class NatJetStreamDrainSavePendingRecurringScheduleRunner
     : NatJetStreamRunnerBase<RecurringScheduleRawModel>, IDrainSavePendingRecurringScheduleRunner

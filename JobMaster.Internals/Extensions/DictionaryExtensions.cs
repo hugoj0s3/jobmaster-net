@@ -1,7 +1,7 @@
 #if JOBMASTER
 namespace JobMaster.Internals;
 #elif NATJS
-namespace JobMaster.NatJetStream.Internals.Utils;
+namespace JobMaster.NatsJetStream.Internals.Utils;
 #elif SQLPROV
 namespace JobMaster.SqlBase.Internals.Utils;
 #else

@@ -1,10 +1,10 @@
-using JobMaster.NatJetStream.Agents;
-using JobMaster.NatJetStream.Background;
+using JobMaster.NatsJetStream.Agents;
+using JobMaster.NatsJetStream.Background;
 using JobMaster.Sdk;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Ioc.Setup;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 [JobMasterIocRegistration]
 internal static class NatJetStreamIocRegistration

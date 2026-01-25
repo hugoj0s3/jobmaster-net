@@ -2,7 +2,7 @@ using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using NATS.Client.Core;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 public static class ConfigExtensions
 {

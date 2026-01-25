@@ -2,8 +2,8 @@ using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using JobMaster.Internals;
-using JobMaster.NatJetStream.Internals;
-using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.NatsJetStream.Internals;
+using JobMaster.NatsJetStream.Internals.Utils;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -18,7 +18,7 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using Nito.AsyncEx;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal abstract class NatJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {

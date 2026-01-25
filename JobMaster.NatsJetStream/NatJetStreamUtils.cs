@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Text;
 using NATS.Client.Core;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 internal static class NatJetStreamUtils
 {

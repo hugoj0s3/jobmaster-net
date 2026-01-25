@@ -4,7 +4,7 @@ using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 
-namespace JobMaster.NatJetStream;
+namespace JobMaster.NatsJetStream;
 
 using System.Threading;
 using System.Threading.Tasks;

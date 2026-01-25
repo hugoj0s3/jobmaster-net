@@ -1,8 +1,8 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Text;
-using JobMaster.NatJetStream.Internals;
-using JobMaster.NatJetStream.Internals.Utils;
+using JobMaster.NatsJetStream.Internals;
+using JobMaster.NatsJetStream.Internals.Utils;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -15,7 +15,7 @@ using NATS.Client.Core;
 using NATS.Client.JetStream;
 using Nito.AsyncEx;
 
-namespace JobMaster.NatJetStream.Agents;
+namespace JobMaster.NatsJetStream.Agents;
 
 internal class NatJetStreamRawMessagesDispatcherRepository : 
     JobMasterClusterAwareComponent, 

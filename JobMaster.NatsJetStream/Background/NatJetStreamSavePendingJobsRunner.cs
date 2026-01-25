@@ -1,5 +1,5 @@
 using System.Text;
-using JobMaster.NatJetStream.Agents;
+using JobMaster.NatsJetStream.Agents;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
@@ -16,7 +16,7 @@ using JobMaster.Sdk.Services.Master;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal sealed class NatJetStreamSavePendingJobsRunner : NatJetStreamRunnerBase<JobRawModel>, ISavePendingJobsRunner
 {

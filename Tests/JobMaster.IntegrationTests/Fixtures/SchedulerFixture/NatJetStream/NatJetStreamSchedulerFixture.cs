@@ -1,4 +1,4 @@
-using JobMaster.NatJetStream;
+using JobMaster.NatsJetStream;
 using Microsoft.Extensions.Configuration;
 using NATS.Client.Core;
 using NATS.Client.JetStream;

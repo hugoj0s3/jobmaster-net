@@ -3,7 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NATS.Client.JetStream;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal sealed class MsgAckGuard
 {

@@ -11,7 +11,7 @@ using JobMaster.Sdk.Background.Runners.SavePendingJobs;
 using JobMaster.Sdk.Repositories;
 using NATS.Client.JetStream;
 
-namespace JobMaster.NatJetStream.Background;
+namespace JobMaster.NatsJetStream.Background;
 
 internal class NatJetStreamDrainProcessingRunner : NatJetStreamRunnerBase<JobRawModel>, IDrainProcessingJobsRunner
 {
