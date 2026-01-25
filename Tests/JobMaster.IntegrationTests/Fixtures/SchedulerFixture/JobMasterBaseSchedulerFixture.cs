@@ -58,7 +58,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
     public IList<string> ClusterIds { get; private set; } = new List<string>();
     public IList<string> WorkerLanes { get; private set; } = new List<string>();
     
-    public ConcurrentDictionary<string, List<LogItem>> Dictionarylogs = new(StringComparer.OrdinalIgnoreCase);
+    internal ConcurrentDictionary<string, List<LogItem>> Dictionarylogs = new(StringComparer.OrdinalIgnoreCase);
     public string CurrentTestExecutionId { get; set; } = string.Empty;
     
     private readonly ConcurrentDictionary<string, DateTime> lastFlushTime = new(StringComparer.OrdinalIgnoreCase);

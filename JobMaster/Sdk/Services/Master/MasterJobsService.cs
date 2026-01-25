@@ -12,7 +12,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsService
+internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsService
 {
     private IMasterJobsRepository masterJobsRepository = null!;
     private IJobMasterLogger logger = null!;

@@ -5,7 +5,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;
 
 public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
-    where TFixture : class, IRepositoryFixture
+    where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 
@@ -14,7 +14,7 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
         Fixture = fixture;
     }
 
-    protected IMasterDistributedLockerRepository Repo => Fixture.MasterDistributedLocker;
+    internal IMasterDistributedLockerRepository Repo => Fixture.MasterDistributedLocker;
 
     [Fact]
     public void TryLock_ShouldReturnToken_And_IsLocked_ShouldBeTrue()

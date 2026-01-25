@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.LocalCache;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterInMemoryCacheItem<T> : JobMasterInMemoryCacheItem
+internal class JobMasterInMemoryCacheItem<T> : JobMasterInMemoryCacheItem
 {
     public JobMasterInMemoryCacheItem(DateTime createdAt, DateTime expiresAt, object? valueObj) : base(createdAt, expiresAt, valueObj)
     {
@@ -11,8 +9,7 @@ public class JobMasterInMemoryCacheItem<T> : JobMasterInMemoryCacheItem
     public T? Value => (T?)ValueObj;
 }
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterInMemoryCacheItem
+internal class JobMasterInMemoryCacheItem
 {
     public JobMasterInMemoryCacheItem(
         DateTime createdAt,

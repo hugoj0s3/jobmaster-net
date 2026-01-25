@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using System.Reflection;
 
 namespace JobMaster.Sdk.Abstractions;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class JobMasterRuntimeSingleton
+internal static class JobMasterRuntimeSingleton
 {
     private static IJobMasterRuntime? _instance;
     public static IJobMasterRuntime Instance

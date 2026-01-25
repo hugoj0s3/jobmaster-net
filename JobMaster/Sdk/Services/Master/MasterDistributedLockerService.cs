@@ -7,7 +7,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterDistributedLockerService : JobMasterClusterAwareComponent, IMasterDistributedLockerService
+internal class MasterDistributedLockerService : JobMasterClusterAwareComponent, IMasterDistributedLockerService
 {
     private IMasterDistributedLockerRepository masterDistributedLockerRepository = null!;
 

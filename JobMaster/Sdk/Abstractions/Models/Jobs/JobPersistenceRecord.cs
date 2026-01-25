@@ -1,11 +1,9 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
 // Portable persistence DTO for repositories. Public setters for easy mapping.
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobPersistenceRecord
+internal class JobPersistenceRecord
 {
     public string ClusterId { get; set; } = string.Empty;
     public Guid Id { get; set; }

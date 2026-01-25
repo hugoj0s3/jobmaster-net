@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class AddSavePendingResult
+internal class AddSavePendingResult
 {
     public AddSavePendingResultCode ResultCode { get; }
     public string? PublishedMessageId { get; }

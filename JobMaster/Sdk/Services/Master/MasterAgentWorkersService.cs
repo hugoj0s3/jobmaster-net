@@ -13,7 +13,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMasterAgentWorkersService
+internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMasterAgentWorkersService
 {
     private IMasterClusterConfigurationService masterClusterConfigurationService = null!;
     private IMasterChangesSentinelService masterChangesSentinelService = null!;

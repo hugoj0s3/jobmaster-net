@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.RecurrenceExpressions;
@@ -10,8 +9,7 @@ using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class RecurringScheduleRawModel : JobMasterBaseModel
+internal class RecurringScheduleRawModel : JobMasterBaseModel
 {
     public RecurringScheduleRawModel(string clusterId) : base(clusterId)
     {

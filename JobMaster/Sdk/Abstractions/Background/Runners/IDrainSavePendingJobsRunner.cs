@@ -1,7 +1,5 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background.Runners;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IDrainSavePendingJobsRunner : IDrainJobsRunner
+internal interface IDrainSavePendingJobsRunner : IDrainJobsRunner
 {
 }

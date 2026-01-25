@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class ClusterDefinition
+internal sealed class ClusterDefinition
 {
     public string? ClusterId { get; set; }
     

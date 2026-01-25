@@ -13,7 +13,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Agents;
 
-public class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
+internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
 {
     private IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory = null!;
     private readonly IJobMasterRuntime jobMasterRuntime;

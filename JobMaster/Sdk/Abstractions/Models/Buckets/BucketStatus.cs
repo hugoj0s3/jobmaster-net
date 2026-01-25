@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public enum BucketStatus
+internal enum BucketStatus
 {
     Active = 1,     // Active and accepting new jobs
     Completing = 2,   // Still processing existing jobs but not accepting new ones

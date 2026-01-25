@@ -17,7 +17,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services;
 
-public class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecurringSchedulePlanner
+internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecurringSchedulePlanner
 {
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
     private readonly IJobMasterSchedulerClusterAware scheduler;

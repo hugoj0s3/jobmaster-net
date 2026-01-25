@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Internals;
 
 namespace JobMaster.Sdk.Abstractions.Keys;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public abstract class JobMasterKeyManager
+internal abstract class JobMasterKeyManager
 {
     protected virtual string BasePrefix() => JobMasterGlobalKey.Key.ToString();
     protected readonly string clusterPrefix;

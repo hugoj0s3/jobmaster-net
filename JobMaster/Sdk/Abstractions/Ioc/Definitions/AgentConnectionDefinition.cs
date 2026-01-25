@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class AgentConnectionDefinition
+internal sealed class AgentConnectionDefinition
 {
     public string ClusterId { get; set; } = string.Empty;
     public string AgentConnectionName { get; set; } = string.Empty;

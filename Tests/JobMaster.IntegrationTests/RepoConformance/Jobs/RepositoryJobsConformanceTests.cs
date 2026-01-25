@@ -9,7 +9,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
 public abstract class RepositoryJobsConformanceTests<TFixture>
-    where TFixture : class, IRepositoryFixture
+    where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 
@@ -444,7 +444,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lte, Value = t0.AddDays(1) }, a.Id, b.Id);
     }
 
-    protected async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
+    internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
     {
         var criteria = new JobQueryCriteria
         {
@@ -459,7 +459,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.Equal(expectedIds.OrderBy(x => x).ToList(), ids.OrderBy(x => x).ToList());
     }
 
-    protected virtual JobRawModel NewJob(
+    internal virtual JobRawModel NewJob(
         string? jobDefinitionId = null,
         JobMasterJobStatus status = JobMasterJobStatus.HeldOnMaster,
         DateTime? scheduledAt = null,

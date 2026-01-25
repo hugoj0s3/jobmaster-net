@@ -1,11 +1,9 @@
-using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.Sdk.Abstractions.Models.Agents;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class AgentConnectionId
+internal sealed class AgentConnectionId
 {
     [JsonInclude]
     public string Name { get; internal set; } = null!;
@@ -55,7 +53,7 @@ public sealed class AgentConnectionId
     }
 }
 
-public static class AgentConnectionIdExtensions
+internal static class AgentConnectionIdExtensions
 {
     public static bool IsNotNullAndActive(this AgentConnectionId? agentConnectionId)
     {

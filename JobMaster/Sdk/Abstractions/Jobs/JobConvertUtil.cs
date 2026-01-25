@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
@@ -11,9 +10,7 @@ namespace JobMaster.Sdk.Abstractions.Jobs;
 /// Centralized conversions among Job, JobRawModel, JobContext, and persistence records.
 /// Prefer these helpers over scattered conversions.
 /// </summary>
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class JobConvertUtil
+internal static class JobConvertUtil
 {
     // JobRawModel -> Job
     public static Job ToJob(JobRawModel raw)

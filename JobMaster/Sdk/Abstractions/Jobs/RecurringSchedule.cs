@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
@@ -10,8 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class RecurringSchedule : JobMasterBaseModel
+internal class RecurringSchedule : JobMasterBaseModel
 {
     internal RecurringSchedule(string clusterId) : base(clusterId)
     {

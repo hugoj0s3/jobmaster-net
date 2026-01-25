@@ -17,27 +17,27 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
-public sealed class SqlServerRepositoryFixture : IRepositoryFixture
+public sealed class SqlServerRepositoryFixture : RepositoryFixtureBase
 {
-    public string ClusterId { get; } = "ClusterForRepoTests-SqlServer-1";
+    internal override string ClusterId { get; set; } = "ClusterForRepoTests-SqlServer-1";
 
-    public AgentConnectionId AgentConnectionId { get; private set; } = null!;
+    internal override AgentConnectionId AgentConnectionId { get; set; } = null!;
 
-    public IServiceProvider Services { get; private set; } = null!;
+    internal override IServiceProvider Services { get; set; } = null!;
 
-    public IMasterJobsRepository MasterJobs { get; private set; } = null!;
-    public IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; private set; } = null!;
-    public IMasterGenericRecordRepository MasterGenericRecords { get; private set; } = null!;
-    public IMasterDistributedLockerRepository MasterDistributedLocker { get; private set; } = null!;
+    internal override IMasterJobsRepository MasterJobs { get; set; } = null!;
+    internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; } = null!;
+    internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
+    internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
-    public IAgentRawMessagesDispatcherRepository AgentMessages { get; private set; } = null!;
+    internal override IAgentRawMessagesDispatcherRepository AgentMessages { get;  set; } = null!;
 
     private const string MasterTablePrefix = "JMSqlServerTests_";
     private const string AgentTablePrefix = "JMSqlServerTests_";
 
     private const string AgentConnectionName = "AgentForConformanceRepoTests-SqlServer-1";
 
-    public async Task InitializeAsync()
+    public override async Task InitializeAsync()
     {
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -132,7 +132,7 @@ public sealed class SqlServerRepositoryFixture : IRepositoryFixture
         }
     }
 
-    public Task DisposeAsync()
+    public override Task DisposeAsync()
     {
         return Task.CompletedTask;
     }

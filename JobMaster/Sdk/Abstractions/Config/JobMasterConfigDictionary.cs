@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using System.Collections.Concurrent;
 using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Keys;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterConfigDictionary
+internal class JobMasterConfigDictionary
 {
     private readonly IDictionary<string, object> Config = new ConcurrentDictionary<string, object>();
     public JobMasterConfigDictionary() { }

@@ -4,7 +4,7 @@ using JobMaster.Sdk.Abstractions.LocalCache;
 
 namespace JobMaster.Sdk.LocalCache;
 
-public class JobMasterInMemoryCache : IJobMasterInMemoryCache
+internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
 {
     private static readonly ConcurrentDictionary<string, JobMasterInMemoryCacheItem> memoryCache = new();
     private static readonly Timer CleanupTimer;

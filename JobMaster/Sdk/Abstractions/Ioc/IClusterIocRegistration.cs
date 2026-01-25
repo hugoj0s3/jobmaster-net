@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Abstractions.Ioc;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IClusterIocRegistration
+internal interface IClusterIocRegistration
 {
     string ClusterId { get; }
     IJobMasterClusterAwareComponentFactory BuildFactory();

@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterAgentConnectionConfig
+internal class JobMasterAgentConnectionConfig
 {
     public JobMasterAgentConnectionConfig(
         string clusterId,

@@ -10,7 +10,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterClusterConfigurationService : JobMasterClusterAwareComponent, IMasterClusterConfigurationService
+internal class MasterClusterConfigurationService : JobMasterClusterAwareComponent, IMasterClusterConfigurationService
 {
     private IMasterGenericRecordRepository repository = null!;
     private IMasterChangesSentinelService masterChangesSentinelService = null!;

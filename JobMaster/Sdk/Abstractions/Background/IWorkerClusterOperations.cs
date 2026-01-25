@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -6,8 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IWorkerClusterOperations : IJobMasterClusterAwareService
+internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
 {
     Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket);
     void MarkAsHeldOnMaster(Guid jobId);

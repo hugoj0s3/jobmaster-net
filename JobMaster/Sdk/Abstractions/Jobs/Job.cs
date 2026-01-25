@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
@@ -9,8 +8,7 @@ using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class Job : JobMasterBaseModel
+internal class Job : JobMasterBaseModel
 {
 
     internal Job(string clusterId) : base(clusterId)

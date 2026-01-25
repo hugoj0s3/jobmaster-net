@@ -29,7 +29,7 @@ using JobMaster.Sdk.Background.Runners;
 
 namespace JobMaster.Sdk.Ioc.Setup;
 
-public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
+internal class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
 {
     private string? clusterId;
     

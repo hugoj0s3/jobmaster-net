@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Keys;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterSentinelKeys : JobMasterKeyManager
+internal class JobMasterSentinelKeys : JobMasterKeyManager
 {
     public JobMasterSentinelKeys(string clusterId) : base("Sentinel", clusterId)
     {

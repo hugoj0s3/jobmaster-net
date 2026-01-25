@@ -18,7 +18,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBucketsService
+internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBucketsService
 {
 
     private IMasterGenericRecordRepository masterGenericRecordRepository = null!;

@@ -9,7 +9,7 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 /// <summary>
 /// Information about a task for monitoring and debugging purposes
 /// </summary>
-public class TaskInfo
+internal class TaskInfo
 {
     public int Index { get; set; }
     public DateTime StartTime { get; set; }

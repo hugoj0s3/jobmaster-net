@@ -13,7 +13,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Repositories;
 
-public abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing> : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository<TSavePending, TProcessing>
+internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing> : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository<TSavePending, TProcessing>
     where TSavePending : class, IAgentRawMessagesDispatcherRepository
     where TProcessing : class, IAgentRawMessagesDispatcherRepository
 {

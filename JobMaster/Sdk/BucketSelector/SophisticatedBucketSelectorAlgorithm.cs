@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 namespace JobMaster.Sdk.BucketSelector;
 
 [Obsolete]
-public class SophisticatedBucketSelectorAlgorithm : IBucketSelectorAlgorithm
+internal class SophisticatedBucketSelectorAlgorithm : IBucketSelectorAlgorithm
 {
     private readonly Dictionary<string, BucketSelectionStats> bucketSelectionStats 
         = new();

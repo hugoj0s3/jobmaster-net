@@ -12,7 +12,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterRecurringSchedulesService : JobMasterClusterAwareComponent, IMasterRecurringSchedulesService
+internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent, IMasterRecurringSchedulesService
 {
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository = null!;
