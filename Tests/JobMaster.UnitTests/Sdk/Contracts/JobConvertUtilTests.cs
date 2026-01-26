@@ -31,7 +31,7 @@ public class JobConvertUtilTests
         {
             Id = Guid.Parse("b10c8e9a-0b2f-4c9f-88ea-3d7f7ac6f4d0"),
             JobDefinitionId = "def",
-            ScheduleSourceType = JobSchedulingSourceType.Once,
+            ScheduleType = JobSchedulingSourceType.Once,
             BucketId = "bucket",
             AgentConnectionId = new AgentConnectionId("c", "a"),
             AgentWorkerId = "w",

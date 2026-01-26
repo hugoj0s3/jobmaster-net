@@ -2,7 +2,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.MySql;
 
-public class MySqlSqlGenerator : SqlGenerator
+internal class MySqlSqlGenerator : SqlGenerator
 {
     private const int MaxVarcharLength = 512;
     private const int MaxVarBinaryLength = 1024;

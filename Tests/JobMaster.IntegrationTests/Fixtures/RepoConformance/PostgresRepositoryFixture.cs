@@ -14,6 +14,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Ioc;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
@@ -103,7 +104,10 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
             throw new Exception($"Agent config '{AgentConnectionName}' not found for cluster '{ClusterId}'.");
         }
 
-        var rawRepo = factory.ClusterServiceProvider.GetRequiredService<PostgresRawMessagesDispatcherRepository>();
+        var rawRepo = factory.ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
+                ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(PostgresRepositoryConstants.RepositoryTypeId)
+            );
         rawRepo.Initialize(agentConfig);
         AgentMessages = rawRepo;
 

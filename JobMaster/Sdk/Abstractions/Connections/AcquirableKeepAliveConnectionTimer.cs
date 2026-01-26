@@ -1,4 +1,4 @@
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Abstractions.Connections;
 

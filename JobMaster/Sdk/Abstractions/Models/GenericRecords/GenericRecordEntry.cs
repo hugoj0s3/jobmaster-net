@@ -2,10 +2,10 @@ using System.Collections.Concurrent;
 using System.Globalization;
 using System.Reflection;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 

@@ -14,10 +14,11 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Ioc;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
-public sealed class SqlServerRepositoryFixture : RepositoryFixtureBase
+public class SqlServerRepositoryFixture : RepositoryFixtureBase
 {
     internal override string ClusterId { get; set; } = "ClusterForRepoTests-SqlServer-1";
 
@@ -103,7 +104,10 @@ public sealed class SqlServerRepositoryFixture : RepositoryFixtureBase
             throw new Exception($"Agent config '{AgentConnectionName}' not found for cluster '{ClusterId}'.");
         }
 
-        var rawRepo = factory.ClusterServiceProvider.GetRequiredService<SqlServerRawMessagesDispatcherRepository>();
+        var rawRepo = factory.ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
+                ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(SqlServerRepositoryConstants.RepositoryTypeId)
+                );
         rawRepo.Initialize(agentConfig);
         AgentMessages = rawRepo;
 

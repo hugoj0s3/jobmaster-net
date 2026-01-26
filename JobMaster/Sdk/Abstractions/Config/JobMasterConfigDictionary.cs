@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 

@@ -1,7 +1,6 @@
 using JobMaster.IntegrationTests.Utils;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
-using JobMaster.MySql.Agents;
 using JobMaster.SqlBase;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -13,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Ioc;
 using MySqlConnector;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
@@ -103,7 +103,10 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
             throw new Exception($"Agent config '{AgentConnectionName}' not found for cluster '{ClusterId}'.");
         }
 
-        var rawRepo = factory.ClusterServiceProvider.GetRequiredService<MySqlRawMessagesDispatcherRepository>();
+        var rawRepo = factory.ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
+                ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(MySqlRepositoryConstants.RepositoryTypeId)
+            );
         rawRepo.Initialize(agentConfig);
         AgentMessages = rawRepo;
 

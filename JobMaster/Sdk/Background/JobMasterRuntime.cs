@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -12,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Background;

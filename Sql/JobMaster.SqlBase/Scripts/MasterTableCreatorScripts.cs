@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.SqlBase.Scripts;
 
-public static class MasterTableCreatorScripts
+internal static class MasterTableCreatorScripts
 {
     public static string CreateGenericRecordTablesScript(ISqlGenerator sqlGenerator, string tablePrefix = "")
     {

@@ -1,15 +1,15 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
-using System.Text;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture;
 using JobMaster.IntegrationTests.Utils;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit.Abstractions;
 
@@ -721,6 +721,11 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             // Write performance report to file
             if (logRootDir != null)
             {
+                if (!Directory.Exists(logRootDir))
+                {
+                    Directory.CreateDirectory(logRootDir);
+                }
+                
                 var reportContent = perfMonitor.GetReportString();
                 var filePath = Path.Combine(logRootDir, "performance-report.log");
                 await File.WriteAllTextAsync(filePath, reportContent);
@@ -1001,9 +1006,17 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         {
             logRootDir = DumpLogs();
             
+          
+            
             // Write performance report to file
             if (logRootDir != null)
             {
+            
+                if (!Directory.Exists(logRootDir))
+                {
+                    Directory.CreateDirectory(logRootDir);
+                }
+                
                 var reportContent = perfMonitor.GetReportString();
                 var filePath = Path.Combine(logRootDir, "recurring-performance-report.log");
                 await File.WriteAllTextAsync(filePath, reportContent);

@@ -1,6 +1,6 @@
 using System.Collections.Concurrent;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.LocalCache;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.LocalCache;
 

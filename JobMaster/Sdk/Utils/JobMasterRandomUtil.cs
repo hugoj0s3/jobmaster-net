@@ -1,19 +1,10 @@
 using System.Buffers;
 using System.Security.Cryptography;
-
 #if NET
 using SecurityDriven.Core;
 #endif
 
-#if JOBMASTER
-namespace JobMaster.Internals;
-#elif NATJS
-namespace JobMaster.NatsJetStream.Internals.Utils;
-#elif SQLPROV
-namespace JobMaster.SqlBase.Internals.Utils;
-#else
-namespace JobMaster.Internals.Utils;
-#endif
+namespace JobMaster.Sdk.Utils;
 
 internal static class JobMasterRandomUtil
 {

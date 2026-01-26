@@ -1,6 +1,6 @@
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
 

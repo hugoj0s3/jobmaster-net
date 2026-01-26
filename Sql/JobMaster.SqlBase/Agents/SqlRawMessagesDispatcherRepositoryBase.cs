@@ -2,7 +2,8 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Text;
 using Dapper;
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Connections;
@@ -12,13 +13,12 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Services.Master;
-using JobMaster.SqlBase.Internals.Utils;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Agents;
 
-public abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
+internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
 {
     private static readonly TimeSpan ConnectionIdleTimeout = TimeSpan.FromMinutes(10);
     

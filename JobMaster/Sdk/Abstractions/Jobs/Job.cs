@@ -1,10 +1,10 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
@@ -50,7 +50,7 @@ internal class Job : JobMasterBaseModel
         var job = new Job(clusterId)
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
-            ScheduleSourceType = scheduledType,
+            ScheduleType = scheduledType,
             OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
@@ -132,7 +132,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingSourceType ScheduleSourceType { get; internal set; }
+    public  JobSchedulingSourceType ScheduleType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
     public int? PartitionLockId { get; internal set; }

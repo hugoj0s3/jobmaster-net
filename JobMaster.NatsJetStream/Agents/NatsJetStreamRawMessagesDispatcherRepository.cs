@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Text;
-using JobMaster.NatsJetStream.Internals;
-using JobMaster.NatsJetStream.Internals.Utils;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -11,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 using Nito.AsyncEx;

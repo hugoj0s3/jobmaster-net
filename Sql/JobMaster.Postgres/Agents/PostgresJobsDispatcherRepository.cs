@@ -4,7 +4,7 @@ using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.Postgres.Agents;
 
-public class PostgresJobsDispatcherRepository : AgentJobsDispatcherRepository<PostgresRawMessagesDispatcherRepository, PostgresRawMessagesDispatcherRepository>
+internal class PostgresJobsDispatcherRepository : AgentJobsDispatcherRepository<PostgresRawMessagesDispatcherRepository, PostgresRawMessagesDispatcherRepository>
 {
     public PostgresJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,

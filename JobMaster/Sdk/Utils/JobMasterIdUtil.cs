@@ -1,14 +1,6 @@
 using System.Text;
 
-#if JOBMASTER
-namespace JobMaster.Internals;
-#elif NATJS
-namespace JobMaster.NatsJetStream.Internals.Utils;
-#elif SQLPROV
-namespace JobMaster.SqlBase.Internals.Utils;
-#else
-namespace JobMaster.Internal.Utils;
-#endif
+namespace JobMaster.Sdk.Utils;
 
 internal class JobMasterIdUtil
 {

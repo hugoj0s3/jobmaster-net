@@ -1,9 +1,8 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
-using JobMaster.Internals;
-using JobMaster.NatsJetStream.Internals;
-using JobMaster.NatsJetStream.Internals.Utils;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;

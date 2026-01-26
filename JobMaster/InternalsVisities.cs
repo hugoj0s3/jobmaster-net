@@ -6,6 +6,8 @@ using System.Runtime.CompilerServices;
 // Mocking frameworks
 [assembly: InternalsVisibleTo("DynamicProxyGenAssembly2")]
 
+[assembly: InternalsVisibleTo("Riok.Mapperly")]
+
 // Projects
 [assembly: InternalsVisibleTo("JobMaster.SqlBase")]
 [assembly: InternalsVisibleTo("JobMaster.Postgres")]

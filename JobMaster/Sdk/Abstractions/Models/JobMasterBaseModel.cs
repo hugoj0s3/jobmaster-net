@@ -1,5 +1,5 @@
 using System.Text.Json.Serialization;
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models;
 

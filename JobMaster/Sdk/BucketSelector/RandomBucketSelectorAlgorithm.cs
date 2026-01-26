@@ -1,6 +1,6 @@
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.BucketSelector;
 
