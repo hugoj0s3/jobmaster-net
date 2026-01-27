@@ -4,7 +4,7 @@
 - Rename AgentWorkerMode.Standalone to AgentWorkerMode.Full
 - Fix project, classes, namespace typo (NatJetStream -> NatsJetStream)
 - Consolidate/Rename ScheduleType and ScheduledSourceType to TriggerSourceType
-  - DB change required
+  - DB change required if using JobMaster v0.0.3
     - Postgres:
       ```sql 
       ALTER TABLE your_table RENAME COLUMN schedule_type TO trigger_source_type;
@@ -18,4 +18,4 @@
       ALTER TABLE your_table RENAME COLUMN schedule_type TO trigger_source_type;
       ```
 - Make SDK.Abstractions internal and expose what is needed
-- Make Utils and Utils.Extensions internal and expose what is needed
+- Make Utils and Utils.Extensions internal and move to JobMaster.Sdk namespace
