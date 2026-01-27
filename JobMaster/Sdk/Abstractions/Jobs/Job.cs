@@ -50,7 +50,7 @@ internal class Job : JobMasterBaseModel
         var job = new Job(clusterId)
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
-            ScheduleType = triggerSourceType,
+            TriggerSourceType = triggerSourceType,
             OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
@@ -132,7 +132,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingTriggerSourceType ScheduleType { get; internal set; }
+    public  JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
     public int? PartitionLockId { get; internal set; }

@@ -14,7 +14,7 @@ public class JobContext
     public IReadableMessageData MsgData { get; internal set; } = null!;
     public IReadableMetadata Metadata { get; internal set; } = null!;
     public Guid? RecurringScheduleId { get; internal set; }
-    public JobSchedulingTriggerSourceType ScheduleType { get; internal set; }
+    public JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
     public RecurringScheduleContext? RecurringSchedule { get; internal set; }
     
     public string? WorkerLane { get; internal set; }
