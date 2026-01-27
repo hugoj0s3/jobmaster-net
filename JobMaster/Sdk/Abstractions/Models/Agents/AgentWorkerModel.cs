@@ -24,7 +24,7 @@ internal class AgentWorkerModel : JobMasterBaseModel
 
     public DateTime LastHeartbeat { get; set; }
 
-    public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
+    public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
 
     public string? WorkerLane { get; set; }
 

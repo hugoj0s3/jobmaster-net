@@ -31,7 +31,7 @@ public class JobConvertUtilTests
         {
             Id = Guid.Parse("b10c8e9a-0b2f-4c9f-88ea-3d7f7ac6f4d0"),
             JobDefinitionId = "def",
-            ScheduleType = JobSchedulingSourceType.Once,
+            TriggerSourceType = JobSchedulingTriggerSourceType.Once,
             BucketId = "bucket",
             AgentConnectionId = new AgentConnectionId("c", "a"),
             AgentWorkerId = "w",
@@ -101,7 +101,7 @@ public class JobConvertUtilTests
             ClusterId = "c",
             Id = Guid.Parse("b10c8e9a-0b2f-4c9f-88ea-3d7f7ac6f4d0"),
             JobDefinitionId = "def",
-            ScheduledType = (int)JobSchedulingSourceType.Once,
+            TriggerSourceType = (int)JobSchedulingTriggerSourceType.Once,
             BucketId = "bucket",
             AgentConnectionId = "c:a",
             AgentWorkerId = "w",

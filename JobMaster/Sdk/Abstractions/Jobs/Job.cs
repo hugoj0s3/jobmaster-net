@@ -33,7 +33,7 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingSourceType scheduledType = JobSchedulingSourceType.Once,
+        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         Guid? recurringScheduleId = null,
         string? workerLane = null)
@@ -50,7 +50,7 @@ internal class Job : JobMasterBaseModel
         var job = new Job(clusterId)
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
-            ScheduleType = scheduledType,
+            ScheduleType = triggerSourceType,
             OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
@@ -78,9 +78,9 @@ internal class Job : JobMasterBaseModel
             jobHandlerType,
             data: recurringSchedule.MsgData,
             scheduledAt: scheduleAt,
-            scheduledType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
-                ? JobSchedulingSourceType.StaticRecurring
-                : JobSchedulingSourceType.DynamicRecurring,
+            triggerSourceType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
+                ? JobSchedulingTriggerSourceType.StaticRecurring
+                : JobSchedulingTriggerSourceType.DynamicRecurring,
             priority: recurringSchedule.Priority,
             timeout: recurringSchedule.Timeout,
             maxNumberOfRetries: recurringSchedule.MaxNumberOfRetries,
@@ -103,7 +103,7 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingSourceType scheduledType = JobSchedulingSourceType.Once,
+        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         string? workerLane = null)
         where T : IJobHandler
@@ -117,7 +117,7 @@ internal class Job : JobMasterBaseModel
             timeout, 
             maxNumberOfRetries, 
             writableMetadata, 
-            scheduledType, 
+            triggerSourceType, 
             masterConfig,
             workerLane: workerLane);
     }
@@ -132,7 +132,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingSourceType ScheduleType { get; internal set; }
+    public  JobSchedulingTriggerSourceType ScheduleType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
     public int? PartitionLockId { get; internal set; }

@@ -385,7 +385,7 @@ public class JobMasterSchedulerClusterAwareTests
         {
             Id = Guid.NewGuid(),
             JobDefinitionId = "def",
-            ScheduleType = JobSchedulingSourceType.Once,
+            TriggerSourceType = JobSchedulingTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
             OriginalScheduledAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,

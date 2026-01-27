@@ -472,7 +472,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         {
             Id = Guid.NewGuid(),
             JobDefinitionId = jobDefinitionId ?? ("job-def-" + Guid.NewGuid()),
-            ScheduleType = JobSchedulingSourceType.Once,
+            TriggerSourceType = JobSchedulingTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
             OriginalScheduledAt = sched,
             ScheduledAt = sched,
@@ -491,7 +491,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         Assert.Equal(expected.Id, actual.Id);
         Assert.Equal(expected.JobDefinitionId, actual.JobDefinitionId);
-        Assert.Equal(expected.ScheduleType, actual.ScheduleType);
+        Assert.Equal(expected.TriggerSourceType, actual.TriggerSourceType);
 
         Assert.Equal(expected.BucketId, actual.BucketId);
         Assert.Equal(expected.AgentConnectionId?.IdValue, actual.AgentConnectionId?.IdValue);
@@ -689,7 +689,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         {
             Id = job.Id,
             JobDefinitionId = job.JobDefinitionId,
-            ScheduleType = job.ScheduleType,
+            TriggerSourceType = job.TriggerSourceType,
             BucketId = job.BucketId,
             AgentConnectionId = job.AgentConnectionId,
             AgentWorkerId = job.AgentWorkerId,

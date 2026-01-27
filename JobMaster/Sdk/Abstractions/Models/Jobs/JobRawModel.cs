@@ -22,7 +22,7 @@ internal class JobRawModel : JobMasterBaseModel
     [JsonInclude]
     public string JobDefinitionId { get; internal set; } = string.Empty;
     [JsonInclude]
-    public JobSchedulingSourceType ScheduleType { get; internal set; }
+    public JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
     [JsonInclude]
     public string? BucketId { get; internal set; }
     [JsonInclude]

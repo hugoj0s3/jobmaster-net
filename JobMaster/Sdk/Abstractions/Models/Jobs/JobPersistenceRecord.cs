@@ -9,7 +9,7 @@ internal class JobPersistenceRecord
     public Guid Id { get; set; }
     public string JobDefinitionId { get; set; } = string.Empty;
 
-    public int ScheduledType { get; set; }
+    public int TriggerSourceType { get; set; }
 
     public string? BucketId { get; set; }
     public string? AgentConnectionId { get; set; }

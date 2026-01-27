@@ -273,7 +273,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         public string Name { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         
-        public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
+        public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
         
         public string? WorkerLane { get; set; }
         

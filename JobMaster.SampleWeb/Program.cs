@@ -43,7 +43,7 @@ builder.Services.AddJobMasterCluster(config =>
            .AgentConnName("Nats-1")
            .BucketQtyConfig(JobMasterPriority.Medium, 1)
            .WorkerBatchSize(1000)
-           .SetWorkerMode(AgentWorkerMode.Standalone);
+           .SetWorkerMode(AgentWorkerMode.Full);
 
        config.AddWorker()
            .AgentConnName("Nats-1")

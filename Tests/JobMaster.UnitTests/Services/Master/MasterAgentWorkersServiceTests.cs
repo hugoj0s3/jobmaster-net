@@ -33,7 +33,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object);
 
-        var act = () => sut.RegisterWorker("agent", "invalid name", workerLane: null, AgentWorkerMode.Standalone, 1);
+        var act = () => sut.RegisterWorker("agent", "invalid name", workerLane: null, AgentWorkerMode.Full, 1);
         act.Should().Throw<ArgumentException>().WithParameterName("workerName");
 
         repo.Verify(x => x.Insert(It.IsAny<GenericRecordEntry>()), Times.Never);
@@ -69,7 +69,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object);
 
-        var workerId = sut.RegisterWorker($"{clusterId}:agent", "worker", workerLane: "lane", AgentWorkerMode.Standalone, 1);
+        var workerId = sut.RegisterWorker($"{clusterId}:agent", "worker", workerLane: "lane", AgentWorkerMode.Full, 1);
 
         workerId.Should().NotBeNullOrWhiteSpace();
 
@@ -136,7 +136,7 @@ public class MasterAgentWorkersServiceTests
                 AgentConnectionId = $"{clusterId}:agent",
                 Name = "worker",
                 CreatedAt = createdAt,
-                Mode = AgentWorkerMode.Standalone,
+                Mode = AgentWorkerMode.Full,
                 WorkerLane = null
             });
 
