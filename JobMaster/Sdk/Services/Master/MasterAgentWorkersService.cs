@@ -1,5 +1,4 @@
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -10,10 +9,12 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMasterAgentWorkersService
+internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMasterAgentWorkersService
 {
     private IMasterClusterConfigurationService masterClusterConfigurationService = null!;
     private IMasterChangesSentinelService masterChangesSentinelService = null!;
@@ -272,7 +273,7 @@ public class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMaster
         public string Name { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
         
-        public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
+        public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
         
         public string? WorkerLane { get; set; }
         

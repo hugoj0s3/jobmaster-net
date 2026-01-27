@@ -1,4 +1,3 @@
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -10,10 +9,11 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services.Agents;
 
-public class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
+internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
 {
     private IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory = null!;
     private readonly IJobMasterRuntime jobMasterRuntime;

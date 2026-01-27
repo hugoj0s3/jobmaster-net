@@ -7,7 +7,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterHeartbeatService : JobMasterClusterAwareComponent, IMasterHeartbeatService
+internal class MasterHeartbeatService : JobMasterClusterAwareComponent, IMasterHeartbeatService
 {
     private IMasterGenericRecordRepository repository = null!;
 

@@ -6,7 +6,7 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <PackageId>JobMaster.SqlBase</PackageId>
-        <VersionPrefix>0.0.3</VersionPrefix>
+        <VersionPrefix>0.0.4</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
@@ -23,17 +23,12 @@
 
     <ItemGroup>
       <PackageReference Include="Dapper" Version="2.1.66" />
-      <PackageReference Include="JobMaster" Version="0.0.3-alpha" />
+      <PackageReference Include="JobMaster" Version="0.0.4-alpha" />
     </ItemGroup>
 
     <PropertyGroup>
         <DefineConstants>$(DefineConstants);SQLPROV</DefineConstants>
     </PropertyGroup>
-
-    <ItemGroup>
-        <Compile Include="..\..\JobMaster.Internals\**\*.cs"
-                 Link="Internals\%(RecursiveDir)%(Filename)%(Extension)" />
-    </ItemGroup>
 
     <ItemGroup>
       <None Include="JobMaster.SqlBase.NuGet.README.md">

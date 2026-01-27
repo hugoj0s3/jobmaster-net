@@ -1,4 +1,4 @@
-
+﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster", "JobMaster\JobMaster.csproj", "{1E268AC1-1A4B-4A98-8730-FC3E26AF5BFD}"
 EndProject
@@ -20,7 +20,7 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "Tests\JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatJetStream", "JobMaster.NatJetStream\JobMaster.NatJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatsJetStream", "JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}"
 EndProject

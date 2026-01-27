@@ -13,7 +13,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
 
-public abstract class SqlMasterGenericRecordRepository : JobMasterClusterAwareRepository, IMasterGenericRecordRepository
+internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAwareRepository, IMasterGenericRecordRepository
 {
     private ISqlGenerator sql = null!;
     private string connString = null!;

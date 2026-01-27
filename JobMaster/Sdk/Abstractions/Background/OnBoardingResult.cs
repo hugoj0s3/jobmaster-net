@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public enum OnBoardingResult
+internal enum OnBoardingResult
 {
     Accepted = 1,
     MovedToMaster,

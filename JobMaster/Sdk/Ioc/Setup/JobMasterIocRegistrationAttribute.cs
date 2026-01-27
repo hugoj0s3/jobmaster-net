@@ -11,7 +11,7 @@ namespace JobMaster.Sdk.Ioc.Setup;
 /// - public static void RegisterForAgent(IServiceCollection services)
 /// </summary>
 [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
-public sealed class JobMasterIocRegistrationAttribute : Attribute
+internal sealed class JobMasterIocRegistrationAttribute : Attribute
 {
     private const string RepositoryTypeProperty = "RepositoryType";
     private const string RegisterForMasterMethod = "RegisterForMaster";

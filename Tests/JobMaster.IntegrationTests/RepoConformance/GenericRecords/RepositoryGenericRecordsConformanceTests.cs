@@ -6,7 +6,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.GenericRecords;
 
 public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
-    where TFixture : class, IRepositoryFixture
+    where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 
@@ -474,7 +474,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.True(remaining.Count >= 6, $"Expected at least 6 remaining, got {remaining.Count}");
     }
 
-    protected async Task AssertGenericFilter(string groupId, string? subjectType, GenericRecordValueFilter filter, params string[] expectedEntryIds)
+    internal async Task AssertGenericFilter(string groupId, string? subjectType, GenericRecordValueFilter filter, params string[] expectedEntryIds)
     {
         var criteria = new GenericRecordQueryCriteria
         {
@@ -493,7 +493,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.Equal(expected, ids);
     }
 
-    protected GenericRecordEntry NewEntry(string groupId, string entryId)
+    internal GenericRecordEntry NewEntry(string groupId, string entryId)
     {
         return GenericRecordEntry.FromWritableMetadata(
             Fixture.ClusterId,

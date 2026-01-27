@@ -12,7 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk;
 
-public class ClusterIocRegistration : IClusterIocRegistration
+internal class ClusterIocRegistration : IClusterIocRegistration
 {
     private readonly IServiceCollection mainServices;
     public string ClusterId { get; }

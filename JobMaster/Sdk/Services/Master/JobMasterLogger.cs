@@ -17,7 +17,7 @@ namespace JobMaster.Sdk.Services.Master;
 /// <summary>
 /// Cluster-aware batched logger that buffers log writes and flushes to the master repository in bulk.
 /// </summary>
-public sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMasterLogger, IDisposable
+internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMasterLogger, IDisposable
 {
     private readonly IMasterGenericRecordRepository repo;
 

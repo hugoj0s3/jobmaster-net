@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IJobsExecutionEngine
+internal interface IJobsExecutionEngine
 {
     IOnBoardingControl<JobRawModel> OnBoardingControl { get; }
     ITaskQueueControl<JobRawModel> TaskQueueControl { get; }

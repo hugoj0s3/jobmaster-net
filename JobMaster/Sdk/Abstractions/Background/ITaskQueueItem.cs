@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface ITaskQueueItem<T> : IDisposable
+internal interface ITaskQueueItem<T> : IDisposable
 {
     string Id { get; }
     T Value { get; }

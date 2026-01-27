@@ -7,7 +7,7 @@ using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.SqlBase.Scripts;
 
-public class GenericRecordSqlUtil
+internal class GenericRecordSqlUtil
 {
     private readonly ISqlGenerator sql;
     private readonly JobMasterConfigDictionary additionalConnConfig;

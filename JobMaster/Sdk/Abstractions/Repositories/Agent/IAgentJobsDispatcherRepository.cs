@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -6,8 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Repositories.Agent;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareComponent
+internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareComponent
 {
     string PushToSaving(RecurringScheduleRawModel recurringScheduleRaw);
     Task<string> PushToSavingAsync(RecurringScheduleRawModel recurringScheduleRaw);
@@ -38,8 +36,7 @@ public interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareComponen
     bool IsAutoDequeueForProcessing { get; }
 }
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IAgentJobsDispatcherRepository<TSavePending, TProcessing> : IAgentJobsDispatcherRepository
+internal interface IAgentJobsDispatcherRepository<TSavePending, TProcessing> : IAgentJobsDispatcherRepository
     where TSavePending : class, IAgentRawMessagesDispatcherRepository
     where TProcessing : class, IAgentRawMessagesDispatcherRepository
 {

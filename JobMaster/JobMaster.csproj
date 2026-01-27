@@ -6,7 +6,7 @@
         <LangVersion>12</LangVersion>
 
         <PackageId>JobMaster</PackageId>
-        <VersionPrefix>0.0.3</VersionPrefix>
+        <VersionPrefix>0.0.4</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
@@ -23,13 +23,13 @@
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
     <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
-        <PackageReference Include="CryptoRandom" Version="1.0.9"  />
+        <PackageReference Include="CryptoRandom" Version="1.0.9" />
     </ItemGroup>
     <ItemGroup>
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
         <PackageReference Include="NaturalCron" Version="0.2.2" />
-        <PackageReference Include="TimeZoneConverter" Version="7.1.0" />
-        <PackageReference Include="System.Text.Json" Version="9.0.2"/>
+          <PackageReference Include="TimeZoneConverter" Version="7.1.0" />
+        <PackageReference Include="System.Text.Json" Version="9.0.2" />
     </ItemGroup>
 
     <PropertyGroup>
@@ -37,8 +37,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <Compile Include="..\JobMaster.Internals\**\*.cs"
-                 Link="Internals\%(RecursiveDir)%(Filename)%(Extension)" />
+        <Compile Include="..\JobMaster.Internals\**\*.cs" Link="Internals\%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
     <ItemGroup>

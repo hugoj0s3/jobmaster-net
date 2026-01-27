@@ -1,17 +1,15 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class WorkerDefinition
+internal sealed class WorkerDefinition
 {
     public string ClusterId { get; set; } = string.Empty;
     public string AgentConnectionName { get; set; } = string.Empty;
     public string WorkerName { get; set; } = string.Empty;
     public string? WorkerLane { get; set; } = null;
     public int BatchSize { get; set; } = 250;
-    public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Standalone;
+    public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
     public double ParallelismFactor { get; set; } = 1;
     public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>()
     {

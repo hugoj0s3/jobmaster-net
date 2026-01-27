@@ -2,7 +2,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.SqlBase.Scripts;
 
-public class AgentTableCreatorScripts
+internal class AgentTableCreatorScripts
 {
     public static string CreateBucketDispatcherTableScript(ISqlGenerator sqlGenerator, string tablePrefix)
     {

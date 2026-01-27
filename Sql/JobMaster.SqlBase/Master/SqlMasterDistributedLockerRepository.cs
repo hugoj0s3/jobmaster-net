@@ -13,7 +13,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
 
-public abstract class SqlMasterDistributedLockerRepository : JobMasterClusterAwareRepository, IMasterDistributedLockerRepository, IDisposable
+internal abstract class SqlMasterDistributedLockerRepository : JobMasterClusterAwareRepository, IMasterDistributedLockerRepository, IDisposable
 {
     protected IDbConnectionManager connManager = null!;
     private ISqlGenerator sql = null!;

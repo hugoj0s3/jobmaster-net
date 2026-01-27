@@ -1,16 +1,16 @@
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.Mixed;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.MySqlPure;
-using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatJetStream;
+using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatsJetStream;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.PostgresPure;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture.SqlServerPure;
 using Xunit.Abstractions;
 
 namespace JobMaster.IntegrationTests.ScheduleTests;
 
-[Collection("NatJetStreamDrainMode")]
-public class NatJetStreamDrainModeTests : JobMasterSchedulerTestsBase<NatJetStreamDrainModeFixture>
+[Collection("NatsJetStreamDrainMode")]
+public class NatsJetStreamDrainModeTests : JobMasterSchedulerTestsBase<NatsJetStreamDrainModeFixture>
 {
-    public NatJetStreamDrainModeTests(NatJetStreamDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
+    public NatsJetStreamDrainModeTests(NatsJetStreamDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
     [InlineData(100000, 10, 30)]

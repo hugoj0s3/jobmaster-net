@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 
 namespace JobMaster.Sdk.Ioc;
 
-public static class ClusterServiceKeys
+internal static class ClusterServiceKeys
 {
     // Key prefixes
     private const string ClusterServiceProviderPrefix = nameof(IJobMasterClusterAwareComponentFactory) + ":";

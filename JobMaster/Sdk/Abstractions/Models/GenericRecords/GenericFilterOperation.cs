@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public enum GenericFilterOperation
+internal enum GenericFilterOperation
 {
     Eq,
     Neq,

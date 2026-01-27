@@ -1,6 +1,6 @@
 namespace JobMaster.Sdk.Services.Master;
 
-public sealed class LogPayload
+internal sealed class LogPayload
 {
     public int Level { get; set; }
     public string Message { get; set; } = string.Empty;

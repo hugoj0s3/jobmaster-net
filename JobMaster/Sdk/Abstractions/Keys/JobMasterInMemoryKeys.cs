@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Keys;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobMasterInMemoryKeys : JobMasterKeyManager
+internal class JobMasterInMemoryKeys : JobMasterKeyManager
 {
     public JobMasterInMemoryKeys(string clusterId) : base("InMemoryCache", clusterId)
     {

@@ -2,8 +2,8 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.Sdk.Utils;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
@@ -12,13 +12,13 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.SqlBase.Internals.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
 
-public abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAwareRepository, IMasterRecurringSchedulesRepository
+internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAwareRepository, IMasterRecurringSchedulesRepository
 {
     private IDbConnectionManager connManager = null!;
     private ISqlGenerator sql = null!;

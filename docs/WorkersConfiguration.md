@@ -15,7 +15,7 @@ config.ClusterId("My-Cluster");
         .WorkerLane("Payroll")           // Logical isolation lane
         .WorkerBatchSize(1000)              // Jobs to fetch per DB round-trip and also onboarding list of a bucket (30 seconds to be processed)
         .ParallelismFactor(2)               // Scaler for concurrent execution
-        .SetWorkerMode(AgentWorkerMode.Standalone)
+        .SetWorkerMode(AgentWorkerMode.Full)
         .BucketQtyConfig(JobMasterPriority.Critical, 3);
 });
 ```
@@ -27,15 +27,15 @@ Example: You can have one Worker dedicated to the `Default` lane and another Wor
 
 ### Agent Worker Modes
 The AgentWorkerMode defines the specific responsibility of a node within the JobMaster cluster. By decoupling the "Brain" (Coordination) from the "Muscle" (Execution), you can tailor your infrastructure to handle massive horizontal scale without overloading your databases
-if none is defined, it will use the Standalone mode (default)
+if none is defined, it will use the Full mode (default)
 
-#### Standalone
+#### Full
 The All-in-One Solution. This is the default mode. It handles the entire job lifecycle:
 - Scans the Master Database.
 - Onboards jobs to Agent Buckets.
 - Executes handlers.
 
-Guidance: If you are unsure which mode to use, start with Standalone. It performs all cluster roles simultaneously.
+Guidance: If you are unsure which mode to use, start with Full. It performs all cluster roles simultaneously.
 
 #### Coordinator
 The Brain. In large-scale systems, you typically deploy one or two dedicated Coordinators.
@@ -68,7 +68,7 @@ Safety:
 - Once all buckets are drained and synced, the process can be safely terminated without data loss.
 
 This matrix explains exactly which internal processes are active in each mode. Use this to design your cluster topology.
-| Feature                                  | Standalone | Coordinator | Execution | Drain |
+| Feature                                  | Full | Coordinator | Execution | Drain |
 |:-----------------------------------------| :---: | :---: | :---: |:-----:|
 | **Scan Master DB** (Look-ahead)          | ✅ | ✅ | ❌ |   ❌   |
 | **Onboard to Buckets** (Transient)       | ✅ | ✅ | ❌ |   ❌   |

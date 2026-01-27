@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IMasterJobsService : IJobMasterClusterAwareService
+internal interface IMasterJobsService : IJobMasterClusterAwareService
 {
     Task AddAsync(JobRawModel jobRaw);
     void Add(JobRawModel jobRaw);

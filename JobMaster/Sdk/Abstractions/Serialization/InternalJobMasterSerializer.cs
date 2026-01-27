@@ -1,11 +1,9 @@
-using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json;
 
 namespace JobMaster.Sdk.Abstractions.Serialization;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class InternalJobMasterSerializer
+internal static class InternalJobMasterSerializer
 {
     public static string Serialize<T>(T value)
     {

@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Text.Json.Serialization;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
@@ -7,8 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class JobRawModel : JobMasterBaseModel
+internal class JobRawModel : JobMasterBaseModel
 {
     public JobRawModel(string clusterId) : base(clusterId)
     {
@@ -24,7 +22,7 @@ public class JobRawModel : JobMasterBaseModel
     [JsonInclude]
     public string JobDefinitionId { get; internal set; } = string.Empty;
     [JsonInclude]
-    public JobSchedulingSourceType ScheduleSourceType { get; internal set; }
+    public JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
     [JsonInclude]
     public string? BucketId { get; internal set; }
     [JsonInclude]

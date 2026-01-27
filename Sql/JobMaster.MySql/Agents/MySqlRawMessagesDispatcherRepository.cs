@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.MySql.Agents;
 
-public class MySqlRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
+internal class MySqlRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
 {
     public MySqlRawMessagesDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,

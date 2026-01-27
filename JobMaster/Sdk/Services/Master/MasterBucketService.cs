@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -15,10 +14,11 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBucketsService
+internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBucketsService
 {
 
     private IMasterGenericRecordRepository masterGenericRecordRepository = null!;

@@ -4,7 +4,7 @@ using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.SqlServer.Agents;
 
-public class SqlServerJobsDispatcherRepository : AgentJobsDispatcherRepository<SqlServerRawMessagesDispatcherRepository, SqlServerRawMessagesDispatcherRepository>
+internal class SqlServerJobsDispatcherRepository : AgentJobsDispatcherRepository<SqlServerRawMessagesDispatcherRepository, SqlServerRawMessagesDispatcherRepository>
 {
     public SqlServerJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,

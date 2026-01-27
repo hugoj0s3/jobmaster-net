@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Keys;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public struct JobMasterNamespaceUniqueKey
+internal struct JobMasterNamespaceUniqueKey
 {
     public string NamespaceKey { get; private set; }
     public Guid StaticId { get; private set; }

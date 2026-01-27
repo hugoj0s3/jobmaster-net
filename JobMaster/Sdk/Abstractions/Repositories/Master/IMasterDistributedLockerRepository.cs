@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 
 namespace JobMaster.Sdk.Abstractions.Repositories.Master;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IMasterDistributedLockerRepository  : IJobMasterClusterAwareMasterRepository
+internal interface IMasterDistributedLockerRepository  : IJobMasterClusterAwareMasterRepository
 {
     string? TryLock(string key, TimeSpan leaseDuration);
     bool ReleaseLock(string key, string lockToken);

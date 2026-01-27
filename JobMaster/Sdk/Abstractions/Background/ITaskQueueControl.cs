@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface ITaskQueueControl<T>
+internal interface ITaskQueueControl<T>
 {
     bool StartQueuedTasksIfHasSlotAvailable();
     int CountRunning();

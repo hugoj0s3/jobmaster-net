@@ -1,11 +1,12 @@
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.BucketSelector;
 
 [Obsolete]
-public class SophisticatedBucketSelectorAlgorithm : IBucketSelectorAlgorithm
+internal class SophisticatedBucketSelectorAlgorithm : IBucketSelectorAlgorithm
 {
     private readonly Dictionary<string, BucketSelectionStats> bucketSelectionStats 
         = new();

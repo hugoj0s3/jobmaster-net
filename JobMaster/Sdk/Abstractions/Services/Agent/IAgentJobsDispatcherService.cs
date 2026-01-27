@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -6,8 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Sdk.Abstractions.Services.Agent;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
+internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 {
     string AddSavePendingJob(JobRawModel jobRaw);
 

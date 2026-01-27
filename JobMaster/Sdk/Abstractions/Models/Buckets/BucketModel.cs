@@ -1,12 +1,10 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class BucketModel : JobMasterBaseModel
+internal class BucketModel : JobMasterBaseModel
 {
     public BucketModel(string clusterId) : base(clusterId)
     {

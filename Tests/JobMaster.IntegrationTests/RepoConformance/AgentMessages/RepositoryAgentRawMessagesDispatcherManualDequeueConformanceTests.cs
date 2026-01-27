@@ -6,7 +6,7 @@ using Xunit.Sdk;
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
 public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests<TFixture>
-    where TFixture : class, IRepositoryFixture
+    where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 

@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk;
 
-public class JsonlFileLogger
+internal class JsonlFileLogger
 {
      public string FilePath;
 

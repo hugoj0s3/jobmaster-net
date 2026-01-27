@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.Ioc.Markups;
 
 namespace JobMaster.Sdk.Ioc.Markups;
 
-public abstract class JobMasterClusterAwareRepository : JobMasterClusterAwareComponent, IJobMasterClusterAwareMasterRepository
+internal abstract class JobMasterClusterAwareRepository : JobMasterClusterAwareComponent, IJobMasterClusterAwareMasterRepository
 {
     protected JobMasterClusterAwareRepository(JobMasterClusterConnectionConfig clusterConnectionConfig) : base(clusterConnectionConfig)
     {

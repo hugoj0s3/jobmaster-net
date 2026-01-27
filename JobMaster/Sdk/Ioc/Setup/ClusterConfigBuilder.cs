@@ -1,7 +1,6 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.BucketSelector;
@@ -26,10 +25,11 @@ using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
 
-public class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
+internal class ClusterConfigBuilder : IClusterConfigSelectorAdvanced
 {
     private string? clusterId;
     

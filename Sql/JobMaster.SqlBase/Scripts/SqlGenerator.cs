@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Config;
 
 namespace JobMaster.SqlBase.Scripts;
 
-public interface ISqlGenerator
+internal interface ISqlGenerator
 {
     public string ColumnNameFor<TModel>(Expression<Func<TModel, object?>> property);
     public string ColumnTypeFor<TModel>(Expression<Func<TModel, object?>> property, 
@@ -44,7 +44,7 @@ public interface ISqlGenerator
     public string RepositoryTypeId { get; }
 }
 
-public abstract class SqlGenerator : ISqlGenerator
+internal abstract class SqlGenerator : ISqlGenerator
 {
     protected virtual int MaxIdentifierLength => 128;
 
@@ -260,7 +260,7 @@ public abstract class SqlGenerator : ISqlGenerator
     }
 }
 
-public static class SqlGeneratorFactory
+internal static class SqlGeneratorFactory
 {
     private static readonly IDictionary<string, ISqlGenerator> RepositoryTypeIdToGeneratorTypeMap =
         new Dictionary<string, ISqlGenerator>(StringComparer.OrdinalIgnoreCase);
