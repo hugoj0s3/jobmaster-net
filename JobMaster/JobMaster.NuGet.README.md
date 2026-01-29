@@ -12,7 +12,7 @@ JobMaster is a high-performance framework designed to manage and execute backgro
 ## 📦 Installation & NuGet
 
 ```bash
-dotnet add package JobMaster --version 0.0.2-alpha
+dotnet add package JobMaster
 ```
 
 
