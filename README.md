@@ -41,7 +41,7 @@ A Job Handler contains the logic that will be executed by the workers.
 ```csharp
 public class HelloJobHandler : IJobHandler
 {
-    public async Task ExecuteAsync(JobContext job)
+    public async Task HandleAsync(JobContext job)
     {
         var name = job.MsgData.GetStringValue("Name");
         Console.WriteLine($"Hello {name}");
