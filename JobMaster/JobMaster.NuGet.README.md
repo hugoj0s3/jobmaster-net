@@ -54,7 +54,7 @@ Define your logic by implementing IJobHandler
 ```csharp
 public class NotificationHandler : IJobHandler
 {
-    public async Task ExecuteAsync(JobContext job)
+    public async Task HandleAsync(JobContext job)
     {
         var userId = job.MsgData.GetStringValue("UserId");
         // Business logic here...
