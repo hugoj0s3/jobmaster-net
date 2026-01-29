@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlServer.Agents;
 
-public class SqlServerRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
+internal class SqlServerRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
 {
     public SqlServerRawMessagesDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,

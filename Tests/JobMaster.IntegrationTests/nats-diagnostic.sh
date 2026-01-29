@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SERVER="${SERVER:-nats://jmuser:jmpass@localhost:4222}"
-STREAM_GREP="${STREAM_GREP:-JobMasterNatJetStreams_}"   # pattern to match your stream(s)
+STREAM_GREP="${STREAM_GREP:-JobMasterNatsJetStreams_}"   # pattern to match your stream(s)
 SINCE="${SINCE:-15m}"                                   # time window: e.g. 10m, 1h
 COUNT="${COUNT:-300}"                                   # messages to scan in view
 

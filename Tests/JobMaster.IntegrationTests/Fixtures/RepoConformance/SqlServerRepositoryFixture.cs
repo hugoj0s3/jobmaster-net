@@ -14,30 +14,31 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Ioc;
 
 namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
-public sealed class SqlServerRepositoryFixture : IRepositoryFixture
+public class SqlServerRepositoryFixture : RepositoryFixtureBase
 {
-    public string ClusterId { get; } = "ClusterForRepoTests-SqlServer-1";
+    internal override string ClusterId { get; set; } = "ClusterForRepoTests-SqlServer-1";
 
-    public AgentConnectionId AgentConnectionId { get; private set; } = null!;
+    internal override AgentConnectionId AgentConnectionId { get; set; } = null!;
 
-    public IServiceProvider Services { get; private set; } = null!;
+    internal override IServiceProvider Services { get; set; } = null!;
 
-    public IMasterJobsRepository MasterJobs { get; private set; } = null!;
-    public IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; private set; } = null!;
-    public IMasterGenericRecordRepository MasterGenericRecords { get; private set; } = null!;
-    public IMasterDistributedLockerRepository MasterDistributedLocker { get; private set; } = null!;
+    internal override IMasterJobsRepository MasterJobs { get; set; } = null!;
+    internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; } = null!;
+    internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
+    internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
-    public IAgentRawMessagesDispatcherRepository AgentMessages { get; private set; } = null!;
+    internal override IAgentRawMessagesDispatcherRepository AgentMessages { get;  set; } = null!;
 
     private const string MasterTablePrefix = "JMSqlServerTests_";
     private const string AgentTablePrefix = "JMSqlServerTests_";
 
     private const string AgentConnectionName = "AgentForConformanceRepoTests-SqlServer-1";
 
-    public async Task InitializeAsync()
+    public override async Task InitializeAsync()
     {
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
@@ -103,7 +104,10 @@ public sealed class SqlServerRepositoryFixture : IRepositoryFixture
             throw new Exception($"Agent config '{AgentConnectionName}' not found for cluster '{ClusterId}'.");
         }
 
-        var rawRepo = factory.ClusterServiceProvider.GetRequiredService<SqlServerRawMessagesDispatcherRepository>();
+        var rawRepo = factory.ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
+                ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(SqlServerRepositoryConstants.RepositoryTypeId)
+                );
         rawRepo.Initialize(agentConfig);
         AgentMessages = rawRepo;
 
@@ -132,7 +136,7 @@ public sealed class SqlServerRepositoryFixture : IRepositoryFixture
         }
     }
 
-    public Task DisposeAsync()
+    public override Task DisposeAsync()
     {
         return Task.CompletedTask;
     }

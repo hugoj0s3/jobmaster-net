@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class OnTickResult
+internal class OnTickResult
 {
     public TicketResultStatus Status { get; }
     public TimeSpan Delay { get; }

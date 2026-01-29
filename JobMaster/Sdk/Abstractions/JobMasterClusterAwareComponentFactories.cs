@@ -1,10 +1,8 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc;
 
 namespace JobMaster.Sdk.Abstractions;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class JobMasterClusterAwareComponentFactories
+internal static class JobMasterClusterAwareComponentFactories
 {
     private static readonly object StaticLock = new();
     private static IDictionary<string, IJobMasterClusterAwareComponentFactory> factories = new Dictionary<string, IJobMasterClusterAwareComponentFactory>();

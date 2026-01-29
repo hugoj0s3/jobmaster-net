@@ -19,7 +19,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services;
 
-public class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, IJobMasterSchedulerClusterAware   
+internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, IJobMasterSchedulerClusterAware   
 {
     private IAgentJobsDispatcherService agentJobsDispatcherService = null!;
     private IMasterBucketsService masterBucketsService = null!;

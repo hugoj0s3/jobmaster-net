@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.LocalCache;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.LocalCache;
 
-public class JobMasterInMemoryCache : IJobMasterInMemoryCache
+internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
 {
     private static readonly ConcurrentDictionary<string, JobMasterInMemoryCacheItem> memoryCache = new();
     private static readonly Timer CleanupTimer;

@@ -1,6 +1,5 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Jobs;
@@ -8,11 +7,12 @@ using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterRecurringSchedulesService : JobMasterClusterAwareComponent, IMasterRecurringSchedulesService
+internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent, IMasterRecurringSchedulesService
 {
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository = null!;

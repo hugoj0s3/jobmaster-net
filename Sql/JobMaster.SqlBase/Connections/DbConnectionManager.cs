@@ -2,17 +2,18 @@ using System.Collections.Concurrent;
 using System.Data;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Connections;
-using JobMaster.SqlBase.Internals.Utils;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.SqlBase.Connections;
 
-public interface IDbConnectionManager : IAcquirableKeepAliveConnectionManager<IDbConnection>
+internal interface IDbConnectionManager : IAcquirableKeepAliveConnectionManager<IDbConnection>
 {
     IDbConnection Open(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
     Task<IDbConnection> OpenAsync(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
 }
 
-public abstract class DbConnectionManager : IDbConnectionManager, IDisposable
+internal abstract class DbConnectionManager : IDbConnectionManager, IDisposable
 {
     private readonly ConcurrentDictionary<string, AcquirableKeepAliveConnectionTimer<IDbConnection>> keepAliveConnections
         = new ConcurrentDictionary<string, AcquirableKeepAliveConnectionTimer<IDbConnection>>();

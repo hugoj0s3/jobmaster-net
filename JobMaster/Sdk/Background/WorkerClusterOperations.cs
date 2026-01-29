@@ -1,5 +1,4 @@
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -14,6 +13,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background;
 
@@ -193,7 +193,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     {
         var workers = await masterAgentWorkersService.GetWorkersAsync();
         return workers.Count(x => x.Status() == AgentWorkerStatus.Active && 
-                                  (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Standalone));
+                                  (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Full));
     }
     
     public void CancelRecurringSchedule(Guid id)

@@ -10,7 +10,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
 
 public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
-    where TFixture : class, IRepositoryFixture
+    where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 
@@ -458,7 +458,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expected, queried.Select(x => x.Id).ToList());
     }
 
-    protected async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
+    internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
     {
         var criteria = new RecurringScheduleQueryCriteria
         {
@@ -473,7 +473,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expectedIds.OrderBy(x => x).ToList(), ids.OrderBy(x => x).ToList());
     }
 
-    protected virtual RecurringScheduleRawModel NewSchedule(string? jobDefinitionId = null)
+    internal virtual RecurringScheduleRawModel NewSchedule(string? jobDefinitionId = null)
     {
         var now = DateTime.UtcNow;
         return new RecurringScheduleRawModel(Fixture.ClusterId)

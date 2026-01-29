@@ -8,7 +8,7 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Repositories;
 
-public class AgentJobsDispatcherRepositoryFactory : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepositoryFactory
+internal class AgentJobsDispatcherRepositoryFactory : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepositoryFactory
 {
     private IDictionary<string, IAgentJobsDispatcherRepository> repositoriesByAgentConnectionId = new Dictionary<string, IAgentJobsDispatcherRepository>();
     private IJobMasterClusterAwareComponentFactory AwareComponentFactory => JobMasterClusterAwareComponentFactories.GetFactory(this.ClusterConnConfig.ClusterId);

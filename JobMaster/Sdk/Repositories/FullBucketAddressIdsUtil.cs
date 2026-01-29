@@ -1,6 +1,6 @@
 namespace JobMaster.Sdk.Repositories;
 
-public static class FullBucketAddressIdsUtil
+internal static class FullBucketAddressIdsUtil
 {
     public static string GetJobSavePendingBucketAddress(string? bucketId)
     {

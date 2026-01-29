@@ -3,7 +3,7 @@ using System.Text;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;
 

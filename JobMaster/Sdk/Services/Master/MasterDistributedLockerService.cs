@@ -1,13 +1,13 @@
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
-public class MasterDistributedLockerService : JobMasterClusterAwareComponent, IMasterDistributedLockerService
+internal class MasterDistributedLockerService : JobMasterClusterAwareComponent, IMasterDistributedLockerService
 {
     private IMasterDistributedLockerRepository masterDistributedLockerRepository = null!;
 

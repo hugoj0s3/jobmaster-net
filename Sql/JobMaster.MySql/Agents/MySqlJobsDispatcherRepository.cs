@@ -4,7 +4,7 @@ using JobMaster.Sdk.Repositories;
 
 namespace JobMaster.MySql.Agents;
 
-public class MySqlJobsDispatcherRepository : AgentJobsDispatcherRepository<MySqlRawMessagesDispatcherRepository, MySqlRawMessagesDispatcherRepository>
+internal class MySqlJobsDispatcherRepository : AgentJobsDispatcherRepository<MySqlRawMessagesDispatcherRepository, MySqlRawMessagesDispatcherRepository>
 {
     public MySqlJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,

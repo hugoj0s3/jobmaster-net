@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
-public static class StaticRecurringDefinitionIdsKeeper
+internal static class StaticRecurringDefinitionIdsKeeper
 {
     private static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, byte>> Data = new();
 

@@ -8,7 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Postgres.Agents;
 
-public class PostgresRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
+internal class PostgresRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRepositoryBase
 {
     public PostgresRawMessagesDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,

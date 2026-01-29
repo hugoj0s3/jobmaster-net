@@ -5,7 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.SqlBase.Scripts;
 
-public static class MasterTableCreatorScripts
+internal static class MasterTableCreatorScripts
 {
     public static string CreateGenericRecordTablesScript(ISqlGenerator sqlGenerator, string tablePrefix = "")
     {
@@ -176,8 +176,8 @@ public static class MasterTableCreatorScripts
         var jobDefinitionIdIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.JobDefinitionId);
         var jobDefinitionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
-        var scheduledTypeCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ScheduledType);
-        var scheduledTypeType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
+        var triggerSourceTypeCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.TriggerSourceType);
+        var triggerSourceTypeType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
         var bucketIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.BucketId);
         var bucketIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
@@ -244,7 +244,7 @@ public static class MasterTableCreatorScripts
             $"{clusterIdCol} {clusterIdType}",
             $"{idCol} {idType}",
             $"{jobDefinitionIdIdCol} {jobDefinitionIdType}",
-            $"{scheduledTypeCol} {scheduledTypeType}",
+            $"{triggerSourceTypeCol} {triggerSourceTypeType}",
             $"{bucketIdCol} {bucketIdType}",
             $"{agentConnectionIdCol} {agentConnectionIdType}",
             $"{agentWorkerIdCol} {agentWorkerIdType}",

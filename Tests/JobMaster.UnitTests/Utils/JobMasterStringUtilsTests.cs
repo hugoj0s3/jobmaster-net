@@ -1,5 +1,5 @@
 using FluentAssertions;
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Utils;
 

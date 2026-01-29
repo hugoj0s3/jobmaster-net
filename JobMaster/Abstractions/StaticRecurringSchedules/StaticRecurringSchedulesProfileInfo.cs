@@ -1,6 +1,6 @@
 
 
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;
 

@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public sealed class GenericRecordValueFilter
+internal sealed class GenericRecordValueFilter
 {
     public string Key { get; set; } = string.Empty;
     public GenericFilterOperation Operation { get; set; } = GenericFilterOperation.Eq;

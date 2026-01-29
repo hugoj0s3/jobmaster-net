@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using JobMaster.Internals;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background;
 

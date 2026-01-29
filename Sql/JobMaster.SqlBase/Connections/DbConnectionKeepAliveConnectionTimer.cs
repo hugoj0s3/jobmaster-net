@@ -4,7 +4,7 @@ using JobMaster.Sdk.Abstractions.Connections;
 
 namespace JobMaster.SqlBase.Connections;
 
-public class DbConnectionKeepAliveConnectionTimer : AcquirableKeepAliveConnectionTimer<IDbConnection>
+internal class DbConnectionKeepAliveConnectionTimer : AcquirableKeepAliveConnectionTimer<IDbConnection>
 {
     public DbConnectionKeepAliveConnectionTimer(
         string connectionId,

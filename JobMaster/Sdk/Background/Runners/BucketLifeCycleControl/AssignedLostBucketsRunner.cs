@@ -1,5 +1,4 @@
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -7,6 +6,8 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
@@ -64,7 +65,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
             
             var workerToSelect = workersAlive
                 .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
-                .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Standalone) // Only drain and standalone workers can be assigned to lost buckets.
+                .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
                 .ToList();
             
             if (!workerToSelect.Any())

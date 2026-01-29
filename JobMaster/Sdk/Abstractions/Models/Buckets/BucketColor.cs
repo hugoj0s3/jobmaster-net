@@ -1,8 +1,6 @@
-using System.ComponentModel;
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public enum BucketColor
+internal enum BucketColor
 {
     Red = 1,
     Brown = 2,
@@ -18,7 +16,7 @@ public enum BucketColor
     Charcoal = 12
 }
 
-public static class BucketColorExtensions
+internal static class BucketColorExtensions
 {
     private static readonly Dictionary<BucketColor, string> ColorMap = new()
     {

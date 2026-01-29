@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.Background;
 
 namespace JobMaster.UnitTests;
 
-public sealed class FakeRuntime : IJobMasterRuntime
+internal sealed class FakeRuntime : IJobMasterRuntime
 {
     public bool Started { get; }
     public DateTime? StartedAt { get; } = DateTime.UtcNow;

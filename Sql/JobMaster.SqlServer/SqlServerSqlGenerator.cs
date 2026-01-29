@@ -2,7 +2,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlServer;
 
-public class SqlServerSqlGenerator : SqlGenerator
+internal class SqlServerSqlGenerator : SqlGenerator
 {
     private const int MaxVarBinaryLength = 1024;
 

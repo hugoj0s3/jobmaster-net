@@ -7,7 +7,7 @@ using static JobMaster.Sdk.Ioc.ClusterServiceKeys;
 
 namespace JobMaster.Sdk.Ioc;
 
-public class JobMasterClusterAwareComponentFactory : IJobMasterClusterAwareComponentFactory
+internal class JobMasterClusterAwareComponentFactory : IJobMasterClusterAwareComponentFactory
 {
     public string ClusterId { get; }
     

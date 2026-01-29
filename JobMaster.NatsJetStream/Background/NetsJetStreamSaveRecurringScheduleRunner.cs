@@ -1,0 +1,72 @@
+using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Abstractions.Services;
+using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Repositories;
+using NATS.Client.JetStream;
+
+namespace JobMaster.NatsJetStream.Background;
+
+internal class NetsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, ISaveRecurringSchedulerRunner
+{
+    private IMasterRecurringSchedulesService masterRecurringSchedulesService;
+    private IRecurringSchedulePlanner recurringSchedulePlanner;
+    private IWorkerClusterOperations workerClusterOperations;
+    
+    public NetsJetStreamSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    {
+        masterRecurringSchedulesService = BackgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
+        workerClusterOperations = backgroundAgentWorker.GetClusterAwareService<IWorkerClusterOperations>();
+        recurringSchedulePlanner = backgroundAgentWorker.GetClusterAwareService<IRecurringSchedulePlanner>();
+    }
+
+    protected override string GetFullBucketAddressId(string bucketId) => FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
+    protected override bool LostRisk() => true;
+    protected override string GetRunnerDescription() => "SaveRecurringSchedule";
+
+    protected override IReadOnlyCollection<BucketStatus> ValidBucketStatuses() => new[] { BucketStatus.Active, BucketStatus.Completing };
+
+    protected override RecurringScheduleRawModel Deserialize(string json)
+    {
+        return InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(json);
+    }
+
+    protected override async Task ProcessPayloadAsync(RecurringScheduleRawModel payload, MsgAckGuard ackGuard)
+    {
+        try
+        {
+            if (payload.Status == RecurringScheduleStatus.PendingSave)
+            {
+                payload.Active();
+            }
+        
+            await workerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
+        }
+        catch (Exception e)
+        {
+            this.logger.Error($"{GetRunnerDescription()} - Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, payload.Id, e);
+            throw;
+        }
+
+        try
+        {
+            await recurringSchedulePlanner.ScheduleNextJobsAsync(payload);
+        }
+        catch (Exception e)
+        {
+            this.logger.Error($"{GetRunnerDescription()} - Failed to schedule next jobs after save", JobMasterLogSubjectType.RecurringSchedule, payload.Id, e);
+        }
+    }
+
+    protected override async Task<bool> ShouldAckAfterLockAsync(RecurringScheduleRawModel payload, CancellationToken ct)
+    {
+        var exists = await masterRecurringSchedulesService.GetAsync(payload.Id);
+        return exists is not null;
+    }
+}

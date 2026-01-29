@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
@@ -11,9 +10,7 @@ namespace JobMaster.Sdk.Abstractions.Jobs;
 /// Centralized conversions among Job, JobRawModel, JobContext, and persistence records.
 /// Prefer these helpers over scattered conversions.
 /// </summary>
-
-[EditorBrowsable(EditorBrowsableState.Never)]
-public static class JobConvertUtil
+internal static class JobConvertUtil
 {
     // JobRawModel -> Job
     public static Job ToJob(JobRawModel raw)
@@ -23,7 +20,7 @@ public static class JobConvertUtil
             AgentConnectionId = raw.AgentConnectionId,
             BucketId = raw.BucketId,
             JobDefinitionId = raw.JobDefinitionId,
-            ScheduleSourceType = raw.ScheduleSourceType,
+            TriggerSourceType = raw.TriggerSourceType,
             Status = raw.Status,
             Id = raw.Id,
             OriginalScheduledAt = raw.OriginalScheduledAt,
@@ -77,7 +74,7 @@ public static class JobConvertUtil
             AgentConnectionId = job.AgentConnectionId,
             BucketId = job.BucketId,
             JobDefinitionId = job.JobDefinitionId,
-            ScheduleSourceType = job.ScheduleSourceType,
+            TriggerSourceType = job.TriggerSourceType,
             Status = job.Status,
             Id = job.Id,
             OriginalScheduledAt = job.OriginalScheduledAt,
@@ -116,7 +113,7 @@ public static class JobConvertUtil
             Id = job.Id,
             ClusterId = job.ClusterId,
             JobDefinitionId = job.JobDefinitionId,
-            ScheduleSourceType = job.ScheduleSourceType,
+            TriggerSourceType = job.TriggerSourceType,
             Priority = job.Priority,
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
@@ -140,7 +137,7 @@ public static class JobConvertUtil
         {
             Id = d.Id,
             JobDefinitionId = d.JobDefinitionId,
-            ScheduleSourceType = (JobSchedulingSourceType)d.ScheduledType,
+            TriggerSourceType = (JobSchedulingTriggerSourceType)d.TriggerSourceType,
             BucketId = d.BucketId,
             AgentConnectionId = d.AgentConnectionId != null ? new AgentConnectionId(d.AgentConnectionId) : null,
             AgentWorkerId = d.AgentWorkerId,
@@ -178,7 +175,7 @@ public static class JobConvertUtil
             ClusterId = m.ClusterId,
             Id = m.Id,
             JobDefinitionId = m.JobDefinitionId,
-            ScheduledType = (int)m.ScheduleSourceType,
+            TriggerSourceType = (int)m.TriggerSourceType,
             BucketId = m.BucketId,
             AgentConnectionId = m.AgentConnectionId?.IdValue,
             AgentWorkerId = m.AgentWorkerId,

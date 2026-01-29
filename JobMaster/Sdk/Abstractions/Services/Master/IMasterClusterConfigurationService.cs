@@ -1,11 +1,9 @@
-using System.ComponentModel;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public interface IMasterClusterConfigurationService : IJobMasterClusterAwareService
+internal interface IMasterClusterConfigurationService : IJobMasterClusterAwareService
 {
     ClusterConfigurationModel? Get();
     

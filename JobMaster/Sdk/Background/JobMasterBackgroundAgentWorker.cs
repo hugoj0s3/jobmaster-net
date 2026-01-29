@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -21,6 +20,7 @@ using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Background.Runners.SavePendingJobs;
 using JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background;
 
@@ -48,7 +48,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public int BatchSize { get; private set; } = 0;
 
-    public AgentWorkerMode Mode { get; private set; } = AgentWorkerMode.Standalone;
+    public AgentWorkerMode Mode { get; private set; } = AgentWorkerMode.Full;
     
     public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
     
@@ -201,9 +201,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var heartBeatRunner = new KeepAliveRunner(this);
         await heartBeatRunner.StartAsync();
         
-        if (this.Mode == AgentWorkerMode.Standalone)
+        if (this.Mode == AgentWorkerMode.Full)
         {
-            await LoadStandaloneRunnersAsync();    
+            await LoadFullRunnersAsync();    
         }
         
         if (this.Mode == AgentWorkerMode.Drain)
@@ -227,7 +227,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         logger.Info("Started JobMasterBackgroundAgentWorker - Initialization complete", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
     }
     
-    private async Task LoadStandaloneRunnersAsync()
+    private async Task LoadFullRunnersAsync()
     {
         // Load buckets first to avoid deadlocks with maintenance runners
         await LoadBucketsForExecution();

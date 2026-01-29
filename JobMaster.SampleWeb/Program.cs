@@ -2,7 +2,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
-using JobMaster.NatJetStream;
+using JobMaster.NatsJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
 using JobMaster.Postgres.Agents;
@@ -23,18 +23,18 @@ builder.Services.AddJobMasterCluster(config =>
     // Master database (must be SQL)
     config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
     
-    config.AddAgentConnectionConfig("Pg-1")
-          .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
-    
-    config.AddAgentConnectionConfig("My-1")
-          .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
-    
-    config.AddAgentConnectionConfig("Sql-1")
-        .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
+    // config.AddAgentConnectionConfig("Pg-1")
+    //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
+    //
+    // config.AddAgentConnectionConfig("My-1")
+    //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
+    //
+    // config.AddAgentConnectionConfig("Sql-1")
+    //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
 
     
     config.AddAgentConnectionConfig("Nats-1")
-          .UseNatJetStream("nats://jmuser:jmpass@localhost:4222");
+          .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
 
     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
     if (isConsumer)
@@ -43,7 +43,7 @@ builder.Services.AddJobMasterCluster(config =>
            .AgentConnName("Nats-1")
            .BucketQtyConfig(JobMasterPriority.Medium, 1)
            .WorkerBatchSize(1000)
-           .SetWorkerMode(AgentWorkerMode.Standalone);
+           .SetWorkerMode(AgentWorkerMode.Full);
 
        config.AddWorker()
            .AgentConnName("Nats-1")

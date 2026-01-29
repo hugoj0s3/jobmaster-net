@@ -1,16 +1,14 @@
-using System.ComponentModel;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public class Job : JobMasterBaseModel
+internal class Job : JobMasterBaseModel
 {
 
     internal Job(string clusterId) : base(clusterId)
@@ -35,7 +33,7 @@ public class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingSourceType scheduledType = JobSchedulingSourceType.Once,
+        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         Guid? recurringScheduleId = null,
         string? workerLane = null)
@@ -52,7 +50,7 @@ public class Job : JobMasterBaseModel
         var job = new Job(clusterId)
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
-            ScheduleSourceType = scheduledType,
+            TriggerSourceType = triggerSourceType,
             OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
@@ -80,9 +78,9 @@ public class Job : JobMasterBaseModel
             jobHandlerType,
             data: recurringSchedule.MsgData,
             scheduledAt: scheduleAt,
-            scheduledType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
-                ? JobSchedulingSourceType.StaticRecurring
-                : JobSchedulingSourceType.DynamicRecurring,
+            triggerSourceType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
+                ? JobSchedulingTriggerSourceType.StaticRecurring
+                : JobSchedulingTriggerSourceType.DynamicRecurring,
             priority: recurringSchedule.Priority,
             timeout: recurringSchedule.Timeout,
             maxNumberOfRetries: recurringSchedule.MaxNumberOfRetries,
@@ -105,7 +103,7 @@ public class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingSourceType scheduledType = JobSchedulingSourceType.Once,
+        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         string? workerLane = null)
         where T : IJobHandler
@@ -119,7 +117,7 @@ public class Job : JobMasterBaseModel
             timeout, 
             maxNumberOfRetries, 
             writableMetadata, 
-            scheduledType, 
+            triggerSourceType, 
             masterConfig,
             workerLane: workerLane);
     }
@@ -134,7 +132,7 @@ public class Job : JobMasterBaseModel
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingSourceType ScheduleSourceType { get; internal set; }
+    public  JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
     public int? PartitionLockId { get; internal set; }

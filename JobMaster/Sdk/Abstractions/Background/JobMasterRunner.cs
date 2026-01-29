@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Diagnostics;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -8,8 +7,7 @@ using JobMaster.Sdk.Background.Runners;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
-[EditorBrowsable(EditorBrowsableState.Never)]
-public abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
+internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 {
     private CancellationTokenSource? cts;
     private Task? taskRunner;

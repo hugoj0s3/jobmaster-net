@@ -2,8 +2,8 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.Sdk.Utils;
 using JobMaster.Abstractions.Models;
-using JobMaster.Internals;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
@@ -12,13 +12,13 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.SqlBase.Internals.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
 
-public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository, IMasterJobsRepository
+internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository, IMasterJobsRepository
 {
     private IDbConnectionManager connManager = null!;
     private ISqlGenerator sql = null!;
@@ -129,7 +129,8 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
         var setClause = UpdateSetClause();
         var sqlText = $"UPDATE {t} SET {setClause} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id AND ({Col(x => x.Version)} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {Col(x => x.Version)} IS NULL));";
 
-        var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId, rec.ScheduledType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries, rec.RecurringScheduleId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+        var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
+            triggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries, rec.RecurringScheduleId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -177,7 +178,8 @@ public abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository,
         var setClause = UpdateSetClause();
         var sqlText = $"UPDATE {t} SET {setClause} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id AND ({Col(x => x.Version)} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {Col(x => x.Version)} IS NULL));";
         
-        var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId, rec.ScheduledType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries, rec.RecurringScheduleId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+        var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
+            TriggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries, rec.RecurringScheduleId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -571,7 +573,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
     {
         var cols = new[]
         {
-            Col(x => x.ClusterId), Col(x => x.Id), Col(x => x.JobDefinitionId), Col(x => x.ScheduledType),
+            Col(x => x.ClusterId), Col(x => x.Id), Col(x => x.JobDefinitionId), Col(x => x.TriggerSourceType),
             Col(x => x.BucketId), Col(x => x.AgentConnectionId), Col(x => x.AgentWorkerId), Col(x => x.Priority),
             Col(x => x.OriginalScheduledAt), Col(x => x.ScheduledAt), Col(x => x.MsgData), Col(x => x.Status),
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
@@ -582,7 +584,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         };
         var vals = new[]
         {
-            "@ClusterId", "@Id", "@JobDefinitionId", "@ScheduledType",
+            "@ClusterId", "@Id", "@JobDefinitionId", "@TriggerSourceType",
             "@BucketId", "@AgentConnectionId", "@AgentWorkerId", "@Priority",
             "@OriginalScheduledAt", "@ScheduledAt", "@MsgData", "@Status",
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
@@ -600,7 +602,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         return string.Join(", ", new[]
         {
             $"{Col(x => x.JobDefinitionId)} = @JobDefinitionId",
-            $"{Col(x => x.ScheduledType)} = @ScheduledType",
+            $"{Col(x => x.TriggerSourceType)} = @TriggerSourceType",
             $"{Col(x => x.BucketId)} = @BucketId",
             $"{Col(x => x.AgentConnectionId)} = @AgentConnectionId",
             $"{Col(x => x.AgentWorkerId)} = @AgentWorkerId",
@@ -630,7 +632,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             $"{jobAlias}.{Col(x => x.ClusterId)}",
             $"{jobAlias}.{Col(x => x.Id)}",
             $"{jobAlias}.{Col(x => x.JobDefinitionId)}",
-            $"{jobAlias}.{Col(x => x.ScheduledType)}",
+            $"{jobAlias}.{Col(x => x.TriggerSourceType)}",
             $"{jobAlias}.{Col(x => x.BucketId)}",
             $"{jobAlias}.{Col(x => x.AgentConnectionId)}",
             $"{jobAlias}.{Col(x => x.AgentWorkerId)}",
@@ -732,7 +734,7 @@ ORDER BY {order}";
                 ClusterId = first.ClusterId,
                 Id = first.Id,
                 JobDefinitionId = first.JobDefinitionId,
-                ScheduledType = first.ScheduledType,
+                TriggerSourceType = first.TriggerSourceType,
                 BucketId = first.BucketId,
                 AgentConnectionId = first.AgentConnectionId,
                 AgentWorkerId = first.AgentWorkerId,
