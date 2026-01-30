@@ -127,7 +127,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 if (string.IsNullOrEmpty(workerDefinition.WorkerName))
                 {
-                    var workerName = JobMasterStringUtils.SanitizeForName(Environment.MachineName, 40) + "." + JobMasterIdUtil.NewNanoId();
+                    var workerName = JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 40) + "." + JobMasterIdUtil.NewNanoId();
                     workerDefinition.WorkerName = workerName;
                 }
             }

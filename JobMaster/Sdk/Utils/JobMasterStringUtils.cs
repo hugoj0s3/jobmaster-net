@@ -53,8 +53,43 @@ internal static class JobMasterStringUtils
 
         return value.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-');
     }
-    
-    public static string SanitizeForName(string value, int maxLen = 50)
+
+    public static string SanitizeForId(string value, int maxLen = 100)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return "x";
+
+        // Allow only letters, digits, '_' and '-'
+        var sb = new StringBuilder(value.Length);
+        foreach (var c in value)
+        {
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == ':') sb.Append(c);
+            // map common separators/spaces to '-'
+            else if (char.IsWhiteSpace(c)  || c == '/' || c == '\\') sb.Append('-');
+            // else drop
+        }
+
+        var s = sb.ToString();
+
+        // Collapse double hyphens/underscores
+        while (s.Contains("--")) s = s.Replace("--", "-");
+        while (s.Contains("__")) s = s.Replace("__", "_");
+
+        while (s.Contains("::")) s = s.Replace("::", ":");
+        while (s.Contains("..")) s = s.Replace("..", ".");
+
+        // Trim edge separators
+        s = s.Trim('-', '_', ':', '.');
+
+        // Fallback if empty
+        if (s.Length == 0) s = "x";
+
+        // Enforce max length
+        if (s.Length > maxLen) s = s.Substring(0, maxLen);
+
+        return s;
+    }
+
+    public static string SanitizeForSegment(string value, int maxLen = 50)
     {
         if (string.IsNullOrWhiteSpace(value)) return "x";
 

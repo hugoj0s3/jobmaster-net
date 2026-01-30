@@ -14,3 +14,5 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("JobMaster.MySql")]
 [assembly: InternalsVisibleTo("JobMaster.SqlServer")]
 [assembly: InternalsVisibleTo("JobMaster.NatsJetStream")]
+[assembly: InternalsVisibleTo("JobMaster.Api")]
+

@@ -16,5 +16,6 @@ internal enum JobMasterLogSubjectType
     AgentWorker,
     Bucket,
     Cluster,
-    RecurringSchedule
+    RecurringSchedule,
+    Api
 }

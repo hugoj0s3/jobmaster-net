@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <LangVersion>12</LangVersion>
+        <PackageId>JobMaster.Api</PackageId>
+        <VersionPrefix>0.0.5</VersionPrefix>
+        <VersionSuffix>alpha</VersionSuffix>
+        <Authors>Hugo Silva</Authors>
+        <Company>Hugo Silva</Company>
+        <Copyright>Copyright 2026 Hugo Silva</Copyright>
+
+        <Description>
+            JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. 
+            This package provides a API for job queries and job scheduling.
+        </Description>
+        
+        <PackageProjectUrl>https://github.com/hugoj0s3/jobmaster-net</PackageProjectUrl>
+        <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
+        <PackageLicenseExpression>MIT</PackageLicenseExpression>
+        <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
+
+        <PackageReadmeFile>JobMaster.Api.NuGet.README.md</PackageReadmeFile>
+
+        <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    </PropertyGroup>
+    <ItemGroup>
+        <None Include="JobMaster.Api.NuGet.README.md" Pack="true" PackagePath="\" />
+    </ItemGroup>
+    <ItemGroup>
+      <PackageReference Include="JobMaster" Version="0.0.5-alpha" />
+      <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.14" />
+      <PackageReference Include="Microsoft.IdentityModel.JsonWebTokens" Version="8.15.0" />
+      <PackageReference Include="Swashbuckle.AspNetCore" Version="7.3.1" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+</Project>

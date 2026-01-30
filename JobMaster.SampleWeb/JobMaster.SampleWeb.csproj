@@ -9,7 +9,7 @@
 
     <ItemGroup>
         <PackageReference Include="Faker.Net" Version="2.0.163" />
-        <PackageReference Include="JobMaster" Version="0.0.4-alpha" />
+        <PackageReference Include="JobMaster" Version="0.0.5-alpha" />
         <PackageReference Include="JobMaster.MySql" Version="0.0.4-alpha" />
         <PackageReference Include="JobMaster.NatsJetStream" Version="0.0.4-alpha" />
         <PackageReference Include="JobMaster.Postgres" Version="0.0.4-alpha" />
@@ -29,6 +29,10 @@
       <Content Include="..\.dockerignore">
         <Link>.dockerignore</Link>
       </Content>
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\JobMaster.Api\JobMaster.Api.csproj" />
     </ItemGroup>
 
 </Project>

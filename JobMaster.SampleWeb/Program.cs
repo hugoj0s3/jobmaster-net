@@ -1,5 +1,6 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Api.AspNetCore;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.NatsJetStream;
@@ -9,6 +10,7 @@ using JobMaster.Postgres.Agents;
 using JobMaster.SqlBase;
 using JobMaster.SqlServer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.OpenApi.Models;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -53,6 +55,15 @@ builder.Services.AddJobMasterCluster(config =>
     }
 });
 
+builder.Services.AddJobMasterApi(o =>
+{
+    o.BasePath = "/jm-api";
+    o.RequireAuthentication = true;
+    o.EnableSwagger = true;
+    
+    o.UseApiKeyAuth().AddApiKey("my-api-key", "admin-key");
+    o.UseUserPwdAuth().AddUserPwd("john", "pwd#123");
+});
 
 
 builder.Services.AddEndpointsApiExplorer();
@@ -69,11 +80,15 @@ builder.Services.AddSerilog();
 
 var app = builder.Build();
 
+app.StartJobMasterApi();
+
 await app.Services.StartJobMasterRuntimeAsync();
+
 
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpsRedirection();
+
 
 app.MapPost("/schedule-job", async (int qty, string? lane, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>
 {
