@@ -138,12 +138,6 @@ public static class JobMasterApiServiceCollectionExtensions
                 throw new InvalidOperationException("JwtBearer auth uses scheme 'Bearer' and must use header 'Authorization'.");
             }
 
-            // TODO: Check if it is needed after refactoring
-            // if (jwtOptions.JwtBearerAuthProviderTypes == null || jwtOptions.JwtBearerAuthProviderTypes.Count == 0)
-            // {
-            //     throw new InvalidOperationException("JwtBearer auth is enabled but no JwtBearer auth providers are registered.");
-            // }
-
             EnsureUniqueHeader(usedHeaders, headerName, "AuthorizationHeaderName");
         }
     }
