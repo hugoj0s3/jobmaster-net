@@ -29,7 +29,7 @@ internal static class ClustersEndpoints
 
     private static IResult GetClusterIds(CancellationToken ct)
     {
-        var result = JobMasterClusterConnectionConfig.GetActiveConfigs().Select(x => x.ClusterId).ToList();
+        var result = JobMasterClusterConnectionConfig.GetReadyConfigs().Select(x => x.ClusterId).ToList();
         return Results.Ok(result);
     }
 

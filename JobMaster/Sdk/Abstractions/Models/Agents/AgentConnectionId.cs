@@ -39,7 +39,7 @@ internal sealed class AgentConnectionId
     public bool IsActive()
     {
         var clusterConnection = JobMasterClusterConnectionConfig.TryGet(this.ClusterId);
-        if (clusterConnection == null || !clusterConnection.IsActive)
+        if (clusterConnection == null || !clusterConnection.IsReady)
         {
             return false;
         }

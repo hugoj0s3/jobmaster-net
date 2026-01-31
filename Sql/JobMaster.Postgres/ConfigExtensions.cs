@@ -7,16 +7,25 @@ public static class ConfigExtensions
 {
     public static IClusterConfigSelector UsePostgresForMaster(this IClusterConfigSelector clusterConfigSelector, string connectionString)
     {
-        ((IClusterConfigSelectorAdvanced)clusterConfigSelector).ClusterConnString(connectionString);
-        ((IClusterConfigSelectorAdvanced)clusterConfigSelector).ClusterRepoType(PostgresRepositoryConstants.RepositoryTypeId);
+        clusterConfigSelector.ClusterConnString(connectionString);
+        clusterConfigSelector.ClusterRepoType(PostgresRepositoryConstants.RepositoryTypeId);
         
         return clusterConfigSelector;
     }
     
     public static IAgentConnectionConfigSelector UsePostgresForAgent(this IAgentConnectionConfigSelector agentConfigSelector, string connectionString)
     {
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentConnString(connectionString);
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(PostgresRepositoryConstants.RepositoryTypeId);
+        agentConfigSelector.AgentConnString(connectionString);
+        agentConfigSelector.AgentRepoType(PostgresRepositoryConstants.RepositoryTypeId);
         return agentConfigSelector;
+    }
+    
+    public static IClusterStandaloneConfigSelector UsePostgres(
+        this IClusterStandaloneConfigSelector standaloneConfigSelector, 
+        string connectionString)
+    {
+        standaloneConfigSelector.ClusterConnString(connectionString);
+        standaloneConfigSelector.ClusterRepoType(PostgresRepositoryConstants.RepositoryTypeId);
+        return standaloneConfigSelector;
     }
 }

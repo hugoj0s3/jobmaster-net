@@ -1,4 +1,8 @@
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
+using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Abstractions.Ioc.Selectors;
 
@@ -23,4 +27,28 @@ public interface IClusterConfigSelector
         string? cnnString = null);
 
     public IClusterConfigSelector ClusterMode(ClusterMode mode);
+    
+    public IClusterStandaloneConfigSelector UseClusterStandalone();
+    
+    internal IAgentConnectionConfigSelector AddAgentConnectionConfig(
+        string agentConnectionName,
+        string? repoType,
+        string? cnnString,
+        JobMasterConfigDictionary? additionalConnConfig);
+
+    internal IClusterConfigSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig);
+
+    internal IClusterConfigSelector ClusterAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig);
+
+    internal IClusterConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
+    internal IClusterConfigSelector AppendAdditionalConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
+    
+    internal IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit);
+    
+    internal IClusterConfigSelector ClusterRepoType(string repoType);
+    internal IClusterConfigSelector ClusterConnString(string connString);
+    
+    internal IClusterConfigSelector EnableMirrorLog(Action<LogItem> mirrorLog);
+    
+    internal void Finish();
 }

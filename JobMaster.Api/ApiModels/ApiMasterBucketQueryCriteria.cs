@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Utils;
 
@@ -22,6 +23,7 @@ public class ApiMasterBucketQueryCriteria
             Priority = Priority,
             Status = Status,
             WorkerLane = WorkerLane,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }
 }

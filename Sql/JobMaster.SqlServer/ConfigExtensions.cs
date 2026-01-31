@@ -7,15 +7,24 @@ public static class ConfigExtensions
 {
     public static IClusterConfigSelector UseSqlServerForMaster(this IClusterConfigSelector clusterConfigSelector, string connectionString)
     {
-        ((IClusterConfigSelectorAdvanced)clusterConfigSelector).ClusterConnString(connectionString);
-        ((IClusterConfigSelectorAdvanced)clusterConfigSelector).ClusterRepoType(SqlServerRepositoryConstants.RepositoryTypeId);
+        clusterConfigSelector.ClusterConnString(connectionString);
+        clusterConfigSelector.ClusterRepoType(SqlServerRepositoryConstants.RepositoryTypeId);
         return clusterConfigSelector;
     }
 
     public static IAgentConnectionConfigSelector UseSqlServerForAgent(this IAgentConnectionConfigSelector agentConfigSelector, string connectionString)
     {
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentConnString(connectionString);
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(SqlServerRepositoryConstants.RepositoryTypeId);
+        agentConfigSelector.AgentConnString(connectionString);
+        agentConfigSelector.AgentRepoType(SqlServerRepositoryConstants.RepositoryTypeId);
         return agentConfigSelector;
+    }
+    
+    public static IClusterStandaloneConfigSelector UseSqlServer(
+        this IClusterStandaloneConfigSelector standaloneConfigSelector, 
+        string connectionString)
+    {
+        standaloneConfigSelector.ClusterConnString(connectionString);
+        standaloneConfigSelector.ClusterRepoType(SqlServerRepositoryConstants.RepositoryTypeId);
+        return standaloneConfigSelector;
     }
 }

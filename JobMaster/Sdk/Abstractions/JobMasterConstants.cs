@@ -48,4 +48,6 @@ internal static class JobMasterConstants
     {
         return DateTime.UtcNow.Add(-ClockSkewPadding);
     }
+    
+    public const string StandaloneAgentConnName = "standalone-agent-conn";
 }

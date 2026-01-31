@@ -54,7 +54,7 @@ internal class JobMasterClusterConnectionConfig
     
     public Action<LogItem>? MirrorLog { get; private set; }
     
-    public bool IsActive { get; private set; }
+    public bool IsReady { get; private set; }
     
     public int? RuntimeDbOperationThrottleLimit { get; private set; }
 
@@ -77,7 +77,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (InstanceLock)
         {
-            if (IsActive)
+            if (IsReady)
             {
                 throw new InvalidOperationException("Cannot modify configuration while the cluster is active and running.");
             }
@@ -103,7 +103,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (InstanceLock)
         {
-            if (IsActive)
+            if (IsReady)
             {
                 throw new InvalidOperationException("Cannot modify configuration while the cluster is active and running.");
             }
@@ -118,6 +118,20 @@ internal class JobMasterClusterConnectionConfig
         if (!AgentConnectionConfigs.TryGetValue(id, out var agentConnectionString) && 
             !AgentConnectionConfigs.TryGetValue(idOrName, out agentConnectionString))
         {
+            if (string.Equals(JobMasterConstants.StandaloneAgentConnName, idOrName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals($"{ClusterId}:{JobMasterConstants.StandaloneAgentConnName}", idOrName, StringComparison.OrdinalIgnoreCase))
+            {
+                // If standalone agent connection string is requested, we create for draining purposes.
+                this.AddAgentConnectionString(
+                    JobMasterConstants.StandaloneAgentConnName,
+                    this.ConnectionString,
+                    this.RepositoryTypeId, 
+                    this.AdditionalConnConfig, 
+                    this.RuntimeDbOperationThrottleLimit);
+                
+                return AgentConnectionConfigs[$"{ClusterId}:{JobMasterConstants.StandaloneAgentConnName}"]; 
+            }
+            
             return null;
         }
             
@@ -139,16 +153,12 @@ internal class JobMasterClusterConnectionConfig
     {
         return AgentConnectionConfigs.Values.ToList();
     }
-
-    /// <summary>
-    /// Activates this cluster configuration, preventing any further modifications.
-    /// Call this when the cluster starts running. This operation cannot be undone.
-    /// </summary>
-    public void Activate()
+    
+    public void MarkAsReady()
     {
         lock (InstanceLock)
         {
-            IsActive = true;
+            IsReady = true;
             
             AdditionalConnConfig.LockChanges();
             
@@ -210,7 +220,7 @@ internal class JobMasterClusterConnectionConfig
     public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeInactive = false)
     {
         return ClusterConfigs
-            .Where(c => includeInactive || c.IsActive)
+            .Where(c => includeInactive || c.IsReady)
             .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -234,9 +244,9 @@ internal class JobMasterClusterConnectionConfig
         }
     }
 
-    public static IList<JobMasterClusterConnectionConfig> GetActiveConfigs()
+    public static IList<JobMasterClusterConnectionConfig> GetReadyConfigs()
     {
-        return ClusterConfigs.Where(c => c.IsActive).ToList();
+        return ClusterConfigs.Where(c => c.IsReady).ToList();
     }
 
     public static IList<JobMasterClusterConnectionConfig> GetAllConfigs()

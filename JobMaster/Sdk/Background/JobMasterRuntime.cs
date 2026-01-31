@@ -95,6 +95,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
+            modelToSave.IsStandalone = clusterDefinition.IsStandalone;
 
             if (clusterCnnCfg.MirrorLog == JsonlFileLogger.LogMirror)
             {
@@ -110,9 +111,9 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
 
             if ((modelToSave.ClusterMode == ClusterMode.Passive || modelToSave.ClusterMode == ClusterMode.Archived) && 
-                workerDefinitions.Any(x => x.Mode != AgentWorkerMode.Drain)) 
+                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1))) 
             {
-                throw new InvalidOperationException("Passive and Archived clusters can only have Drain workers");
+                throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
             }
             
             masterConfigService.Save(modelToSave);
@@ -122,6 +123,19 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 throw new InvalidOperationException("Duplicate agent connection names found");
             }
+
+            if (agentDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.StandaloneAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($" {JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
+            }
+
+            if (clusterDefinition.IsStandalone && agentDefinitions.Any())
+            {
+                throw new InvalidOperationException("Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
+            } 
             
             foreach (var workerDefinition in workerDefinitions)
             {
@@ -154,7 +168,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
         foreach (var def in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
-            def.Activate();
+            def.MarkAsReady();
         }
         
         foreach (var worker in Workers)

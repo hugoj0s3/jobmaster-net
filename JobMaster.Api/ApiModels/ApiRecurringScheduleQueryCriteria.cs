@@ -1,4 +1,5 @@
 ﻿using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Api.ApiModels;
@@ -41,6 +42,7 @@ public class ApiRecurringScheduleQueryCriteria
             MetadataFilters = ApiGenericRecordValueFilterMappings.ParseMetadataFiltersJson(MetadataFiltersJson),
             CountLimit = CountLimit,
             Offset = Offset,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }
 }

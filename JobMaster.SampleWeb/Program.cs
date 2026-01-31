@@ -55,7 +55,13 @@ builder.Services.AddJobMasterCluster(config =>
     }
 });
 
-builder.Services.AddJobMasterApi(o =>
+builder.Services.AddJobMasterCluster(c =>
+        c.UseClusterStandalone().
+            ClusterId("Cluster-Standalone-1").
+        .UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster_standalone;Username=postgres;Password=postgres;Maximum Pool Size=300")
+    );
+
+builder.Services.UseJobMasterApi(o =>
 {
     o.BasePath = "/jm-api";
     o.RequireAuthentication = true;
@@ -64,11 +70,9 @@ builder.Services.AddJobMasterApi(o =>
     o.UseApiKeyAuth().AddApiKey("my-api-key", "admin-key");
     o.UseUserPwdAuth().AddUserPwd("john", "pwd#123");
 });
-
-
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
 
+builder.Services.AddSwaggerGen();
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Seq("http://localhost:5341/")
     .MinimumLevel.Debug()

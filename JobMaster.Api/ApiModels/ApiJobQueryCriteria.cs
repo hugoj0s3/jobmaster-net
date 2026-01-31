@@ -1,4 +1,5 @@
 ﻿using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Api.ApiModels;
@@ -36,6 +37,7 @@ public class ApiJobQueryCriteria
             WorkerLane = WorkerLane,
             CountLimit = CountLimit,
             Offset = Offset,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }
 }
