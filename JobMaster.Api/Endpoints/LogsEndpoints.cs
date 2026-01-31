@@ -33,7 +33,13 @@ internal static class LogsEndpoints
         }
 
         var result = await service.QueryAsync(criteria.ToDomainCriteria());
-        return Results.Ok(result.Select(ApiLogItem.FromDomain).ToList());
+        var apiLogItems = result.Select(ApiLogItem.FromDomain).ToList();
+        foreach (var apiLogItem in apiLogItems)
+        {
+            apiLogItem.CutMessage();
+        }
+        
+        return Results.Ok(apiLogItems);
     }
 
     private static async Task<IResult> CountLogsAsync(

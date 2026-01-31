@@ -1,5 +1,6 @@
 ﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -27,7 +28,12 @@ public class ApiJobModel : ApiClusterBaseModel
     public DateTime? SucceedExecutedAt { get; set; }
     public string? WorkerLane { get; set; }
 
-    internal static ApiJobModel FromDomain(Job job)
+    internal static ApiJobModel FromDomain(JobRawModel jobRawModel)
+    {
+        return FromDto(Job.FromModel(jobRawModel));
+    }
+    
+    internal static ApiJobModel FromDto(Job job)
     {
         return new ApiJobModel
         {

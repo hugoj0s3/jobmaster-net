@@ -3,7 +3,6 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using JobMaster.Api.ApiModels;
-using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.AspNetCore.Builder;
@@ -49,7 +48,6 @@ internal static class RecurringSchedulesEndpoints
 
         var result = await service.QueryAsync(domainCriteria);
         var api = result
-            .Select(RecurringScheduleConvertUtil.ToRecurringSchedule)
             .Select(ApiRecurringScheduleModel.FromDomain)
             .ToList();
 
@@ -108,7 +106,6 @@ internal static class RecurringSchedulesEndpoints
             return Results.NotFound();
         }
 
-        var schedule = RecurringScheduleConvertUtil.ToRecurringSchedule(result);
-        return Results.Ok(ApiRecurringScheduleModel.FromDomain(schedule));
+        return Results.Ok(ApiRecurringScheduleModel.FromDomain(result));
     }
 }

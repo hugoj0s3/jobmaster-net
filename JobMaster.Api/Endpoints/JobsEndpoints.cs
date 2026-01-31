@@ -50,8 +50,7 @@ internal static class JobsEndpoints
 
         var result = await service.QueryAsync(domainCriteria);
         var api = result
-            .Select(x => Job.FromModel(x))
-            .Select(ApiJobModel.FromDomain)
+            .Select(x => ApiJobModel.FromDomain(x))
             .ToList();
 
         return Results.Ok(api);
@@ -108,8 +107,7 @@ internal static class JobsEndpoints
         {
             return Results.NotFound();
         }
-
-        var job = Job.FromModel(result);
-        return Results.Ok(ApiJobModel.FromDomain(job));
+        
+        return Results.Ok(ApiJobModel.FromDomain(result));
     }
 }

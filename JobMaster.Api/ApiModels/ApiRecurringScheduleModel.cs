@@ -1,5 +1,6 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -83,5 +84,10 @@ public class ApiRecurringScheduleModel : ApiClusterBaseModel
             WorkerLane = schedule.WorkerLane,
             IsStaticIdle = schedule.RecurringScheduleType == RecurringScheduleType.Static && schedule.Status != RecurringScheduleStatus.Active,
         };
+    }
+
+    internal static ApiRecurringScheduleModel FromDomain(RecurringScheduleRawModel scheduleRawModel)
+    {
+        return FromDomain(RecurringScheduleConvertUtil.ToRecurringSchedule(scheduleRawModel));
     }
 }
