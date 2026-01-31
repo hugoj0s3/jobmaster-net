@@ -2,6 +2,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Dapper;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
@@ -26,7 +27,7 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
         using var tx = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
         try
         {

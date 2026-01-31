@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.SqlBase.Connections;
@@ -29,7 +30,7 @@ internal class PostgresMasterRecurringSchedulesRepository : SqlMasterRecurringSc
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
         var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
@@ -68,11 +69,10 @@ WITH candidates AS (
     WHERE s.{cClusterId} = @ClusterId
       AND s.{cId} = c.id
       AND {unlockedGuard}
-    RETURNING s.{cId}
+    RETURNING s.*
 )
 SELECT {selectCols}
-FROM {t} s
-JOIN locked l ON l.{cId} = s.{cId}
+FROM locked s
 LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
 LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 ORDER BY {orderBy};";

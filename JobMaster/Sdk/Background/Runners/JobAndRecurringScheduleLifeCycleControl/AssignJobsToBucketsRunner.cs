@@ -146,7 +146,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             if (bucket is null)
             {
                 logger.Warn($"No bucket available for job {job.Id}. WorkerLane={job.WorkerLane} Priority={job.Priority} ScheduledAt={job.ScheduledAt:O}. Clearing partition lock.", JobMasterLogSubjectType.Job, job.Id);
-                masterJobsService.ClearPartitionLock(job.Id);
+                masterJobsService.ReleasePartitionLock(job.Id);
                 continue;
             }
             

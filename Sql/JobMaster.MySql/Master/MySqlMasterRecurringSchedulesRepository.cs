@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.SqlBase.Connections;
@@ -30,7 +31,7 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
         var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {

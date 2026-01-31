@@ -2,6 +2,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Dapper;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
@@ -25,7 +26,7 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
 
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
         using var tx = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
         try
         {
@@ -64,11 +65,10 @@ WITH candidates AS (
     WHERE j.{cClusterId} = @ClusterId
       AND j.{cId} = c.id
       AND {unlockedGuard}
-    RETURNING j.{cId}
+    RETURNING j.*
 )
 SELECT {selectCols}
-FROM {t} j
-JOIN locked l ON l.{cId} = j.{cId}
+FROM locked j
 LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} and e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 ORDER BY {orderBy};";
