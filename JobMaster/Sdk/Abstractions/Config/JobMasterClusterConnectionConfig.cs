@@ -35,8 +35,8 @@ internal class JobMasterClusterConnectionConfig
         ConnectionString = connectionString;
     }
     
-    private ConcurrentDictionary<string, JobMasterAgentConnectionConfig> AgentConnectionConfigs { get; } 
-        = new();
+    private ConcurrentDictionary<string, JobMasterAgentConnectionConfig> AgentConnectionConfigs { get; }
+        = new(StringComparer.OrdinalIgnoreCase);
     
     public JobMasterConfigDictionary AdditionalConnConfig { get; private set; } = new ();
     
@@ -168,7 +168,7 @@ internal class JobMasterClusterConnectionConfig
         
         if (other is JobMasterClusterConnectionConfig clusterConfig)
         {
-            return ClusterId == clusterConfig.ClusterId;
+            return string.Equals(ClusterId, clusterConfig.ClusterId, StringComparison.OrdinalIgnoreCase);
         }
         
         return false;
@@ -176,7 +176,7 @@ internal class JobMasterClusterConnectionConfig
     
     public override int GetHashCode()
     {
-        return ClusterId.GetHashCode();
+        return StringComparer.OrdinalIgnoreCase.GetHashCode(ClusterId);
     }
     
     
@@ -209,7 +209,9 @@ internal class JobMasterClusterConnectionConfig
     
     public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeInactive = false)
     {
-        return ClusterConfigs.Where(c => includeInactive || c.IsActive).FirstOrDefault(c => c.ClusterId == clusterId);
+        return ClusterConfigs
+            .Where(c => includeInactive || c.IsActive)
+            .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
     public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeInactive = false)

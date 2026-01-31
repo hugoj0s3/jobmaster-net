@@ -26,7 +26,10 @@ internal static class EndpointUtils
  
     public static RouteGroupBuilder GetClusterEntityGroup(this RouteGroupBuilder group, string entityName)
     {
-        return group.MapGroup("/{clusterId}").MapGroup($"/{entityName}").WithTags(entityName);
+        var tag = string.IsNullOrEmpty(entityName)
+            ? entityName
+            : char.ToUpperInvariant(entityName[0]) + entityName.Substring(1);
+        return group.MapGroup("/{clusterId}").MapGroup($"/{entityName}").WithTags(tag);
     }
 
     public static JobMasterApiOptions GetJobMasterApiOptions(this IEndpointRouteBuilder endpoints)

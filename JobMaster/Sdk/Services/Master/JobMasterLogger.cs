@@ -122,7 +122,15 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         var genericRecordQueryCriteria = ToGenericRecordQueryCriteria(criteria);
         return repo.CountAsync(MasterGenericRecordGroupIds.Log, genericRecordQueryCriteria);
     }
-    
+
+    public async Task<LogItem?> GetAsync(Guid id)
+    {
+        var record = await repo.GetAsync(MasterGenericRecordGroupIds.Log, id.ToString("N"));
+        if (record == null) return null;
+        
+        return ToLogItem(record);
+    }
+
     public void Dispose()
     {
         if (disposed) return;

@@ -52,16 +52,12 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
                 return await next(context);
             });
         
-        group.MapGet("/version", (CancellationToken ct) => 
-        {
-            return Results.Json(new
-            {
-                Product = JobMasterApiAssemblyInfo.GetServiceId(), 
-                Version = JobMasterApiAssemblyInfo.GetVersion(),
-            });
-        });
-        
         group.MapBucketsEndpoints();
+        group.MapClustersEndpoints();
+        group.MapWorkersEndpoints();
+        group.MapLogsEndpoints();
+        group.MapJobsEndpoints();
+        group.MapRecurringSchedulesEndpoints();
 
         return endpoints;
     }
@@ -69,7 +65,7 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
     private static void LogRequest(EndpointFilterInvocationContext context, JobMasterApiIdentity identity)
     {
         // 1. Try route value, then fallback to default cluster config, or skip if neither exists.
-        var clusterId = context.HttpContext.GetRouteValue("cluster-id")?.ToString() 
+        var clusterId = context.HttpContext.GetRouteValue("clusterId")?.ToString() 
                         ?? JobMasterClusterConnectionConfig.Default?.ClusterId;
 
         if (string.IsNullOrWhiteSpace(clusterId)) return;

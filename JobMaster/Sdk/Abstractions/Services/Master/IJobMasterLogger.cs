@@ -18,4 +18,6 @@ internal interface IJobMasterLogger : IJobMasterClusterAwareService
     Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria);
     
     Task<int> CountAsync(LogItemQueryCriteria criteria);
+    
+    Task<LogItem?> GetAsync(Guid id);
 }
