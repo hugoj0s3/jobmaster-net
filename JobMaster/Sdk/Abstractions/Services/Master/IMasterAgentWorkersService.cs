@@ -6,8 +6,8 @@ namespace JobMaster.Sdk.Abstractions.Services.Master;
 
 internal interface IMasterAgentWorkersService : IJobMasterClusterAwareService
 {
-    IList<AgentWorkerModel> GetWorkers(string? agentConnectionId = null, bool useCache = true);
-    Task<IList<AgentWorkerModel>> GetWorkersAsync(string? agentConnectionId = null, bool useCache = true);
+    IList<AgentWorkerModel> QueryWorkers(string? agentConnectionId = null, bool useCache = true);
+    Task<IList<AgentWorkerModel>> QueryWorkersAsync(string? agentConnectionId = null, bool useCache = true);
     
     AgentWorkerModel? GetWorker(string workerId);
     Task<AgentWorkerModel?> GetWorkerAsync(string workerId);

@@ -24,7 +24,7 @@
     
 
     <ItemGroup>
-      <PackageReference Include="JobMaster" Version="0.0.4-alpha" />
+      <PackageReference Include="JobMaster" Version="0.0.5-alpha" />
       <PackageReference Include="NATS.Client.JetStream" Version="2.7.0" />
       <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
     </ItemGroup>

@@ -39,7 +39,7 @@
     </ItemGroup>
     
     <ItemGroup>
-      <PackageReference Include="JobMaster.SqlBase" Version="0.0.4-alpha" />
+      <PackageReference Include="JobMaster.SqlBase" Version="0.0.5-alpha" />
     </ItemGroup>
 
 </Project>

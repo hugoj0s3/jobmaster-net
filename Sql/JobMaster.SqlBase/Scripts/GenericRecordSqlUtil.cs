@@ -19,6 +19,34 @@ internal class GenericRecordSqlUtil
         this.additionalConnConfig = additionalConnConfig;
         this.clusterId = clusterId;
     }
+
+    private void AppendCriteriaWhere(
+        List<string> where,
+        GenericRecordQueryCriteria criteria,
+        string cExpiresAt,
+        string cSubjectType,
+        string cSubjectId,
+        string cEntryId,
+        string cCreatedAt
+    )
+    {
+        if (!criteria.IncludeExpired)
+            where.Add($"({cExpiresAt} IS NULL OR {cExpiresAt} > @NowUtc)");
+        if (!string.IsNullOrEmpty(criteria.SubjectType))
+            where.Add($"{cSubjectType} = @SubjectType");
+        if (criteria.SubjectIds.Any())
+            where.Add(this.sql.InClauseFor(cSubjectId, "@SubjectIds"));
+        if (criteria.EntryIds.Any())
+            where.Add(this.sql.InClauseFor(cEntryId, "@EntryIds"));
+        if (criteria.CreatedAtFrom.HasValue)
+            where.Add($"{cCreatedAt} >= @CreatedAtFrom");
+        if (criteria.CreatedAtTo.HasValue)
+            where.Add($"{cCreatedAt} <= @CreatedAtTo");
+        if (criteria.ExpiresAtFrom.HasValue)
+            where.Add($"{cExpiresAt} >= @ExpiresAtFrom");
+        if (criteria.ExpiresAtTo.HasValue)
+            where.Add($"{cExpiresAt} <= @ExpiresAtTo");
+    }
     
     public (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
     {
@@ -90,22 +118,7 @@ left join {EntryValueTable()} on {EntryValueTable()}.{ColVal(x => x.RecordUnique
             $"{cGroupId} = @GroupId"
         };
 
-        if (!criteria.IncludeExpired)
-            where.Add($"({cExpiresAt} IS NULL OR {cExpiresAt} > @NowUtc)");
-        if (!string.IsNullOrEmpty(criteria.SubjectType))
-            where.Add($"{cSubjectType} = @SubjectType");
-        if (criteria.SubjectIds.Any())
-            where.Add(this.sql.InClauseFor(cSubjectId, "@SubjectIds"));
-        if (criteria.EntryIds.Any())
-            where.Add(this.sql.InClauseFor(cEntryId, "@EntryIds"));
-        if (criteria.CreatedAtFrom.HasValue)
-            where.Add($"{cCreatedAt} >= @CreatedAtFrom");
-        if (criteria.CreatedAtTo.HasValue)
-            where.Add($"{cCreatedAt} <= @CreatedAtTo");
-        if (criteria.ExpiresAtFrom.HasValue)
-            where.Add($"{cExpiresAt} >= @ExpiresAtFrom");
-        if (criteria.ExpiresAtTo.HasValue)
-            where.Add($"{cExpiresAt} <= @ExpiresAtTo");
+        AppendCriteriaWhere(where, criteria, cExpiresAt, cSubjectType, cSubjectId, cEntryId, cCreatedAt);
         
         var args = new Dictionary<string, object?>
         {
@@ -193,6 +206,52 @@ ORDER BY {baseOrderBy}
 ";
 
         return (baseSelect, args);
+    }
+
+    public (string Sql, object Args) BuildCountSql(string groupId, GenericRecordQueryCriteria criteria)
+    {
+        var cClusterId = $"e.{Col(x => x.ClusterId)}";
+        var cGroupId = $"e.{Col(x => x.GroupId)}";
+        var cEntryId = $"e.{Col(x => x.EntryId)}";
+        var cSubjectType = $"e.{Col(x => x.SubjectType)}";
+        var cSubjectId = $"e.{Col(x => x.SubjectId)}";
+        var cCreatedAt = $"e.{Col(x => x.CreatedAt)}";
+        var cExpiresAt = $"e.{Col(x => x.ExpiresAt)}";
+
+        var where = new List<string>
+        {
+            $"{cClusterId} = @ClusterId",
+            $"{cGroupId} = @GroupId"
+        };
+
+        AppendCriteriaWhere(where, criteria, cExpiresAt, cSubjectType, cSubjectId, cEntryId, cCreatedAt);
+
+        var args = new Dictionary<string, object?>
+        {
+            { "ClusterId", clusterId },
+            { "GroupId", groupId },
+            { "SubjectIds", criteria.SubjectIds },
+            { "EntryIds", criteria.EntryIds.ToArray() },
+            { "CreatedAtFrom", criteria.CreatedAtFrom },
+            { "CreatedAtTo", criteria.CreatedAtTo },
+            { "ExpiresAtFrom", criteria.ExpiresAtFrom },
+            { "ExpiresAtTo", criteria.ExpiresAtTo },
+            { "SubjectType", criteria.SubjectType },
+            { "NowUtc", DateTime.UtcNow }
+        };
+
+        var exists = BuildWhereClause(criteria.Filters, "e", "v2", args);
+        if (!string.IsNullOrEmpty(exists))
+            where.Add(exists);
+
+        var t = EntryTable();
+        var countSql = $@"
+SELECT COUNT(*)
+FROM {t} e
+WHERE {string.Join(" AND ", where)}
+";
+
+        return (countSql, args);
     }
     
     public IList<(string, IDictionary<string, object?>)> BuildFilterArgs(IList<GenericRecordValueFilter> filters, string alias)

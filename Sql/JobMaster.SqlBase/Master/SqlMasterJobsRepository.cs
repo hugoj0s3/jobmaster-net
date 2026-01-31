@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -214,7 +215,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = conn.Query<JobPersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListRecord(linearRows);
@@ -223,7 +224,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public async Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
@@ -253,7 +254,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public long Count(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
         var (whereSql, args) = BuildWhere(queryCriteria);
         args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
         var t = TableName();

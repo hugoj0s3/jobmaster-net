@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using JobMaster.Api.AspNetCore.Auth;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Api.AspNetCore.Internals;
+using JobMaster.Api.Endpoints;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -20,32 +21,34 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
 {
     public static IEndpointRouteBuilder MapJobMasterApi(this IEndpointRouteBuilder endpoints)
     {
-        var options = endpoints.ServiceProvider.GetRequiredService<IOptions<JobMasterApiOptions>>().Value;
-        var basePath = JobMasterApiPath.NormalizeBasePath(options.BasePath);
+        var group = endpoints.GetJobMasterEndpointGroup();
+        var options = endpoints.GetJobMasterApiOptions();
 
-        var group = endpoints.MapGroup(basePath)
-            .WithGroupName($"{JobMasterApiNamespaceKey.Key}")
-            .AddEndpointFilter(async (context, next) => 
+        group.WithGroupName($"{JobMasterApiNamespaceKey.Key}")
+            .AddEndpointFilter(async (context, next) =>
             {
-                var identityProvider = context.HttpContext.RequestServices.GetRequiredService<IJobMasterIdentityProvider>();
-                var authProvider = context.HttpContext.RequestServices.GetRequiredService<IJobMasterAuthorizationProvider>();
+                var identityProvider =
+                    context.HttpContext.RequestServices.GetRequiredService<IJobMasterIdentityProvider>();
+                var authProvider = context.HttpContext.RequestServices
+                    .GetRequiredService<IJobMasterAuthorizationProvider>();
                 var identity = await identityProvider.GetIdentityAsync(context.HttpContext);
-                
+
                 var opt = context.HttpContext.RequestServices.GetRequiredService<IOptions<JobMasterApiOptions>>().Value;
                 if (options.EnableLogging)
                 {
                     LogRequest(context, identity);
                 }
-                
+
                 if (opt.RequireAuthentication)
                 {
                     if (!identity.IsAuthenticated) return Results.Unauthorized();
-                    
+
                     if (!await authProvider.IsAuthorizedAsync(identity, context.HttpContext))
                     {
-                        return Results.Forbid(); 
+                        return Results.Forbid();
                     }
                 }
+
                 return await next(context);
             });
         
@@ -57,6 +60,8 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
                 Version = JobMasterApiAssemblyInfo.GetVersion(),
             });
         });
+        
+        group.MapBucketsEndpoints();
 
         return endpoints;
     }

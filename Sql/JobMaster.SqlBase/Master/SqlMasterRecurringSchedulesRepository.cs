@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -195,7 +196,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
 
     public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = conn.Query<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListToDomain(linearRows);
@@ -204,7 +205,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
 
     public async Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
@@ -355,7 +356,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
 
     public long Count(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
         var (whereSql, args) = BuildWhere(queryCriteria);
         var t = TableName();
         var sqlText = $"SELECT COUNT(*) FROM {t} s {whereSql}";

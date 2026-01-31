@@ -14,6 +14,8 @@ internal class LogItem
     public string? SourceFile { get; set; }
     public int? SourceLine { get; set; }
     
+    public Guid Id { get; set; }
+    
     public override string ToString()
     {
         return $"{TimestampUtc:O} [{Level}] {SubjectType}/{SubjectId} | {SourceMember} ({SourceFile}:{SourceLine}) | {Message} | {Host}";

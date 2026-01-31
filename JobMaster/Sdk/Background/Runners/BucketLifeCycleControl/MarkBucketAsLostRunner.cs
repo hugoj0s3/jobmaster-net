@@ -1,3 +1,4 @@
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -37,7 +38,7 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
             b => b.AgentWorkerId != BackgroundAgentWorker.AgentWorkerId
             && b.Status != BucketStatus.Lost);
         
-        var workers = await masterAgentWorkersService.GetWorkersAsync(useCache: false);
+        var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
         var bucketsToMarkAsLost = new List<BucketModel>();
         foreach (var bucket in bucketsToEvaluate)
         {

@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 
@@ -15,5 +16,11 @@ internal interface IMasterBucketsService : IJobMasterClusterAwareService
     Task<BucketModel?> SelectBucketAsync(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null);
     BucketModel? Get(string bucketId, TimeSpan? allowedDiscrepancy);
     Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null);
-    List<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null);
+    IList<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null);
+    
+    Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria);
+    IList<BucketModel> Query(MasterBucketQueryCriteria criteria);
+    
+    Task<int> CountAsync(MasterBucketQueryCriteria criteria);
+    int Count(MasterBucketQueryCriteria criteria);
 }

@@ -16,4 +16,6 @@ internal interface IJobMasterLogger : IJobMasterClusterAwareService
         int? sourceLine = null);
     
     Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria);
+    
+    Task<int> CountAsync(LogItemQueryCriteria criteria);
 }

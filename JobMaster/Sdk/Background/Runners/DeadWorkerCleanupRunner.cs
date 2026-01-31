@@ -53,7 +53,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
         try
         {
             // Get all workers (including dead ones)
-            var allWorkers = await masterAgentWorkersService.GetWorkersAsync(useCache: false);
+            var allWorkers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
             
             // Find dead workers that need cleanup
             var deadWorkers = allWorkers.Where(w => !w.IsAlive).ToList();

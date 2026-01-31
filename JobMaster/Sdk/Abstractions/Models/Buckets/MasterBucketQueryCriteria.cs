@@ -8,5 +8,6 @@ internal class MasterBucketQueryCriteria
     public JobMasterPriority? Priority { get; set; }
     public BucketStatus? Status { get; set; }
     public string? AgentWorkerId { get; set; }
-    public bool? OnlyActive { get; set; }
+    public string? WorkerLane { get; set; }
+    public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

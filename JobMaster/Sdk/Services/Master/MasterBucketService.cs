@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
@@ -64,7 +65,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
 
     public async Task DestroyAsync(string bucketId)
     {
-        var bucket = this.masterGenericRecordRepository.Get(MasterGenericRecordGroupIds.Bucket, bucketId);
+        var bucket = await this.masterGenericRecordRepository.GetAsync(MasterGenericRecordGroupIds.Bucket, bucketId);
         if (bucket is null)
             return;
 
@@ -175,40 +176,48 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
 
     public async Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null)
     {
-        var criteria = new GenericRecordQueryCriteria();
-
-        if (bucketStatus.HasValue)
+        return await QueryAsync(new MasterBucketQueryCriteria()
         {
-            criteria.Filters.Add(new GenericRecordValueFilter()
-            {
-                Key = "Status",
-                Operation = GenericFilterOperation.Eq,
-                Value = (int)bucketStatus.Value,
-            });
-        }
+            Status = bucketStatus,
+            ReadIsolationLevel = ReadIsolationLevel.Consistent,
+        });
+    }
 
-        var records = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.Bucket, criteria);
+    public IList<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null)
+    {
+        return Query(new MasterBucketQueryCriteria()
+        {
+            Status = bucketStatus,
+            ReadIsolationLevel = ReadIsolationLevel.Consistent,
+        });
+    }
+
+    public async Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria)
+    {
+        var records = await masterGenericRecordRepository.
+            QueryAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
+        
         return records.Select(x => x.ToObject<BucketModel>()).ToList();
     }
 
-    public List<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null)
+    public IList<BucketModel> Query(MasterBucketQueryCriteria criteria)
     {
-        var criteria = new GenericRecordQueryCriteria();
-
-        if (bucketStatus.HasValue)
-        {
-            criteria.Filters.Add(new GenericRecordValueFilter()
-            {
-                Key = "Status",
-                Operation = GenericFilterOperation.Eq,
-                Value = (int)bucketStatus.Value,
-            });
-        }
-
-        var records = masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
-        return Enumerable.Select(records, x => x.ToObject<BucketModel>()).ToList();
+        var records = masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
+        return records.Select(x => x.ToObject<BucketModel>()).ToList();
     }
-    
+
+    public async Task<int> CountAsync(MasterBucketQueryCriteria criteria)
+    {
+        var count = await masterGenericRecordRepository.CountAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
+        return count;
+    }
+
+    public int Count(MasterBucketQueryCriteria criteria)
+    {
+        var count = masterGenericRecordRepository.Count(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
+        return count;
+    }
+
     public const string AnyWorkerLaneKeyword = "[Any]";
     private BucketModel? SelectBucketForJob(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
@@ -312,4 +321,63 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         if (agentConfiguration is null)
             throw new ArgumentException($"Agent configuration with id {agentConnectionId} not found.", nameof(agentConnectionId));
     }
+    
+    private GenericRecordQueryCriteria ToGenericRecordQueryCriteria(MasterBucketQueryCriteria criteria)
+    {
+        var genericRecordQueryCriteria = new GenericRecordQueryCriteria();
+        if (criteria.Status.HasValue)
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.Status),
+                Operation = GenericFilterOperation.Eq,
+                Value = (int)criteria.Status.Value,
+            });
+        }
+
+        if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.AgentConnectionId),
+                Operation = GenericFilterOperation.Eq,
+                Value = criteria.AgentConnectionId,
+            });
+        }
+
+        if (!string.IsNullOrEmpty(criteria.AgentWorkerId))
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.AgentWorkerId),
+                Operation = GenericFilterOperation.Eq,
+                Value = criteria.AgentWorkerId,
+            });
+        }
+
+        if (criteria.Priority.HasValue)
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.Priority),
+                Operation = GenericFilterOperation.Eq,
+                Value = (int)criteria.Priority,
+            });
+        }
+
+        if (!string.IsNullOrEmpty(criteria.WorkerLane))
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.WorkerLane),
+                Operation = GenericFilterOperation.Eq,
+                Value = criteria.WorkerLane,
+            });
+        }
+        
+        genericRecordQueryCriteria.ReadIsolationLevel = criteria.ReadIsolationLevel;
+        
+        return genericRecordQueryCriteria;
+    }
 }
+

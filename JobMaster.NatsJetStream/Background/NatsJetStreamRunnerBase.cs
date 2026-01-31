@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Abstractions;

@@ -23,7 +23,7 @@
 
     <ItemGroup>
       <PackageReference Include="Dapper" Version="2.1.66" />
-      <PackageReference Include="JobMaster" Version="0.0.4-alpha" />
+      <PackageReference Include="JobMaster" Version="0.0.5-alpha" />
     </ItemGroup>
 
     <PropertyGroup>
