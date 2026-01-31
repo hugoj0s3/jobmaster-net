@@ -99,26 +99,15 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
-        
-        var jobIds = await masterJobsService.QueryIdsAsync(jobQueryCriteria);
-        if (jobIds.Count <= 0)
+
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, utcNow.Add(durationToLock));
+        if (jobs.Count <= 0)
         {
             masterDistributedLockerService.ReleaseLock(lockKeys.BucketAssignerLock(lockId), lockToken);
             return OnTickResult.Skipped(lastScanPlanResult.Interval);
         }
-        
-        var updateResult = masterJobsService.BulkUpdatePartitionLockId(jobIds, lockId, utcNow.Add(durationToLock));
-        if (!updateResult)
-        {
-            masterDistributedLockerService.ReleaseLock(lockKeys.BucketAssignerLock(lockId), lockToken);
-            return OnTickResult.Locked(TimeSpan.FromMilliseconds(250));
-        }
-        
-        jobQueryCriteria.IsLocked = true;
-        jobQueryCriteria.PartitionLockId = lockId;
-        
-        var jobs = await masterJobsService.QueryAsync(jobQueryCriteria);
-        logger.Debug($"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobIds)}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+
+        logger.Debug($"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         
         var jobIdByBucketModel = new Dictionary<Guid, BucketModel>(); 
         

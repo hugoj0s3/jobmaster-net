@@ -21,11 +21,11 @@ namespace JobMaster.SqlBase.Master;
 
 internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterClusterAwareRepository, IMasterRecurringSchedulesRepository
 {
-    private IDbConnectionManager connManager = null!;
-    private ISqlGenerator sql = null!;
-    private string connString = string.Empty;
-    private JobMasterConfigDictionary additionalConnConfig = null!;
-    private GenericRecordSqlUtil genericUtil = null!;
+    protected IDbConnectionManager connManager = null!;
+    protected ISqlGenerator sql = null!;
+    protected string connString = string.Empty;
+    protected JobMasterConfigDictionary additionalConnConfig = null!;
+    protected GenericRecordSqlUtil genericUtil = null!;
 
     protected SqlMasterRecurringSchedulesRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
@@ -37,6 +37,8 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         additionalConnConfig = clusterConnConfig.AdditionalConnConfig;
         genericUtil = new GenericRecordSqlUtil(sql, additionalConnConfig, ClusterConnConfig.ClusterId);
     }
+
+    public abstract Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
 
     public void Add(RecurringScheduleRawModel scheduleRaw)
     {
@@ -427,7 +429,7 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
     }
 
     // SQL builders
-    private (string, object) BuildGetSql(Guid id)
+    protected (string, object) BuildGetSql(Guid id)
     {
         var t = TableName();
         var selectCols = SelectProjection("s", "e", "v");
@@ -441,7 +443,7 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
         return (sqlText, args);
     }
 
-    private (string, object) BuildQuerySql(RecurringScheduleQueryCriteria c)
+    protected (string, object) BuildQuerySql(RecurringScheduleQueryCriteria c)
     {
         var t = TableName();
         var selectCols = SelectProjection("s", "e", "v");
@@ -462,7 +464,7 @@ ORDER BY {order}");
         return (sb.ToString(), args);
     }
 
-    private (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c)
+    protected (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c)
     {
         var where = new List<string> { $"s.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();
@@ -566,12 +568,12 @@ ORDER BY {order}");
         return (whereSql, args);
     }
 
-    private string TableName()
+    protected string TableName()
     {
         return sql.TableNameFor<RecurringSchedule>(additionalConnConfig);
     }
 
-    private string SelectProjection(string scheduleAlias = "s", string genericEntryAlias = "e", string genericEntryValueAlias = "v")
+    protected string SelectProjection(string scheduleAlias = "s", string genericEntryAlias = "e", string genericEntryValueAlias = "v")
     {
         return string.Join(", ", new[]
         {
@@ -622,7 +624,7 @@ ORDER BY {order}");
         });
     }
 
-    private (string Columns, string ValuesParams) InsertColumnsAndParams()
+    protected (string Columns, string ValuesParams) InsertColumnsAndParams()
     {
         var cols = new[]
         {
@@ -647,7 +649,7 @@ ORDER BY {order}");
         return (string.Join(", ", cols), string.Join(", ", vals));
     }
 
-    private string UpdateSetClause()
+    protected string UpdateSetClause()
     {
         return string.Join(", ", new[]
         {
@@ -680,7 +682,7 @@ ORDER BY {order}");
         });
     }
     
-    private (string sqlText, Dictionary<string, object?> args) BuildGetByStaticIdSql(string staticId)
+    protected (string sqlText, Dictionary<string, object?> args) BuildGetByStaticIdSql(string staticId)
     {
         var t = TableName();
         var sqlText = $@"
@@ -699,9 +701,9 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
         });
     }
 
-    private string Col(Expression<Func<RecurringSchedulePersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
+    protected string Col(Expression<Func<RecurringSchedulePersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
 
-    private IList<RecurringSchedulePersistenceRecord> LinearListToDomain(IList<RecurringSchedulePersistenceRecordLinearDto> list)
+    protected IList<RecurringSchedulePersistenceRecord> LinearListToDomain(IList<RecurringSchedulePersistenceRecordLinearDto> list)
     {
         if (list.Count == 0) return new List<RecurringSchedulePersistenceRecord>(0);
 
@@ -776,7 +778,7 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
         return result;
     }
 
-    private class RecurringSchedulePersistenceRecordLinearDto : RecurringSchedulePersistenceRecord
+    protected class RecurringSchedulePersistenceRecordLinearDto : RecurringSchedulePersistenceRecord
     {
         public string RecordUniqueId { get; set; } = string.Empty;
         public string GroupId { get; set; } = string.Empty;

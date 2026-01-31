@@ -101,28 +101,15 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
-        
-        var jobIds = await masterJobsService.QueryIdsAsync(jobQueryCriteria);
-        if (jobIds.Count <= 0)
+
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, utcNow.Add(durationToLock));
+        if (jobs.Count <= 0)
         {
             masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockId), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
-        
-        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Found {jobIds.Count} jobs past deadline. JobIds: {string.Join(", ", jobIds.Take(10))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-        
-        // Lock the partition to prevent race conditions
-        var updateResult = masterJobsService.BulkUpdatePartitionLockId(jobIds, lockId, utcNow.Add(durationToLock));
-        if (!updateResult)
-        {
-            masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockId), lockToken);
-            return OnTickResult.Locked(TimeSpan.FromMilliseconds(250));
-        }
-        
-        jobQueryCriteria.IsLocked = true;
-        jobQueryCriteria.PartitionLockId = lockId;
-        
-        var jobs = await masterJobsService.QueryAsync(jobQueryCriteria);
+
+        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Found {jobs.Count} jobs past deadline. JobIds: {string.Join(", ", jobs.Select(x => x.Id).Take(10))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         
         await MarkAsHeldOnMasterAsync(jobs, cutOffTime, ct);
         

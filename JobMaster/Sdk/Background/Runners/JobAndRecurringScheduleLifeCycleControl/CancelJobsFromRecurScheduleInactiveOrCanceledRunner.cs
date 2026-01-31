@@ -72,25 +72,13 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
-        
-        var recurringScheduleIds = await masterRecurringSchedulesService.QueryIdsAsync(recurringScheduleQueryCriteria);
-        if (recurringScheduleIds.Count <= 0)
+
+        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, lockId, utcNow.Add(durationToLock));
+        if (recurringSchedules.Count <= 0)
         {
             distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
-        
-        var bulkUpdateResult = masterRecurringSchedulesService.BulkUpdatePartitionLockId(recurringScheduleIds, lockId, utcNow.Add(durationToLock));
-        if (!bulkUpdateResult)
-        {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
-            return OnTickResult.Locked(TimeSpan.FromMilliseconds(250));
-        }
-        
-        recurringScheduleQueryCriteria.IsLocked = true;
-        recurringScheduleQueryCriteria.PartitionLockId = lockId;
-        
-        var recurringSchedules = await masterRecurringSchedulesService.QueryAsync(recurringScheduleQueryCriteria);
         foreach (var recurringSchedule in recurringSchedules)
         {
             if (cutOffTime <= DateTime.UtcNow)
@@ -104,7 +92,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
                 break;
             }
 
-            CencelJobs(recurringSchedule, lockId, durationToLock);
+            await CencelJobsAsync(recurringSchedule, lockId, durationToLock, ct);
         }
         
         distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
@@ -112,7 +100,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         return OnTickResult.Success(lastScanPlanResult.Interval);
     }
 
-    private void CencelJobs(RecurringScheduleRawModel recurringScheduleRawModel, int lockId, TimeSpan durationToLock)
+    private async Task CencelJobsAsync(RecurringScheduleRawModel recurringScheduleRawModel, int lockId, TimeSpan durationToLock, CancellationToken ct)
     {
         var jobQueryCriteria = new JobQueryCriteria()
         {
@@ -123,21 +111,25 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             IsLocked = false,
             Offset = 0,
         };
-        
-        var jobs = masterJobsService.Query(jobQueryCriteria);
-        var jobIdsToLock = jobs
-            .Where(x => !x.Status.IsFinalStatus())
-            .Select(job => job.Id).ToList();
-        var updateResult = masterJobsService.BulkUpdatePartitionLockId(jobIdsToLock, lockId, DateTime.UtcNow.Add(durationToLock));
-        if (!updateResult)
+
+        if (ct.IsCancellationRequested)
         {
             return;
         }
-        
-        jobQueryCriteria.IsLocked = true;
-        jobQueryCriteria.PartitionLockId = lockId;
-        
-        var jobIdsToCancel = masterJobsService.QueryIds(jobQueryCriteria);
+
+        var expiresAtUtc = DateTime.UtcNow.Add(durationToLock);
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, expiresAtUtc);
+        var jobIdsToCancel = jobs
+            .Where(x => !x.Status.IsFinalStatus())
+            .Select(x => x.Id)
+            .ToList();
+
+        if (jobIdsToCancel.Count <= 0)
+        {
+            recurringScheduleRawModel.HasCancelJobsFinish();
+            masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+            return;
+        }
         
         var finalStatuses = JobMasterJobStatusUtil.GetFinalStatuses().Where(x => x != JobMasterJobStatus.Cancelled).ToList();
         masterJobsService.BulkUpdateStatus(jobIdsToCancel, JobMasterJobStatus.Cancelled, null, null, null, excludeStatuses: finalStatuses);

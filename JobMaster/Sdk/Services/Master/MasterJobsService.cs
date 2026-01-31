@@ -100,6 +100,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         }
     }
 
+    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
     public bool BulkUpdatePartitionLockId(IList<Guid> jobIds, int lockId, DateTime expiresAt)
     {   if (jobIds.Count <= 0)
         {
@@ -108,10 +109,21 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         
         return operationThrottler.Exec(() => masterJobsRepository.BulkUpdatePartitionLockId(jobIds, lockId, expiresAt));
     }
+    
+    public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
+    {
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+    }
 
+    public void ReleasePartitionLock(Guid jobId)
+    {
+        operationThrottler.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId));
+    }
+
+    [Obsolete("Use ReleasePartitionLock(...) instead. This method will be removed in a future release.")]
     public void ClearPartitionLock(Guid jobId)
     {
-        operationThrottler.Exec(() => masterJobsRepository.ClearPartitionLock(jobId));
+        ReleasePartitionLock(jobId);
     }
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
