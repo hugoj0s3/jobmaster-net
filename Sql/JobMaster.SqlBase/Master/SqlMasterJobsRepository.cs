@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -20,11 +21,11 @@ namespace JobMaster.SqlBase.Master;
 
 internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepository, IMasterJobsRepository
 {
-    private IDbConnectionManager connManager = null!;
-    private ISqlGenerator sql = null!;
-    private string connString = string.Empty;
-    private JobMasterConfigDictionary additionalConnConfig = null!;
-    private GenericRecordSqlUtil genericUtil = null!;
+    protected IDbConnectionManager connManager = null!;
+    protected ISqlGenerator sql = null!;
+    protected string connString = string.Empty;
+    protected JobMasterConfigDictionary additionalConnConfig = null!;
+    protected GenericRecordSqlUtil genericUtil = null!;
 
     protected SqlMasterJobsRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
@@ -214,7 +215,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = conn.Query<JobPersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListRecord(linearRows);
@@ -223,7 +224,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public async Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
@@ -253,7 +254,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
     public long Count(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
         var (whereSql, args) = BuildWhere(queryCriteria);
         args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
         var t = TableName();
@@ -282,7 +283,7 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
 
     public async Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (whereSql, args) = BuildWhere(queryCriteria);
         var sb = new StringBuilder();
         sb.Append($"SELECT {Col(x => x.Id)} FROM {TableName()} j {whereSql}");
@@ -336,7 +337,7 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
         }
     }
 
-    public void ClearPartitionLock(Guid jobId)
+    public void ReleasePartitionLock(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var t = TableName();
@@ -349,6 +350,12 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
         WHERE {Col(x => x.Id)} = @JobId";
 
         conn.Execute(sqlText, new { JobId = jobId });
+    }
+
+    [Obsolete("Use ReleasePartitionLock(...) instead. This method will be removed in a future release.")]
+    public void ClearPartitionLock(Guid jobId)
+    {
+        ReleasePartitionLock(jobId);
     }
 
     public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null)
@@ -454,7 +461,9 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
             throw;
         }
     }
-    
+
+    public abstract Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+
     protected abstract bool IsDupeViolation(Guid jobId, Exception ex);
 
     // SQL builders
@@ -494,7 +503,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         return (sb.ToString(), concatedArgs);
     }
 
-    private (string whereSql, Dictionary<string, object?> args) BuildWhere(JobQueryCriteria c)
+    protected (string whereSql, Dictionary<string, object?> args) BuildWhere(JobQueryCriteria c)
     {
         var where = new List<string> { $"j.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();
@@ -564,7 +573,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         return (whereSql, args);
     }
 
-    private string TableName()
+    protected string TableName()
     {
         return sql.TableNameFor<Job>(additionalConnConfig);
     }
@@ -624,7 +633,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         });
     }
 
-    private string SelectProjection(string jobAlias = "j", string genericEntryAlias = "e", string genericEntryValueAlias = "v")
+    protected string SelectProjection(string jobAlias = "j", string genericEntryAlias = "e", string genericEntryValueAlias = "v")
     {
         // No aliases needed; Dapper will map snake_case -> PascalCase
         return string.Join(", ", new[]
@@ -684,9 +693,9 @@ ORDER BY {order}";
         return (sqlText, new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.JobMetadata } });
     }
 
-    private string Col(Expression<Func<JobPersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
+    protected string Col(Expression<Func<JobPersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
 
-    private IList<JobPersistenceRecord> LinearListRecord(IList<JobPersistenceRecordLinearDto> list)
+    protected IList<JobPersistenceRecord> LinearListRecord(IList<JobPersistenceRecordLinearDto> list)
     {
         if (list.Count == 0) return new List<JobPersistenceRecord>(0);
 
@@ -764,7 +773,7 @@ ORDER BY {order}";
         return result;
     }
 
-    private class JobPersistenceRecordLinearDto : JobPersistenceRecord
+    protected class JobPersistenceRecordLinearDto : JobPersistenceRecord
     {
         public string RecordUniqueId { get; set; } = string.Empty;
         public string GroupId { get; set; } = string.Empty;

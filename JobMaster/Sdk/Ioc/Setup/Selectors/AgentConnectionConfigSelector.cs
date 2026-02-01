@@ -6,7 +6,7 @@ using JobMaster.Sdk.Abstractions.Keys;
 
 namespace JobMaster.Sdk.Ioc.Setup.Selectors;
 
-internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSelectorAdvanced
+internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSelector
 {
     private readonly ClusterConfigBuilder root;
     private readonly AgentConnectionDefinition def;

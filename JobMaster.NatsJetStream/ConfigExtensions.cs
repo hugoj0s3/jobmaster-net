@@ -12,10 +12,10 @@ public static class ConfigExtensions
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
     {
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentConnString(connectionString);
-        ((IAgentConnectionConfigSelectorAdvanced)agentConfigSelector).AgentRepoType(NatsJetStreamConstants.RepositoryTypeId);
+        agentConfigSelector.AgentConnString(connectionString);
+        agentConfigSelector.AgentRepoType(NatsJetStreamConstants.RepositoryTypeId);
         
-        var advancedSelector = (IAgentConnectionConfigSelectorAdvanced) agentConfigSelector;
+        var advancedSelector = agentConfigSelector;
         if (authOpts is not null)
         {
             advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey, authOpts);

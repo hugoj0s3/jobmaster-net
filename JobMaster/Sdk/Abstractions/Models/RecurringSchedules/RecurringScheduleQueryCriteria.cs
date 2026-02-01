@@ -32,4 +32,6 @@ internal class RecurringScheduleQueryCriteria
     public string? WorkerLane { get; set; }
     
     public IList<GenericRecordValueFilter> MetadataFilters { get; set; } = new List<GenericRecordValueFilter>();
+    
+    public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

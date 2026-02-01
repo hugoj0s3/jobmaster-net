@@ -12,9 +12,12 @@ internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareServ
     IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<Guid>> QueryIdsAsync(RecurringScheduleQueryCriteria queryCriteria);
+    Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
     long Count(RecurringScheduleQueryCriteria queryCriteria);
     RecurringScheduleRawModel? Get(Guid recurringScheduleId);
     Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId);
+
+    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
     bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt);
     void BulkUpdateStaticDefinitionLastEnsured(IList<string> staticDefinitionIds, DateTime ensuredAt);
     Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff);

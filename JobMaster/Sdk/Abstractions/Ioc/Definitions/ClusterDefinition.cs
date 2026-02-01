@@ -31,4 +31,6 @@ internal sealed class ClusterDefinition
     public string? MirrorLogFilePath { get; set; }
     public int? MirrorLogMaxBufferItems { get; set; }
     public TimeSpan? MirrorLogFlushInterval { get; set; }
+    
+    public bool IsStandalone { get; set; } = false;
 }

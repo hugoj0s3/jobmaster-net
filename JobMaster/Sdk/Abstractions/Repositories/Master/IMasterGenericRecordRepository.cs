@@ -25,4 +25,7 @@ internal interface IMasterGenericRecordRepository : IJobMasterClusterAwareMaster
     Task BulkInsertAsync(IList<GenericRecordEntry> records);
     Task<int> DeleteExpiredAsync(DateTime expiresAtTo, int limit);
     Task<int> DeleteByCreatedAtAsync(string groupId, DateTime createdAtTo, int limit);
+    
+    int Count(string groupId, GenericRecordQueryCriteria? criteria = null);
+    Task<int> CountAsync(string groupId, GenericRecordQueryCriteria? criteria = null);
 }

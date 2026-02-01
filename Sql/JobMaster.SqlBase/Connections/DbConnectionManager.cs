@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Data;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Connections;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
@@ -9,8 +10,14 @@ namespace JobMaster.SqlBase.Connections;
 
 internal interface IDbConnectionManager : IAcquirableKeepAliveConnectionManager<IDbConnection>
 {
-    IDbConnection Open(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
-    Task<IDbConnection> OpenAsync(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
+    IDbConnection Open(
+        string connectionString, 
+        JobMasterConfigDictionary? additionalConnConfig = null,
+        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent);
+    Task<IDbConnection> OpenAsync(
+        string connectionString,  
+        JobMasterConfigDictionary? additionalConnConfig = null,
+        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent);
 }
 
 internal abstract class DbConnectionManager : IDbConnectionManager, IDisposable
@@ -18,8 +25,14 @@ internal abstract class DbConnectionManager : IDbConnectionManager, IDisposable
     private readonly ConcurrentDictionary<string, AcquirableKeepAliveConnectionTimer<IDbConnection>> keepAliveConnections
         = new ConcurrentDictionary<string, AcquirableKeepAliveConnectionTimer<IDbConnection>>();
 
-    public abstract IDbConnection Open(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
-    public abstract Task<IDbConnection> OpenAsync(string connectionString, JobMasterConfigDictionary? additionalConnConfig = null);
+    public abstract IDbConnection Open(
+        string connectionString,  
+        JobMasterConfigDictionary? additionalConnConfig = null,
+        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent);
+    public abstract Task<IDbConnection> OpenAsync(
+        string connectionString,  
+        JobMasterConfigDictionary? additionalConnConfig = null,
+        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent);
 
     /// <summary>
     /// Acquires a keep-alive database connection from the pool, ensuring concurrency control through semaphores.

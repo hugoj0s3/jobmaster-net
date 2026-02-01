@@ -6,7 +6,7 @@
         <LangVersion>12</LangVersion>
 
         <PackageId>JobMaster</PackageId>
-        <VersionPrefix>0.0.4</VersionPrefix>
+        <VersionPrefix>0.0.5</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>

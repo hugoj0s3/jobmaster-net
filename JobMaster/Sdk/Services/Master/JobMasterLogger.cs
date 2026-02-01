@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -72,6 +73,7 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
             SourceMember = sourceMember,
             SourceFile = sourceFile,
             SourceLine = sourceLine,
+            Id = Guid.NewGuid(),
         };
         
         if (exception != null)
@@ -109,65 +111,66 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
 
     public async Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria)
     {
-        // ... (Your existing query logic remains unchanged) ...
-        var genericRecordQueryCriteria = new GenericRecordQueryCriteria()
-        {
-            Filters = new List<GenericRecordValueFilter>()
-        };
-        var filters = genericRecordQueryCriteria.Filters;
-        
-        if (criteria.FromTimestamp.HasValue)
-        {
-            filters.Add(new GenericRecordValueFilter()
-            {
-               Key = nameof(LogPayload.TimestampUtc),
-               Operation = GenericFilterOperation.Gte,
-               Value = criteria.FromTimestamp.Value
-            });
-        }
+        var genericRecordQueryCriteria = ToGenericRecordQueryCriteria(criteria);
 
-        if (criteria.ToTimestamp.HasValue)
-        {
-            filters.Add(new GenericRecordValueFilter()
-            {
-                Key = nameof(LogPayload.TimestampUtc),
-                Operation = GenericFilterOperation.Lte,
-                Value = criteria.ToTimestamp.Value
-            });
-        }
-
-        if (criteria.Level.HasValue)
-        {
-            filters.Add(new GenericRecordValueFilter()
-            {
-                Key = nameof(LogPayload.Level),
-                Operation = GenericFilterOperation.Eq,
-                Value = criteria.Level.Value
-            });
-        }
-        
-        if (!string.IsNullOrEmpty(criteria.Keyword))
-        {
-            filters.Add(new GenericRecordValueFilter()
-            {
-                Key = nameof(LogPayload.Message),
-                Operation = GenericFilterOperation.Contains,
-                Value = criteria.Keyword
-            });
-        }
-
-        if (criteria.SubjectType.HasValue)
-        {
-            genericRecordQueryCriteria.SubjectType = criteria.SubjectType.Value.ToString();
-        }
-
-        if (!string.IsNullOrEmpty(criteria.SubjectId))
-        {
-            genericRecordQueryCriteria.SubjectIds = new List<string>() { criteria.SubjectId! };
-        }
-        
         var genericRecords = await repo.QueryAsync(MasterGenericRecordGroupIds.Log, genericRecordQueryCriteria);
         return genericRecords.Select(x => ToLogItem(x)).ToList();
+    }
+    
+    public Task<int> CountAsync(LogItemQueryCriteria criteria)
+    {
+        var genericRecordQueryCriteria = ToGenericRecordQueryCriteria(criteria);
+        return repo.CountAsync(MasterGenericRecordGroupIds.Log, genericRecordQueryCriteria);
+    }
+
+    public async Task<LogItem?> GetAsync(Guid id)
+    {
+        var record = await repo.GetAsync(MasterGenericRecordGroupIds.Log, id.ToString("N"));
+        if (record == null) return null;
+        
+        return ToLogItem(record);
+    }
+
+    public void Dispose()
+    {
+        if (disposed) return;
+        
+        // 1. Stop the timer first to prevent new flush triggers
+        try { timer.Dispose(); } catch { }
+        
+        // 2. FORCE Final Flush
+        // We bypass SafeFlushAsync to avoid the 'disposed' check and allow a wait time.
+        try 
+        { 
+            // Wait up to 2 seconds for the lock (in case a flush is currently running)
+            if (flushLock.Wait(2000)) 
+            {
+                try
+                {
+                    // Run synchronously (Sync-over-Async) because we are in Dispose
+                    FlushCoreAsync().GetAwaiter().GetResult(); 
+                }
+                finally
+                {
+                    flushLock.Release();
+                }
+            }
+            else
+            {
+                var msg = "[JM-LOGGER] Dispose timeout. Could not acquire lock for final flush.";
+                Trace.TraceError(msg);
+            }
+        } 
+        catch (Exception e)
+        { 
+            var msg = $"[JM-LOGGER] Dispose timeout. Could not acquire lock for final flush. {e.StackTrace}";
+            Trace.TraceError(msg);
+        }
+        
+        // 3. NOW set disposed to true
+        disposed = true;
+        
+        flushLock.Dispose();
     }
 
     private static LogItem ToLogItem(GenericRecordEntry x)
@@ -191,6 +194,8 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         var logItem = x.ToObject<LogItem>();
         logItem.SubjectId = x.SubjectId;
         logItem.SubjectType = subjectType;
+        logItem.ClusterId = x.ClusterId;
+        logItem.Id = Guid.Parse(x.EntryId);
             
         return logItem;
     }
@@ -282,58 +287,81 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
             return GenericRecordEntry.Create(
                 ClusterConnConfig.ClusterId,
                 MasterGenericRecordGroupIds.Log,
-                Guid.NewGuid(),
+                item.Id,
                 payload);
         }
         
         return GenericRecordEntry.Create(
             ClusterConnConfig.ClusterId,
             MasterGenericRecordGroupIds.Log,
-            Guid.NewGuid(),
+            item.Id,
             item.SubjectType?.ToString() ?? string.Empty,
             item.SubjectId!,
             payload);
     }
-
-    public void Dispose()
+    
+    private static GenericRecordQueryCriteria ToGenericRecordQueryCriteria(LogItemQueryCriteria criteria)
     {
-        if (disposed) return;
+        var genericRecordQueryCriteria = new GenericRecordQueryCriteria()
+        {
+            Filters = new List<GenericRecordValueFilter>(),
+            OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtDesc,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
+            Offset = criteria.Offset,
+            Limit = criteria.CountLimit,
+        };
+        var filters = genericRecordQueryCriteria.Filters;
         
-        // 1. Stop the timer first to prevent new flush triggers
-        try { timer.Dispose(); } catch { }
-        
-        // 2. FORCE Final Flush
-        // We bypass SafeFlushAsync to avoid the 'disposed' check and allow a wait time.
-        try 
-        { 
-            // Wait up to 2 seconds for the lock (in case a flush is currently running)
-            if (flushLock.Wait(2000)) 
+        if (criteria.FromTimestamp.HasValue)
+        {
+            filters.Add(new GenericRecordValueFilter()
             {
-                try
-                {
-                    // Run synchronously (Sync-over-Async) because we are in Dispose
-                    FlushCoreAsync().GetAwaiter().GetResult(); 
-                }
-                finally
-                {
-                    flushLock.Release();
-                }
-            }
-            else
+                Key = nameof(LogPayload.TimestampUtc),
+                Operation = GenericFilterOperation.Gte,
+                Value = criteria.FromTimestamp.Value
+            });
+        }
+
+        if (criteria.ToTimestamp.HasValue)
+        {
+            filters.Add(new GenericRecordValueFilter()
             {
-                var msg = "[JM-LOGGER] Dispose timeout. Could not acquire lock for final flush.";
-                Trace.TraceError(msg);
-            }
-        } 
-        catch (Exception e)
-        { 
-            var msg = $"[JM-LOGGER] Dispose timeout. Could not acquire lock for final flush. {e.StackTrace}";
-            Trace.TraceError(msg);
+                Key = nameof(LogPayload.TimestampUtc),
+                Operation = GenericFilterOperation.Lte,
+                Value = criteria.ToTimestamp.Value
+            });
+        }
+
+        if (criteria.Level.HasValue)
+        {
+            filters.Add(new GenericRecordValueFilter()
+            {
+                Key = nameof(LogPayload.Level),
+                Operation = GenericFilterOperation.Eq,
+                Value = (int)criteria.Level.Value
+            });
         }
         
-        // 3. NOW set disposed to true
-        disposed = true;
-        
-        flushLock.Dispose();
+        if (!string.IsNullOrEmpty(criteria.Keyword))
+        {
+            filters.Add(new GenericRecordValueFilter()
+            {
+                Key = nameof(LogPayload.Message),
+                Operation = GenericFilterOperation.Contains,
+                Value = criteria.Keyword
+            });
+        }
+
+        if (criteria.SubjectType.HasValue)
+        {
+            genericRecordQueryCriteria.SubjectType = criteria.SubjectType.Value.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(criteria.SubjectId))
+        {
+            genericRecordQueryCriteria.SubjectIds = new List<string>() { criteria.SubjectId! };
+        }
+
+        return genericRecordQueryCriteria;
     }
 }

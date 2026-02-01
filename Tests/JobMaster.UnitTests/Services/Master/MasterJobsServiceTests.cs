@@ -112,22 +112,6 @@ public class MasterJobsServiceTests
     }
 
     [Fact]
-    public void BulkUpdatePartitionLockId_WhenIdsEmpty_ShouldReturnFalse_AndNotCallRepo()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
-
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
-
-        var result = sut.BulkUpdatePartitionLockId(new List<Guid>(), lockId: 1, expiresAt: DateTime.UtcNow);
-
-        result.Should().BeFalse();
-        repo.Verify(x => x.BulkUpdatePartitionLockId(It.IsAny<IList<Guid>>(), It.IsAny<int>(), It.IsAny<DateTime>()), Times.Never);
-    }
-
-    [Fact]
     public void BulkUpdateStatus_WhenIdsEmpty_ShouldDoNothing()
     {
         var clusterId = NewClusterId();

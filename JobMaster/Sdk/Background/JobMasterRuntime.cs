@@ -95,6 +95,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
+            modelToSave.IsStandalone = clusterDefinition.IsStandalone;
 
             if (clusterCnnCfg.MirrorLog == JsonlFileLogger.LogMirror)
             {
@@ -110,9 +111,9 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
 
             if ((modelToSave.ClusterMode == ClusterMode.Passive || modelToSave.ClusterMode == ClusterMode.Archived) && 
-                workerDefinitions.Any(x => x.Mode != AgentWorkerMode.Drain)) 
+                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1))) 
             {
-                throw new InvalidOperationException("Passive and Archived clusters can only have Drain workers");
+                throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
             }
             
             masterConfigService.Save(modelToSave);
@@ -122,12 +123,25 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 throw new InvalidOperationException("Duplicate agent connection names found");
             }
+
+            if (agentDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.StandaloneAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($" {JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
+            }
+
+            if (clusterDefinition.IsStandalone && agentDefinitions.Any())
+            {
+                throw new InvalidOperationException("Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
+            } 
             
             foreach (var workerDefinition in workerDefinitions)
             {
                 if (string.IsNullOrEmpty(workerDefinition.WorkerName))
                 {
-                    var workerName = JobMasterStringUtils.SanitizeForName(Environment.MachineName, 40) + "." + JobMasterIdUtil.NewNanoId();
+                    var workerName = JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 40) + "." + JobMasterIdUtil.NewNanoId();
                     workerDefinition.WorkerName = workerName;
                 }
             }
@@ -138,15 +152,47 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException("Duplicate worker names found");
             }
             
+            if (!clusterDefinition.IsStandalone)
+            {
+                var bucketService = componentFactory.GetComponent<IMasterBucketsService>();
+                var existingBuckets = await bucketService.QueryAllNoCacheAsync();
+                
+                // Create a drainer for standalone buckets. It can happen when a standalone cluster transitions to a non-standalone cluster.
+                // workerDefinitions.Any() is to not add in publisher only app instance.
+                if (existingBuckets.Any(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!)) && workerDefinitions.Any())
+                {
+                    var lanes = existingBuckets.Where(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!))
+                        .Select(x => x.WorkerLane)
+                        .Distinct()
+                        .ToList();
+                    
+                    foreach (var lane in lanes)
+                    {
+                        var workerDefinition = new WorkerDefinition()
+                        {
+                            AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
+                            WorkerName = $"{JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 25)}-StandaloneDrainer-{JobMasterIdUtil.NewNanoId()}",
+                            WorkerLane = lane,
+                            Mode = AgentWorkerMode.Drain,
+                            ClusterId = clusterDefinition.ClusterId!,
+                            BatchSize = 250,
+                        };
+                        
+                        var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
+                            serviceProvider,
+                            workerDefinition);
+                        
+                        Workers.Add(worker);
+                    }
+                }
+                
+            }
+            
             foreach (var workerDefinition in workerDefinitions)
             {
                 var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
                     serviceProvider,
-                    clusterCnnCfg.ClusterId,
-                    workerDefinition.AgentConnectionName,
-                    workerDefinition.WorkerName,
-                    workerDefinition.WorkerLane,
-                    workerDefinition.Mode);
+                    workerDefinition);
 
                 Workers.Add(worker);
             }
@@ -154,7 +200,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
         foreach (var def in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
-            def.Activate();
+            def.MarkAsReady();
         }
         
         foreach (var worker in Workers)
@@ -164,7 +210,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             await worker.StartAsync();
         }
-
+        
         BootstrapStaticRecurringSchedules(JobMasterClusterConnectionConfig.Default!.ClusterId);
         
         Started = true;

@@ -412,7 +412,7 @@ public class JobMasterSchedulerClusterAwareTests
             connectionString: "cnn-agent",
             repositoryTypeId: "repo-agent");
 
-        cfg.Activate();
+        cfg.MarkAsReady();
         return cfg;
     }
 }

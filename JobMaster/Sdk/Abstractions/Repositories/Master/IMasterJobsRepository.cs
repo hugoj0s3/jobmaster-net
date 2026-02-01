@@ -24,9 +24,15 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
     Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria);
 
+
+    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
     bool BulkUpdatePartitionLockId(IList<Guid> jobIds, int lockId, DateTime expiresAt);
+    void ReleasePartitionLock(Guid jobId);
+
+    [Obsolete("Use ReleasePartitionLock(...) instead. This method will be removed in a future release.")]
     void ClearPartitionLock(Guid jobId);
     void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
 
     Task<int> PurgeFinalByScheduledAtAsync(DateTime cutoffUtc, int limit);
+    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
 }

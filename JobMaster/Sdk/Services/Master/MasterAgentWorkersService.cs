@@ -43,13 +43,13 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         sentinelKeys = new JobMasterSentinelKeys(clusterConnectionConfig.ClusterId);
     }
     
-    public IList<AgentWorkerModel> GetWorkers(string? agentConnectionId = null, bool useCache = true)
+    public IList<AgentWorkerModel> QueryWorkers(string? agentConnectionId = null, bool useCache = true)
     {
         var all = GetAllAgentWorkers(useCache);
         return ToModel(all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList());
     }
 
-    public async Task<IList<AgentWorkerModel>> GetWorkersAsync(string? agentConnectionId = null, bool useCache = true)
+    public async Task<IList<AgentWorkerModel>> QueryWorkersAsync(string? agentConnectionId = null, bool useCache = true)
     {
         var all = await GetAllAgentWorkersAsync(useCache);
         return ToModel(all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList());

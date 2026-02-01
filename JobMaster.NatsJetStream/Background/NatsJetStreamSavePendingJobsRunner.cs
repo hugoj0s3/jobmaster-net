@@ -1,4 +1,5 @@
 using System.Text;
+using JobMaster.Abstractions.Models;
 using JobMaster.NatsJetStream.Agents;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;

@@ -1,10 +1,11 @@
+using JobMaster.Abstractions.Ioc.Selectors;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
 internal static class ClusterConfigSelectorAdvancedFactory
 {
-    public static IClusterConfigSelectorAdvanced Create(string? clusterId, IServiceCollection serviceCollection)
+    public static IClusterConfigSelector Create(string? clusterId, IServiceCollection serviceCollection)
     {
         // Try to resolve the concrete builder type across assemblies
         var typeName = "JobMaster.Sdk.Ioc.Setup.ClusterConfigBuilder, JobMaster.Sdk";
@@ -24,6 +25,6 @@ internal static class ClusterConfigSelectorAdvancedFactory
             .GetConstructor(new[] { typeof(string), typeof(IServiceCollection) })
             !;
 
-        return (IClusterConfigSelectorAdvanced)constructor.Invoke([clusterId, serviceCollection]);
+        return (IClusterConfigSelector)constructor.Invoke([clusterId, serviceCollection]);
     }
 }

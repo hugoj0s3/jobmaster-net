@@ -4,6 +4,7 @@ using System.Text;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
@@ -63,8 +64,9 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
     {
         string sqlText;
         object args;
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        
         criteria ??= new GenericRecordQueryCriteria();
+        using var conn = connManager.Open(connString, additionalConnConfig, criteria.ReadIsolationLevel);
         (sqlText, args) = BuildQuerySql(groupId, criteria);
             
         var result = conn.Query<SqlGenericRecordEntryLinearDto>(
@@ -77,8 +79,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
 
     public async Task<IList<GenericRecordEntry>> QueryAsync(string groupId, GenericRecordQueryCriteria? criteria = null)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         criteria ??= new GenericRecordQueryCriteria();
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, criteria.ReadIsolationLevel);
 
         var (sqlText, args) = BuildQuerySql(groupId, criteria);
         
@@ -432,6 +434,24 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
             tx.Rollback();
             throw;
         }
+    }
+
+    public int Count(string groupId, GenericRecordQueryCriteria? criteria = null)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        criteria ??= new GenericRecordQueryCriteria();
+
+        var (sqlText, args) = genericUtil.BuildCountSql(groupId, criteria);
+        return conn.ExecuteScalar<int>(sqlText, args);
+    }
+
+    public async Task<int> CountAsync(string groupId, GenericRecordQueryCriteria? criteria = null)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        criteria ??= new GenericRecordQueryCriteria();
+
+        var (sqlText, args) = genericUtil.BuildCountSql(groupId, criteria);
+        return await conn.ExecuteScalarAsync<int>(sqlText, args);
     }
     
     // Helpers

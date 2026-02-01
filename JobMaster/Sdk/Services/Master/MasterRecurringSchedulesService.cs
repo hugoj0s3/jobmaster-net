@@ -123,6 +123,11 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         return rows.Select(x => x.Id).ToList();
     }
 
+    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
+    {
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+    }
+
     public Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
     {
         return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.InactivateStaticDefinitionsOlderThanAsync(cutoff));
@@ -143,6 +148,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.GetAsync(recurringScheduleId));
     }
 
+    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
     public bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt)
     {
         if (recurringScheduleIds.IsNullOrEmpty())

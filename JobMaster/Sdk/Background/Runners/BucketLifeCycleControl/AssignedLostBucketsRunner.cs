@@ -50,7 +50,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
         var lostBuckets = buckets
             .Where(b => b.Status == BucketStatus.Lost);
         
-        var workers = await masterAgentWorkersService.GetWorkersAsync(useCache: false);
+        var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
         var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
         
         foreach (var bucket in lostBuckets)

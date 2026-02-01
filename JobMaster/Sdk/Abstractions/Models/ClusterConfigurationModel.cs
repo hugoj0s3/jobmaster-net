@@ -50,6 +50,8 @@ internal class ClusterConfigurationModel : JobMasterBaseModel
     /// - null = keep data forever (no automatic purge)
     /// </summary>
     public TimeSpan? DataRetentionTtl { get; set; } = TimeSpan.FromDays(30);
+    
+    public bool IsStandalone { get; set; } = false;
 
     public JobMasterConfigDictionary AdditionalConfig { get; set; } = new();
 

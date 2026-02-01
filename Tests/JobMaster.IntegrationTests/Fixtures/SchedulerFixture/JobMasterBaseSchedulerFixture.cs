@@ -193,7 +193,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                 
                 // cfg.DebugJsonlFileLogger("/home/hugo/log/");
                 
-                ((IClusterConfigSelectorAdvanced)cfg).EnableMirrorLog((lItem) => OnLog(lItem));
+                cfg.EnableMirrorLog((lItem) => OnLog(lItem));
 
                 var defaultAgentTablePrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
                     ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")

@@ -77,25 +77,13 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
-        
-        var recurringScheduleIds = await masterRecurringSchedulesService.QueryIdsAsync(recurringScheduleQueryCriteria);
-        if (recurringScheduleIds.Count <= 0)
+
+        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, lockId, utcNow.Add(durationToLock));
+        if (recurringSchedules.Count <= 0)
         {
             distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
-        
-        var updateResult = masterRecurringSchedulesService.BulkUpdatePartitionLockId(recurringScheduleIds, lockId, utcNow.Add(durationToLock));
-        if (!updateResult)
-        {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
-            return OnTickResult.Locked(TimeSpan.FromMilliseconds(250));
-        }
-        
-        recurringScheduleQueryCriteria.IsLocked = true;
-        recurringScheduleQueryCriteria.PartitionLockId = lockId;
-        
-        var recurringSchedules = await masterRecurringSchedulesService.QueryAsync(recurringScheduleQueryCriteria);
         foreach (var recurringSchedule in recurringSchedules)
         {
             if (cutOffTime <= DateTime.UtcNow)

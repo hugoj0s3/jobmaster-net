@@ -19,7 +19,7 @@ public class AgentJobsDispatcherServiceTests
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
-        clusterConfig.Activate();
+        clusterConfig.MarkAsReady();
 
         var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -50,7 +50,7 @@ public class AgentJobsDispatcherServiceTests
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
-        clusterConfig.Activate();
+        clusterConfig.MarkAsReady();
 
         var agentConnId = new AgentConnectionId(clusterId, "agent");
         
@@ -95,7 +95,7 @@ public class AgentJobsDispatcherServiceTests
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
-        clusterConfig.Activate();
+        clusterConfig.MarkAsReady();
 
         var agentConnId = new AgentConnectionId(clusterId, "agent");
         var bucketId = "b1";
@@ -143,7 +143,7 @@ public class AgentJobsDispatcherServiceTests
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
-        clusterConfig.Activate();
+        clusterConfig.MarkAsReady();
 
         var agentConnId = new AgentConnectionId(clusterId, "agent");
         var bucketId = "b1";

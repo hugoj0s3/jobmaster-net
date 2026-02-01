@@ -5,6 +5,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.SchedulerFixture;
 using JobMaster.IntegrationTests.Utils;
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -192,11 +193,13 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     {
                         Status = JobMasterJobStatus.HeldOnMaster, 
                         MetadataFilters = sessionMetadataFilters,
+                        ReadIsolationLevel = ReadIsolationLevel.FastSync,
                     });
                     
                     var countSucceeded = masterJobsService.Count(new JobQueryCriteria() { 
                         Status = JobMasterJobStatus.Succeeded, 
                         MetadataFilters = sessionMetadataFilters,
+                        ReadIsolationLevel = ReadIsolationLevel.FastSync,
                     });
                     
                     var expectedTotalForCluster = qtys.Where(x => x.ClusterId == clusterId).Sum(x => x.QtyJobs);
@@ -236,7 +239,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
                 {
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
@@ -319,7 +323,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 {
                     Status = JobMasterJobStatus.Succeeded,
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
                 allSucceededJobs.AddRange(succeededJobs.Select(j => j.Id));
             }
@@ -361,7 +366,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
                 {
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
@@ -579,7 +585,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
                 {
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
@@ -670,7 +677,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
                 {
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
@@ -863,7 +871,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var jobs = await masterJobsService.QueryAsync(new JobQueryCriteria
                 {
                     MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue
+                    CountLimit = int.MaxValue,
+                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
                 });
 
                 allJobsFromDb.AddRange(jobs);

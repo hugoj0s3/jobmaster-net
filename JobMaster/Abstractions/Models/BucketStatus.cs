@@ -1,6 +1,6 @@
-namespace JobMaster.Sdk.Abstractions.Models.Buckets;
+namespace JobMaster.Abstractions.Models;
 
-internal enum BucketStatus
+public enum BucketStatus
 {
     Active = 1,     // Active and accepting new jobs
     Completing = 2,   // Still processing existing jobs but not accepting new ones

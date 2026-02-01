@@ -18,4 +18,5 @@ internal class JobQueryCriteria
     public string? WorkerLane { get; set; }
     public int CountLimit { get; set; } = 100;
     public int Offset { get; set; }
+    public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

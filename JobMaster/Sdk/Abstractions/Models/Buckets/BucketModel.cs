@@ -123,4 +123,9 @@ internal class BucketModel : JobMasterBaseModel
     {
         return DateTime.UtcNow.Subtract(LastStatusChangeAt) > JobMasterConstants.MinBucketStatusTransitionInterval;
     }
+
+    public bool IsStandaloneBucket(string clusterDefinitionClusterId)
+    {
+        return ClusterId == clusterDefinitionClusterId && AgentConnectionId.Name == JobMasterConstants.StandaloneAgentConnName;
+    }
 }
