@@ -17,7 +17,7 @@ dotnet add package JobMaster.Api
 
 
 ## ⚙️ Base Configuration
-The API is configured during the service registration phase. You must call `app.StartJobMasterApi()` after building the app to map the internal routes.
+The API is configured during the service registration phase. You must call `app.MapJobMasterApi()` after building the app to map the internal routes.
 
 ```csharp
 builder.Services.UseJobMasterApi(o =>
