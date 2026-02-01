@@ -96,7 +96,24 @@ internal class JobMasterClusterConnectionConfig
             var id = agentConnConfig.Id;
             AgentConnectionConfigs[id] = agentConnConfig;
         }
-            
+    }
+
+    public JobMasterAgentConnectionConfig AddStandaloneAgentConnectionString()
+    {
+        lock (InstanceLock)
+        {
+            var agentConnConfig = new JobMasterAgentConnectionConfig(
+                this.ClusterId, 
+                JobMasterConstants.StandaloneAgentConnName, 
+                this.ConnectionString, 
+                this.RepositoryTypeId, 
+                this.AdditionalConnConfig, 
+                this.RuntimeDbOperationThrottleLimit);
+                
+            AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
+                    
+            return agentConnConfig;
+        }
     }
     
     public void SetJobMasterConfigDictionary(JobMasterConfigDictionary config)
@@ -121,15 +138,7 @@ internal class JobMasterClusterConnectionConfig
             if (string.Equals(JobMasterConstants.StandaloneAgentConnName, idOrName, StringComparison.OrdinalIgnoreCase) ||
                 string.Equals($"{ClusterId}:{JobMasterConstants.StandaloneAgentConnName}", idOrName, StringComparison.OrdinalIgnoreCase))
             {
-                // If standalone agent connection string is requested, we create for draining purposes.
-                this.AddAgentConnectionString(
-                    JobMasterConstants.StandaloneAgentConnName,
-                    this.ConnectionString,
-                    this.RepositoryTypeId, 
-                    this.AdditionalConnConfig, 
-                    this.RuntimeDbOperationThrottleLimit);
-                
-                return AgentConnectionConfigs[$"{ClusterId}:{JobMasterConstants.StandaloneAgentConnName}"]; 
+                return AddStandaloneAgentConnectionString();
             }
             
             return null;

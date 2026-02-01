@@ -194,6 +194,8 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         var logItem = x.ToObject<LogItem>();
         logItem.SubjectId = x.SubjectId;
         logItem.SubjectType = subjectType;
+        logItem.ClusterId = x.ClusterId;
+        logItem.Id = Guid.Parse(x.EntryId);
             
         return logItem;
     }
@@ -302,7 +304,11 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
     {
         var genericRecordQueryCriteria = new GenericRecordQueryCriteria()
         {
-            Filters = new List<GenericRecordValueFilter>()
+            Filters = new List<GenericRecordValueFilter>(),
+            OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtDesc,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
+            Offset = criteria.Offset,
+            Limit = criteria.CountLimit,
         };
         var filters = genericRecordQueryCriteria.Filters;
         
@@ -332,7 +338,7 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
             {
                 Key = nameof(LogPayload.Level),
                 Operation = GenericFilterOperation.Eq,
-                Value = criteria.Level.Value
+                Value = (int)criteria.Level.Value
             });
         }
         
@@ -355,8 +361,6 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         {
             genericRecordQueryCriteria.SubjectIds = new List<string>() { criteria.SubjectId! };
         }
-        
-        genericRecordQueryCriteria.ReadIsolationLevel = ReadIsolationLevel.FastSync;
 
         return genericRecordQueryCriteria;
     }

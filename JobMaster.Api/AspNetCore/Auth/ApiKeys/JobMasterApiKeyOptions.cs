@@ -2,7 +2,7 @@
 
 internal sealed class JobMasterApiKeyOptions
 {
-    public string ApiKeyHeader { get; set; } = "api-key";
+    public string ApiKeyHeader { get; set; } = "x-api-key";
     
     public IList<JobMasterApiKeyIdentity> FixedIdentityList { get; set; } = new List<JobMasterApiKeyIdentity>();
     

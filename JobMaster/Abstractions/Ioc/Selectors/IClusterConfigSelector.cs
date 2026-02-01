@@ -28,7 +28,7 @@ public interface IClusterConfigSelector
 
     public IClusterConfigSelector ClusterMode(ClusterMode mode);
     
-    public IClusterStandaloneConfigSelector UseClusterStandalone();
+    public IClusterStandaloneConfigSelector UseStandaloneCluster();
     
     internal IAgentConnectionConfigSelector AddAgentConnectionConfig(
         string agentConnectionName,

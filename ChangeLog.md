@@ -1,4 +1,10 @@
 # ChangeLog
+## 0.0.5-alpha
+### Added
+- **Core API**: Implementation to consult all system entities (Jobs, Buckets, Workers, Clusters, etc.).
+- **Standalone Mode**: Quick-start configuration for users who do not require multiple agents or external brokers.
+- **Performance Optimization**: Improved job fetching logic with AcquireAndFetchAsync to reduce database round-trips.
+- **Improve the config selector internal code**: get ride of the internal advance selector.
 ## 0.0.4-alpha
 ### Added
 - Rename AgentWorkerMode.Standalone to AgentWorkerMode.Full

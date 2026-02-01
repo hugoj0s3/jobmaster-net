@@ -8,7 +8,7 @@ namespace JobMaster.Api.AspNetCore;
 
 public static class JobMasterApiWebApplicationExtensions
 {
-    public static WebApplication StartJobMasterApi(this WebApplication app)
+    public static WebApplication MapJobMasterApi(this WebApplication app)
     {
         if (app == null) throw new ArgumentNullException(nameof(app));
 
@@ -20,7 +20,7 @@ public static class JobMasterApiWebApplicationExtensions
             JobMasterApiSwaggerSupport.ConfigureApplication(app, options);
         }
 
-        app.MapJobMasterApi();
+        JobMasterApiEndpointRouteBuilderExtensions.MapJobMasterApi(app);
 
         return app;
      }

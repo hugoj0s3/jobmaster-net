@@ -9,9 +9,19 @@ namespace JobMaster.Api.AspNetCore.Auth;
 
 public sealed class JobMasterApiOptions
 {
+    /// <summary>
+    ///  Require authentication for all API endpoints. Default is false.
+    /// </summary>
     public bool RequireAuthentication { get; set; } = false;
+    
+    /// <summary>
+    ///  Base path for the JobMaster API. Default is "/jm-api".
+    /// </summary>
     public string BasePath { get; set; } = "/jm-api";
     
+    /// <summary>
+    /// Enable Swagger UI for API documentation.
+    /// </summary>
     public bool EnableSwagger { get; set; } = false;
     
     public IList<JobMasterApiAuthenticationType> GetAuthenticationTypesSupported()
@@ -19,17 +29,38 @@ public sealed class JobMasterApiOptions
         return AuthenticationTypesSupported.ToList();
     }
     
+    /// <summary>
+    /// Configures API Key authentication.
+    /// </summary>
+    /// <returns></returns>
     public IApiKeyAuthConfigSelector UseApiKeyAuth() => new ApiKeyAuthConfigSelector(this);
+    
+    /// <summary>
+    /// Configure User/Password authentication.
+    /// </summary>
+    /// <returns></returns>
     
     public IApiUserPwdAuthConfigSelector UseUserPwdAuth() => new ApiUserPwdAuthConfigSelector(this);
 
+    /// <summary>
+    /// Configure JWT Bearer authentication.
+    /// </summary>
+    /// <returns></returns>
     public IJwtBearerAuthConfigSelector UseJwtBearerAuth() => new JwtBearerAuthConfigSelector(this);
     
+    /// <summary>
+    /// Use custom JobMaster identity provider. it excludes all ApiKey, UserPwd and JwtBearer authentication configuration.
+    /// </summary>
+    /// <returns></returns>
     public void UseCustomizeJobMasterIdentityProvider<T>() where T : class, IJobMasterIdentityProvider
     {
         JobMasterIdentityProviderType = typeof(T);
     }
     
+    /// <summary>
+    /// Use custom JobMaster authorization provider. By default, is all or nothing. If the user is authenticated, it is authorized.
+    /// </summary>
+    /// <returns></returns>
     public void UseCustomizeJobMasterAuthorizationProvider<T>() where T : class, IJobMasterAuthorizationProvider
     {
         JobMasterAuthorizationProviderType = typeof(T);

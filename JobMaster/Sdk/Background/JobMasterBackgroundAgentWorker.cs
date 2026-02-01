@@ -112,24 +112,17 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public static async Task<JobMasterBackgroundAgentWorker> CreateAsync(
         IServiceProvider serviceProvider,
-        string clusterId,
-        string agentConnName,
-        string workerName,
-        string? workerLane,
-        AgentWorkerMode mode)
+        WorkerDefinition workerDefinition)
     {
         if (JobMasterRuntimeSingleton.Instance?.Started == true)
         {
             throw new InvalidOperationException("JobMasterRuntime is already started");
         }
         
-        var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.First(x => x.ClusterId == clusterId);
-        
-        var workerDefinition = clusterDefinition.Workers.FirstOrDefault(x => x.AgentConnectionName == agentConnName && x.WorkerName == workerName);
-        if (workerDefinition == null)
-        {
-            throw new ArgumentException($"Worker '{workerName}' not found in cluster configuration.", nameof(workerName));
-        }
+        var clusterId = workerDefinition.ClusterId;
+        var agentConnName = workerDefinition.AgentConnectionName;
+        var workerName = workerDefinition.WorkerName;
+        var workerLane = workerDefinition.WorkerLane;
         
         if (string.IsNullOrEmpty(workerName))
         {
@@ -156,7 +149,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         
         var agentConnectionString = clusterConfig.GetAgentConnectionConfig(agentConnName);
-        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, mode, workerDefinition.ParallelismFactor);
+        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
@@ -171,7 +164,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
             BatchSize = workerDefinition.BatchSize,
             BucketAwareSemaphoreSlim = new SemaphoreSlim(qtyOfBuckets),
-            Mode = mode,
+            Mode = workerDefinition.Mode,
             WorkerLane = workerLane,
             SkipWarmUpTime = workerDefinition.SkipWarmUpTime,
             ParallelismFactor = workerDefinition.ParallelismFactor,

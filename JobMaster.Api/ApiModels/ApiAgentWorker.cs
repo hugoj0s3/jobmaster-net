@@ -8,6 +8,7 @@ public class ApiAgentWorker : ApiClusterBaseModel
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
     public string AgentConnectionId { get; set; } = null!;
+    public string AgentConnectionName { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
     public bool IsAlive { get; set; }
     public DateTime? StopRequestedAt { get; set; }
@@ -26,6 +27,7 @@ public class ApiAgentWorker : ApiClusterBaseModel
             Id = model.Id,
             Name = model.Name,
             AgentConnectionId = model.AgentConnectionId.IdValue,
+            AgentConnectionName = model.AgentConnectionId.Name,
             CreatedAt = model.CreatedAt,
             IsAlive = model.IsAlive,
             StopRequestedAt = model.StopRequestedAt,

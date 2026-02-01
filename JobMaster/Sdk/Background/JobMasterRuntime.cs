@@ -152,15 +152,47 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException("Duplicate worker names found");
             }
             
+            if (!clusterDefinition.IsStandalone)
+            {
+                var bucketService = componentFactory.GetComponent<IMasterBucketsService>();
+                var existingBuckets = await bucketService.QueryAllNoCacheAsync();
+                
+                // Create a drainer for standalone buckets. It can happen when a standalone cluster transitions to a non-standalone cluster.
+                // workerDefinitions.Any() is to not add in publisher only app instance.
+                if (existingBuckets.Any(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!)) && workerDefinitions.Any())
+                {
+                    var lanes = existingBuckets.Where(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!))
+                        .Select(x => x.WorkerLane)
+                        .Distinct()
+                        .ToList();
+                    
+                    foreach (var lane in lanes)
+                    {
+                        var workerDefinition = new WorkerDefinition()
+                        {
+                            AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
+                            WorkerName = $"{JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 25)}-StandaloneDrainer-{JobMasterIdUtil.NewNanoId()}",
+                            WorkerLane = lane,
+                            Mode = AgentWorkerMode.Drain,
+                            ClusterId = clusterDefinition.ClusterId!,
+                            BatchSize = 250,
+                        };
+                        
+                        var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
+                            serviceProvider,
+                            workerDefinition);
+                        
+                        Workers.Add(worker);
+                    }
+                }
+                
+            }
+            
             foreach (var workerDefinition in workerDefinitions)
             {
                 var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
                     serviceProvider,
-                    clusterCnnCfg.ClusterId,
-                    workerDefinition.AgentConnectionName,
-                    workerDefinition.WorkerName,
-                    workerDefinition.WorkerLane,
-                    workerDefinition.Mode);
+                    workerDefinition);
 
                 Workers.Add(worker);
             }
@@ -178,7 +210,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             await worker.StartAsync();
         }
-
+        
         BootstrapStaticRecurringSchedules(JobMasterClusterConnectionConfig.Default!.ClusterId);
         
         Started = true;

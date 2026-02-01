@@ -19,7 +19,7 @@ public static class ConfigExtensions
         return agentConfigSelector;
     }
     
-    public static IClusterStandaloneConfigSelector UseMySqlForMaster(
+    public static IClusterStandaloneConfigSelector UseMySql(
         this IClusterStandaloneConfigSelector standaloneConfigSelector, 
         string connectionString)
     {

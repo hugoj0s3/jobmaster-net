@@ -15,9 +15,6 @@
 ### Ignoring the recurring schedule if the handle does not exists anymore and log error. It will avoid to explode later when the job is scheduled.
 ### Review lockers we might not need ~~saving~~ anymore and ideally it should be per resource not action, but keep this design for now if it is difficulty.
 
-## Clean ups
-### Review documentation all class
-
 ## Runners
 ### The stop gracefully should be reviewed. it is not quite good.
 ### Also the immediate stop should be reviewed. it is not quite good as well.

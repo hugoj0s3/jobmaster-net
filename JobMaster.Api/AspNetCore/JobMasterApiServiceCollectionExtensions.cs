@@ -15,6 +15,13 @@ namespace JobMaster.Api.AspNetCore;
 
 public static class JobMasterApiServiceCollectionExtensions
 {
+    /// <summary>
+    /// Configures the JobMaster API.
+    /// </summary>
+    /// <param name="services"></param>
+    /// <param name="configureAuth"></param>
+    /// <returns></returns>
+    /// <exception cref="ArgumentNullException"></exception>
     public static IServiceCollection UseJobMasterApi(this IServiceCollection services, Action<JobMasterApiOptions>? configureAuth = null)
     {
         if (services == null) throw new ArgumentNullException(nameof(services));

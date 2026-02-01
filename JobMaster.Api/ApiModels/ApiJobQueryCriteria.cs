@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -14,8 +14,8 @@ public class ApiJobQueryCriteria
     public string? MetadataFiltersJson { get; set; }
     public string? JobDefinitionId { get; set; }
     public string? WorkerLane { get; set; }
-    public int CountLimit { get; set; }
-    public int Offset { get; set; }
+    public int? CountLimit { get; set; }
+    public int? Offset { get; set; }
 
     internal JobQueryCriteria ToDomainCriteria()
     {
@@ -35,8 +35,8 @@ public class ApiJobQueryCriteria
             MetadataFilters = ApiGenericRecordValueFilterMappings.ParseMetadataFiltersJson(MetadataFiltersJson),
             JobDefinitionId = JobDefinitionId,
             WorkerLane = WorkerLane,
-            CountLimit = CountLimit,
-            Offset = Offset,
+            CountLimit = CountLimit ?? 25,
+            Offset = Offset ?? 0,
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }

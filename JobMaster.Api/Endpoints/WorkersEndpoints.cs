@@ -31,7 +31,7 @@ internal static class WorkersEndpoints
             return Results.NotFound();
         }
 
-        var workers = await service.QueryWorkersAsync(useCache: true);
+        var workers = await service.QueryWorkersAsync(useCache: false);
 
         if (!string.IsNullOrEmpty(criteria.WorkerLane))
             workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.Ordinal)).ToList();
@@ -63,7 +63,7 @@ internal static class WorkersEndpoints
         var workers = await service.QueryWorkersAsync(useCache: true);
 
         if (!string.IsNullOrEmpty(criteria.WorkerLane))
-            workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.Ordinal)).ToList();
+            workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.OrdinalIgnoreCase)).ToList();
         if (criteria.Mode.HasValue)
             workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
         if (criteria.IsAlive.HasValue)

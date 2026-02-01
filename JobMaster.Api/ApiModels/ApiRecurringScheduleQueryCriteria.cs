@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
@@ -20,8 +20,8 @@ public class ApiRecurringScheduleQueryCriteria
     public string? WorkerLane { get; set; }
     public string? MetadataFiltersJson { get; set; }
     
-    public int CountLimit { get; set; } = 100;
-    public int Offset { get; set; }
+    public int? CountLimit { get; set; }
+    public int? Offset { get; set; }
 
     internal RecurringScheduleQueryCriteria ToDomainCriteria()
     {
@@ -40,8 +40,8 @@ public class ApiRecurringScheduleQueryCriteria
             ProfileId = ProfileId,
             WorkerLane = WorkerLane,
             MetadataFilters = ApiGenericRecordValueFilterMappings.ParseMetadataFiltersJson(MetadataFiltersJson),
-            CountLimit = CountLimit,
-            Offset = Offset,
+            CountLimit = CountLimit ?? 25,
+            Offset = Offset ?? 0,
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }

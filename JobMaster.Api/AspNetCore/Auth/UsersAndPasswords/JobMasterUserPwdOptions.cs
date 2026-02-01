@@ -2,8 +2,8 @@
 
 internal sealed class JobMasterUserPwdOptions
 {
-    public string UserHeaderName { get; set; } = "user";
-    public string PwdHeaderName { get; set; } = "pwd";                                                                              
+    public string UserHeaderName { get; set; } = "X-User-Name";
+    public string PwdHeaderName { get; set; } = "X-Password";                                                                              
     
     internal Type? UserPwdAuthProviderType { get; set; } 
     

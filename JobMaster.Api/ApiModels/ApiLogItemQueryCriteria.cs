@@ -1,4 +1,4 @@
-﻿using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -13,8 +13,8 @@ public class ApiLogItemQueryCriteria
     
     public string? Keyword { get; set; }
     
-    public int CountLimit { get; set; } = 100;
-    public int Offset { get; set; }
+    public int? CountLimit { get; set; }
+    public int? Offset { get; set; }
 
     internal LogItemQueryCriteria ToDomainCriteria()
     {
@@ -26,8 +26,8 @@ public class ApiLogItemQueryCriteria
             FromTimestamp = FromTimestamp,
             ToTimestamp = ToTimestamp,
             Keyword = Keyword,
-            CountLimit = CountLimit,
-            Offset = Offset,
+            CountLimit = CountLimit ?? 25,
+            Offset = Offset ?? 0,
         };
     }
 }

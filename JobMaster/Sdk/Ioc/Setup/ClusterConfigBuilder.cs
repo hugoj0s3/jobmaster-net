@@ -31,28 +31,13 @@ namespace JobMaster.Sdk.Ioc.Setup;
 
 internal class ClusterConfigBuilder : IClusterConfigSelector
 {
-    private string? clusterId;
-    
-    private string? clusterRepoType;
-    private string? clusterConnString;
-    private JobMasterConfigDictionary clusterAdditionalConnConfig = new();
-    
-    private int? clusterDefaultMaxRetryCount;
-    private TimeSpan? clusterDefaultJobTimeout;
-    private int? clusterMaxMessageByteSize;
-    private string? clusterIanaTimeZoneId;
-    private bool? clusterIsDefault;
-    private JobMasterConfigDictionary? clusterAdditionalConfig;
-    
     internal readonly ClusterDefinition clusterDefinition = new();
     
     private readonly IServiceCollection services;
-    private TimeSpan clusterTransientThreshold;
-    private int? clusterRuntimeDbOperationThrottleLimit;
 
     public ClusterConfigBuilder(string? clusterId, IServiceCollection serviceProvider)
     {
-        this.clusterId = clusterId;
+        this.clusterDefinition.ClusterId = clusterId;
         this.services = serviceProvider;
     }
 
@@ -64,38 +49,27 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public void Finish()
     {
-        var finalClusterId = clusterId;
-        if (string.IsNullOrWhiteSpace(finalClusterId))
+        if (string.IsNullOrWhiteSpace(clusterDefinition.ClusterId))
         {
             throw new ArgumentException("ClusterId must be defined via AddJobMasterCluster(name, ...) or ClusterId(...)");
         }
 
-        if (string.IsNullOrWhiteSpace(clusterRepoType))
+        if (string.IsNullOrWhiteSpace(clusterDefinition.RepoType))
         {
             throw new ArgumentException("ClusterRepoType must be defined via ClusterRepoType(...)");
         }
 
-        if (string.IsNullOrWhiteSpace(clusterConnString))
+        if (string.IsNullOrWhiteSpace(clusterDefinition.ConnString))
         {
             throw new ArgumentException("ClusterConnString must be defined via ClusterConnString(...)");
         }
 
-        clusterDefinition.ClusterId = finalClusterId!;
-        clusterDefinition.RepoType = clusterRepoType!;
-        clusterDefinition.ConnString = clusterConnString!;
-        
-        clusterDefinition.AdditionalConnConfig = clusterAdditionalConnConfig;
-        clusterDefinition.DefaultMaxRetryCount = clusterDefaultMaxRetryCount;
-        clusterDefinition.TransientThreshold = clusterTransientThreshold;
-        clusterDefinition.DefaultJobTimeout = clusterDefaultJobTimeout;
-        clusterDefinition.MaxMessageByteSize = clusterMaxMessageByteSize;
-        clusterDefinition.IanaTimeZoneId = clusterIanaTimeZoneId;
-        clusterDefinition.AdditionalConfig = clusterAdditionalConfig;
-        clusterDefinition.IsDefault = clusterIsDefault ?? false;
-        clusterDefinition.RuntimeDbOperationThrottleLimit = clusterRuntimeDbOperationThrottleLimit;
+        var finalClusterId = clusterDefinition.ClusterId!;
+        var finalClusterRepoType = clusterDefinition.RepoType!;
+        var finalClusterConnString = clusterDefinition.ConnString!;
         
         BootstrapBlueprintDefinitions.Clusters.Add(clusterDefinition);
-        // Register workers
+        
         foreach (var w in clusterDefinition.Workers)
         {
             w.ClusterId = finalClusterId!;
@@ -108,34 +82,46 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         // Create or get ClusterConnectionConfig
         var clusterCnnConfig = JobMasterClusterConnectionConfig.Create(
-            finalClusterId!, clusterRepoType!, 
-            clusterConnString!, 
-            isDefault: this.clusterIsDefault ?? false, 
-            runtimeDbOperationThrottleLimit: this.clusterRuntimeDbOperationThrottleLimit);
+            finalClusterId, 
+            finalClusterRepoType, 
+            finalClusterConnString, 
+            isDefault: clusterDefinition.IsDefault, 
+            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationThrottleLimit);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
         // Apply cluster custom connection config (optional)
-        clusterCnnConfig.SetJobMasterConfigDictionary(clusterAdditionalConnConfig);
+        clusterCnnConfig.SetJobMasterConfigDictionary(clusterDefinition.AdditionalConnConfig ?? new JobMasterConfigDictionary());
 
         // Register agents
-        foreach (var a in clusterDefinition.AgentConnections)
+        foreach (var agentConnDefinition in clusterDefinition.AgentConnections)
         {
-            var repoType = string.IsNullOrWhiteSpace(a.AgentRepoType) ? clusterRepoType! : a.AgentRepoType!;
-            var additionalConnConfig = a.AgentAdditionalConnConfig;
-            clusterCnnConfig.AddAgentConnectionString(a.AgentConnectionName, a.AgentConnString ?? string.Empty, repoType, additionalConnConfig, a.RuntimeDbOperationThrottleLimit);
-        }
+            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnectionName))
+            {
+                throw new ArgumentException("AgentConnectionName must be defined via AgentConnectionName(...)");
+            }
 
+            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnString))
+            {
+                throw new ArgumentException("AgentConnString must be defined via AgentConnString(...)");
+            }
+            
+            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentRepoType))
+            {
+                throw new ArgumentException("AgentRepoType must be defined via AgentRepoType(...)");
+            }
+            
+            clusterCnnConfig.AddAgentConnectionString(
+                agentConnDefinition.AgentConnectionName, 
+                agentConnDefinition.AgentConnString ?? string.Empty, 
+                agentConnDefinition.AgentRepoType!, 
+                agentConnDefinition.AgentAdditionalConnConfig, 
+                agentConnDefinition.RuntimeDbOperationThrottleLimit);
+        }
+        
         if (clusterDefinition.IsStandalone)
         {
-            var repoType = clusterRepoType!;
-            var additionalConnConfig = clusterCnnConfig.AdditionalConnConfig;
-            clusterCnnConfig.AddAgentConnectionString(
-                JobMasterConstants.StandaloneAgentConnName,
-                clusterConnString!,
-                repoType, 
-                additionalConnConfig, 
-                this.clusterRuntimeDbOperationThrottleLimit);
+            clusterCnnConfig.AddStandaloneAgentConnectionString();
         }
 
         services.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
@@ -161,9 +147,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
         
-        JobMasterIocRegistrationAttribute.RegisterAllForMaster(clusterServiceRegistration, this.clusterRepoType!, finalClusterId!);
+        JobMasterIocRegistrationAttribute.RegisterAllForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
         var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
+        agentRepoTypes.Add(finalClusterRepoType); // for standalone agents
+        
         foreach (var agentRepoType in agentRepoTypes)
         {
             if (string.IsNullOrEmpty(agentRepoType))
@@ -210,90 +198,95 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     // IClusterConfigSelector implementation
     public IClusterConfigSelector SetAsDefault()
     {
-        this.clusterIsDefault = true;
+        this.clusterDefinition.IsDefault = true;
         return this;
     }
 
     public IClusterConfigSelector ClusterId(string clusterId)
     {
-        this.clusterId = clusterId;
+        this.clusterDefinition.ClusterId = clusterId;
         return this;
     }
 
     public IClusterConfigSelector ClusterRepoType(string repoType)
     {
-        this.clusterRepoType = repoType;
+        this.clusterDefinition.RepoType = repoType;
         return this;
     }
 
     public IClusterConfigSelector ClusterConnString(string connString)
     {
-        this.clusterConnString = connString;
+        this.clusterDefinition.ConnString = connString;
         return this;
     }
 
     public IClusterConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout)
     {
-        this.clusterDefaultJobTimeout = defaultJobTimeout;
+        this.clusterDefinition.DefaultJobTimeout = defaultJobTimeout;
         return this;
     }
 
     public IClusterConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold)
     {
-        this.clusterTransientThreshold = transientThreshold;
+        this.clusterDefinition.TransientThreshold = transientThreshold;
         return this;
     }
 
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount)
     {
-        this.clusterDefaultMaxRetryCount = defaultMaxRetryCount;
+        this.clusterDefinition.DefaultMaxRetryCount = defaultMaxRetryCount;
         return this;
     }
 
     public IClusterConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize)
     {
-        this.clusterMaxMessageByteSize = maxMessageByteSize;
+        this.clusterDefinition.MaxMessageByteSize = maxMessageByteSize;
         return this;
     }
 
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId)
     {
-        this.clusterIanaTimeZoneId = ianaTimeZoneId;
+        this.clusterDefinition.IanaTimeZoneId = ianaTimeZoneId;
         return this;
     }
 
     public IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit)
     {
-        this.clusterRuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+        this.clusterDefinition.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
         return this;
     }
 
     public IClusterConfigSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig)
     {
-        this.clusterAdditionalConfig = additionalConfig;
+        this.clusterDefinition.AdditionalConfig = additionalConfig;
         return this;
     }
 
     public IClusterConfigSelector ClusterAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig)
     {
-        this.clusterAdditionalConnConfig = additionalConnConfig;
+        this.clusterDefinition.AdditionalConnConfig = additionalConnConfig;
         return this;
     }
     
     public IClusterConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
     {
-        this.clusterAdditionalConnConfig.SetValue(namespaceKey, key, value);
+        if (this.clusterDefinition.AdditionalConnConfig is null)
+        {
+            this.clusterDefinition.AdditionalConnConfig = new JobMasterConfigDictionary();
+        }
+        
+        this.clusterDefinition.AdditionalConnConfig!.SetValue(namespaceKey, key, value);
         return this;
     }
     
     public IClusterConfigSelector AppendAdditionalConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
     {
-        if (this.clusterAdditionalConfig is null)
+        if (this.clusterDefinition.AdditionalConnConfig is null)
         {
-            this.clusterAdditionalConfig = new JobMasterConfigDictionary();
+            this.clusterDefinition.AdditionalConnConfig = new JobMasterConfigDictionary();
         }
         
-        this.clusterAdditionalConfig.SetValue(namespaceKey, key, value);
+        this.clusterDefinition.AdditionalConnConfig.SetValue(namespaceKey, key, value);
         return this;
     }
 
@@ -320,7 +313,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector UseClusterStandalone()
+    public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
         clusterDefinition.IsStandalone = true;
         return new ClusterStandaloneConfigBuilder(clusterDefinition);
