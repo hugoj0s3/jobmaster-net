@@ -43,6 +43,7 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(PostgresRepositoryFixture).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -53,6 +54,9 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
             ?? Array.Empty<string>();
 
         var agentCnn = agentCnnList.FirstOrDefault();
+
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "Postgres", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "Postgres", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {
