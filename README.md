@@ -8,8 +8,8 @@ JobMaster is a framework designed to manage and execute background tasks across 
 ## 📋 Overview
 JobMaster provides a architecture to handle job lifecycles. It is built to be transport-agnostic, supporting RDBMS (PostgreSQL, SQL Server, MySQL) and Message Brokers (NATS JetStream).
 
-## 🚀 Quick Start (Standalone Mode)
-Standalone mode is the easiest way to start. It uses a single database for both coordination and job storage, with no external brokers required.
+## 🚀 Quick Start (Standalone Setup)
+Standalone setup is the easiest way to start. It uses a single database connection for both coordination and job storage, with no external brokers/database required.
 
 ### Configuration
 Register JobMaster in your `Program.cs`. This sets up the database and attaches a background worker automatically.
