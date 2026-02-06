@@ -92,6 +92,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(JobMasterBaseSchedulerFixture).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -130,9 +131,9 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
             }
         }
 
-        CreateClustersFromDefinitions(services, clusterDefs);
+        CreateClustersFromDefinitions(services, clusterDefs, config);
 
-        await DropTablesFromDefinitions(clusterDefs);
+        await DropTablesFromDefinitions(clusterDefs, config);
         
 
         IsConfigured = ClusterIds.Count > 0;
@@ -155,13 +156,26 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         await Task.Delay(TimeSpan.FromSeconds(5));
     }
 
-    private void CreateClustersFromDefinitions(ServiceCollection services, IReadOnlyList<TestClusterDefinition> clusterDefs)
+    private void CreateClustersFromDefinitions(ServiceCollection services, IReadOnlyList<TestClusterDefinition> clusterDefs, IConfiguration config)
     {
         foreach (var c in clusterDefs)
         {
             if (string.IsNullOrWhiteSpace(c.ClusterName) || string.IsNullOrWhiteSpace(c.ConnectionString))
             {
                 continue;
+            }
+
+            c.ConnectionString = IntegrationTestSecrets.ApplySecrets(
+                c.ConnectionString,
+                c.DbProvider.ToString(),
+                config);
+
+            foreach (var a in c.AgentConnections)
+            {
+                a.ConnectionString = IntegrationTestSecrets.ApplySecrets(
+                    a.ConnectionString,
+                    a.DbProvider.ToString(),
+                    config);
             }
 
             services.AddJobMasterCluster(c.ClusterName, cfg =>
@@ -274,7 +288,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         }
     }
 
-    private static async Task DropTablesFromDefinitions(IReadOnlyList<TestClusterDefinition> clusterDefs)
+    private static async Task DropTablesFromDefinitions(IReadOnlyList<TestClusterDefinition> clusterDefs, IConfiguration config)
     {
         foreach (var c in clusterDefs)
         {
@@ -282,18 +296,24 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
             var defaultAgentPrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
                 ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
                 : null;
-            if (!string.IsNullOrWhiteSpace(c.ConnectionString))
+
+            var masterCnn = IntegrationTestSecrets.ApplySecrets(
+                c.ConnectionString,
+                c.DbProvider.ToString(),
+                config);
+
+            if (!string.IsNullOrWhiteSpace(masterCnn))
             {
                 switch (c.DbProvider)
                 {
                     case DbProvider.Postgres:
-                        await PostgresTestDbUtil.DropMasterTablesAsync(c.ConnectionString, masterPrefix);
+                        await PostgresTestDbUtil.DropMasterTablesAsync(masterCnn, masterPrefix);
                         break;
                     case DbProvider.MySql:
-                        await MySqlTestDbUtil.DropMasterTablesAsync(c.ConnectionString, masterPrefix);
+                        await MySqlTestDbUtil.DropMasterTablesAsync(masterCnn, masterPrefix);
                         break;
                     case DbProvider.SqlServer:
-                        await SqlServerTestDbUtil.DropMasterTablesAsync(c.ConnectionString, masterPrefix);
+                        await SqlServerTestDbUtil.DropMasterTablesAsync(masterCnn, masterPrefix);
                         break;
                 }
             }
@@ -306,16 +326,26 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                 }
 
                 var agentPrefix = ToSafeSqlIdentifier(a.AgentTablePrefix ?? defaultAgentPrefix ?? a.AgentName);
+                var agentCnn = IntegrationTestSecrets.ApplySecrets(
+                    a.ConnectionString,
+                    a.DbProvider.ToString(),
+                    config);
+
+                if (string.IsNullOrWhiteSpace(agentCnn))
+                {
+                    continue;
+                }
+
                 switch (a.DbProvider)
                 {
                     case DbProvider.Postgres:
-                        await PostgresTestDbUtil.DropAgentTablesAsync(a.ConnectionString, agentPrefix);
+                        await PostgresTestDbUtil.DropAgentTablesAsync(agentCnn, agentPrefix);
                         break;
                     case DbProvider.MySql:
-                        await MySqlTestDbUtil.DropAgentTablesAsync(a.ConnectionString, agentPrefix);
+                        await MySqlTestDbUtil.DropAgentTablesAsync(agentCnn, agentPrefix);
                         break;
                     case DbProvider.SqlServer:
-                        await SqlServerTestDbUtil.DropAgentTablesAsync(a.ConnectionString, agentPrefix);
+                        await SqlServerTestDbUtil.DropAgentTablesAsync(agentCnn, agentPrefix);
                         break;
                     case DbProvider.NatsJetStream:
                         break;

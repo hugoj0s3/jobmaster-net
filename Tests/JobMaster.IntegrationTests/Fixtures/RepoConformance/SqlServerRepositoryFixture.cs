@@ -43,6 +43,7 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(SqlServerRepositoryFixture).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -53,6 +54,9 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
             ?? Array.Empty<string>();
 
         var agentCnn = agentCnnList.FirstOrDefault();
+
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "SqlServer", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "SqlServer", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {

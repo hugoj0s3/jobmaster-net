@@ -1,4 +1,5 @@
 using JobMaster.NatsJetStream;
+using JobMaster.IntegrationTests.Utils;
 using Microsoft.Extensions.Configuration;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
@@ -25,6 +26,7 @@ public sealed class NatsJetStreamSchedulerFixture : JobMasterBaseSchedulerFixtur
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(NatsJetStreamSchedulerFixture).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -39,7 +41,10 @@ public sealed class NatsJetStreamSchedulerFixture : JobMasterBaseSchedulerFixtur
                     continue;
 
                 var agentId = agent.GetValue<string>("AgentName") ?? string.Empty;
-                var conn = agent.GetValue<string>("ConnectionString") ?? string.Empty;
+                var conn = IntegrationTestSecrets.ApplySecrets(
+                    agent.GetValue<string>("ConnectionString") ?? string.Empty,
+                    "NatsJetStream",
+                    config);
                 if (string.IsNullOrWhiteSpace(agentId) || string.IsNullOrWhiteSpace(conn))
                     continue;
 

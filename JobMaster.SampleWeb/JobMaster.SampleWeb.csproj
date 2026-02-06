@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <UserSecretsId>JobMaster.SampleWeb-3e4cc8f0-5b50-4e29-8c15-43e972b0b6ad</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
