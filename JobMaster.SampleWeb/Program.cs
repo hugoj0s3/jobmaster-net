@@ -10,89 +10,107 @@ using JobMaster.Postgres.Agents;
 using JobMaster.SqlBase;
 using JobMaster.SqlServer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Configuration;
 using Microsoft.OpenApi.Models;
 using Serilog;
+using System.Text.RegularExpressions;
 
 var builder = WebApplication.CreateBuilder(args);
-//
-// builder.Services.AddJobMasterCluster(config =>
-// {
-//     config.ClusterId("Cluster-1")
-//           .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
-//           .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
-//           .ClusterMode(ClusterMode.Active);
-//
-//     // Master database (must be SQL)
-//     config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
-//     
-//     // config.AddAgentConnectionConfig("Pg-1")
-//     //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
-//     //
-//     // config.AddAgentConnectionConfig("My-1")
-//     //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
-//     //
-//     // config.AddAgentConnectionConfig("Sql-1")
-//     //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
-//
-//     
-//     config.AddAgentConnectionConfig("Nats-1")
-//           .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
-//
-//     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
-//     if (isConsumer)
-//     {
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Full);
-//
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Drain);
-//     }
-// });//
-// builder.Services.AddJobMasterCluster(config =>
-// {
-//     config.ClusterId("Cluster-1")
-//           .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
-//           .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
-//           .ClusterMode(ClusterMode.Active);
-//
-//     // Master database (must be SQL)
-//     config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
-//     
-//     // config.AddAgentConnectionConfig("Pg-1")
-//     //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
-//     //
-//     // config.AddAgentConnectionConfig("My-1")
-//     //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
-//     //
-//     // config.AddAgentConnectionConfig("Sql-1")
-//     //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
-//
-//     
-//     config.AddAgentConnectionConfig("Nats-1")
-//           .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
-//
-//     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
-//     if (isConsumer)
-//     {
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Full);
-//
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Drain);
-//     }
-// });//
+
+if (builder.Environment.IsDevelopment())
+{
+    builder.Configuration.AddUserSecrets<Program>(optional: true);
+}
+
+static string ApplySecrets(string value, IConfiguration config)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return value;
+    }
+
+    var replaced = value;
+
+    var secretTokenMatches = Regex.Matches(value, @"\bsecret_[A-Za-z0-9_]+\b");
+    foreach (Match match in secretTokenMatches)
+    {
+        var token = match.Value;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            continue;
+        }
+
+        var secretValue = config[token];
+        if (string.IsNullOrWhiteSpace(secretValue))
+        {
+            continue;
+        }
+
+        replaced = replaced.Replace(token, secretValue, StringComparison.Ordinal);
+    }
+
+    var bracketTokenMatches = Regex.Matches(value, @"\[[A-Za-z0-9_]+\]");
+    foreach (Match match in bracketTokenMatches)
+    {
+        var token = match.Value;
+        if (string.IsNullOrWhiteSpace(token) || token.Length < 3)
+        {
+            continue;
+        }
+
+        var key = token.Substring(1, token.Length - 2);
+        if (string.IsNullOrWhiteSpace(key))
+        {
+            continue;
+        }
+
+        var secretValue = config[key];
+        if (string.IsNullOrWhiteSpace(secretValue))
+        {
+            continue;
+        }
+
+        replaced = replaced.Replace(token, secretValue, StringComparison.Ordinal);
+    }
+
+    return replaced;
+}
+
+var masterPostgres = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:MasterPostgres"]
+    ?? "Host=[POSTGRES_HOST];Port=[POSTGRES_PORT];Database=jobmaster;Username=[POSTGRES_USER];Password=[POSTGRES_PASSWORD];Maximum Pool Size=300",
+    builder.Configuration);
+
+var natsUrl = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:NatsJetStream"]
+    ?? "nats://[NATS_USER]:[NATS_PASSWORD]@[NATS_HOST]:[NATS_PORT]",
+    builder.Configuration);
+
+var standalonePostgres = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:StandalonePostgres"]
+    ?? "Host=[POSTGRES_HOST];Port=[POSTGRES_PORT];Database=jobmaster_standalone;Username=[POSTGRES_USER];Password=[POSTGRES_PASSWORD];Maximum Pool Size=300",
+    builder.Configuration);
+
+var apiKeyOwner = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:ApiKeyOwner"]
+    ?? "[JM_API_KEY_OWNER]",
+    builder.Configuration);
+
+var apiKey = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:ApiKey"]
+    ?? "[JM_API_KEY]",
+    builder.Configuration);
+
+var apiUser = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:ApiUser"]
+    ?? "[JM_API_USER]",
+    builder.Configuration);
+
+var apiPassword = ApplySecrets(
+    builder.Configuration["JobMaster:SampleWeb:ApiPassword"]
+    ?? "[JM_API_PASSWORD]",
+    builder.Configuration);
+
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
@@ -101,20 +119,20 @@ builder.Services.AddJobMasterCluster(config =>
           .ClusterMode(ClusterMode.Active);
 
     // Master database (must be SQL)
-    config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
+    config.UsePostgresForMaster(masterPostgres);
     
     // config.AddAgentConnectionConfig("Pg-1")
-    //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
+    //       .UsePostgresForAgent("Host=[POSTGRES_HOST];Port=[POSTGRES_PORT];Database=agent_pg1;Username=[POSTGRES_USER];Password=[POSTGRES_PASSWORD]");
     //
     // config.AddAgentConnectionConfig("My-1")
-    //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
+    //       .UseMySqlForAgent("Server=[MYSQL_HOST];Port=[MYSQL_PORT];Database=agent_my1;User ID=[MYSQL_USER];Password=[MYSQL_PASSWORD];");
     //
     // config.AddAgentConnectionConfig("Sql-1")
-    //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
+    //     .UseSqlServerForAgent("Server=[SQL_SERVER_HOST];Initial Catalog=agent_sql1;User Id=[SQL_SERVER_USER];Password=[SQL_SERVER_PASSWORD];Encrypt=False;TrustServerCertificate=True;");
 
     
     config.AddAgentConnectionConfig("Nats-1")
-          .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
+          .UseNatsJetStream(natsUrl);
 
     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
     if (isConsumer)
@@ -131,67 +149,14 @@ builder.Services.AddJobMasterCluster(config =>
            .WorkerBatchSize(1000)
            .SetWorkerMode(AgentWorkerMode.Drain);
     }
-});//
-// builder.Services.AddJobMasterCluster(config =>
-// {
-//     config.ClusterId("Cluster-1")
-//           .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
-//           .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
-//           .ClusterMode(ClusterMode.Active);
-//
-//     // Master database (must be SQL)
-//     config.UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster;Username=postgres;Password=postgres;Maximum Pool Size=300");
-//     
-//     // config.AddAgentConnectionConfig("Pg-1")
-//     //       .UsePostgresForAgent("Host=localhost;Port=5432;Database=agent_pg1;Username=postgres;Password=postgres");
-//     //
-//     // config.AddAgentConnectionConfig("My-1")
-//     //       .UseMySqlForAgent("Server=localhost;Port=3306;Database=agent_my1;User ID=root;Password=root;");
-//     //
-//     // config.AddAgentConnectionConfig("Sql-1")
-//     //     .UseSqlServerForAgent("Server=localhost,1433;Initial Catalog=agent_sql1;User Id=sa;Password=Passw0rd!;Encrypt=False;TrustServerCertificate=True;");
-//
-//     
-//     config.AddAgentConnectionConfig("Nats-1")
-//           .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
-//
-//     var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
-//     if (isConsumer)
-//     {
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Full);
-//
-//        config.AddWorker()
-//            .AgentConnName("Nats-1")
-//            .BucketQtyConfig(JobMasterPriority.Medium, 1)
-//            .WorkerBatchSize(1000)
-//            .SetWorkerMode(AgentWorkerMode.Drain);
-//     }
-// });
-
+});
 builder.Services.AddJobMasterCluster(c => {
         
     c.UseStandaloneCluster().ClusterId("Cluster-Standalone-1")
-        .UsePostgres("Host=localhost;Port=5432;Database=jobmaster_standalone;Username=postgres;Password=postgres;Maximum Pool Size=300")
+        .UsePostgres(standalonePostgres)
         .SetAsDefault()
         .AddWorker();
     
-        // c.ClusterId("Cluster-Standalone-1")
-        //     .UsePostgresForMaster("Host=localhost;Port=5432;Database=jobmaster_standalone;Username=postgres;Password=postgres;Maximum Pool Size=300")
-        //     .SetAsDefault();
-        //
-        //
-        // c.AddAgentConnectionConfig("Nats-1")
-        //     .UseNatsJetStream("nats://jmuser:jmpass@localhost:4222");
-        //
-        // c.AddWorker()
-        //     .AgentConnName("Nats-1")
-        //     .BucketQtyConfig(JobMasterPriority.Medium, 1)
-        //     .WorkerBatchSize(1000)
-        //     .SetWorkerMode(AgentWorkerMode.Full);
 });
 
 builder.Services.UseJobMasterApi(o =>
@@ -200,8 +165,8 @@ builder.Services.UseJobMasterApi(o =>
     o.RequireAuthentication = true;
     o.EnableSwagger = true;
     
-    o.UseApiKeyAuth().AddApiKey("my-api-key", "admin-key");
-    o.UseUserPwdAuth().AddUserPwd("john", "pwd#123");
+    o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
+    o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
 });
 
 
