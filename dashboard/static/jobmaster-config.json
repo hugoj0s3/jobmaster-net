@@ -1,0 +1,93 @@
+﻿{
+  "apiBaseUrl": "http://localhost:5000/jm-api",
+  "defaultThemeId": "jobmaster-dark",
+  "auth": {
+    "enabled": true,
+    "providers": [
+      {
+        "type": "API_KEY",
+        "displayName": "API Key",
+        "headerName": "X-JobMaster-Key"
+      },
+      {
+        "type": "USER_PASSWORD",
+        "displayName": "Admin Login",
+        "userHeaderName": "X-JobMaster-User",
+        "passwordHeaderName": "X-JobMaster-Pwd"
+      },
+      {
+        "type": "JWT_CUSTOM_FORM",
+        "displayName": "Standard JWT",
+        "tokenUrl": "/api/auth/login",
+        "transport": { "header": "Authorization", "scheme": "Bearer" },
+        "fields": [
+          { "id": "username", 
+            "label": "Email", 
+            "type": "text",
+            "isRequired": true
+          },
+          { "id": "password", 
+            "label": "Password", 
+            "type": "password",
+            "isRequired": true
+          }
+        ]
+      },
+      {
+        "type": "JWT_SSO",
+        "displayName": "SSO Login",
+        "initUrl": "/api/auth/external-login",
+        "exchangeUrl": "/api/auth/callback-exchange",
+        "flow": "CODE",
+        "credentialLocation": "QUERY",
+        "credentialKey": "code",
+        "transport": { "header": "Authorization", "scheme": "Bearer" }
+      }
+    ]
+  },
+  "clusters": [
+    {
+      "id": "cluster-1",
+      "environmentName": "QA - Testing",
+      "defaultThemeId": "jobmaster-dark"
+    },
+    {
+      "id": "cluster-2",
+      "environmentName": "PRODUCTION",
+      "defaultThemeId": "jobmaster-dark"
+    }
+  ],
+  "themes": [
+    { "id": "jobmaster-light", "displayName": "JobMaster Light", "baseTheme": "jobmaster-light" },
+    { "id": "jobmaster-dark",  "displayName": "JobMaster Dark",  "baseTheme": "jobmaster-dark" },
+
+    {
+      "id": "theme-night",
+      "displayName": "Night Mode",
+      "isCustom": false,
+      "baseTheme": "night"
+    },
+    {
+      "id": "theme-corporate",
+      "displayName": "Corporate",
+      "isCustom": false,
+      "baseTheme": "corporate"
+    },
+    {
+      "id": "custom-brand-x",
+      "displayName": "Brand Especial",
+      "isCustom": true,
+      "baseTheme": "business",
+      "overrides": {
+        "primary": "#FF5733",
+        "secondary": "#9922FF",
+        "accent": "#33FF57",
+
+        "base100": "#1a1a1a",
+        "base200": "#141414",
+        "base300": "#0f0f0f",
+        "baseContent": "#e2e8f0"
+      }
+    }
+  ]
+}

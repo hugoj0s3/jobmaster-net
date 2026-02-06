@@ -1,0 +1,47 @@
+﻿@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&family=JetBrains+Mono:wght@800&display=swap");
+
+@config "../tailwind.config.js";
+@import "tailwindcss";
+@plugin "daisyui";
+
+@theme {
+    --font-sans: "Inter", ui-sans-serif, system-ui;
+    --font-mono: "JetBrains Mono", monospace;
+}
+
+@layer base {
+    :root[data-theme="jobmaster-light"] {
+        color-scheme: light;
+        --color-base-100: oklch(0.99 0 0);
+        --color-base-200: oklch(0.975 0.01 275);
+        --color-base-300: oklch(0.94 0.02 275);
+        --color-base-content: oklch(0.20 0.02 270);
+
+        --color-primary: oklch(0.62 0.18 255);
+        --color-primary-content: oklch(0.99 0 0);
+
+        --color-accent: oklch(0.54 0.24 275);
+        --color-accent-content: oklch(0.99 0 0);
+    }
+
+    :root[data-theme="jobmaster-dark"] {
+        color-scheme: dark;
+        /* ✅ Modern DaisyUI 5 variable names */
+        --color-base-100: oklch(0.12 0.02 260);
+        --color-base-200: oklch(0.09 0.02 260);
+        --color-base-300: oklch(0.14 0.03 260);
+        --color-base-content: oklch(0.93 0.01 260);
+
+        --color-primary: oklch(0.73 0.12 255);
+        --color-primary-content: oklch(0.12 0.02 260);
+
+        --color-accent: oklch(0.54 0.24 275);
+        --color-accent-content: oklch(0.99 0 0);
+    }
+}
+
+@layer components {
+    .form-control label {
+        @apply pb-2 pt-1;
+    }
+}

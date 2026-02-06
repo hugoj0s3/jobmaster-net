@@ -218,6 +218,17 @@ Log.Information("Starting up");
 
 builder.Services.AddSerilog();
 
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(
+        policy =>
+        {
+            policy.AllowAnyOrigin() // Allow requests from any origin
+                .AllowAnyMethod()
+                .AllowAnyHeader();
+        });
+});
+
 var app = builder.Build();
 
 app.MapJobMasterApi();

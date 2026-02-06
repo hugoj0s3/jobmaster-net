@@ -26,6 +26,8 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{B5E6056F
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Api", "JobMaster.Api\JobMaster.Api.csproj", "{08BE469C-06A7-4896-9F0B-632F44E671BF}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Dashboard", "JobMaster.Dashboard\JobMaster.Dashboard.csproj", "{21F16F8B-F257-42FA-A040-75DCF1D29D01}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -76,6 +78,10 @@ Global
 		{08BE469C-06A7-4896-9F0B-632F44E671BF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{08BE469C-06A7-4896-9F0B-632F44E671BF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{08BE469C-06A7-4896-9F0B-632F44E671BF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{21F16F8B-F257-42FA-A040-75DCF1D29D01}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{21F16F8B-F257-42FA-A040-75DCF1D29D01}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{21F16F8B-F257-42FA-A040-75DCF1D29D01}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{21F16F8B-F257-42FA-A040-75DCF1D29D01}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{F30A538D-FA41-4692-A858-509CB4566B1A} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
