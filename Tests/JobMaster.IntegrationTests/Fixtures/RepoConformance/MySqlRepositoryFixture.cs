@@ -42,6 +42,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
         var config = new ConfigurationBuilder()
             .SetBasePath(AppContext.BaseDirectory)
             .AddJsonFile("appsettings.json", optional: true)
+            .AddUserSecrets(typeof(MySqlRepositoryFixture).Assembly, optional: true)
             .AddEnvironmentVariables()
             .Build();
 
@@ -52,6 +53,9 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
             ?? Array.Empty<string>();
 
         var agentCnn = agentCnnList.FirstOrDefault();
+
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "MySql", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "MySql", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {
