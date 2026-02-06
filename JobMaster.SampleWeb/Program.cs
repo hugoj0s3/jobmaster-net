@@ -1,6 +1,5 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
-using JobMaster.Api.AspNetCore;
 using JobMaster.Ioc.Extensions;
 using JobMaster.MySql;
 using JobMaster.NatsJetStream;
@@ -150,26 +149,6 @@ builder.Services.AddJobMasterCluster(config =>
            .SetWorkerMode(AgentWorkerMode.Drain);
     }
 });
-builder.Services.AddJobMasterCluster(c => {
-        
-    c.UseStandaloneCluster().ClusterId("Cluster-Standalone-1")
-        .UsePostgres(standalonePostgres)
-        .SetAsDefault()
-        .AddWorker();
-    
-});
-
-builder.Services.UseJobMasterApi(o =>
-{
-    o.BasePath = "/jm-api";
-    o.RequireAuthentication = true;
-    o.EnableSwagger = true;
-    
-    o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
-    o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
-});
-
-
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -184,8 +163,6 @@ Log.Information("Starting up");
 builder.Services.AddSerilog();
 
 var app = builder.Build();
-
-app.MapJobMasterApi();
 
 await app.Services.StartJobMasterRuntimeAsync();
 
