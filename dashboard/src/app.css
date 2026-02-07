@@ -1,8 +1,10 @@
-﻿@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&family=JetBrains+Mono:wght@800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@300;400;800&family=JetBrains+Mono:wght@800&display=swap");
 
 @config "../tailwind.config.js";
 @import "tailwindcss";
-@plugin "daisyui";
+@plugin "daisyui" {
+    themes: light, corporate, retro, emerald, cupcake, dark, business, night, dracula, synthwave, jobmaster-light, jobmaster-dark;
+}
 
 @theme {
     --font-sans: "Inter", ui-sans-serif, system-ui;

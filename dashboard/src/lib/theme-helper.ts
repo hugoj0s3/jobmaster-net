@@ -1,4 +1,4 @@
-﻿const KEY = (clusterId: string) => `jm_theme_${clusterId}`;
+const KEY = (clusterId: string) => `jm_theme_${clusterId}`;
 
 export function resolveThemeId(clusterId: string, config: any) {
     const stored = sessionStorage.getItem(KEY(clusterId));
@@ -10,7 +10,7 @@ export function resolveThemeId(clusterId: string, config: any) {
 
     // else fallback to cluster default, then global default
     const cluster = config?.clusters?.find((c: any) => c.id === clusterId);
-    return cluster?.defaultThemeId ?? config?.defaultThemeId ?? "jobmaster-light";
+    return cluster?.defaultThemeId ?? config?.defaultThemeId ?? "light";
 }
 
 export function setStoredTheme(clusterId: string, themeId: string) {

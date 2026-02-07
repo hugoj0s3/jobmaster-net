@@ -1,13 +1,13 @@
 <!-- src/routes/+layout.svelte -->
 <script lang="ts">
     import "../app.css";
-    import { onMount } from "svelte";
+    import {onMount} from "svelte";
     import Login from "$lib/components/Login.svelte";
     import Sidebar from "$lib/components/Sidebar.svelte";
 
-    import { resolveThemeId, setStoredTheme } from "$lib/theme-helper";
+    import {resolveThemeId, setStoredTheme} from "$lib/theme-helper";
 
-    let { children } = $props();
+    let {children} = $props();
 
     let config = $state<any>(null);
     let isLoggedIn = $state(false);
@@ -17,8 +17,8 @@
     onMount(async () => {
         const res = await fetch("/jobmaster-config.json");
         config = await res.json();
-
-        if (sessionStorage.getItem("jm_auth") === "true") isLoggedIn = true;
+        if (sessionStorage.getItem("jm_auth") === "true" || config.auth?.enabled != true) isLoggedIn = true;
+        
         if (config?.clusters?.length > 0) handleClusterChange(config.clusters[0].id);
     });
 
@@ -42,35 +42,47 @@
         baseContent: "--color-base-content",
     };
 
+    const darkBaseThemes = new Set([
+        "dark",
+        "business",
+        "night",
+        "dracula",
+        "synthwave",
+        "jobmaster-dark",
+    ]);
+
     function applyTheme(themeId: string, persistForCluster = false) {
-        const theme = config?.themes?.find((t: any) => t.id === themeId);
-        if (!theme) return;
+        let theme = config?.themes?.find((t: any) => t.id === themeId);
 
         currentTheme = theme;
         const base = theme.baseTheme ?? "jobmaster-light";
+        
+        const root = document.documentElement.style;
+        Object.values(themeVarMap).forEach(cssVar => root.removeProperty(cssVar));
 
-        // 2. Aplicar o atributo do DaisyUI
         document.documentElement.setAttribute("data-theme", base);
 
-        // 3. Ajustar o esquema de cores do browser
         document.documentElement.style.colorScheme =
-            base.includes("dark") || base === "night" || base === "business" || base === "dracula" ? "dark" : "light";
+            darkBaseThemes.has(base) ? "dark" : "light";
 
-        const root = document.documentElement.style;
-
-        Object.values(themeVarMap).forEach(cssVar => root.removeProperty(cssVar));
+        console.log(`Applying theme: ${themeId} (${base}) color scheme: ${document.documentElement.style.colorScheme}`);
 
         if (theme.overrides) {
             for (const [key, value] of Object.entries(theme.overrides)) {
                 const cssVar = themeVarMap[key];
                 if (cssVar) {
                     root.setProperty(cssVar, value as string);
-                    
-                    console.log(`Override aplicado: ${cssVar} = ${value}`);
+
+                    console.log(`Override applied: ${cssVar} = ${value}`);
                 }
             }
         }
+
+        if (persistForCluster) {
+            setStoredTheme(currentCluster.id, themeId);
+        }
     }
+
 
     function logout() {
         sessionStorage.removeItem("jm_auth");
@@ -84,11 +96,11 @@
     </div>
 
 {:else if !isLoggedIn}
-    <Login auth={config.auth} onLogin={() => (isLoggedIn = true)} />
+    <Login auth={config.auth} onLogin={() => (isLoggedIn = true)}/>
 
 {:else}
     <div class="flex h-screen overflow-hidden bg-base-100 text-base-content">
-        <Sidebar />
+        <Sidebar/>
 
         <div class="flex-1 flex flex-col min-w-0">
             <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center px-4 shrink-0">
@@ -104,8 +116,9 @@
               </span>
                         </div>
 
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30" fill="none"
+                             viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                         </svg>
                     </button>
 

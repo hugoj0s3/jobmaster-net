@@ -1,4 +1,4 @@
-﻿{
+{
   "apiBaseUrl": "http://localhost:5000/jm-api",
   "defaultThemeId": "jobmaster-dark",
   "auth": {
@@ -59,13 +59,77 @@
   ],
   "themes": [
     {
+      "id": "light",
+      "displayName": "Light",
+      "isCustom": false,
+      "baseTheme": "light"
+    },
+    {
+      "id": "corporate",
+      "displayName": "Corporate",
+      "isCustom": false,
+      "baseTheme": "corporate"
+    },
+    {
+      "id": "retro",
+      "displayName": "Retro",
+      "isCustom": false,
+      "baseTheme": "retro"
+    },
+    {
+      "id": "emerald",
+      "displayName": "Emerald",
+      "isCustom": false,
+      "baseTheme": "emerald"
+    },
+    {
+      "id": "cupcake",
+      "displayName": "Cupcake",
+      "isCustom": false,
+      "baseTheme": "cupcake"
+    },
+    {
+      "id": "dark",
+      "displayName": "Dark",
+      "isCustom": false,
+      "baseTheme": "dark"
+    },
+    {
+      "id": "business",
+      "displayName": "Business",
+      "isCustom": false,
+      "baseTheme": "business"
+    },
+    {
+      "id": "night",
+      "displayName": "Night",
+      "isCustom": false,
+      "baseTheme": "night"
+    },
+    {
       "id": "dracula",
       "displayName": "Dracula",
       "isCustom": false,
       "baseTheme": "dracula"
     },
-    { "id": "jobmaster-light", "displayName": "JobMaster Light", "baseTheme": "jobmaster-light" },
-    { "id": "jobmaster-dark",  "displayName": "JobMaster Dark",  "baseTheme": "jobmaster-dark" },
+    {
+      "id": "synthwave",
+      "displayName": "Synthwave",
+      "isCustom": false,
+      "baseTheme": "synthwave"
+    },
+    
+    { 
+      "id": "jobmaster-light", 
+      "displayName": "JobMaster Light", 
+      "baseTheme": "jobmaster-light"
+    },
+    
+    { 
+      "id": "jobmaster-dark",  
+      "displayName": "JobMaster Dark",  
+      "baseTheme": "jobmaster-dark"
+    },
 
     {
       "id": "theme-night",
@@ -73,12 +137,7 @@
       "isCustom": false,
       "baseTheme": "night"
     },
-    {
-      "id": "theme-corporate",
-      "displayName": "Corporate",
-      "isCustom": false,
-      "baseTheme": "corporate"
-    },
+  
     {
       "id": "custom-brand-x",
       "displayName": "Brand Especial",
