@@ -2,7 +2,7 @@
   "apiBaseUrl": "http://localhost:5000/jm-api",
   "defaultThemeId": "jobmaster-dark",
   "auth": {
-    "enabled": true,
+    "enabled": false,
     "providers": [
       {
         "type": "API_KEY",
@@ -58,6 +58,12 @@
     }
   ],
   "themes": [
+    {
+      "id": "dracula",
+      "displayName": "Dracula",
+      "isCustom": false,
+      "baseTheme": "dracula"
+    },
     { "id": "jobmaster-light", "displayName": "JobMaster Light", "baseTheme": "jobmaster-light" },
     { "id": "jobmaster-dark",  "displayName": "JobMaster Dark",  "baseTheme": "jobmaster-dark" },
 

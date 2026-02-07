@@ -54,7 +54,7 @@
 
         // 3. Ajustar o esquema de cores do browser
         document.documentElement.style.colorScheme =
-            base.includes("dark") || base === "night" || base === "business" ? "dark" : "light";
+            base.includes("dark") || base === "night" || base === "business" || base === "dracula" ? "dark" : "light";
 
         const root = document.documentElement.style;
 

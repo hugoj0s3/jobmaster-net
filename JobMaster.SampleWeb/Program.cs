@@ -134,22 +134,19 @@ builder.Services.AddJobMasterCluster(config =>
     config.AddAgentConnectionConfig("Nats-1")
           .UseNatsJetStream(natsUrl);
 
-    var isConsumer = Environment.GetEnvironmentVariable("CONSUMER")?.ToUpperInvariant() == "TRUE";
-    if (isConsumer)
-    {
-       config.AddWorker()
-           .AgentConnName("Nats-1")
-           .BucketQtyConfig(JobMasterPriority.Medium, 1)
-           .WorkerBatchSize(1000)
-           .SetWorkerMode(AgentWorkerMode.Full);
+    config.AddWorker()
+        .AgentConnName("Nats-1")
+        .BucketQtyConfig(JobMasterPriority.Medium, 1)
+        .WorkerBatchSize(1000)
+        .SetWorkerMode(AgentWorkerMode.Full);
 
-       config.AddWorker()
-           .AgentConnName("Nats-1")
-           .BucketQtyConfig(JobMasterPriority.Medium, 1)
-           .WorkerBatchSize(1000)
-           .SetWorkerMode(AgentWorkerMode.Drain);
-    }
+    config.AddWorker()
+        .AgentConnName("Nats-1")
+        .BucketQtyConfig(JobMasterPriority.Medium, 1)
+        .WorkerBatchSize(1000)
+        .SetWorkerMode(AgentWorkerMode.Drain);
 });
+
 builder.Services.AddJobMasterCluster(c => {
         
     c.UseStandaloneCluster().ClusterId("Cluster-Standalone-1")
@@ -162,11 +159,11 @@ builder.Services.AddJobMasterCluster(c => {
 builder.Services.UseJobMasterApi(o =>
 {
     o.BasePath = "/jm-api";
-    o.RequireAuthentication = true;
+    o.RequireAuthentication = false;
     o.EnableSwagger = true;
     
-    o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
-    o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
+    // o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
+    // o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
 });
 
 

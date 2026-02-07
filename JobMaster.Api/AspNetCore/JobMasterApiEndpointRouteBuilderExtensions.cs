@@ -55,6 +55,8 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
         group.MapBucketsEndpoints();
         group.MapClustersEndpoints();
         group.MapWorkersEndpoints();
+        group.MapAgentConnectionsEndpoints();
+        group.MapHostsEndpoints();
         group.MapLogsEndpoints();
         group.MapJobsEndpoints();
         group.MapRecurringSchedulesEndpoints();

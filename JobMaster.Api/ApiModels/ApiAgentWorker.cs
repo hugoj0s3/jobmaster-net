@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 
 namespace JobMaster.Api.ApiModels;
@@ -18,9 +18,18 @@ public class ApiAgentWorker : ApiClusterBaseModel
     public string? WorkerLane { get; set; }
     public double ParallelismFactor { get; set; }
     public AgentWorkerStatus Status { get; set; }
-
+    
+    public string HostId { get; set; } = string.Empty;
+    public string HostDisplayName { get; set; } = string.Empty;
+    
     internal static ApiAgentWorker FromDomain(AgentWorkerModel model)
     {
+        // TODO: Mock host assignment until worker-to-host mapping/telemetry is implemented.
+        var hostSeed = HashCode.Combine(model.ClusterId, model.Id);
+        var hostIndex = (Math.Abs(hostSeed) % 8) + 1;
+        var hostId = $"host-{hostIndex}";
+        var hostDisplayName = $"Host {hostIndex}";
+
         return new ApiAgentWorker
         {
             ClusterId = model.ClusterId,
@@ -36,7 +45,9 @@ public class ApiAgentWorker : ApiClusterBaseModel
             Mode = model.Mode,
             WorkerLane = model.WorkerLane,
             ParallelismFactor = model.ParallelismFactor,
-            Status = model.Status()
+            Status = model.Status(),
+            HostId = hostId,
+            HostDisplayName = hostDisplayName,
         };
     }
 }

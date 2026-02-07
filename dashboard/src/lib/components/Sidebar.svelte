@@ -1,11 +1,14 @@
-﻿<script lang="ts">
+<script lang="ts">
     let isHovered = $state(false);
 
     const menuItems = [
         { name: "Dashboard", path: "/", iconClass: "fa-solid fa-gauge-high" },
+        { name: "Jobs", path: "/jobs", iconClass: "fa-solid fa-gears" },
+        { name: "Recurring Schedules", path: "/recurring-schedules", iconClass: "fa-solid fa-clock" },
+        { name: "Hosts", path: "/hosts", iconClass: "fa-solid fa-server" },
         { name: "Workers", path: "/workers", iconClass: "fa-solid fa-microchip" },
-        { name: "Jobs", path: "/jobs", iconClass: "fa-solid fa-list-check" },
-        { name: "Buckets", path: "/buckets", iconClass: "fa-solid fa-database" },
+        { name: "Buckets", path: "/buckets", iconClass: "fa-solid fa-layer-group" },
+        { name: "Agent Connections", path: "/agent-connections", iconClass: "fa-solid fa-plug" },
     ];
 </script>
 
@@ -24,7 +27,7 @@
         onmouseleave={() => (isHovered = false)}
 >
     <!-- Logo -->
-    <div class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300">
+    <a href="/" class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300 cursor-pointer">
         <div class="flex items-center min-w-[50px]">
             <div
                     class="w-10 h-10 bg-accent text-accent-content rounded-xl flex items-center justify-center font-black text-lg transition-transform duration-500 shadow-lg shadow-accent/20"
@@ -46,7 +49,7 @@
                 </p>
             </div>
         {/if}
-    </div>
+    </a>
 
     <!-- Navigation -->
     <nav class="flex-1 px-3 space-y-1.5 mt-6">

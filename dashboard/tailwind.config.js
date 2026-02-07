@@ -6,6 +6,6 @@ export default {
     plugins: [daisyui],
     daisyui: {
         // ✅ Add your custom themes here so DaisyUI recognizes the names
-        themes: ["light", "dark", "corporate", "night", "business", "jobmaster-light", "jobmaster-dark"],
+        themes: ["light", "dark", "corporate", "dracula", "night", "business", "jobmaster-light", "jobmaster-dark"],
     },
 };
