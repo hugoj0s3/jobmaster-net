@@ -1,5 +1,5 @@
 # JobMaster .Net
-## Distributed job orchestration engine for .NET. Oriented to horizontal scalling and flexibility.
+## Distributed job orchestration engine for .NET. Oriented to horizontal scalling and flexibility
 
 JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. By decoupling coordination from execution, it allows developers to scale their infrastructure horizontally based on workload demands.
 
