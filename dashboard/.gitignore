@@ -21,3 +21,10 @@ Thumbs.db
 # Vite
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+
+# openapi
+/openapitools.json
+src/openapi/
+src/openapitools.json
+src/swagger.json

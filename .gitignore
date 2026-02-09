@@ -145,3 +145,6 @@ riderModule.iml
 
 # Windsurf rules
 /.windsurf/rules/
+
+set-secrets.sh
+openapitools.json
