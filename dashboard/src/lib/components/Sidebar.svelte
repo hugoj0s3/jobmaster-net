@@ -1,4 +1,6 @@
 <script lang="ts">
+    import { page } from "$app/stores";
+
     let isHovered = $state(false);
 
     const menuItems = [
@@ -10,6 +12,14 @@
         { name: "Buckets", path: "/buckets", iconClass: "fa-solid fa-layer-group" },
         { name: "Agent Connections", path: "/agent-connections", iconClass: "fa-solid fa-plug" },
     ];
+
+    function resolveHref(path: string) {
+        const cluster = $page.params.cluster;
+
+        if (!cluster) return path;
+        if (path === "/") return `/${cluster}/dashboard`;
+        return `/${cluster}${path}`;
+    }
 </script>
 
 <aside
@@ -55,7 +65,7 @@
     <nav class="flex-1 px-3 space-y-1.5 mt-6">
         {#each menuItems as item}
             <a
-                    href={item.path}
+                    href={resolveHref(item.path)}
                     class="
                     flex items-center
                     h-12 px-3
