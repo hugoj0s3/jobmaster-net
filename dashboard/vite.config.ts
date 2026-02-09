@@ -1,10 +1,16 @@
-import { sveltekit } from '@sveltejs/kit/vite';
-import { defineConfig } from 'vite';
-import tailwindcss from '@tailwindcss/vite'; // 1. Import it
+import { sveltekit } from "@sveltejs/kit/vite";
+import { defineConfig } from "vite";
+import tailwindcss from "@tailwindcss/vite";
 
 export default defineConfig({
-    plugins: [
-        tailwindcss(), // 2. Add it here (before sveltekit)
-        sveltekit()
-    ]
+	plugins: [tailwindcss(), sveltekit()],
+	server: {
+		proxy: {
+			"/jm-api": {
+				target: "https://localhost:7247",
+				changeOrigin: true,
+				secure: false
+			}
+		}
+	}
 });

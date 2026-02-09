@@ -1,5 +1,20 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
+    import { page } from "$app/stores";
+    import { fetchJson } from "$lib/helper/fetch-json";
+
+    const clusterId = () => $page.params.cluster;
+
+    type JobmasterConfig = {
+        apiBaseUrl: string;
+    };
+
+    let apiBaseUrl: string | null = null;
+
+    function apiUrl(path: string) {
+        const base = apiBaseUrl ?? "/jm-api";
+        return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+    }
 
     type UpcomingJobsBreakdown = {
         OnMaster: number;
@@ -45,72 +60,87 @@
         durationText?: string;
     };
 
+    type ApiCluster = {
+        clusterId?: string;
+        transientThreshold?: string;
+        ClusterId?: string;
+        TransientThreshold?: string;
+    };
+
+    type ApiJob = {
+        id: string;
+        jobDefinitionId: string;
+        status: number;
+        createdAt?: string;
+        scheduledAt?: string;
+        processingStartedAt?: string;
+        succeedExecutedAt?: string;
+    };
+
+    function statusLabel(status: number): JobStatus {
+        if (status === 5) return "Succeeded";
+        if (status === 7) return "Failed";
+        if (status === 8) return "Cancelled";
+        return "Succeeded";
+    }
+
+    function bestJobTimestampIso(j: ApiJob): string {
+        return (
+            j.succeedExecutedAt ??
+            j.processingStartedAt ??
+            j.scheduledAt ??
+            j.createdAt ??
+            new Date(0).toISOString()
+        );
+    }
+
+    function resolveTransientThreshold(cluster: ApiCluster): string | null {
+        return cluster.transientThreshold ?? cluster.TransientThreshold ?? null;
+    }
+
+    function zeroMetrics(): Metrics {
+        return {
+            upcomingJobs: {
+                total: 0,
+                breakdown: {
+                    OnMaster: 0,
+                    InBucket: 0,
+                    Queued: 0,
+                    Processing: 0
+                }
+            },
+            failures: {
+                jobsFailedExceededRetries: 0,
+                failedExecutions: 0
+            },
+            workers: {
+                onlineTotal: 0,
+                executionMode: 0,
+                drainingMode: 0,
+                fullMode: 0,
+                lastHeartbeatText: "—"
+            },
+            hosts: {
+                total: 0,
+                offline: 0
+            },
+            buckets: {
+                total: 0,
+                lost: 0,
+                draining: 0
+            }
+        };
+    }
+
     const refreshIntervalSec = 20;
     let lastUpdatedAt = new Date();
     let isRefreshing = false;
 
-    let metrics: Metrics = {
-        upcomingJobs: {
-            total: 12,
-            breakdown: {
-                OnMaster: 3,
-                InBucket: 2,
-                Queued: 5,
-                Processing: 2
-            }
-        },
-        failures: {
-            jobsFailedExceededRetries: 5,
-            failedExecutions: 11
-        },
-        workers: {
-            onlineTotal: 4,
-            executionMode: 2,
-            drainingMode: 1,
-            fullMode: 1,
-            lastHeartbeatText: "≈ 12s"
-        },
-        hosts: {
-            total: 6,
-            offline: 1
-        },
-        buckets: {
-            total: 24,
-            lost: 0,
-            draining: 1
-        }
-    };
+    let transientThreshold: string | null = null;
 
-    let recentlyExecutedJobs: RecentlyExecutedJob[] = [
-        {
-            jobId: "9aa1...1cc2",
-            definitionId: "CleanupHandler",
-            status: "Succeeded",
-            executedAt: new Date(Date.now() - 70_000).toISOString(),
-            durationText: "121ms"
-        },
-        {
-            jobId: "717e...7d7a",
-            definitionId: "InvoicingHandler",
-            status: "Failed",
-            executedAt: new Date(Date.now() - 61 * 60_000).toISOString(),
-            durationText: "2.3s"
-        },
-        {
-            jobId: "c0f1...a91b",
-            definitionId: "GenerateReportHandler",
-            status: "Succeeded",
-            executedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
-            durationText: "5.2s"
-        },
-        {
-            jobId: "8b12...f9a7",
-            definitionId: "FetchDataHandler",
-            status: "Cancelled",
-            executedAt: new Date(Date.now() - 16 * 60_000).toISOString(),
-            durationText: "—"
-        }
-    ];
+    let metrics: Metrics = zeroMetrics();
+
+    let recentlyExecutedJobs: RecentlyExecutedJob[] = [];
 
     let uiNow = new Date();
     let nowTicker: number | undefined;
@@ -143,11 +173,88 @@
     async function refreshNow() {
         isRefreshing = true;
         try {
-            // Placeholder: quando ligar no backend, substitui aqui.
-            // Ex.: const res = await fetch(`/api/dashboard?...`);
-            // const data = await res.json();
-            // metrics = data.metrics;
-            // recentlyExecutedJobs = data.recentlyExecutedJobs;
+            const cid = clusterId();
+            if (!cid) return;
+
+            if (!apiBaseUrl) {
+                const cfg = await fetchJson<JobmasterConfig>("/jobmaster-config.json");
+                apiBaseUrl = cfg.apiBaseUrl;
+            }
+
+            try {
+                const [
+                    cluster,
+                    onMasterCount,
+                    inBucketCount,
+                    queuedCount,
+                    processingCount,
+                    hostsCount,
+                    bucketsCount,
+                    succeededJobs,
+                    failedJobs,
+                    cancelledJobs
+                ] = await Promise.all([
+                    fetchJson<ApiCluster>(apiUrl(`/clusters/${encodeURIComponent(cid)}`)),
+
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=2`)),
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=3`)),
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=6`)),
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=4`)),
+
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/hosts/count`)),
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/buckets/count`)),
+
+                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=5&CountLimit=10&Offset=0`)),
+                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=7&CountLimit=10&Offset=0`)),
+                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=8&CountLimit=10&Offset=0`))
+                ]);
+
+                transientThreshold = resolveTransientThreshold(cluster);
+
+                const upcomingTotal = onMasterCount + inBucketCount + queuedCount + processingCount;
+
+                metrics = {
+                    ...metrics,
+                    upcomingJobs: {
+                        total: upcomingTotal,
+                        breakdown: {
+                            OnMaster: onMasterCount,
+                            InBucket: inBucketCount,
+                            Queued: queuedCount,
+                            Processing: processingCount
+                        }
+                    },
+                    hosts: {
+                        total: hostsCount,
+                        offline: 0
+                    },
+                    buckets: {
+                        total: bucketsCount,
+                        lost: 0,
+                        draining: 0
+                    }
+                };
+
+                const merged = [...succeededJobs, ...failedJobs, ...cancelledJobs]
+                    .sort(
+                        (a, b) =>
+                            new Date(bestJobTimestampIso(b)).getTime() -
+                            new Date(bestJobTimestampIso(a)).getTime()
+                    )
+                    .slice(0, 10);
+
+                recentlyExecutedJobs = merged.map((j) => ({
+                    jobId: j.id,
+                    definitionId: j.jobDefinitionId,
+                    status: statusLabel(j.status),
+                    executedAt: bestJobTimestampIso(j),
+                    durationText: "—"
+                }));
+            } catch {
+                metrics = zeroMetrics();
+                transientThreshold = null;
+                recentlyExecutedJobs = [];
+            }
 
             lastUpdatedAt = new Date();
         } finally {
@@ -193,6 +300,12 @@
                 <h1 class="text-2xl font-semibold tracking-tight text-base-content">Overview</h1>
 
                 <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
+
+                {#if transientThreshold}
+                    <div class="badge badge-ghost badge-lg font-mono">
+                        TransientThreshold: {transientThreshold}
+                    </div>
+                {/if}
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
@@ -321,44 +434,46 @@
             </div>
         </div>
 
-        <div class="mt-6">
-            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-                <div class="card-body">
-                    <div class="flex items-center justify-between">
-                        <div class="text-lg font-semibold">Recently Executed Jobs</div>
-                    </div>
+        {#if sortedRecentlyExecutedJobs.length > 0}
+            <div class="mt-6">
+                <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                    <div class="card-body">
+                        <div class="flex items-center justify-between">
+                            <div class="text-lg font-semibold">Recently Executed Jobs</div>
+                        </div>
 
-                    <div class="mt-4 overflow-x-auto">
-                        <table class="table">
-                            <thead class="opacity-60">
-                            <tr>
-                                <th>Status</th>
-                                <th>JobId</th>
-                                <th>Definition</th>
-                                <th>Executed</th>
-                                <th class="text-right">Duration</th>
-                            </tr>
-                            </thead>
-                            <tbody>
-                            {#each sortedRecentlyExecutedJobs as j (j.jobId)}
-                                <tr class="hover">
-                                    <td>
-											<span class={`badge badge-sm ${jobStatusBadgeClass(j.status)}`}>
-												{j.status}
-											</span>
-                                    </td>
-                                    <td class="font-medium">{j.jobId}</td>
-                                    <td>{j.definitionId}</td>
-                                    <td class="opacity-80">{executedAgo(j.executedAt)} ago</td>
-                                    <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
+                        <div class="mt-4 overflow-x-auto">
+                            <table class="table">
+                                <thead class="opacity-60">
+                                <tr>
+                                    <th>Status</th>
+                                    <th>JobId</th>
+                                    <th>Definition</th>
+                                    <th>Executed</th>
+                                    <th class="text-right">Duration</th>
                                 </tr>
-                            {/each}
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody>
+                                {#each sortedRecentlyExecutedJobs as j (j.jobId)}
+                                    <tr class="hover">
+                                        <td>
+												<span class={`badge badge-sm ${jobStatusBadgeClass(j.status)}`}>
+													{j.status}
+												</span>
+                                        </td>
+                                        <td class="font-medium">{j.jobId}</td>
+                                        <td>{j.definitionId}</td>
+                                        <td class="opacity-80">{executedAgo(j.executedAt)} ago</td>
+                                        <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
+                                    </tr>
+                                {/each}
+                                </tbody>
+                            </table>
+                        </div>
 
+                    </div>
                 </div>
             </div>
-        </div>
+        {/if}
     </div>
 </div>

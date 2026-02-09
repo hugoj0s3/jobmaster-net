@@ -2,6 +2,38 @@
     let { auth, onLogin } = $props();
 
     let selectedProvider = $state(auth.providers?.[0]);
+
+    let apiKey = $state("");
+    let user = $state("");
+    let pwd = $state("");
+
+    let jwtFieldValues = $state<Record<string, string>>({});
+
+    function clearStoredCredentials() {
+        sessionStorage.removeItem("jm_api_key");
+        sessionStorage.removeItem("jm_user");
+        sessionStorage.removeItem("jm_pwd");
+        sessionStorage.removeItem("jm_jwt");
+    }
+
+    function handleSubmit(e: SubmitEvent) {
+        e.preventDefault();
+
+        clearStoredCredentials();
+
+        if (selectedProvider?.type === "API_KEY") {
+            sessionStorage.setItem("jm_api_key", apiKey);
+        } else if (selectedProvider?.type === "USER_PASSWORD") {
+            sessionStorage.setItem("jm_user", user);
+            sessionStorage.setItem("jm_pwd", pwd);
+        } else if (selectedProvider?.type === "JWT_CUSTOM_FORM") {
+            for (const [k, v] of Object.entries(jwtFieldValues)) {
+                sessionStorage.setItem(`jm_jwt_field_${k}`, v ?? "");
+            }
+        }
+
+        onLogin();
+    }
 </script>
 
 <div class="min-h-screen bg-base-100 text-base-content flex items-center justify-center p-6">
@@ -32,13 +64,7 @@
             </div>
 
             <!-- Form -->
-            <form
-                    class="card-body pt-4"
-                    onsubmit={(e) => {
-          e.preventDefault();
-          onLogin();
-        }}
-            >
+            <form class="card-body pt-4" onsubmit={handleSubmit}>
                 {#if selectedProvider?.type === "API_KEY"}
                     <div class="form-control w-full">
                         <label class="label py-1">
@@ -51,6 +77,7 @@
                                 class="input input-bordered w-full bg-base-100"
                                 required
                                 autocomplete="off"
+                                bind:value={apiKey}
                         />
 
                         <button type="submit" class="btn btn-primary w-full mt-4">Set Key</button>
@@ -66,6 +93,7 @@
                                 class="input input-bordered w-full bg-base-100"
                                 required
                                 autocomplete="username"
+                                bind:value={user}
                         />
                     </div>
 
@@ -78,6 +106,7 @@
                                 class="input input-bordered w-full bg-base-100"
                                 required
                                 autocomplete="current-password"
+                                bind:value={pwd}
                         />
                     </div>
 
@@ -95,6 +124,10 @@
                                     class="input input-bordered w-full bg-base-100"
                                     required={field.isRequired === true}
                                     autocomplete={field.id === "username" ? "username" : field.id === "password" ? "current-password" : "off"}
+                                    value={jwtFieldValues[field.id] ?? ""}
+                                    oninput={(e) => {
+                                        jwtFieldValues = { ...jwtFieldValues, [field.id]: (e.currentTarget as HTMLInputElement).value };
+                                    }}
                             />
                         </div>
                     {/each}
