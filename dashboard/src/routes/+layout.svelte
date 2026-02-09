@@ -238,8 +238,8 @@
                     </div>
                 </header>
 
-                <main class="flex-1 overflow-y-auto p-8 bg-base-100">
-                    <div class="max-w-[1600px] mx-auto">
+                <main class="flex-1 overflow-y-auto pr-2 py-8 bg-base-100">
+                    <div class="max-w-[1600px]">
                         {@render children()}
                     </div>
                 </main>
