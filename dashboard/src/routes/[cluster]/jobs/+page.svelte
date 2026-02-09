@@ -1,4 +1,27 @@
 <script lang="ts">
+    import { onDestroy, onMount } from "svelte";
+    import { page } from "$app/stores";
+    import { fetchJson } from "$lib/helper/fetch-json";
+    import { lastUpdatedAgo } from "$lib/helper/time-ago";
+
+    const refreshIntervalSec = 20;
+
+    const clusterId = () => $page.params.cluster;
+
+    type JobmasterConfig = {
+        apiBaseUrl: string;
+    };
+
+    let apiBaseUrl: string | null = null;
+
+    function apiUrl(path: string) {
+        const base = apiBaseUrl ?? "/jm-api";
+        return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+    }
+
+    let uiNow = new Date();
+    let nowTicker: number | undefined;
+
     type JobStatus =
         | "Processing"
         | "Queued"
@@ -26,59 +49,111 @@
         bucket?: string;
     };
 
+    type ApiCluster = {
+        transientThreshold?: string;
+        TransientThreshold?: string;
+        clusterId?: string;
+        ClusterId?: string;
+    };
+
+    type ApiJob = {
+        id: string;
+        jobDefinitionId: string;
+        priority: number;
+        status: number;
+        scheduledAt?: string;
+        createdAt?: string;
+        processingStartedAt?: string;
+        succeedExecutedAt?: string;
+        bucketId?: string | null;
+        agentWorkerId?: string | null;
+        workerLane?: string | null;
+        metadata?: Record<string, unknown> | null;
+    };
+
+    type ApiHost = {
+        id: string;
+        displayName: string;
+    };
+
+    type ApiBucket = {
+        id: string;
+        name: string;
+        hostId?: string | null;
+        hostDisplayName?: string | null;
+        agentWorkerId?: string | null;
+        status: number;
+        priority: number;
+        workerLane?: string | null;
+    };
+
+    function resolveTransientThreshold(cluster: ApiCluster): string | null {
+        return cluster.transientThreshold ?? cluster.TransientThreshold ?? null;
+    }
+
+    function mapApiStatus(status: number): JobStatus {
+        // Backend enum:
+        // 1 SavePending, 2 HeldOnMaster, 3 AssignedToBucket, 4 Processing, 5 Succeeded, 6 Queued, 7 Failed, 8 Cancelled
+        if (status === 1) return "SavePending";
+        if (status === 2) return "OnMaster";
+        if (status === 3) return "InBucket";
+        if (status === 4) return "Processing";
+        if (status === 5) return "Succeeded";
+        if (status === 6) return "Queued";
+        if (status === 7) return "Failed";
+        if (status === 8) return "Cancelled";
+        return "Queued";
+    }
+
+    function mapApiPriority(priority: number): Priority {
+        // JobMasterPriority enum é int; mapeamento seguro:
+        // 1->Low, 2->Medium, 3->High, 4/5->Critical
+        if (priority <= 1) return "Low";
+        if (priority === 2) return "Medium";
+        if (priority === 3) return "High";
+        return "Critical";
+    }
+
+    function stringifyMetadata(meta: Record<string, unknown> | null | undefined): Record<string, string> {
+        if (!meta) return {};
+        const out: Record<string, string> = {};
+        for (const [k, v] of Object.entries(meta)) {
+            if (v === null || v === undefined) continue;
+            if (typeof v === "string") out[k] = v;
+            else if (typeof v === "number" || typeof v === "boolean") out[k] = String(v);
+            else {
+                try {
+                    out[k] = JSON.stringify(v);
+                } catch {
+                    out[k] = String(v);
+                }
+            }
+        }
+        return out;
+    }
+
+    function bestExecutedAtIso(j: ApiJob): string | undefined {
+        return j.succeedExecutedAt ?? j.processingStartedAt ?? undefined;
+    }
+
+    function scheduledIso(j: ApiJob): string | undefined {
+        return j.scheduledAt ?? j.createdAt ?? undefined;
+    }
+
     let refresh = true;
 
-    const jobs: Job[] = [
-        {
-            jobId: "8b12...f9a7",
-            definitionId: "FetchDataHandler",
-            metadata: { "!lane": "DataProcessing", "!tenant": "acme", debug: "true" },
-            status: "Processing",
-            priority: "Critical",
-            scheduledAt: new Date(Date.now() - 2 * 60_000).toISOString(),
-            host: "Host 3",
-            worker: "Payroll-Worker-02"
-        },
-        {
-            jobId: "f19b...770e",
-            definitionId: "SendEmailHandler",
-            metadata: { "!tenant": "acme", trace: "on" },
-            status: "OnMaster",
-            priority: "High",
-            scheduledAt: new Date(Date.now() + 12 * 60_000).toISOString(),
-            host: "Host 3"
-        },
-        {
-            jobId: "50d2...de4c",
-            definitionId: "MethodHandler",
-            metadata: { "!lane": "Invoicing" },
-            status: "InBucket",
-            priority: "Medium",
-            scheduledAt: new Date(Date.now() + 90 * 60_000).toISOString(),
-            bucket: "bucket-12"
-        },
-        {
-            jobId: "717e...7d7a",
-            definitionId: "InvoicingHandler",
-            metadata: { "!tenant": "beta", note: "x" },
-            status: "Failed",
-            priority: "Low",
-            executedAt: new Date(Date.now() - 61 * 60_000).toISOString(),
-            host: "Host 1",
-            worker: "DNS-Worker-01"
-        },
-        {
-            jobId: "9aa1...1cc2",
-            definitionId: "CleanupHandler",
-            metadata: { "!tenant": "acme" },
-            status: "Succeeded",
-            priority: "Low",
-            executedAt: new Date(Date.now() - 70_000).toISOString(),
-            host: "Host 2",
-            worker: "Cleanup-Worker-01",
-            bucket: "bucket-2"
-        }
-    ];
+    let lastUpdatedAt = new Date();
+    let isRefreshing = false;
+
+    let transientThreshold: string | null = null;
+
+    let jobs: Job[] = [];
+    let jobsTotalCount = 0;
+
+    let hostsById = new Map<string, ApiHost>();
+    let bucketsById = new Map<string, ApiBucket>();
+
+    let poller: number | undefined;
 
     const statusClasses: Record<JobStatus, string> = {
         Processing: "badge-info",
@@ -194,6 +269,132 @@
     function bulkAbort() {
         console.log("Bulk Abort", [...selected]);
     }
+
+    async function ensureConfigLoaded() {
+        if (apiBaseUrl) return;
+        const cfg = await fetchJson<JobmasterConfig>("/jobmaster-config.json");
+        apiBaseUrl = cfg.apiBaseUrl;
+    }
+
+    async function loadHost(hostId: string): Promise<ApiHost | null> {
+        try {
+            await ensureConfigLoaded();
+            return await fetchJson<ApiHost>(apiUrl(`/${encodeURIComponent(clusterId() ?? "")}/hosts/${encodeURIComponent(hostId)}`));
+        } catch {
+            return null;
+        }
+    }
+
+    async function loadBucket(bucketId: string): Promise<ApiBucket | null> {
+        try {
+            await ensureConfigLoaded();
+            return await fetchJson<ApiBucket>(
+                apiUrl(`/${encodeURIComponent(clusterId() ?? "")}/buckets/${encodeURIComponent(bucketId)}`)
+            );
+        } catch {
+            return null;
+        }
+    }
+
+    async function refreshNow() {
+        if (!refresh) return;
+
+        isRefreshing = true;
+        try {
+            const cid = clusterId();
+            if (!cid) return;
+
+            await ensureConfigLoaded();
+
+            try {
+                const [cluster, jobsCount, apiJobs, apiHosts, apiBuckets] = await Promise.all([
+                    fetchJson<ApiCluster>(apiUrl(`/clusters/${encodeURIComponent(cid)}`)),
+
+                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count`)),
+                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?CountLimit=200&Offset=0`)),
+
+                    fetchJson<ApiHost[]>(apiUrl(`/${encodeURIComponent(cid)}/hosts`)),
+                    fetchJson<ApiBucket[]>(apiUrl(`/${encodeURIComponent(cid)}/buckets`))
+                ]);
+
+                transientThreshold = resolveTransientThreshold(cluster);
+
+                jobsTotalCount = jobsCount;
+
+                hostsById = new Map(apiHosts.map((h) => [h.id, h]));
+                bucketsById = new Map(apiBuckets.map((b) => [b.id, b]));
+
+                jobs = apiJobs.map((j) => {
+                    const status = mapApiStatus(j.status);
+                    const priority = mapApiPriority(j.priority);
+
+                    const bucketId = j.bucketId ?? undefined;
+                    const bucket = bucketId ? bucketsById.get(bucketId) : undefined;
+
+                    const hostDisplayName = bucket?.hostDisplayName ?? undefined;
+
+                    const worker = j.agentWorkerId ?? bucket?.agentWorkerId ?? undefined;
+
+                    const meta = stringifyMetadata(j.metadata);
+                    if (j.workerLane) meta["!lane"] = j.workerLane;
+
+                    return {
+                        jobId: j.id,
+                        definitionId: j.jobDefinitionId,
+                        metadata: meta,
+                        status,
+                        priority,
+                        executedAt: bestExecutedAtIso(j),
+                        scheduledAt: scheduledIso(j),
+                        host: hostDisplayName,
+                        worker: worker ?? undefined,
+                        bucket: bucketId
+                    };
+                });
+
+                selected = new Set([...selected].filter((id) => jobs.some((j) => j.jobId === id)));
+
+                lastUpdatedAt = new Date();
+            } catch {
+                transientThreshold = null;
+                jobsTotalCount = 0;
+                jobs = [];
+                hostsById = new Map();
+                bucketsById = new Map();
+                selected = new Set();
+            }
+        } finally {
+            isRefreshing = false;
+            lastUpdatedAt = new Date();
+            lastUpdatedLabel = computeLastUpdatedAgoText();
+        }
+    }
+
+    function restartPoller() {
+        if (poller) window.clearInterval(poller);
+        poller = window.setInterval(() => {
+            if (refresh) refreshNow();
+        }, refreshIntervalSec * 1000);
+    }
+
+    onMount(() => {
+        nowTicker = window.setInterval(() => {
+            uiNow = new Date();
+        }, 1000);
+
+        refreshNow();
+        restartPoller();
+
+        return () => {
+            if (nowTicker) window.clearInterval(nowTicker);
+            if (poller) window.clearInterval(poller);
+        };
+    });
+
+    onDestroy(() => {
+        if (nowTicker) window.clearInterval(nowTicker);
+        if (poller) window.clearInterval(poller);
+    });
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -212,26 +413,22 @@
             <h1 class="text-4xl font-semibold">Jobs</h1>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: 10s ago</span>
+                <span>Last updated: {lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
 
-                <label class="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                            type="checkbox"
-                            bind:checked={refresh}
-                            class="toggle toggle-sm toggle-primary"
-                    />
-                    <span class={` font-semibold text-sm ${refresh ? "text-primary" : ""} `}>Refresh</span>
-                </label>
-
-                <button class="btn btn-ghost btn-sm btn-square" aria-label="More">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                        <circle cx="12" cy="5" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="12" cy="19" r="2" />
+                <button class="btn btn-ghost btn-sm btn-square" aria-label="Refresh now" on:click={refreshNow} disabled={isRefreshing}>
+                    <svg xmlns="http://www.w3.org/2000/svg" class={"h-5 w-5 " + (isRefreshing ? "animate-spin" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path d="M21 12a9 9 0 1 1-3-6.7" />
+                        <path d="M21 3v6h-6" />
                     </svg>
                 </button>
             </div>
         </div>
+
+        {#if transientThreshold}
+            <div class="mt-3 text-xs opacity-70 font-mono">
+                TransientThreshold: {transientThreshold}
+            </div>
+        {/if}
 
         {#if selected.size > 0}
             <div
@@ -322,22 +519,22 @@
                             </td>
 
                             <td>
-									<span class={`badge badge-sm ${statusClasses[j.status] ?? "badge-ghost"}`}>
-										{j.status}
-									</span>
+								<span class={`badge badge-sm ${statusClasses[j.status] ?? "badge-ghost"}`}>
+									{j.status}
+								</span>
                             </td>
 
                             <td>
-									<span class={`badge badge-sm ${priorityClasses[j.priority] ?? "badge-ghost"}`}>
-										{j.priority}
-									</span>
+								<span class={`badge badge-sm ${priorityClasses[j.priority] ?? "badge-ghost"}`}>
+									{j.priority}
+								</span>
                             </td>
 
                             <td>
                                 {#if formatTimeCell(j).tooltip}
-										<span class="tooltip tooltip-bottom" data-tip={formatTimeCell(j).tooltip}>
-											{formatTimeCell(j).label}
-										</span>
+									<span class="tooltip tooltip-bottom" data-tip={formatTimeCell(j).tooltip}>
+										{formatTimeCell(j).label}
+									</span>
                                 {:else}
                                     <span>{formatTimeCell(j).label}</span>
                                 {/if}

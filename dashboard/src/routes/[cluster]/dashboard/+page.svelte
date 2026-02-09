@@ -2,6 +2,7 @@
     import { onDestroy, onMount } from "svelte";
     import { page } from "$app/stores";
     import { fetchJson } from "$lib/helper/fetch-json";
+    import { lastUpdatedAgo } from "$lib/helper/time-ago";
 
     const clusterId = () => $page.params.cluster;
 
@@ -145,19 +146,6 @@
     let uiNow = new Date();
     let nowTicker: number | undefined;
     let poller: number | undefined;
-
-    function formatAgeShort(ms: number): string {
-        const s = Math.max(0, Math.floor(ms / 1000));
-        if (s < 60) return `${s}s`;
-        const m = Math.floor(s / 60);
-        if (m < 60) return `${m}m`;
-        const h = Math.floor(m / 60);
-        return `${h}h`;
-    }
-
-    function lastUpdatedAgo(): string {
-        return formatAgeShort(uiNow.getTime() - lastUpdatedAt.getTime());
-    }
 
     function executedAgo(iso: string): string {
         const ms = uiNow.getTime() - new Date(iso).getTime();
@@ -309,8 +297,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: {lastUpdatedAgo()} ago</span>
-
+                <span>Last updated: {lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
                 <button
                         class="btn btn-ghost btn-sm btn-square"
                         aria-label="Refresh now"
