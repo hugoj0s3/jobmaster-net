@@ -4,7 +4,7 @@
     let isHovered = $state(false);
 
     const menuItems = [
-        { name: "Dashboard", path: "/dashboard", iconClass: "fa-solid fa-gauge-high" },
+        { name: "Dashboard", path: "/", iconClass: "fa-solid fa-gauge-high" },
         { name: "Jobs", path: "/jobs", iconClass: "fa-solid fa-gears" },
         { name: "Recurring Schedules", path: "/recurring-schedules", iconClass: "fa-solid fa-clock" },
         { name: "Hosts", path: "/hosts", iconClass: "fa-solid fa-server" },

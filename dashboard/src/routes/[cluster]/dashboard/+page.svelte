@@ -1,288 +1,364 @@
 <script lang="ts">
-  const lifecycle = [
-    { label: "SavePending", value: 0, cls: "bg-base-300/60 text-base-content/80" },
-    { label: "HeldOnMaster", value: 14, cls: "bg-base-300/60 text-base-content/80" },
-    { label: "...", value: 27, cls: "bg-warning/80 text-black" },
-    { label: "Assignee164", value: 0, cls: "bg-warning/60 text-black" },
-    { label: "Queued", value: 8, cls: "bg-info/70 text-black" },
-    { label: "Processing", value: 4, cls: "bg-info/50 text-black" },
-    { label: "Succeeded", value: "1.1k", cls: "bg-success/70 text-black" },
-    { label: "Failed", value: 5, cls: "bg-error/80 text-black" }
-  ];
+    import { onDestroy, onMount } from "svelte";
 
-  const recent = [
-    { status: "Succeeded", title: "Fetch Data Job", meta: "145ms", ago: "3m ago" },
-    { status: "Succeeded", title: "Generate Report", meta: "5.2s", ago: "5m ago" },
-    { status: "Failed", title: "Send Email Notification", meta: "2.3s", ago: "14m ago" },
-    { status: "Succeeded", title: "Process Invoices", meta: "1.2s", ago: "22m ago" },
-    { status: "Succeeded", title: "Fetch Data Job", meta: "121ms", ago: "26m ago" }
-  ];
+    type UpcomingJobsBreakdown = {
+        OnMaster: number;
+        InBucket: number;
+        Queued: number;
+        Processing: number;
+    };
 
-  const issues = [
-    { n: 1, text: "Lost bucket detected", action: "View buckets" },
-    { n: 4, text: "Worker Payroll-Worker-02 offline", action: "View workers" }
-  ];
+    type Metrics = {
+        upcomingJobs: {
+            total: number;
+            breakdown: UpcomingJobsBreakdown;
+        };
+        failures: {
+            jobsFailedExceededRetries: number;
+            failedExecutions: number;
+        };
+        workers: {
+            onlineTotal: number;
+            executionMode: number;
+            drainingMode: number;
+            fullMode: number;
+            lastHeartbeatText: string;
+        };
+        hosts: {
+            total: number;
+            offline: number;
+        };
+        buckets: {
+            total: number;
+            lost: number;
+            draining: number;
+        };
+    };
 
-  const workers = [
-    { name: "DNS-Worker-01", mode: "Full", lane: "Default", hb: "12s", jobs: 2 },
-    { name: "FileImport-Worker-01", mode: "Coordinator", lane: "FileImport", hb: "9s", jobs: 0 },
-    { name: "Payroll-Worker-01", mode: "Execution", lane: "Payroll", hb: "7s", jobs: 1 }
-  ];
+    type JobStatus = "Succeeded" | "Failed" | "Cancelled";
 
-  function StatusIcon({ status }: { status: string }) {
-    // placeholder; used via {#if} blocks below
-    return status;
-  }
+    type RecentlyExecutedJob = {
+        jobId: string;
+        definitionId: string;
+        status: JobStatus;
+        executedAt: string;
+        durationText?: string;
+    };
+
+    const refreshIntervalSec = 20;
+    let lastUpdatedAt = new Date();
+    let isRefreshing = false;
+
+    let metrics: Metrics = {
+        upcomingJobs: {
+            total: 12,
+            breakdown: {
+                OnMaster: 3,
+                InBucket: 2,
+                Queued: 5,
+                Processing: 2
+            }
+        },
+        failures: {
+            jobsFailedExceededRetries: 5,
+            failedExecutions: 11
+        },
+        workers: {
+            onlineTotal: 4,
+            executionMode: 2,
+            drainingMode: 1,
+            fullMode: 1,
+            lastHeartbeatText: "≈ 12s"
+        },
+        hosts: {
+            total: 6,
+            offline: 1
+        },
+        buckets: {
+            total: 24,
+            lost: 0,
+            draining: 1
+        }
+    };
+
+    let recentlyExecutedJobs: RecentlyExecutedJob[] = [
+        {
+            jobId: "9aa1...1cc2",
+            definitionId: "CleanupHandler",
+            status: "Succeeded",
+            executedAt: new Date(Date.now() - 70_000).toISOString(),
+            durationText: "121ms"
+        },
+        {
+            jobId: "717e...7d7a",
+            definitionId: "InvoicingHandler",
+            status: "Failed",
+            executedAt: new Date(Date.now() - 61 * 60_000).toISOString(),
+            durationText: "2.3s"
+        },
+        {
+            jobId: "c0f1...a91b",
+            definitionId: "GenerateReportHandler",
+            status: "Succeeded",
+            executedAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+            durationText: "5.2s"
+        },
+        {
+            jobId: "8b12...f9a7",
+            definitionId: "FetchDataHandler",
+            status: "Cancelled",
+            executedAt: new Date(Date.now() - 16 * 60_000).toISOString(),
+            durationText: "—"
+        }
+    ];
+
+    let uiNow = new Date();
+    let nowTicker: number | undefined;
+    let poller: number | undefined;
+
+    function formatAgeShort(ms: number): string {
+        const s = Math.max(0, Math.floor(ms / 1000));
+        if (s < 60) return `${s}s`;
+        const m = Math.floor(s / 60);
+        if (m < 60) return `${m}m`;
+        const h = Math.floor(m / 60);
+        return `${h}h`;
+    }
+
+    function lastUpdatedAgo(): string {
+        return formatAgeShort(uiNow.getTime() - lastUpdatedAt.getTime());
+    }
+
+    function executedAgo(iso: string): string {
+        const ms = uiNow.getTime() - new Date(iso).getTime();
+        return formatAgeShort(ms);
+    }
+
+    function jobStatusBadgeClass(s: JobStatus): string {
+        if (s === "Succeeded") return "badge-success";
+        if (s === "Failed") return "badge-error";
+        return "badge-ghost";
+    }
+
+    async function refreshNow() {
+        isRefreshing = true;
+        try {
+            // Placeholder: quando ligar no backend, substitui aqui.
+            // Ex.: const res = await fetch(`/api/dashboard?...`);
+            // const data = await res.json();
+            // metrics = data.metrics;
+            // recentlyExecutedJobs = data.recentlyExecutedJobs;
+
+            lastUpdatedAt = new Date();
+        } finally {
+            isRefreshing = false;
+        }
+    }
+
+    function restartPoller() {
+        if (poller) window.clearInterval(poller);
+        poller = window.setInterval(() => {
+            refreshNow();
+        }, refreshIntervalSec * 1000);
+    }
+
+    $: sortedRecentlyExecutedJobs = [...recentlyExecutedJobs].sort(
+        (a, b) => new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime()
+    );
+
+    onMount(() => {
+        nowTicker = window.setInterval(() => {
+            uiNow = new Date();
+        }, 1000);
+
+        refreshNow();
+        restartPoller();
+
+        return () => {
+            if (nowTicker) window.clearInterval(nowTicker);
+            if (poller) window.clearInterval(poller);
+        };
+    });
+
+    onDestroy(() => {
+        if (nowTicker) window.clearInterval(nowTicker);
+        if (poller) window.clearInterval(poller);
+    });
 </script>
 
-<div class="min-h-screen bg-base-100">
-  <!-- subtle top glow -->
-  <div class="pointer-events-none fixed inset-0 opacity-50"
-       style="background: radial-gradient(1200px 600px at 30% 10%, rgba(45,212,191,0.10), transparent 60%),
-                           radial-gradient(900px 500px at 70% 20%, rgba(96,165,250,0.10), transparent 60%),
-                           radial-gradient(900px 500px at 80% 80%, rgba(167,139,250,0.10), transparent 60%);">
-  </div>
+<div class="min-h-[calc(100vh-theme(spacing.14))] bg-base-100">
+    <div class="w-full px-2 py-2">
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div class="flex items-center gap-3">
+                <h1 class="text-2xl font-semibold tracking-tight text-base-content">Overview</h1>
 
-  <div class="relative mx-auto w-full max-w-6xl px-6 py-10">
-    <!-- Header -->
-    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-      <div class="flex items-center gap-3">
-        <h1 class="text-4xl font-semibold tracking-tight text-base-content">Overview</h1>
-        <div class="badge badge-outline px-3 py-3 text-xs opacity-90">Cluster: QA - Testing</div>
-        <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
-      </div>
-
-      <div class="flex items-center gap-3 text-sm opacity-80">
-        <span>Last updated: 12s ago</span>
-        <button class="btn btn-ghost btn-sm gap-2">
-          <!-- refresh icon -->
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 12a9 9 0 1 1-3-6.7" />
-            <path d="M21 3v6h-6" />
-          </svg>
-          Refresh
-        </button>
-        <button class="btn btn-ghost btn-sm btn-square" aria-label="Settings">
-          <!-- gear -->
-          <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/>
-            <path d="M19.4 15a7.7 7.7 0 0 0 .1-1l2-1.2-2-3.5-2.3.5a7.2 7.2 0 0 0-.8-.7l.3-2.4H9.7L10 5.1a7.2 7.2 0 0 0-.8.7L6.9 5.3l-2 3.5L7 10a7.7 7.7 0 0 0 0 2l-2.1 1.2 2 3.5 2.3-.5c.3.3.5.5.8.7l-.3 2.4h6.9l-.3-2.4c.3-.2.6-.4.8-.7l2.3.5 2-3.5-2-1.2z"/>
-          </svg>
-        </button>
-      </div>
-    </div>
-
-    <!-- Top cards -->
-    <div class="mt-8 grid grid-cols-1 gap-5 md:grid-cols-4">
-      <!-- Jobs in progress -->
-      <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-        <div class="card-body">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="text-sm opacity-80">Jobs In Progress</div>
-              <div class="mt-2 text-5xl font-semibold">12</div>
-              <div class="mt-1 text-sm opacity-70">in-flight now</div>
+                <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
             </div>
-            <div class="opacity-80">
-              <!-- circular spinner-ish -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M21 12a9 9 0 1 1-9-9" />
-              </svg>
+
+            <div class="flex items-center gap-3 text-sm opacity-80">
+                <span>Last updated: {lastUpdatedAgo()} ago</span>
+
+                <button
+                        class="btn btn-ghost btn-sm btn-square"
+                        aria-label="Refresh now"
+                        on:click={refreshNow}
+                        disabled={isRefreshing}
+                >
+                    <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            stroke-width="2"
+                    >
+                        <path d="M21 12a9 9 0 1 1-3-6.7" />
+                        <path d="M21 3v6h-6" />
+                    </svg>
+                </button>
             </div>
-          </div>
         </div>
-      </div>
 
-      <!-- Failed jobs (24h) - FIXED ICON: use X-in-circle instead of lightning -->
-      <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-        <div class="card-body">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="text-sm opacity-80">Failed Jobs (24h)</div>
-              <div class="mt-2 text-5xl font-semibold text-error">5</div>
-              <div class="mt-1 text-sm opacity-70">/ today</div>
-            </div>
-            <div class="text-error opacity-90">
-              <!-- X circle -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M15 9l-6 6" />
-                <path d="M9 9l6 6" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
+        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="text-sm opacity-80">Upcoming Jobs</div>
+                    <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
-      <!-- Workers online -->
-      <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-        <div class="card-body">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="text-sm opacity-80">Workers <span class="text-primary">Online</span></div>
-              <div class="mt-2 text-5xl font-semibold">4 / 4</div>
-              <div class="mt-1 text-sm opacity-70">heartbeats ≅ 12s</div>
-            </div>
-            <div class="opacity-80">
-              <!-- pulse -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 12h4l2-5 4 10 2-5h6" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Buckets -->
-      <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-        <div class="card-body">
-          <div class="flex items-start justify-between">
-            <div>
-              <div class="text-sm opacity-80">Buckets</div>
-              <div class="mt-2 text-5xl font-semibold">24 / 24</div>
-              <div class="mt-1 text-sm opacity-70">/ 0 lost, 1 draining</div>
-            </div>
-            <div class="opacity-80">
-              <!-- trash-ish -->
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M3 6h18" />
-                <path d="M8 6V4h8v2" />
-                <path d="M6 6l1 16h10l1-16" />
-              </svg>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Lifecycle pills -->
-    <div class="mt-8">
-      <div class="mb-3 text-sm font-semibold opacity-80">Job Lifecycle</div>
-      <div class="flex flex-wrap gap-2">
-        {#each lifecycle as item}
-          <div class={"badge badge-lg rounded-full px-5 py-4 " + item.cls}>
-            <span class="mr-2 opacity-90">{item.label}</span>
-            <span class="font-semibold">{item.value}</span>
-          </div>
-        {/each}
-      </div>
-    </div>
-
-    <!-- Bottom grid -->
-    <div class="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
-      <!-- Left column -->
-      <div class="flex flex-col gap-6">
-        <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div class="text-lg font-semibold">Top Workers</div>
-              <button class="btn btn-ghost btn-sm btn-square opacity-70">…</button>
-            </div>
-
-            <div class="mt-2 space-y-4">
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="badge badge-error badge-lg rounded-full text-black">4</div>
-                  <div class="text-sm opacity-90">Lost bucket detected</div>
-                  <div class="text-xs opacity-50">3s ago</div>
+                    <div class="mt-3 space-y-1 text-xs opacity-70">
+                        <div class="flex items-center justify-between">
+                            <span>On Master</span>
+                            <span class="font-mono">{metrics.upcomingJobs.breakdown.OnMaster}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>In Bucket</span>
+                            <span class="font-mono">{metrics.upcomingJobs.breakdown.InBucket}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>Queued</span>
+                            <span class="font-mono">{metrics.upcomingJobs.breakdown.Queued}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>Processing</span>
+                            <span class="font-mono">{metrics.upcomingJobs.breakdown.Processing}</span>
+                        </div>
+                    </div>
                 </div>
-                <a class="link link-primary text-sm">View buckets</a>
-              </div>
-
-              <div class="flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="badge badge-warning badge-lg rounded-full text-black">1</div>
-                  <div class="text-sm opacity-90">Worker Payroll-Worker-02</div>
-                  <div class="text-xs opacity-50">offline</div>
-                </div>
-                <a class="link link-primary text-sm">View workers</a>
-              </div>
             </div>
-          </div>
+
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="text-sm opacity-80">Jobs Failed (Exceeded Retries)</div>
+                    <div class="mt-2 text-5xl font-semibold text-error">
+                        {metrics.failures.jobsFailedExceededRetries}
+                    </div>
+
+                    <div class="mt-3 text-xs opacity-70">
+                        <div class="flex items-center justify-between">
+                            <span>Failed Executions</span>
+                            <span class="font-mono">{metrics.failures.failedExecutions}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="text-sm opacity-80">Workers Online</div>
+                    <div class="mt-2 text-5xl font-semibold">{metrics.workers.onlineTotal}</div>
+
+                    <div class="mt-3 space-y-1 text-xs opacity-70">
+                        <div class="flex items-center justify-between">
+                            <span>Execution Mode</span>
+                            <span class="font-mono">{metrics.workers.executionMode}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>Draining Mode</span>
+                            <span class="font-mono">{metrics.workers.drainingMode}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>Full Mode</span>
+                            <span class="font-mono">{metrics.workers.fullMode}</span>
+                        </div>
+
+                        <div class="pt-2 text-[11px] opacity-60">
+                            Last heartbeat: {metrics.workers.lastHeartbeatText}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="text-sm opacity-80">Hosts</div>
+                    <div class="mt-2 text-5xl font-semibold">{metrics.hosts.total}</div>
+
+                    <div class="mt-3 text-xs opacity-70">
+                        <div class="flex items-center justify-between">
+                            <span>Offline</span>
+                            <span class="font-mono text-error">{metrics.hosts.offline}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="text-sm opacity-80">Buckets</div>
+                    <div class="mt-2 text-5xl font-semibold">{metrics.buckets.total}</div>
+
+                    <div class="mt-3 space-y-1 text-xs opacity-70">
+                        <div class="flex items-center justify-between">
+                            <span>Lost</span>
+                            <span class="font-mono">{metrics.buckets.lost}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span>Draining</span>
+                            <span class="font-mono">{metrics.buckets.draining}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
 
-                <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-                  <div class="card-body">
-                    <div class="text-lg font-semibold">Worker</div>
+        <div class="mt-6">
+            <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card-body">
+                    <div class="flex items-center justify-between">
+                        <div class="text-lg font-semibold">Recently Executed Jobs</div>
+                    </div>
 
                     <div class="mt-4 overflow-x-auto">
-                      <table class="table">
-                        <thead class="opacity-60">
-                          <tr>
-                            <th>Name</th>
-                            <th>Mode</th>
-                            <th>Lane</th>
-                            <th>Heartbeat</th>
-                            <th>Jobs</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {#each workers as w}
-                            <tr class="hover">
-                              <td class="font-medium">{w.name}</td>
-                              <td>{w.mode}</td>
-                              <td>{w.lane}</td>
-                              <td>{w.hb}</td>
-                              <td>{w.jobs}</td>
+                        <table class="table">
+                            <thead class="opacity-60">
+                            <tr>
+                                <th>Status</th>
+                                <th>JobId</th>
+                                <th>Definition</th>
+                                <th>Executed</th>
+                                <th class="text-right">Duration</th>
                             </tr>
-                          {/each}
-                        </tbody>
-                      </table>
+                            </thead>
+                            <tbody>
+                            {#each sortedRecentlyExecutedJobs as j (j.jobId)}
+                                <tr class="hover">
+                                    <td>
+											<span class={`badge badge-sm ${jobStatusBadgeClass(j.status)}`}>
+												{j.status}
+											</span>
+                                    </td>
+                                    <td class="font-medium">{j.jobId}</td>
+                                    <td>{j.definitionId}</td>
+                                    <td class="opacity-80">{executedAgo(j.executedAt)} ago</td>
+                                    <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
+                                </tr>
+                            {/each}
+                            </tbody>
+                        </table>
                     </div>
 
-                  </div>
                 </div>
-      </div>
-
-      <!-- Right column -->
-      <div class="flex flex-col gap-6">
-        <div class="card bg-base-200/70 shadow-xl backdrop-blur">
-          <div class="card-body">
-            <div class="flex items-center justify-between">
-              <div class="text-lg font-semibold">Recent Activity</div>
-              <button class="btn btn-ghost btn-sm btn-square opacity-70">…</button>
             </div>
-
-            <div class="mt-2 divide-y divide-base-300/60">
-              {#each recent as r}
-                <div class="flex items-center justify-between py-4">
-                  <div class="flex items-center gap-3">
-                    {#if r.status === "Succeeded"}
-                      <span class="text-success">
-                        <!-- check -->
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                          <path d="M20 6L9 17l-5-5" />
-                        </svg>
-                      </span>
-                    {:else}
-                      <span class="text-error">
-                        <!-- x -->
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
-                          <path d="M18 6L6 18" />
-                          <path d="M6 6l12 12" />
-                        </svg>
-                      </span>
-                    {/if}
-
-                    <div class="text-sm">
-                      <span class={r.status === "Failed" ? "text-error font-semibold" : "font-semibold"}>
-                        {r.status}
-                      </span>
-                      <span class="ml-2 opacity-80">{r.title}</span>
-                      <span class="ml-2 opacity-60">{r.meta}</span>
-                    </div>
-                  </div>
-
-                  <div class="flex items-center gap-3 text-xs opacity-60">
-                    <span>{r.ago}</span>
-                    <span class="h-2 w-2 rounded-full bg-base-content/40"></span>
-                  </div>
-                </div>
-              {/each}
-            </div>
-          </div>
         </div>
-      </div>
     </div>
-  </div>
 </div>
