@@ -2,6 +2,8 @@
 <script lang="ts">
     import "../app.css";
     import {onMount} from "svelte";
+    import { page } from "$app/stores";
+    import { goto } from "$app/navigation";
     import Login from "$lib/components/Login.svelte";
     import Sidebar from "$lib/components/Sidebar.svelte";
 
@@ -18,15 +20,78 @@
         const res = await fetch("/jobmaster-config.json");
         config = await res.json();
         if (sessionStorage.getItem("jm_auth") === "true" || config.auth?.enabled != true) isLoggedIn = true;
-        
-        if (config?.clusters?.length > 0) handleClusterChange(config.clusters[0].id);
     });
 
-    function handleClusterChange(id: string) {
-        currentCluster = config.clusters.find((c: any) => c.id === id);
-        const themeId = resolveThemeId(id, config);
-        applyTheme(themeId);
+    function getUrlClusterIdFromPathname(pathname: string) {
+        const parts = pathname.split("/").filter(Boolean);
+        const first = parts[0];
+        if (!first) return null;
+
+        const isCluster = config?.clusters?.some((c: any) => c.id === first) === true;
+        return isCluster ? first : null;
     }
+
+    function getPathAfterCluster() {
+        const parts = $page.url.pathname.split("/").filter(Boolean);
+        const first = parts[0];
+        const isCluster = config?.clusters?.some((c: any) => c.id === first) === true;
+
+        const rest = isCluster ? parts.slice(1) : parts;
+        return `/${rest.join("/")}`;
+    }
+
+    function handleClusterChange(id: string) {
+        const after = getPathAfterCluster();
+        const next = after === "/" ? "/dashboard" : after;
+        return goto(`/${id}${next}`, { keepFocus: true, noScroll: true });
+    }
+
+    $effect(() => {
+        if (!config?.clusters?.length) return;
+
+        const urlClusterId = getUrlClusterIdFromPathname($page.url.pathname);
+        
+        let clusterFound = null;
+        if (urlClusterId) {
+            const urlClusterIdLower = urlClusterId.toLowerCase();
+            clusterFound = config.clusters.find((c: any) => (c.id ?? "").toLowerCase() === urlClusterIdLower);
+        }
+
+        if (!urlClusterId || !clusterFound) {
+            const parts = $page.url.pathname.split("/").filter(Boolean);
+
+            if (parts.length > 0) {
+                void goto("/", { replaceState: true, keepFocus: true, noScroll: true });
+            }
+
+            currentCluster = null;
+
+            const defaultThemeId = config?.defaultThemeId ?? "jobmaster-light";
+            if (currentTheme?.id !== defaultThemeId) {
+                applyTheme(defaultThemeId, false);
+            }
+            return;
+        }
+        
+        const nextCluster = clusterFound ?? config.clusters[0] ?? null;
+        if (!nextCluster) return;
+
+        if (currentCluster?.id !== nextCluster.id) {
+            currentCluster = nextCluster;
+            const themeId = resolveThemeId(nextCluster.id, config);
+            applyTheme(themeId);
+        }
+
+        if (!clusterFound) {
+            const after = getPathAfterCluster();
+            const next = after === "/" ? "/dashboard" : after;
+            const target = `/${nextCluster.id}${next}`;
+
+            if ($page.url.pathname !== target) {
+                void goto(target, { replaceState: true, keepFocus: true, noScroll: true });
+            }
+        }
+    });
 
     // 1. Definimos o mapeamento fora para ser usado na limpeza e na aplicação
     const themeVarMap: Record<string, string> = {
@@ -54,6 +119,13 @@
     function applyTheme(themeId: string, persistForCluster = false) {
         let theme = config?.themes?.find((t: any) => t.id === themeId);
 
+        if (!theme) {
+            const fallbackId = config?.defaultThemeId ?? "light";
+            theme = config?.themes?.find((t: any) => t.id === fallbackId) ?? config?.themes?.[0];
+        }
+
+        if (!theme) return;
+
         currentTheme = theme;
         const base = theme.baseTheme ?? "jobmaster-light";
         
@@ -78,7 +150,7 @@
             }
         }
 
-        if (persistForCluster) {
+        if (persistForCluster && currentCluster?.id) {
             setStoredTheme(currentCluster.id, themeId);
         }
     }
@@ -99,77 +171,83 @@
     <Login auth={config.auth} onLogin={() => (isLoggedIn = true)}/>
 
 {:else}
-    <div class="flex h-screen overflow-hidden bg-base-100 text-base-content">
-        <Sidebar/>
+    {#if currentCluster}
+        <div class="flex h-screen overflow-hidden bg-base-100 text-base-content">
+            <Sidebar/>
 
-        <div class="flex-1 flex flex-col min-w-0">
-            <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center px-4 shrink-0">
-                <div class="dropdown dropdown-end">
-                    <button
-                            tabindex="0"
-                            class="btn btn-ghost btn-sm h-9 px-3 flex items-center gap-3 border border-base-300 bg-base-100 hover:bg-base-200"
-                    >
-                        <div class="flex items-center gap-2">
-                            <span class="text-[12px] font-mono opacity-50">ADMIN</span>
-                            <span class="text-[14px] font-mono font-bold px-1.5 py-0.5 rounded leading-none">
-                {currentCluster?.id} {currentCluster?.environmentName}
-              </span>
-                        </div>
-
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30" fill="none"
-                             viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
-                        </svg>
-                    </button>
-
-                    <ul
-                            tabindex="0"
-                            class="dropdown-content menu p-2 shadow-2xl bg-base-200 rounded-box w-72 mt-2 border border-base-300 z-[100] space-y-2"
-                    >
-                        <li class="menu-title text-[12px] font-black opacity-40">Cluster</li>
-                        {#each config.clusters as cluster}
-                            <li>
-                                <button
-                                        class="flex flex-col items-start py-2 {currentCluster.id === cluster.id ? 'active' : ''}"
-                                        onclick={() => handleClusterChange(cluster.id)}
-                                >
-                  <span class="text-[12px] font-mono font-bold">
-                    {cluster.id} {cluster.environmentName}
+            <div class="flex-1 flex flex-col min-w-0">
+                <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center px-4 shrink-0">
+                    <div class="dropdown dropdown-end">
+                        <button
+                                tabindex="0"
+                                class="btn btn-ghost btn-sm h-9 px-3 flex items-center gap-3 border border-base-300 bg-base-100 hover:bg-base-200"
+                        >
+                            <div class="flex items-center gap-2">
+                                <span class="text-[12px] font-mono opacity-50">ADMIN</span>
+                                <span class="text-[14px] font-mono font-bold px-1.5 py-0.5 rounded leading-none">
+                    {currentCluster?.id} {currentCluster?.environmentName}
                   </span>
+                            </div>
+
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30" fill="none"
+                                 viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                            </svg>
+                        </button>
+
+                        <ul
+                                tabindex="0"
+                                class="dropdown-content menu p-2 shadow-2xl bg-base-200 rounded-box w-72 mt-2 border border-base-300 z-[100] space-y-2"
+                        >
+                            <li class="menu-title text-[12px] font-black opacity-40">Cluster</li>
+                            {#each config.clusters as cluster}
+                                <li>
+                                    <button
+                                            class="flex flex-col items-start py-2 {currentCluster?.id === cluster.id ? 'active' : ''}"
+                                            onclick={() => handleClusterChange(cluster.id)}
+                                    >
+                      <span class="text-[12px] font-mono font-bold">
+                        {cluster.id} {cluster.environmentName}
+                      </span>
+                                    </button>
+                                </li>
+                            {/each}
+
+                            <div class="divider my-0"></div>
+
+                            <li class="menu-title text-[12px] font-black opacity-40">Appearance</li>
+                            <div class="grid grid-cols-2 gap-1 p-2">
+                                {#each config.themes as theme}
+                                    <button
+                                            class="btn btn-xs font-mono text-[12px] {currentTheme?.id === theme.id ? 'btn-primary' : 'btn-ghost border-base-300'}"
+                                            onclick={() => applyTheme(theme.id, true)}
+                                    >
+                                        {theme.displayName}
+                                    </button>
+                                {/each}
+                            </div>
+
+                            <div class="divider my-0"></div>
+
+                            <li>
+                                <button class="text-error font-bold text-[12px] justify-center" onclick={logout}>
+                                    Logout Session
                                 </button>
                             </li>
-                        {/each}
+                        </ul>
+                    </div>
+                </header>
 
-                        <div class="divider my-0"></div>
-
-                        <li class="menu-title text-[12px] font-black opacity-40">Appearance</li>
-                        <div class="grid grid-cols-2 gap-1 p-2">
-                            {#each config.themes as theme}
-                                <button
-                                        class="btn btn-xs font-mono text-[12px] {currentTheme.id === theme.id ? 'btn-primary' : 'btn-ghost border-base-300'}"
-                                        onclick={() => applyTheme(theme.id, true)}
-                                >
-                                    {theme.displayName}
-                                </button>
-                            {/each}
-                        </div>
-
-                        <div class="divider my-0"></div>
-
-                        <li>
-                            <button class="text-error font-bold text-[12px] justify-center" onclick={logout}>
-                                Logout Session
-                            </button>
-                        </li>
-                    </ul>
-                </div>
-            </header>
-
-            <main class="flex-1 overflow-y-auto p-8 bg-base-100">
-                <div class="max-w-[1600px] mx-auto">
-                    {@render children()}
-                </div>
-            </main>
+                <main class="flex-1 overflow-y-auto p-8 bg-base-100">
+                    <div class="max-w-[1600px] mx-auto">
+                        {@render children()}
+                    </div>
+                </main>
+            </div>
         </div>
-    </div>
+    {:else}
+        <main class="min-h-screen bg-base-200 text-base-content">
+            {@render children()}
+        </main>
+    {/if}
 {/if}
