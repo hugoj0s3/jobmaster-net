@@ -30,6 +30,7 @@ internal class PostgresDbConnectionManager : DbConnectionManager, IDbConnectionM
         var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
         
+        
         return conn;
        
     }
