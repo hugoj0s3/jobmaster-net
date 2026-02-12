@@ -18,8 +18,8 @@
       ALTER TABLE your_table RENAME COLUMN recurring_schedule_id TO source_id;
       ```
 ### Pending (Just for remember)
-- Add Host Id and Host Name on Job models
-- Add Host Id and Host Name on Worker, Bucket
+- Add Host Id and Host Display Name on Job models
+- Add Host Id and Host Display Name on Worker, Bucket
 - Implement the filters on SQL repos
 - Split generic record into multiple tables per group. Bucket, Worker, Host and Agent Connection -> add new table suffix _topology
 - Add Host Service

@@ -12,6 +12,8 @@ public class ApiJobModel : ApiClusterBaseModel
     public string? BucketId { get; set; }
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
+    public string? HostId { get; set; }
+    public string HostDisplayName { get; set; } = string.Empty;
     public JobMasterPriority Priority { get; set; }
     public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
