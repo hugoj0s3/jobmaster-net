@@ -879,7 +879,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             }
             
             var succeededJobs = allJobsFromDb.Where(j => j.Status == JobMasterJobStatus.Succeeded).ToList();
-            var jobsWithRecurringId = allJobsFromDb.Where(j => j.RecurringScheduleId == recurringScheduleId).ToList();
+            var jobsWithRecurringId = allJobsFromDb.Where(j => j.SourceId == recurringScheduleId).ToList();
             
             output.WriteLine($"Total jobs in DB: {allJobsFromDb.Count}");
             output.WriteLine($"Succeeded jobs in DB: {succeededJobs.Count}");

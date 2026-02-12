@@ -35,7 +35,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.NumberOfFailures = 2;
         job.MaxNumberOfRetries = 7;
         job.Timeout = TimeSpan.FromSeconds(123);
-        job.RecurringScheduleId = Guid.NewGuid();
+        job.SourceId = Guid.NewGuid();
         job.PartitionLockId = 42;
         job.PartitionLockExpiresAt = now.AddMinutes(30);
         job.ProcessDeadline = now.AddMinutes(20);
@@ -72,7 +72,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.NumberOfFailures = 3;
         updated.MaxNumberOfRetries = 9;
         updated.Timeout = TimeSpan.FromSeconds(77);
-        updated.RecurringScheduleId = Guid.NewGuid();
+        updated.SourceId = Guid.NewGuid();
         updated.PartitionLockId = 11;
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(15);
         updated.ProcessDeadline = DateTime.UtcNow.AddMinutes(5);
@@ -253,17 +253,17 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     public async Task Query_ShouldSupport_RecurringScheduleId_Filter()
     {
         var def = "defRecurring-" + Guid.NewGuid();
-        var recurringId = Guid.NewGuid();
+        var sourceId = Guid.NewGuid();
 
         var match = NewJob(jobDefinitionId: def);
-        match.RecurringScheduleId = recurringId;
+        match.SourceId = sourceId;
         var other = NewJob(jobDefinitionId: def);
-        other.RecurringScheduleId = Guid.NewGuid();
+        other.SourceId = Guid.NewGuid();
 
         await Fixture.MasterJobs.AddAsync(match);
         await Fixture.MasterJobs.AddAsync(other);
 
-        var c = new JobQueryCriteria { JobDefinitionId = def, RecurringScheduleId = recurringId, CountLimit = 100 };
+        var c = new JobQueryCriteria { JobDefinitionId = def, SourceId = sourceId, CountLimit = 100 };
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == match.Id);
@@ -472,7 +472,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         {
             Id = Guid.NewGuid(),
             JobDefinitionId = jobDefinitionId ?? ("job-def-" + Guid.NewGuid()),
-            TriggerSourceType = JobSchedulingTriggerSourceType.Once,
+            TriggerSourceType = JobMasterTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
             OriginalScheduledAt = sched,
             ScheduledAt = sched,
@@ -510,7 +510,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.Equal(expected.MaxNumberOfRetries, actual.MaxNumberOfRetries);
 
         AssertDateTimeEquivalent(ToUtc(expected.CreatedAt), ToUtc(actual.CreatedAt));
-        Assert.Equal(expected.RecurringScheduleId, actual.RecurringScheduleId);
+        Assert.Equal(expected.SourceId, actual.SourceId);
 
         Assert.Equal(expected.PartitionLockId, actual.PartitionLockId);
         AssertDateTimeEquivalent(ToUtcN(expected.PartitionLockExpiresAt), ToUtcN(actual.PartitionLockExpiresAt));
@@ -703,7 +703,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
             CreatedAt = job.CreatedAt,
-            RecurringScheduleId = job.RecurringScheduleId,
+            SourceId = job.SourceId,
             PartitionLockId = job.PartitionLockId,
             PartitionLockExpiresAt = job.PartitionLockExpiresAt,
             ProcessDeadline = job.ProcessDeadline,

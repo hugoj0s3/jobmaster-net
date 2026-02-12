@@ -8,7 +8,7 @@ public class ApiJobModel : ApiClusterBaseModel
 {
     public string Id { get; set; } = string.Empty;
     public string JobDefinitionId { get; set; } = string.Empty;
-    public JobSchedulingTriggerSourceType TriggerSourceType { get; set; }
+    public JobMasterTriggerSourceType TriggerSourceType { get; set; }
     public string? BucketId { get; set; }
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
@@ -22,7 +22,7 @@ public class ApiJobModel : ApiClusterBaseModel
     public TimeSpan Timeout { get; set; }
     public int MaxNumberOfRetries { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public string? RecurringScheduleId { get; set; }
+    public string? SourceId { get; set; }
     public DateTime? ProcessDeadline { get; set; }
     public DateTime? ProcessingStartedAt { get; set; }
     public DateTime? SucceedExecutedAt { get; set; }
@@ -54,7 +54,7 @@ public class ApiJobModel : ApiClusterBaseModel
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
             CreatedAt = job.CreatedAt,
-            RecurringScheduleId = job.RecurringScheduleId.HasValue ? job.RecurringScheduleId.Value.ToBase64() : null,
+            SourceId = job.SourceId?.ToBase64(),
             ProcessDeadline = job.ProcessDeadline,
             ProcessingStartedAt = job.ProcessingStartedAt,
             SucceedExecutedAt = job.SucceedExecutedAt,

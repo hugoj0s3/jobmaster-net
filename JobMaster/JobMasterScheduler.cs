@@ -271,7 +271,7 @@ public class JobMasterScheduler : IJobMasterScheduler
             timeout: timeout,
             maxNumberOfRetries: maxNumberOfRetries,
             writableMetadata: writableMetadata,
-            triggerSourceType: JobSchedulingTriggerSourceType.Once,
+            triggerSourceType: JobMasterTriggerSourceType.Once,
             masterConfig: clusterConfiguration,
             workerLane: workerLane);
     }

@@ -447,21 +447,48 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
     {
         var t = TableName();
         var selectCols = SelectProjection("s", "e", "v");
+        
+        if (c.CountLimit < 0) 
+            throw new ArgumentOutOfRangeException(nameof(c.CountLimit), c.CountLimit, "CountLimit must be >= 0");
+        if (c.Offset < 0) 
+            throw new ArgumentOutOfRangeException(nameof(c.Offset), c.Offset, "Offset must be >= 0");
+        
         var (whereSql, args) = BuildWhere(c);
         var order = $" s.{Col(x => x.LastPlanCoverageUntil)} DESC, s.{Col(x => x.CreatedAt)} ASC";
+
+        var concatedArgs = args.Concat(new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata } })
+            .ToDictionary(x => x.Key, x => x.Value);
+
+        if (c.CountLimit > 0)
+        {
+            var offsetClause = sql.OffsetQueryFor(c.CountLimit, c.Offset);
+
+            var queryText = $@"
+WITH schedules_page AS (
+    SELECT s.*
+    FROM {t} s
+    LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    {whereSql}
+    ORDER BY {order}
+    {offsetClause}
+)
+SELECT {selectCols} FROM schedules_page s
+LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+ORDER BY {order}";
+
+            return (queryText, concatedArgs);
+        }
+
         var sb = new StringBuilder();
         sb.Append($@"
 SELECT {selectCols} FROM {t} s
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
+LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}  
 {whereSql} 
 ORDER BY {order}");
-        if (c.CountLimit > 0)
-        {
-            sb.Append('\n');
-            sb.Append(sql.OffsetQueryFor(c.CountLimit, c.Offset));
-        }
-        return (sb.ToString(), args);
+
+        return (sb.ToString(), concatedArgs);
     }
 
     protected (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c)

@@ -33,7 +33,7 @@ internal class JobPersistenceRecord
     public int MaxNumberOfRetries { get; set; }
 
     public DateTime CreatedAt { get; set; }
-    public Guid? RecurringScheduleId { get; set; }
+    public Guid? SourceId { get; set; }
 
     public int? PartitionLockId { get; set; }
     public DateTime? PartitionLockExpiresAt { get; set; }

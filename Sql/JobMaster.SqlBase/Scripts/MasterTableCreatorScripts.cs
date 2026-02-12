@@ -215,8 +215,8 @@ internal static class MasterTableCreatorScripts
         var createdAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.CreatedAt);
         var createdAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
-        var recurringScheduleIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.RecurringScheduleId);
-        var recurringScheduleIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
+        var sourceIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.SourceId);
+        var sourceIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockId);
         var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
@@ -257,7 +257,7 @@ internal static class MasterTableCreatorScripts
             $"{timeoutTicksCol} {timeoutTicksType}",
             $"{maxRetriesCol} {maxRetriesType}",
             $"{createdAtCol} {createdAtType}",
-            $"{recurringScheduleIdCol} {recurringScheduleIdType}",
+            $"{sourceIdCol} {sourceIdType}",
             $"{partitionLockIdCol} {partitionLockIdType}",
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{processDeadlineCol} {processDeadlineType}",
@@ -277,7 +277,7 @@ internal static class MasterTableCreatorScripts
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_process_deadline", (processDeadlineCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_partition_lock_id", (partitionLockIdCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_worker_lane", (workerLaneCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_recurring_schedule_id", (recurringScheduleIdCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_recurring_schedule_id", (sourceIdCol, false, (int?)null)));
 
         return $"{create}\n{string.Join("\n", indexes)}";
     }

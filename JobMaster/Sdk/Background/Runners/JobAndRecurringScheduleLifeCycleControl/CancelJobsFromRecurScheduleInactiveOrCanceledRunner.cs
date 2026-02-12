@@ -105,7 +105,13 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         var jobQueryCriteria = new JobQueryCriteria()
         {
             CountLimit = BackgroundAgentWorker.BatchSize,
-            RecurringScheduleId = recurringScheduleRawModel.Id,
+            SourceId = recurringScheduleRawModel.Id,
+            TriggerSourceTypes = new List<JobMasterTriggerSourceType>
+            {
+                recurringScheduleRawModel.RecurringScheduleType == RecurringScheduleType.Static
+                    ? JobMasterTriggerSourceType.StaticRecurring
+                    : JobMasterTriggerSourceType.DynamicRecurring
+            },
             // Only cancel jobs scheduled 5 minutes later. the job on fly will be cancelled by the JobExecutionEngine.
             ScheduledFrom = DateTime.UtcNow.AddMinutes(5),
             IsLocked = false,
