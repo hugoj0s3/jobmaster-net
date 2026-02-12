@@ -13,8 +13,8 @@ public class JobContext
     public int MaxNumberOfRetries { get; internal set; }
     public IReadableMessageData MsgData { get; internal set; } = null!;
     public IReadableMetadata Metadata { get; internal set; } = null!;
-    public Guid? RecurringScheduleId { get; internal set; }
-    public JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
+    public Guid? SourceId { get; internal set; }
+    public JobMasterTriggerSourceType TriggerSourceType { get; internal set; }
     public RecurringScheduleContext? RecurringSchedule { get; internal set; }
     
     public string? WorkerLane { get; internal set; }

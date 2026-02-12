@@ -33,9 +33,9 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
+        JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
-        Guid? recurringScheduleId = null,
+        Guid? sourceId = null,
         string? workerLane = null)
     {
         var metadataDictionary = writableMetadata?.ToDictionary() ?? new Dictionary<string, object?>();
@@ -59,7 +59,7 @@ internal class Job : JobMasterBaseModel
             MsgData = data ?? MessageData.Empty,
             Metadata = new Metadata(finalMetadataAttribute),
             CreatedAt = DateTime.UtcNow,
-            RecurringScheduleId = recurringScheduleId,
+            SourceId = sourceId,
             WorkerLane = JobUtil.GetWorkerLane(jobHandlerType, workerLane)
         };
         
@@ -79,12 +79,12 @@ internal class Job : JobMasterBaseModel
             data: recurringSchedule.MsgData,
             scheduledAt: scheduleAt,
             triggerSourceType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
-                ? JobSchedulingTriggerSourceType.StaticRecurring
-                : JobSchedulingTriggerSourceType.DynamicRecurring,
+                ? JobMasterTriggerSourceType.StaticRecurring
+                : JobMasterTriggerSourceType.DynamicRecurring,
             priority: recurringSchedule.Priority,
             timeout: recurringSchedule.Timeout,
             maxNumberOfRetries: recurringSchedule.MaxNumberOfRetries,
-            recurringScheduleId: recurringSchedule.Id,
+            sourceId: recurringSchedule.Id,
             masterConfig: masterConfig,
             workerLane: recurringSchedule.WorkerLane);
         
@@ -103,7 +103,7 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
+        JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         string? workerLane = null)
         where T : IJobHandler
@@ -132,7 +132,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
+    public  JobMasterTriggerSourceType TriggerSourceType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
     public int? PartitionLockId { get; internal set; }
@@ -146,7 +146,7 @@ internal class Job : JobMasterBaseModel
     public  int MaxNumberOfRetries { get; internal set; }
     public IWriteableMessageData MsgData { get; internal set; } = new MessageData();
     public IWritableMetadata? Metadata { get; internal set; }
-    public Guid? RecurringScheduleId { get; internal set; }
+    public Guid? SourceId { get; internal set; }
     
     public string? WorkerLane { get; internal set; }
     

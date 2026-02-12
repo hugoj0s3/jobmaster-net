@@ -1,4 +1,30 @@
 # ChangeLog
+## 0.0.6-alpha
+### Added
+- TriggerSourceTypes on JobQueryCriteria
+### Changes
+- Rename from RecurringScheduleId to SourceId { get; set; }
+  - DB change required if using JobMaster v0.0.5
+    - Postgres:
+      ```sql 
+      ALTER TABLE your_table RENAME COLUMN recurring_schedule_id TO source_id;
+      ```
+    - SQL Server:
+      ```sql 
+      EXEC sp_rename 'dbo.your_table.recurring_schedule_id', 'source_id', 'COLUMN';
+      ```
+    - MySQL:
+      ```sql 
+      ALTER TABLE your_table RENAME COLUMN recurring_schedule_id TO source_id;
+      ```
+### Pending (Just for remember)
+- Add Host Id and Host Display Name on Job models
+- Add Host Id and Host Display Name on Worker, Bucket
+- Implement the filters on SQL repos
+- Split generic record into multiple tables per group. Bucket, Worker, Host and Agent Connection -> add new table suffix _topology
+- Add Host Service
+- Store Agent Connection footprint (later we will have validation)
+
 ## 0.0.5-alpha
 ### Added
 - **Core API**: Implementation to consult all system entities (Jobs, Buckets, Workers, Clusters, etc.).

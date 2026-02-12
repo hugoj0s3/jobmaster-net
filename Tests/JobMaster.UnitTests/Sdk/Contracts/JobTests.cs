@@ -20,7 +20,7 @@ public class JobTests
         job.ClusterId.Should().Be(clusterId);
         job.JobDefinitionId.Should().Be("JobHandlerForTest");
         job.Status.Should().Be(JobMasterJobStatus.SavePending);
-        job.TriggerSourceType.Should().Be(JobSchedulingTriggerSourceType.Once);
+        job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.Once);
         job.ScheduledAt.Should().Be(scheduledAt);
         job.OriginalScheduledAt.Should().Be(scheduledAt);
         job.Priority.Should().Be(JobMasterPriority.Low);
@@ -128,8 +128,8 @@ public class JobTests
 
         var job = Job.FromRecurringSchedule(clusterId, typeof(JobHandlerForTestAllAttributes), recurring, scheduleAt);
 
-        job.TriggerSourceType.Should().Be(JobSchedulingTriggerSourceType.StaticRecurring);
-        job.RecurringScheduleId.Should().Be(recurring.Id);
+        job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.StaticRecurring);
+        job.SourceId.Should().Be(recurring.Id);
         job.ScheduledAt.Should().Be(scheduleAt);
         job.OriginalScheduledAt.Should().Be(scheduleAt);
         job.Priority.Should().Be(JobMasterPriority.High);

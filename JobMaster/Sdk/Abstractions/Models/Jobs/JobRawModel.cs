@@ -22,7 +22,11 @@ internal class JobRawModel : JobMasterBaseModel
     [JsonInclude]
     public string JobDefinitionId { get; internal set; } = string.Empty;
     [JsonInclude]
-    public JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
+    public JobMasterTriggerSourceType TriggerSourceType { get; internal set; }
+    
+    [JsonInclude]
+    public Guid? SourceId { get; internal set; }
+    
     [JsonInclude]
     public string? BucketId { get; internal set; }
     [JsonInclude]
@@ -56,9 +60,6 @@ internal class JobRawModel : JobMasterBaseModel
     
     [JsonInclude]
     public DateTime CreatedAt { get; internal set; } = DateTime.UtcNow;
-    
-    [JsonInclude]
-    public Guid? RecurringScheduleId { get; internal set; }
     
     [JsonInclude]
     public int? PartitionLockId { get; internal set; }

@@ -220,7 +220,12 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         {
             var jobs = masterJobsService.Query(new JobQueryCriteria
             {
-                RecurringScheduleId = recurringScheduleId,
+                SourceId = recurringScheduleId,
+                TriggerSourceTypes = new List<JobMasterTriggerSourceType>
+                {
+                    JobMasterTriggerSourceType.StaticRecurring,
+                    JobMasterTriggerSourceType.DynamicRecurring
+                },
                 ScheduledFrom = baseDateTime,
                 ScheduledTo = stopAt,
             });

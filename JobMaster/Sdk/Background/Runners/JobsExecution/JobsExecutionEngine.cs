@@ -84,10 +84,10 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
         
         // Check if job belongs to a cancelled recurring schedule
-        if (payload.RecurringScheduleId.HasValue)
+        if (payload.SourceId.HasValue && payload.TriggerSourceType.IsRecurringTrigger())
         {
             var (validationResult, _) = await ValidateRecurringScheduleAsync(
-                payload.RecurringScheduleId.Value, 
+                payload.SourceId.Value, 
                 payload.ScheduledAt, 
                 payload.Id);
             
@@ -288,8 +288,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         var stopwatch = Stopwatch.StartNew();
         
         string? lockRecurringScheduleProcessingToken = null;
-        var lockRecurringScheduleProcessingKey = jobRawModel.RecurringScheduleId.HasValue
-            ? lockKeys.RecurringScheduleProcessingLock(jobRawModel.RecurringScheduleId.Value)
+        var lockRecurringScheduleProcessingKey = jobRawModel.SourceId.HasValue && jobRawModel.TriggerSourceType.IsRecurringTrigger()
+            ? lockKeys.RecurringScheduleProcessingLock(jobRawModel.SourceId.Value)
             : null;
         try
         {
@@ -331,7 +331,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             try
             {
                 RecurringScheduleContext? recurringScheduleContext = null;
-                if (jobRawModel.RecurringScheduleId.HasValue)
+                if (jobRawModel.SourceId.HasValue && jobRawModel.TriggerSourceType.IsRecurringTrigger())
                 {
                     lockRecurringScheduleProcessingToken = distributedLockerService.TryLock(
                         lockRecurringScheduleProcessingKey!,
@@ -339,8 +339,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                     if (lockRecurringScheduleProcessingToken == null)
                     {
-                        logger.Warn($"Job overlap detected for recurring schedule {jobRawModel.RecurringScheduleId}", JobMasterLogSubjectType.RecurringSchedule, jobRawModel.RecurringScheduleId.Value);
-                        logger.Warn($"Job overlap detected for recurring schedule {jobRawModel.RecurringScheduleId}", JobMasterLogSubjectType.JobExecution, jobRawModel.Id);
+                        logger.Warn($"Job overlap detected for recurring schedule {jobRawModel.SourceId}", JobMasterLogSubjectType.RecurringSchedule, jobRawModel.SourceId.Value);
+                        logger.Warn($"Job overlap detected for recurring schedule {jobRawModel.SourceId}", JobMasterLogSubjectType.JobExecution, jobRawModel.Id);
                         jobRawModel.MarkAsFailed();
                         await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
                         return;
@@ -348,7 +348,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                     // Check recurring schedule again at execution time (job may have been onboarded before cancellation)
                     var (validationResult, recurringSchedule) = await ValidateRecurringScheduleAsync(
-                        jobRawModel.RecurringScheduleId.Value, 
+                        jobRawModel.SourceId.Value, 
                         jobRawModel.ScheduledAt, 
                         jobRawModel.Id);
                     
