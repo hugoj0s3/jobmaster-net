@@ -120,4 +120,32 @@ internal static class JobMasterStringUtils
 
         return s;
     }
+
+    public static string ToSnakeCase(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+        var sb = new StringBuilder(value.Length + 8);
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            if (char.IsUpper(c))
+            {
+                if (i > 0 && (char.IsLower(value[i - 1]) || char.IsDigit(value[i - 1])))
+                {
+                    sb.Append('_');
+                }
+
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
+    }
 }
