@@ -1,17 +1,12 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import { page } from "$app/stores";
-    import { createJobMasterClient } from "$lib/api/client";
+    import { ApiClientUtil } from "$lib/api/api-client-util";
     import type { components } from "$lib/api/schema";
     import { BucketStatus, JobStatus as ApiJobStatus } from "$lib/api/enums";
-    import { formatAgeShort, lastUpdatedAgo } from "$lib/helper/time-ago";
-    import {
-        defaultDashboardSettings,
-        resolve,
-        set,
-        clear,
-        type DashboardSettings
-    } from "$lib/dashboard-settings-storage";
+    import { DateTimeUtil } from "$lib/helper/datetime-util";
+    import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
+    import { SettingsStorage, type DashboardSettings } from "$lib/dashboard-settings-storage";
 
     const clusterId = () => $page.params.cluster;
 
@@ -59,25 +54,16 @@
         };
     };
 
-    type JobStatus = "Succeeded" | "Failed" | "Cancelled";
-
     type RecentlyExecutedJob = {
         jobId: string;
         definitionId: string;
-        status: JobStatus;
+        status: JobStatusLabel;
         executedAt: string;
         durationText?: string;
     };
 
     type ApiClusterModel = components["schemas"]["ApiClusterModel"];
     type ApiJobModel = components["schemas"]["ApiJobModel"];
-
-    function statusLabel(status: number): JobStatus {
-        if (status === 5) return "Succeeded";
-        if (status === 7) return "Failed";
-        if (status === 8) return "Cancelled";
-        return "Succeeded";
-    }
 
     function bestJobTimestampIso(j: ApiJobModel): string {
         return (
@@ -87,10 +73,6 @@
             j.createdAt ??
             new Date(0).toISOString()
         );
-    }
-
-    function resolveTransientThreshold(cluster: ApiClusterModel): string | null {
-        return cluster.transientThreshold ?? null;
     }
 
     function zeroMetrics(): Metrics {
@@ -135,8 +117,6 @@
     let lastUpdatedAt = new Date();
     let isRefreshing = false;
 
-    let transientThreshold: string | null = null;
-
     let metrics: Metrics = zeroMetrics();
 
     let recentlyExecutedJobs: RecentlyExecutedJob[] = [];
@@ -145,9 +125,9 @@
     let nowTicker: number | undefined;
     let poller: number | undefined;
 
-    let settings: DashboardSettings = defaultDashboardSettings();
+    let settings: DashboardSettings = SettingsStorage.Dashboards.resolve(clusterId());
     let showSettings = false;
-    let draftSettings: DashboardSettings = defaultDashboardSettings();
+    let draftSettings: DashboardSettings = SettingsStorage.Dashboards.resolve(clusterId());
 
     function openSettings() {
         draftSettings = { ...settings };
@@ -169,7 +149,7 @@
         }
 
         settings = { ...draftSettings };
-        setStoredDashboardSettings(cid, settings);
+        SettingsStorage.Dashboards.set(cid, settings);
         refreshIntervalSec = settings.refreshIntervalSec;
         restartPoller();
         closeSettings();
@@ -177,13 +157,7 @@
 
     function executedAgo(iso: string): string {
         const ms = uiNow.getTime() - new Date(iso).getTime();
-        return formatAgeShort(ms);
-    }
-
-    function jobStatusBadgeClass(s: JobStatus): string {
-        if (s === "Succeeded") return "badge-success";
-        if (s === "Failed") return "badge-error";
-        return "badge-ghost";
+        return DateTimeUtil.formatAgeShort(ms);
     }
 
     function kpiBadgeClass(count: number, activeClass: string): string {
@@ -203,7 +177,7 @@
                 apiBaseUrl = cfg.apiBaseUrl;
             }
 
-            const jm = createJobMasterClient(apiBaseUrl, fetch);
+            const jmApi = ApiClientUtil.CreateApiClient(apiBaseUrl, fetch);
 
             try {
                 const [
@@ -224,109 +198,111 @@
                     failedJobs,
                     cancelledJobs
                 ] = await Promise.all([
-                    jm.GET("/jm-api/clusters/{clusterId}", {
-                        params: { path: { clusterId: cid } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiClusterModel;
-                    }),
-
-                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.HeldOnMaster } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.AssignedToBucket } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Queued } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Processing } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
 
-                    jm.GET("/jm-api/{clusterId}/hosts/count", {
+                    jmApi.GET("/jm-api/{clusterId}/hosts/count", {
                         params: { path: { clusterId: cid } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Active } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Completing } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDrain } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Draining } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Lost } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDelete } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
 
-                    jm.GET("/jm-api/{clusterId}/jobs", {
+                    jmApi.GET("/jm-api/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Succeeded, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Failed, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs", {
+                    
+                    jmApi.GET("/jm-api/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Cancelled, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     })
                 ]);
-
-                transientThreshold = resolveTransientThreshold(cluster);
 
                 const upcomingTotal = onMasterCount + inBucketCount + queuedCount + processingCount;
 
@@ -367,13 +343,12 @@
                 recentlyExecutedJobs = merged.map((j) => ({
                     jobId: j.id ?? "",
                     definitionId: j.jobDefinitionId ?? "",
-                    status: statusLabel(j.status ?? 5),
+                    status: JobStatusUtil.getLabel(j.status ?? ApiJobStatus.Succeeded),
                     executedAt: bestJobTimestampIso(j),
                     durationText: "—"
                 }));
             } catch {
                 metrics = zeroMetrics();
-                transientThreshold = null;
                 recentlyExecutedJobs = [];
             }
 
@@ -390,12 +365,8 @@
         }, refreshIntervalSec * 1000);
     }
 
-    $: sortedRecentlyExecutedJobs = [...recentlyExecutedJobs].sort(
-        (a, b) => new Date(b.executedAt).getTime() - new Date(a.executedAt).getTime()
-    );
-
     onMount(() => {
-        settings = resolve(clusterId());
+        settings = SettingsStorage.Dashboards.resolve(clusterId());
         refreshIntervalSec = settings.refreshIntervalSec;
 
         nowTicker = window.setInterval(() => {
@@ -427,7 +398,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: {lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
+                <span>Last updated: {DateTimeUtil.lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
                 <button
                         class="btn btn-ghost btn-sm btn-square"
                         aria-label="Refresh now"
@@ -650,7 +621,7 @@
             </div>
         </div>
 
-        {#if sortedRecentlyExecutedJobs.length > 0}
+        {#if recentlyExecutedJobs.length > 0}
             <div class="mt-6">
                 <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                     <div class="card-body">
@@ -662,22 +633,22 @@
                             <table class="table">
                                 <thead class="opacity-60">
                                 <tr>
-                                    <th>Status</th>
                                     <th>JobId</th>
+                                    <th>Status</th>
                                     <th>Definition Id</th>
                                     <th>Executed</th>
                                     <th class="text-right">Duration</th>
                                 </tr>
                                 </thead>
                                 <tbody>
-                                {#each sortedRecentlyExecutedJobs as j (j.jobId)}
+                                {#each recentlyExecutedJobs as j (j.jobId)}
                                     <tr class="hover">
-                                        <td>
-												<span class={`badge badge-sm ${jobStatusBadgeClass(j.status)}`}>
-													{j.status}
-												</span>
-                                        </td>
                                         <td class="font-medium">{j.jobId}</td>
+                                        <td>
+                                            <span class={`badge badge-sm ${JobStatusUtil.getBadgeClass(j.status)}`}>
+                                                {j.status}
+                                            </span>
+                                        </td>
                                         <td>{j.definitionId}</td>
                                         <td class="opacity-80">{executedAgo(j.executedAt)} ago</td>
                                         <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>

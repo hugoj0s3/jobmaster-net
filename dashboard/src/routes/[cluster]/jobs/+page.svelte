@@ -1,10 +1,15 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import { page } from "$app/stores";
-    import { createJobMasterClient } from "$lib/api/client";
+    import { ApiClientUtil } from "$lib/api/api-client-util";
     import type { components } from "$lib/api/schema";
-    import { BucketStatus, JobStatus as ApiJobStatus, Priority as ApiPriority } from "$lib/api/enums";
-    import { lastUpdatedAgo } from "$lib/helper/time-ago";
+    import { JobStatus as ApiJobStatus } from "$lib/api/enums";
+    import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+    import FilterItem from "$lib/components/filters/FilterItem.svelte";
+    import Pager from "$lib/components/Pager.svelte";
+    import { DateTimeUtil } from "$lib/helper/datetime-util";
+    import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
+    import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
 
     const refreshIntervalSec = 20;
 
@@ -16,24 +21,15 @@
 
     let apiBaseUrl: string | null = null;
 
-    const pageSize = 12;
+    let pageSize = 12;
     let pageIndex = 0;
     let lastClusterId: string | null = null;
 
     let uiNow = new Date();
     let nowTicker: number | undefined;
 
-    type JobStatus =
-        | "Processing"
-        | "Queued"
-        | "SavePending"
-        | "OnMaster"
-        | "InBucket"
-        | "Succeeded"
-        | "Failed"
-        | "Cancelled";
-
-    type Priority = "Critical" | "High" | "Medium" | "Low";
+    type JobStatus = JobStatusLabel;
+    type Priority = PriorityLabel;
 
     type Job = {
         jobId: string;
@@ -48,38 +44,18 @@
         executedAt?: string;
         scheduledAt?: string;
 
-        host?: string;
         workerLane?: string;
         worker?: string;
-        bucket?: string;
     };
 
-    type ApiClusterModel = components["schemas"]["ApiClusterModel"];
     type ApiJobModel = components["schemas"]["ApiJobModel"];
-    type ApiHostModel = components["schemas"]["ApiHostModel"];
-    type ApiBucketModel = components["schemas"]["ApiBucketModel"];
-
-    function resolveTransientThreshold(cluster: ApiClusterModel): string | null {
-        return cluster.transientThreshold ?? null;
-    }
 
     function mapApiStatus(status: number): JobStatus {
-        if (status === ApiJobStatus.SavePending) return "SavePending";
-        if (status === ApiJobStatus.HeldOnMaster) return "OnMaster";
-        if (status === ApiJobStatus.AssignedToBucket) return "InBucket";
-        if (status === ApiJobStatus.Processing) return "Processing";
-        if (status === ApiJobStatus.Succeeded) return "Succeeded";
-        if (status === ApiJobStatus.Queued) return "Queued";
-        if (status === ApiJobStatus.Failed) return "Failed";
-        if (status === ApiJobStatus.Cancelled) return "Cancelled";
-        return "Queued";
+        return JobStatusUtil.getLabel(status);
     }
 
-    function mapApiPriority(priority: number): Priority {
-        if (priority === ApiPriority.VeryLow || priority === ApiPriority.Low) return "Low";
-        if (priority === ApiPriority.Medium) return "Medium";
-        if (priority === ApiPriority.High) return "High";
-        return "Critical";
+    function mapApiPriority(priority: number | null | undefined): Priority {
+        return PriorityUtil.getLabel(priority);
     }
 
     function stringifyMetadata(meta: Record<string, unknown> | null | undefined): Record<string, string> {
@@ -113,43 +89,48 @@
     let lastUpdatedAt = new Date();
     let isRefreshing = false;
 
-    let transientThreshold: string | null = null;
-
     let jobs: Job[] = [];
     let jobsTotalCount = 0;
 
-    let hostsById = new Map<string, ApiHostModel>();
-    let bucketsById = new Map<string, ApiBucketModel>();
-
     let poller: number | undefined;
 
-    const statusClasses: Record<JobStatus, string> = {
-        Processing: "badge-info",
-        Queued: "badge-warning",
-        SavePending: "badge-neutral",
-        OnMaster: "badge-ghost",
-        InBucket: "badge-secondary",
-        Succeeded: "badge-success",
-        Failed: "badge-error",
-        Cancelled: "badge-ghost"
-    };
-
-    const priorityClasses: Record<Priority, string> = {
-        Critical: "badge-error",
-        High: "badge-warning",
-        Medium: "badge-info",
-        Low: "badge-neutral"
-    };
+    function statusBadgeClass(status: JobStatus): string {
+        return JobStatusUtil.getBadgeClass(status);
+    }
 
     let selected = new Set<string>();
 
     $: allSelected = jobs.length > 0 && selected.size === jobs.length;
     $: someSelected = selected.size > 0 && selected.size < jobs.length;
 
-    $: maxPageIndex = Math.max(0, Math.ceil(jobsTotalCount / pageSize) - 1);
-    $: pageIndex = Math.min(pageIndex, maxPageIndex);
-    $: pageStart = jobsTotalCount === 0 ? 0 : pageIndex * pageSize + 1;
-    $: pageEnd = jobsTotalCount === 0 ? 0 : Math.min(jobsTotalCount, pageIndex * pageSize + jobs.length);
+    let lastPageIndexForRefresh = pageIndex;
+    $: if (pageIndex !== lastPageIndexForRefresh) {
+        lastPageIndexForRefresh = pageIndex;
+        selected = new Set();
+        refreshNow();
+    }
+
+    let lastPageSizeForRefresh = pageSize;
+    $: if (pageSize !== lastPageSizeForRefresh) {
+        lastPageSizeForRefresh = pageSize;
+        pageIndex = 0;
+        selected = new Set();
+        refreshNow();
+    }
+
+    type FilterValues = Record<string, unknown>;
+    let filterValues: FilterValues = {};
+
+    function buildJobsQuery() {
+        const statuses = (filterValues.statuses ?? []) as components["schemas"]["JobMasterJobStatus"][];
+        const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
+
+        return {
+            Statuses: statuses.length > 0 ? statuses : undefined,
+            ScheduledFrom: scheduledAt.from,
+            ScheduledTo: scheduledAt.to
+        } as const;
+    }
 
     function toggleAll(checked: boolean) {
         selected = checked ? new Set(jobs.map((j) => j.jobId)) : new Set();
@@ -174,7 +155,11 @@
     function formatTimeCell(job: Job): { label: string; tooltip?: string } {
         const now = Date.now();
 
-        if (job.status === "Succeeded" || job.status === "Failed" || job.status === "Cancelled") {
+        if (
+            job.status === JobStatusUtil.Label.Succeeded ||
+            job.status === JobStatusUtil.Label.Failed ||
+            job.status === JobStatusUtil.Label.Cancelled
+        ) {
             if (!job.executedAt) return { label: "Executed", tooltip: undefined };
             
             const executedMs = new Date(job.executedAt).getTime();
@@ -209,15 +194,19 @@
     }
 
     function canRunAgain(job: Job) {
-        return job.status === "Succeeded" || job.status === "Failed" || job.status === "Cancelled";
+        return (
+            job.status === JobStatusUtil.Label.Succeeded ||
+            job.status === JobStatusUtil.Label.Failed ||
+            job.status === JobStatusUtil.Label.Cancelled
+        );
     }
 
     function canRunNow(job: Job) {
-        return job.status === "OnMaster" || job.status === "InBucket";
+        return job.status === JobStatusUtil.Label.HeldOnMaster || job.status === JobStatusUtil.Label.AssignedToBucket;
     }
 
     function canCancel(job: Job) {
-        return job.status === "OnMaster";
+        return job.status === JobStatusUtil.Label.HeldOnMaster;
     }
 
     function canAbort(_job: Job) {
@@ -254,40 +243,6 @@
         apiBaseUrl = cfg.apiBaseUrl;
     }
 
-    async function loadHost(hostId: string): Promise<ApiHostModel | null> {
-        try {
-            await ensureConfigLoaded();
-            const cid = clusterId();
-            if (!cid) return null;
-
-            const jm = createJobMasterClient(apiBaseUrl, fetch);
-            const r = await jm.GET("/jm-api/{clusterId}/hosts/{hostId}", {
-                params: { path: { clusterId: cid, hostId } }
-            });
-            if (r.error) throw r.error;
-            return (r.data ?? null) as ApiHostModel | null;
-        } catch {
-            return null;
-        }
-    }
-
-    async function loadBucket(bucketId: string): Promise<ApiBucketModel | null> {
-        try {
-            await ensureConfigLoaded();
-            const cid = clusterId();
-            if (!cid) return null;
-
-            const jm = createJobMasterClient(apiBaseUrl, fetch);
-            const r = await jm.GET("/jm-api/{clusterId}/buckets/{bucketId}", {
-                params: { path: { clusterId: cid, bucketId } }
-            });
-            if (r.error) throw r.error;
-            return (r.data ?? null) as ApiBucketModel | null;
-        } catch {
-            return null;
-        }
-    }
-
     async function refreshNow() {
         if (!refresh) return;
 
@@ -302,48 +257,29 @@
             }
 
             await ensureConfigLoaded();
-
-            const jm = createJobMasterClient(apiBaseUrl, fetch);
+            const jm = ApiClientUtil.CreateApiClient(apiBaseUrl, fetch);
 
             try {
-                const safeOffset = Math.max(0, Math.min(pageIndex, maxPageIndex)) * pageSize;
+                const safeOffset = Math.max(0, pageIndex) * pageSize;
 
-                const [cluster, jobsCount, apiJobs, apiHosts, apiBuckets] = await Promise.all([
-                    jm.GET("/jm-api/clusters/{clusterId}", {
-                        params: { path: { clusterId: cid } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiClusterModel;
-                    }),
-
+                const filters = buildJobsQuery();
+                const [jobsCount, apiJobs] = await Promise.all([
                     jm.GET("/jm-api/{clusterId}/jobs/count", {
-                        params: { path: { clusterId: cid } }
+                        params: { path: { clusterId: cid }, query: filters }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     jm.GET("/jm-api/{clusterId}/jobs", {
-                        params: { path: { clusterId: cid }, query: { CountLimit: pageSize, Offset: safeOffset } }
+                        params: {
+                            path: { clusterId: cid },
+                            query: { ...filters, CountLimit: pageSize, Offset: safeOffset }
+                        }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
-                    }),
-
-                    jm.GET("/jm-api/{clusterId}/hosts", {
-                        params: { path: { clusterId: cid } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiHostModel[];
-                    }),
-                    jm.GET("/jm-api/{clusterId}/buckets", {
-                        params: { path: { clusterId: cid } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiBucketModel[];
                     })
                 ]);
-
-                transientThreshold = resolveTransientThreshold(cluster);
 
                 jobsTotalCount = jobsCount;
 
@@ -352,21 +288,9 @@
                     pageIndex = newMaxPageIndex;
                 }
 
-                hostsById = new Map(apiHosts.filter((h) => !!h.id).map((h) => [h.id as string, h]));
-                bucketsById = new Map(apiBuckets.filter((b) => !!b.id).map((b) => [b.id as string, b]));
-
                 jobs = apiJobs.map((j) => {
                     const status = mapApiStatus(j.status ?? ApiJobStatus.Queued);
-                    const priority = mapApiPriority(j.priority ?? ApiPriority.Medium);
-
-                    const bucketId = j.bucketId ?? undefined;
-                    const bucket = bucketId ? bucketsById.get(bucketId) : undefined;
-
-                    const hostDisplayName = bucket?.hostDisplayName ?? undefined;
-
-                    const lane = j.workerLane ?? bucket?.workerLane ?? undefined;
-
-                    const worker = j.agentWorkerId ?? bucket?.agentWorkerId ?? undefined;
+                    const priority = mapApiPriority(j.priority);
 
                     const meta = stringifyMetadata(j.metadata);
                     if (j.workerLane) meta["!lane"] = j.workerLane;
@@ -381,10 +305,8 @@
                         maxNumberOfRetries: j.maxNumberOfRetries,
                         executedAt: bestExecutedAtIso(j),
                         scheduledAt: scheduledIso(j),
-                        host: hostDisplayName,
-                        workerLane: lane,
-                        worker: worker ?? undefined,
-                        bucket: bucketId
+                        workerLane: j.workerLane,
+                        worker: j.agentWorkerId
                     };
                 });
 
@@ -392,11 +314,8 @@
 
                 lastUpdatedAt = new Date();
             } catch {
-                transientThreshold = null;
                 jobsTotalCount = 0;
                 jobs = [];
-                hostsById = new Map();
-                bucketsById = new Map();
                 selected = new Set();
             }
         } finally {
@@ -430,12 +349,6 @@
         if (nowTicker) window.clearInterval(nowTicker);
         if (poller) window.clearInterval(poller);
     });
-
-    function goToPage(nextIndex: number) {
-        pageIndex = Math.max(0, Math.min(nextIndex, maxPageIndex));
-        selected = new Set();
-        refreshNow();
-    }
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -454,29 +367,18 @@
             <div class="flex items-center gap-4 min-w-0">
                 <h1 class="text-4xl font-semibold">Jobs</h1>
 
-                <div class="flex items-center gap-2 text-xs opacity-80">
-                    <div class="hidden sm:block">
-                        <span class="font-semibold">{pageStart}-{pageEnd}</span>
-                        <span class="opacity-70">/</span>
-                        <span class="font-semibold">{jobsTotalCount}</span>
-                    </div>
-
-                    <div class="flex items-center gap-1">
-                        <button class="btn btn-ghost btn-xs" on:click={() => goToPage(pageIndex - 1)} disabled={pageIndex <= 0 || isRefreshing}>
-                            ‹
-                        </button>
-                        <div class="hidden sm:block">
-                            Page <span class="font-semibold">{pageIndex + 1}</span>/<span class="font-semibold">{maxPageIndex + 1}</span>
-                        </div>
-                        <button class="btn btn-ghost btn-xs" on:click={() => goToPage(pageIndex + 1)} disabled={pageIndex >= maxPageIndex || isRefreshing}>
-                            ›
-                        </button>
-                    </div>
-                </div>
+                <Pager
+                    bind:pageIndex
+                    bind:pageSize
+                    totalCount={jobsTotalCount}
+                    currentCount={jobs.length}
+                    disabled={isRefreshing}
+                    showPageSize={true}
+                />
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: {lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
+                <span>Last updated: {DateTimeUtil.lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
 
                 <button class="btn btn-ghost btn-sm btn-square" aria-label="Refresh now" on:click={refreshNow} disabled={isRefreshing}>
                     <svg xmlns="http://www.w3.org/2000/svg" class={"h-5 w-5 " + (isRefreshing ? "animate-spin" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -516,6 +418,43 @@
                 </div>
             </div>
         {/if}
+
+        <FilterContainer
+            title="Filters"
+            on:change={(e) => {
+                filterValues = e.detail;
+                pageIndex = 0;
+                selected = new Set();
+                refreshNow();
+            }}
+        >
+            <FilterItem
+                id="scheduledAt"
+                label="Scheduled at"
+                type="datetime"
+                presets={[
+                    { type: "LAST_MINUTES", minutes: 15, label: "Last 15 minutes" },
+                    { type: "LAST_MINUTES", minutes: 60, label: "Last 60 minutes" },
+                    { type: "NEXT_HOURS", hours: 10, label: "Next 10 hours" }
+                ]}
+            />
+
+            <FilterItem
+                id="statuses"
+                label="Statuses"
+                type="multiselect"
+                options={[
+                    { value: ApiJobStatus.SavePending, label: JobStatusUtil.Label.SavePending },
+                    { value: ApiJobStatus.HeldOnMaster, label: JobStatusUtil.Label.HeldOnMaster },
+                    { value: ApiJobStatus.AssignedToBucket, label: JobStatusUtil.Label.AssignedToBucket },
+                    { value: ApiJobStatus.Processing, label: JobStatusUtil.Label.Processing },
+                    { value: ApiJobStatus.Succeeded, label: JobStatusUtil.Label.Succeeded },
+                    { value: ApiJobStatus.Queued, label: JobStatusUtil.Label.Queued },
+                    { value: ApiJobStatus.Failed, label: JobStatusUtil.Label.Failed },
+                    { value: ApiJobStatus.Cancelled, label: JobStatusUtil.Label.Cancelled }
+                ]}
+            />
+        </FilterContainer>
 
         <div class="mt-4 card bg-base-200/50 shadow-xl backdrop-blur">
             <div class="overflow-x-auto">
@@ -579,9 +518,9 @@
                             </td>
 
                             <td>
-                            <span class={`badge badge-sm ${statusClasses[j.status] ?? "badge-ghost"}`}>
-                                {j.status}
-                            </span>
+                                <span class={`badge badge-sm ${statusBadgeClass(j.status)}`}>
+                                    {j.status}
+                                </span>
                             </td>
 
                             <td>
@@ -593,16 +532,16 @@
                             </td>
 
                             <td>
-                            <span class={`badge badge-sm ${priorityClasses[j.priority] ?? "badge-ghost"}`}>
-                                {j.priority}
-                            </span>
+                                <span class={`badge badge-sm ${PriorityUtil.getBadgeClass(j.priority)}`}>
+                                    {j.priority}
+                                </span>
                             </td>
 
                             <td>
                                 {#if formatTimeCell(j).tooltip}
-                            <span class="tooltip tooltip-bottom" data-tip={formatTimeCell(j).tooltip}>
-                                {formatTimeCell(j).label}
-                            </span>
+                                    <span class="tooltip tooltip-bottom" data-tip={formatTimeCell(j).tooltip}>
+                                        {formatTimeCell(j).label}
+                                    </span>
                                 {:else}
                                     <span>{formatTimeCell(j).label}</span>
                                 {/if}

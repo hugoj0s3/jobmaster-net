@@ -1,0 +1,100 @@
+<script lang="ts">
+    import { setContext, createEventDispatcher } from "svelte";
+    import { writable, derived, get } from "svelte/store";
+    import { FILTERS_CTX_KEY, type FilterValue, type FilterValues, type FiltersContext } from "$lib/components/filters/context";
+
+    export let title: string = "Filters";
+    export let showWhenEmpty: boolean = false;
+
+    const dispatch = createEventDispatcher<{ change: FilterValues }>();
+
+    const draftValues = writable<FilterValues>({});
+    const appliedValues = writable<FilterValues>({});
+
+    function isActiveValue(value: FilterValue): boolean {
+        if (value === null || value === undefined) return false;
+        if (typeof value === "string") return value.trim().length > 0;
+        if (Array.isArray(value)) return value.length > 0;
+        if (typeof value === "object") {
+            const o = value as Record<string, unknown>;
+            return Object.values(o).some(isActiveValue);
+        }
+        return true;
+    }
+
+    function setValue(id: string, value: FilterValue) {
+        draftValues.update((v) => ({ ...v, [id]: value }));
+    }
+
+    function clearValue(id: string) {
+        draftValues.update((v) => {
+            const next = { ...v };
+            delete next[id];
+            return next;
+        });
+    }
+
+    function clearAll() {
+        draftValues.set({});
+        appliedValues.set({});
+        dispatch("change", {});
+    }
+
+    function apply() {
+        const next = get(draftValues);
+        appliedValues.set(next);
+        dispatch("change", next);
+    }
+
+    const appliedActiveCount = derived(appliedValues, ($values) => {
+        return Object.values($values).reduce((acc, v) => (isActiveValue(v) ? acc + 1 : acc), 0);
+    });
+
+    const hasActive = derived(appliedActiveCount, ($c) => $c > 0);
+
+    const isDirty = derived([draftValues, appliedValues], ([$draft, $applied]) => {
+        // Basic (fast) deep compare good enough for small filter objects.
+        return JSON.stringify($draft) !== JSON.stringify($applied);
+    });
+
+    let open = false;
+
+    setContext<FiltersContext>(FILTERS_CTX_KEY, {
+        values: draftValues,
+        setValue,
+        clearValue,
+        clearAll,
+        isActiveValue
+    });
+</script>
+
+{#if showWhenEmpty || open || $hasActive}
+    <div class="mt-4">
+        <div class="flex flex-wrap items-center gap-2">
+            <button class="btn btn-ghost btn-sm" on:click={() => (open = !open)} aria-expanded={open}>
+                {title}
+                {#if $appliedActiveCount > 0}
+                    <span class="badge badge-sm badge-primary ml-2">{$appliedActiveCount}</span>
+                {/if}
+            </button>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <slot />
+            </div>
+
+            {#if $isDirty}
+                <button class="btn btn-primary btn-sm" on:click={apply}>Apply</button>
+            {:else}
+                <button class="btn btn-primary btn-sm" on:click={apply} disabled>Apply</button>
+            {/if}
+
+            {#if $appliedActiveCount > 0}
+                <button class="btn btn-ghost btn-sm" on:click={clearAll}>Clear</button>
+            {/if}
+        </div>
+    </div>
+{:else}
+    <div class="mt-4">
+        <button class="btn btn-ghost btn-sm" on:click={() => (open = true)}>{title}</button>
+    </div>
+{/if}
