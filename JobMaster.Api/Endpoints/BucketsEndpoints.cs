@@ -1,10 +1,11 @@
-﻿using JobMaster.Api.ApiModels;
+using JobMaster.Api.ApiModels;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using System.Collections.Generic;
 
 namespace JobMaster.Api.Endpoints;
 
@@ -14,9 +15,17 @@ internal static class BucketsEndpoints
     {
         var buckets = group.GetClusterEntityGroup("buckets");
 
-        buckets.MapGet("/", QueryBucketsAsync);
-        buckets.MapGet("/count", CountBucketsAsync);
-        buckets.MapGet("/{bucketId}", GetBucketAsync);
+        buckets.MapGet("/", QueryBucketsAsync)
+            .Produces<List<ApiBucketModel>>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        buckets.MapGet("/count", CountBucketsAsync)
+            .Produces<int>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
+
+        buckets.MapGet("/{bucketId}", GetBucketAsync)
+            .Produces<ApiBucketModel>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         return group;
     }

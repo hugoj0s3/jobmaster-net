@@ -1,8 +1,17 @@
 <script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import { page } from "$app/stores";
-    import { fetchJson } from "$lib/helper/fetch-json";
-    import { lastUpdatedAgo } from "$lib/helper/time-ago";
+    import { createJobMasterClient } from "$lib/api/client";
+    import type { components } from "$lib/api/schema";
+    import { BucketStatus, JobStatus as ApiJobStatus } from "$lib/api/enums";
+    import { formatAgeShort, lastUpdatedAgo } from "$lib/helper/time-ago";
+    import {
+        defaultDashboardSettings,
+        resolve,
+        set,
+        clear,
+        type DashboardSettings
+    } from "$lib/dashboard-settings-storage";
 
     const clusterId = () => $page.params.cluster;
 
@@ -11,11 +20,6 @@
     };
 
     let apiBaseUrl: string | null = null;
-
-    function apiUrl(path: string) {
-        const base = apiBaseUrl ?? "/jm-api";
-        return `${base}${path.startsWith("/") ? path : `/${path}`}`;
-    }
 
     type UpcomingJobsBreakdown = {
         OnMaster: number;
@@ -46,8 +50,12 @@
         };
         buckets: {
             total: number;
+            active: number;
+            completing: number;
+            readyToDrain: number;
             lost: number;
             draining: number;
+            readyToDelete: number;
         };
     };
 
@@ -61,22 +69,8 @@
         durationText?: string;
     };
 
-    type ApiCluster = {
-        clusterId?: string;
-        transientThreshold?: string;
-        ClusterId?: string;
-        TransientThreshold?: string;
-    };
-
-    type ApiJob = {
-        id: string;
-        jobDefinitionId: string;
-        status: number;
-        createdAt?: string;
-        scheduledAt?: string;
-        processingStartedAt?: string;
-        succeedExecutedAt?: string;
-    };
+    type ApiClusterModel = components["schemas"]["ApiClusterModel"];
+    type ApiJobModel = components["schemas"]["ApiJobModel"];
 
     function statusLabel(status: number): JobStatus {
         if (status === 5) return "Succeeded";
@@ -85,7 +79,7 @@
         return "Succeeded";
     }
 
-    function bestJobTimestampIso(j: ApiJob): string {
+    function bestJobTimestampIso(j: ApiJobModel): string {
         return (
             j.succeedExecutedAt ??
             j.processingStartedAt ??
@@ -95,8 +89,8 @@
         );
     }
 
-    function resolveTransientThreshold(cluster: ApiCluster): string | null {
-        return cluster.transientThreshold ?? cluster.TransientThreshold ?? null;
+    function resolveTransientThreshold(cluster: ApiClusterModel): string | null {
+        return cluster.transientThreshold ?? null;
     }
 
     function zeroMetrics(): Metrics {
@@ -127,13 +121,17 @@
             },
             buckets: {
                 total: 0,
+                active: 0,
+                completing: 0,
+                readyToDrain: 0,
                 lost: 0,
-                draining: 0
+                draining: 0,
+                readyToDelete: 0
             }
         };
     }
 
-    const refreshIntervalSec = 20;
+    let refreshIntervalSec = 20;
     let lastUpdatedAt = new Date();
     let isRefreshing = false;
 
@@ -147,6 +145,36 @@
     let nowTicker: number | undefined;
     let poller: number | undefined;
 
+    let settings: DashboardSettings = defaultDashboardSettings();
+    let showSettings = false;
+    let draftSettings: DashboardSettings = defaultDashboardSettings();
+
+    function openSettings() {
+        draftSettings = { ...settings };
+        showSettings = true;
+    }
+
+    function closeSettings() {
+        showSettings = false;
+    }
+
+    function saveSettings() {
+        const cid = clusterId();
+        if (!cid) {
+            settings = { ...draftSettings };
+            refreshIntervalSec = settings.refreshIntervalSec;
+            restartPoller();
+            closeSettings();
+            return;
+        }
+
+        settings = { ...draftSettings };
+        setStoredDashboardSettings(cid, settings);
+        refreshIntervalSec = settings.refreshIntervalSec;
+        restartPoller();
+        closeSettings();
+    }
+
     function executedAgo(iso: string): string {
         const ms = uiNow.getTime() - new Date(iso).getTime();
         return formatAgeShort(ms);
@@ -158,6 +186,10 @@
         return "badge-ghost";
     }
 
+    function kpiBadgeClass(count: number, activeClass: string): string {
+        return count > 0 ? activeClass : "badge-ghost";
+    }
+
     async function refreshNow() {
         isRefreshing = true;
         try {
@@ -165,9 +197,13 @@
             if (!cid) return;
 
             if (!apiBaseUrl) {
-                const cfg = await fetchJson<JobmasterConfig>("/jobmaster-config.json");
+                const res = await fetch("/jobmaster-config.json");
+                if (!res.ok) throw new Error(`${res.status} ${res.statusText} - /jobmaster-config.json`);
+                const cfg = (await res.json()) as JobmasterConfig;
                 apiBaseUrl = cfg.apiBaseUrl;
             }
+
+            const jm = createJobMasterClient(apiBaseUrl, fetch);
 
             try {
                 const [
@@ -178,23 +214,116 @@
                     processingCount,
                     hostsCount,
                     bucketsCount,
+                    bucketsActiveCount,
+                    bucketsCompletingCount,
+                    bucketsReadyToDrainCount,
+                    bucketsDrainingCount,
+                    bucketsLostCount,
+                    bucketsReadyToDeleteCount,
                     succeededJobs,
                     failedJobs,
                     cancelledJobs
                 ] = await Promise.all([
-                    fetchJson<ApiCluster>(apiUrl(`/clusters/${encodeURIComponent(cid)}`)),
+                    jm.GET("/jm-api/clusters/{clusterId}", {
+                        params: { path: { clusterId: cid } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as ApiClusterModel;
+                    }),
 
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=2`)),
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=3`)),
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=6`)),
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/jobs/count?Status=4`)),
+                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.HeldOnMaster } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.AssignedToBucket } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Queued } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Processing } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
 
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/hosts/count`)),
-                    fetchJson<number>(apiUrl(`/${encodeURIComponent(cid)}/buckets/count`)),
+                    jm.GET("/jm-api/{clusterId}/hosts/count", {
+                        params: { path: { clusterId: cid } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.Active } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.Completing } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDrain } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.Draining } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.Lost } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    jm.GET("/jm-api/{clusterId}/buckets/count", {
+                        params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDelete } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
 
-                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=5&CountLimit=10&Offset=0`)),
-                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=7&CountLimit=10&Offset=0`)),
-                    fetchJson<ApiJob[]>(apiUrl(`/${encodeURIComponent(cid)}/jobs?Status=8&CountLimit=10&Offset=0`))
+                    jm.GET("/jm-api/{clusterId}/jobs", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Succeeded, CountLimit: 10, Offset: 0 } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as ApiJobModel[];
+                    }),
+                    jm.GET("/jm-api/{clusterId}/jobs", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Failed, CountLimit: 10, Offset: 0 } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as ApiJobModel[];
+                    }),
+                    jm.GET("/jm-api/{clusterId}/jobs", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Cancelled, CountLimit: 10, Offset: 0 } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as ApiJobModel[];
+                    })
                 ]);
 
                 transientThreshold = resolveTransientThreshold(cluster);
@@ -218,8 +347,12 @@
                     },
                     buckets: {
                         total: bucketsCount,
-                        lost: 0,
-                        draining: 0
+                        active: bucketsActiveCount,
+                        completing: bucketsCompletingCount,
+                        readyToDrain: bucketsReadyToDrainCount,
+                        draining: bucketsDrainingCount,
+                        lost: bucketsLostCount,
+                        readyToDelete: bucketsReadyToDeleteCount
                     }
                 };
 
@@ -232,9 +365,9 @@
                     .slice(0, 10);
 
                 recentlyExecutedJobs = merged.map((j) => ({
-                    jobId: j.id,
-                    definitionId: j.jobDefinitionId,
-                    status: statusLabel(j.status),
+                    jobId: j.id ?? "",
+                    definitionId: j.jobDefinitionId ?? "",
+                    status: statusLabel(j.status ?? 5),
                     executedAt: bestJobTimestampIso(j),
                     durationText: "—"
                 }));
@@ -262,6 +395,9 @@
     );
 
     onMount(() => {
+        settings = resolve(clusterId());
+        refreshIntervalSec = settings.refreshIntervalSec;
+
         nowTicker = window.setInterval(() => {
             uiNow = new Date();
         }, 1000);
@@ -288,12 +424,6 @@
                 <h1 class="text-2xl font-semibold tracking-tight text-base-content">Overview</h1>
 
                 <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
-
-                {#if transientThreshold}
-                    <div class="badge badge-ghost badge-lg font-mono">
-                        TransientThreshold: {transientThreshold}
-                    </div>
-                {/if}
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
@@ -316,31 +446,114 @@
                         <path d="M21 3v6h-6" />
                     </svg>
                 </button>
+
+                <button class="btn btn-ghost btn-sm btn-square ml-1" aria-label="Settings" on:click={openSettings}>
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class="h-4 w-4"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    >
+                        <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+                        <path d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1a2.2 2.2 0 0 1 0 3.1 2.2 2.2 0 0 1-3.1 0l-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1 1.6V22a2.2 2.2 0 0 1-4.4 0v-.2a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .4l-.1.1a2.2 2.2 0 0 1-3.1 0 2.2 2.2 0 0 1 0-3.1l.1-.1a1.8 1.8 0 0 0 .4-2 1.8 1.8 0 0 0-1.6-1H2a2.2 2.2 0 0 1 0-4.4h.2a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.4-2l-.1-.1a2.2 2.2 0 0 1 0-3.1 2.2 2.2 0 0 1 3.1 0l.1.1a1.8 1.8 0 0 0 2 .4 1.8 1.8 0 0 0 1-1.6V2a2.2 2.2 0 0 1 4.4 0v.2a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.4l.1-.1a2.2 2.2 0 0 1 3.1 0 2.2 2.2 0 0 1 0 3.1l-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1H22a2.2 2.2 0 0 1 0 4.4h-.2a1.8 1.8 0 0 0-1.6 1Z" />
+                    </svg>
+                </button>
             </div>
         </div>
+
+        {#if showSettings}
+            <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+                <div class="card w-full max-w-md bg-base-100 shadow-xl">
+                    <div class="card-body gap-4">
+                        <div class="flex items-start justify-between gap-4">
+                            <h3 class="text-lg font-semibold">Dashboard Settings</h3>
+                            <button class="btn btn-ghost btn-sm btn-square" aria-label="Close" on:click={closeSettings}>✕</button>
+                        </div>
+
+                        <div class="grid gap-3">
+                            <div class="form-control">
+                                <div class="text-sm opacity-70">Upcoming window (minutes)</div>
+                                <input
+                                    class="input input-bordered"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    bind:value={draftSettings.nextMinutes}
+                                />
+                            </div>
+
+                            <div class="form-control">
+                                <div class="text-sm opacity-70">Failed jobs window (hours)</div>
+                                <input
+                                    class="input input-bordered"
+                                    type="number"
+                                    min="1"
+                                    step="1"
+                                    bind:value={draftSettings.lastHours}
+                                />
+                            </div>
+
+                            <div class="form-control">
+                                <div class="text-sm opacity-70">Refresh interval (seconds)</div>
+                                <input
+                                    class="input input-bordered"
+                                    type="number"
+                                    min="5"
+                                    step="1"
+                                    bind:value={draftSettings.refreshIntervalSec}
+                                />
+                            </div>
+                        </div>
+
+                        <div class="card-actions justify-end">
+                            <button class="btn btn-ghost" on:click={closeSettings}>Cancel</button>
+                            <button class="btn btn-primary" on:click={saveSettings}>Save</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {/if}
 
         <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
-                    <div class="text-sm opacity-80">Upcoming Jobs</div>
+                    <div class="text-sm opacity-80">Upcoming Execution <span class="opacity-60">(next {settings.nextMinutes} min)</span></div>
                     <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>On Master</span>
-                            <span class="font-mono">{metrics.upcomingJobs.breakdown.OnMaster}</span>
+                            <span
+                                class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.OnMaster, "badge-primary")} font-mono text-base font-semibold`}
+                            >
+                                {metrics.upcomingJobs.breakdown.OnMaster}
+                            </span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>In Bucket</span>
-                            <span class="font-mono">{metrics.upcomingJobs.breakdown.InBucket}</span>
+                            <span
+                                class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.InBucket, "badge-secondary")} font-mono text-base font-semibold`}
+                            >
+                                {metrics.upcomingJobs.breakdown.InBucket}
+                            </span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>Queued</span>
-                            <span class="font-mono">{metrics.upcomingJobs.breakdown.Queued}</span>
+                            <span
+                                class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Queued, "badge-warning")} font-mono text-base font-semibold`}
+                            >
+                                {metrics.upcomingJobs.breakdown.Queued}
+                            </span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>Processing</span>
-                            <span class="font-mono">{metrics.upcomingJobs.breakdown.Processing}</span>
+                            <span
+                                class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Processing, "badge-accent")} font-mono text-base font-semibold`}
+                            >
+                                {metrics.upcomingJobs.breakdown.Processing}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -348,7 +561,7 @@
 
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
-                    <div class="text-sm opacity-80">Jobs Failed (Exceeded Retries)</div>
+                    <div class="text-sm opacity-80">Failed (Exceeded Retries) <span class="opacity-60">(last {settings.lastHours}h)</span></div>
                     <div class="mt-2 text-5xl font-semibold text-error">
                         {metrics.failures.jobsFailedExceededRetries}
                     </div>
@@ -356,7 +569,7 @@
                     <div class="mt-3 text-xs opacity-70">
                         <div class="flex items-center justify-between">
                             <span>Failed Executions</span>
-                            <span class="font-mono">{metrics.failures.failedExecutions}</span>
+                            <span class="font-mono text-base font-semibold">{metrics.failures.failedExecutions}</span>
                         </div>
                     </div>
                 </div>
@@ -368,17 +581,17 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.workers.onlineTotal}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>Execution Mode</span>
-                            <span class="font-mono">{metrics.workers.executionMode}</span>
+                            <span class="font-mono text-base font-semibold">{metrics.workers.executionMode}</span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>Draining Mode</span>
-                            <span class="font-mono">{metrics.workers.drainingMode}</span>
+                            <span class="font-mono text-base font-semibold">{metrics.workers.drainingMode}</span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
                             <span>Full Mode</span>
-                            <span class="font-mono">{metrics.workers.fullMode}</span>
+                            <span class="font-mono text-base font-semibold">{metrics.workers.fullMode}</span>
                         </div>
 
                         <div class="pt-2 text-[11px] opacity-60">
@@ -396,7 +609,7 @@
                     <div class="mt-3 text-xs opacity-70">
                         <div class="flex items-center justify-between">
                             <span>Offline</span>
-                            <span class="font-mono text-error">{metrics.hosts.offline}</span>
+                            <span class="font-mono text-base font-semibold text-error">{metrics.hosts.offline}</span>
                         </div>
                     </div>
                 </div>
@@ -407,14 +620,30 @@
                     <div class="text-sm opacity-80">Buckets</div>
                     <div class="mt-2 text-5xl font-semibold">{metrics.buckets.total}</div>
 
-                    <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between">
-                            <span>Lost</span>
-                            <span class="font-mono">{metrics.buckets.lost}</span>
+                    <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs opacity-70">
+                        <div class="flex items-center justify-between gap-2">
+                            <span>Active</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.active}</span>
                         </div>
-                        <div class="flex items-center justify-between">
+                        <div class="flex items-center justify-between gap-2">
+                            <span>Completing</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.completing}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span>Draining Soon</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.readyToDrain}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
                             <span>Draining</span>
-                            <span class="font-mono">{metrics.buckets.draining}</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.draining}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span>Lost</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.lost}</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-2">
+                            <span>Deleting Soon</span>
+                            <span class="font-mono text-base font-semibold">{metrics.buckets.readyToDelete}</span>
                         </div>
                     </div>
                 </div>
@@ -435,7 +664,7 @@
                                 <tr>
                                     <th>Status</th>
                                     <th>JobId</th>
-                                    <th>Definition</th>
+                                    <th>Definition Id</th>
                                     <th>Executed</th>
                                     <th class="text-right">Duration</th>
                                 </tr>

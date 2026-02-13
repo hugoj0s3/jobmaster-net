@@ -47,7 +47,7 @@
   },
   "clusters": [
     {
-      "id": "cluster-1",
+      "id": "Cluster-1",
       "environmentName": "QA - Testing",
       "defaultThemeId": "jobmaster-dark"
     },

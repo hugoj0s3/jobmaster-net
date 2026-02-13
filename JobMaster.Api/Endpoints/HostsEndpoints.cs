@@ -17,9 +17,15 @@ internal static class HostsEndpoints
 
         // TODO: This is a mock endpoint (randomized values) until host telemetry is implemented.
 
-        hosts.MapGet("/", ListHostsAsync);
-        hosts.MapGet("/count", CountHostsAsync);
-        hosts.MapGet("/{hostId}", GetHostAsync);
+        hosts.MapGet("/", ListHostsAsync)
+            .Produces<List<ApiHostModel>>(StatusCodes.Status200OK);
+
+        hosts.MapGet("/count", CountHostsAsync)
+            .Produces<int>(StatusCodes.Status200OK);
+
+        hosts.MapGet("/{hostId}", GetHostAsync)
+            .Produces<ApiHostModel>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         return group;
     }

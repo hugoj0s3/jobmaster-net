@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using System.Collections.Generic;
 
 namespace JobMaster.Api.Endpoints;
 
@@ -15,9 +16,15 @@ internal static class ClustersEndpoints
     {
         var clusters = group.MapGroup("/clusters").WithTags("Clusters");
 
-        clusters.MapGet("/count", GetClustersCount);
-        clusters.MapGet("/ids", GetClusterIds);
-        clusters.MapGet("/{clusterId}", GetClusterDetailAsync);
+        clusters.MapGet("/count", GetClustersCount)
+            .Produces<int>(StatusCodes.Status200OK);
+
+        clusters.MapGet("/ids", GetClusterIds)
+            .Produces<List<string>>(StatusCodes.Status200OK);
+
+        clusters.MapGet("/{clusterId}", GetClusterDetailAsync)
+            .Produces<ApiClusterModel>(StatusCodes.Status200OK)
+            .Produces(StatusCodes.Status404NotFound);
 
         return group;
     }

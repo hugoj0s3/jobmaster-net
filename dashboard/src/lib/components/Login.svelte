@@ -1,4 +1,4 @@
-﻿<script lang="ts">
+<script lang="ts">
     let { auth, onLogin } = $props();
 
     let selectedProvider = $state(auth.providers?.[0]);
@@ -14,12 +14,17 @@
         sessionStorage.removeItem("jm_user");
         sessionStorage.removeItem("jm_pwd");
         sessionStorage.removeItem("jm_jwt");
+        sessionStorage.removeItem("jm_auth_provider");
     }
 
     function handleSubmit(e: SubmitEvent) {
         e.preventDefault();
 
         clearStoredCredentials();
+
+        if (selectedProvider) {
+            sessionStorage.setItem("jm_auth_provider", JSON.stringify(selectedProvider));
+        }
 
         if (selectedProvider?.type === "API_KEY") {
             sessionStorage.setItem("jm_api_key", apiKey);
