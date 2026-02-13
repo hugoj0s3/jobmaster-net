@@ -136,7 +136,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
         var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             triggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            RecurringScheduleId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -186,7 +186,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         
         var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             TriggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            RecurringScheduleId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -500,7 +500,9 @@ FROM {TableName()} j
 LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 {whereSql}";
         sb.Append(sqlText);
-        sb.Append($" ORDER BY j.{Col(x => x.ScheduledAt)} ASC, j.{Col(x => x.CreatedAt)} ASC");
+        var sortBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", $" ORDER BY j.{Col(x => x.ScheduledAt)} ASC, j.{Col(x => x.CreatedAt)} ASC ");
+        
+        sb.Append(sortBy);
         
         sb.Append('\n');
         sb.Append(sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset));
@@ -512,7 +514,9 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
     {
         var t = TableName();
         var selectCols = SelectProjection();
-        var order = "j.scheduled_at ASC, j.created_at ASC";
+        var defaultOrderByClause = " ORDER BY j.scheduled_at ASC, j.created_at ASC ";
+        var order = SqlOrderByUtil.BuildOrderByClause(c.SortBy, "j", defaultOrderByClause);
+        
         
         if (c.CountLimit < 0) 
             throw new ArgumentOutOfRangeException(nameof(c.CountLimit), c.CountLimit, "CountLimit must be >= 0");
@@ -534,14 +538,14 @@ WITH jobs_page AS (
     FROM {t} j
     LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
     {whereSql}
-    ORDER BY {order}
+    {order}
     {offsetClause}
 )
 SELECT {selectCols}
 FROM jobs_page j
 LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-ORDER BY {order}";
+{order}";
 
             return (queryText, concatedArgs);
         }
@@ -652,7 +656,7 @@ ORDER BY {order}";
             "@BucketId", "@AgentConnectionId", "@AgentWorkerId", "@Priority",
             "@OriginalScheduledAt", "@ScheduledAt", "@MsgData", "@Status",
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
-            "@CreatedAt", "@RecurringScheduleId",
+            "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
             "@ProcessingStartedAt", "@SucceedExecutedAt",
             "@WorkerLane", "@Version",
@@ -677,7 +681,7 @@ ORDER BY {order}";
             $"{Col(x => x.NumberOfFailures)} = @NumberOfFailures",
             $"{Col(x => x.TimeoutTicks)} = @TimeoutTicks",
             $"{Col(x => x.MaxNumberOfRetries)} = @MaxNumberOfRetries",
-            $"{Col(x => x.SourceId)} = @RecurringScheduleId",
+            $"{Col(x => x.SourceId)} = @SourceId",
             $"{Col(x => x.PartitionLockId)} = @PartitionLockId",
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.ProcessDeadline)} = @ProcessDeadline",
@@ -743,7 +747,7 @@ FROM {jobTableName} j
 LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 {whereSql}
-ORDER BY {order}";
+{order}";
         
         return (sqlText, new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.JobMetadata } });
     }

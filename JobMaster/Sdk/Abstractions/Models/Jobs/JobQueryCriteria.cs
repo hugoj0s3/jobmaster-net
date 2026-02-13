@@ -29,5 +29,14 @@ internal class JobQueryCriteria
     
     public int CountLimit { get; set; } = 100;
     public int Offset { get; set; }
+    
+    public SortByCriteria? SortBy { get; set; }
+    
     public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
+}
+
+internal class SortByCriteria
+{
+    public string? Property { get; set; }
+    public bool Ascending { get; set; }
 }
