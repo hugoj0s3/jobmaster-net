@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/jm-api/{clusterId}/agent-connections": {
+    "/{clusterId}/agent-connections": {
         parameters: {
             query?: never;
             header?: never;
@@ -39,7 +39,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/agent-connections/count": {
+    "/{clusterId}/agent-connections/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -74,7 +74,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/agent-connections/{agentConnectionId}": {
+    "/{clusterId}/agent-connections/{agentConnectionId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -110,7 +110,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/buckets": {
+    "/{clusterId}/buckets": {
         parameters: {
             query?: never;
             header?: never;
@@ -160,7 +160,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/buckets/count": {
+    "/{clusterId}/buckets/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -210,7 +210,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/buckets/{bucketId}": {
+    "/{clusterId}/buckets/{bucketId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -255,7 +255,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/clusters/count": {
+    "/clusters/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -290,7 +290,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/clusters/ids": {
+    "/clusters/ids": {
         parameters: {
             query?: never;
             header?: never;
@@ -325,7 +325,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/clusters/{clusterId}": {
+    "/clusters/{clusterId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -369,7 +369,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/hosts": {
+    "/{clusterId}/hosts": {
         parameters: {
             query?: never;
             header?: never;
@@ -406,7 +406,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/hosts/count": {
+    "/{clusterId}/hosts/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -443,7 +443,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/hosts/{hostId}": {
+    "/{clusterId}/hosts/{hostId}": {
         parameters: {
             query?: never;
             header?: never;
@@ -488,7 +488,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/jobs": {
+    "/{clusterId}/jobs": {
         parameters: {
             query?: never;
             header?: never;
@@ -561,7 +561,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/jobs/count": {
+    "/{clusterId}/jobs/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -634,7 +634,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/jobs/{id}": {
+    "/{clusterId}/jobs/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -688,7 +688,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/logs": {
+    "/{clusterId}/logs": {
         parameters: {
             query?: never;
             header?: never;
@@ -732,7 +732,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/logs/{id}": {
+    "/{clusterId}/logs/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -768,7 +768,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/logs/count": {
+    "/{clusterId}/logs/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -812,7 +812,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/recurring-schedules": {
+    "/{clusterId}/recurring-schedules": {
         parameters: {
             query?: never;
             header?: never;
@@ -863,7 +863,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/recurring-schedules/count": {
+    "/{clusterId}/recurring-schedules/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -914,7 +914,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/recurring-schedules/{id}": {
+    "/{clusterId}/recurring-schedules/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -950,7 +950,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/workers": {
+    "/{clusterId}/workers": {
         parameters: {
             query?: never;
             header?: never;
@@ -991,7 +991,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/workers/count": {
+    "/{clusterId}/workers/count": {
         parameters: {
             query?: never;
             header?: never;
@@ -1032,7 +1032,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/jm-api/{clusterId}/workers/{workerId}": {
+    "/{clusterId}/workers/{workerId}": {
         parameters: {
             query?: never;
             header?: never;

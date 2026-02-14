@@ -170,18 +170,10 @@
             const cid = clusterId();
             if (!cid) return;
 
-            if (!apiBaseUrl) {
-                const res = await fetch("/jobmaster-config.json");
-                if (!res.ok) throw new Error(`${res.status} ${res.statusText} - /jobmaster-config.json`);
-                const cfg = (await res.json()) as JobmasterConfig;
-                apiBaseUrl = cfg.apiBaseUrl;
-            }
-
-            const jmApi = ApiClientUtil.CreateApiClient(apiBaseUrl, fetch);
+            const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
             try {
                 const [
-                    cluster,
                     onMasterCount,
                     inBucketCount,
                     queuedCount,
@@ -198,105 +190,105 @@
                     failedJobs,
                     cancelledJobs
                 ] = await Promise.all([
-                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
+                    jmApi.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.HeldOnMaster } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
+                    jmApi.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.AssignedToBucket } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
+                    jmApi.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Queued } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/jobs/count", {
+                    jmApi.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Processing } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
 
-                    jmApi.GET("/jm-api/{clusterId}/hosts/count", {
+                    jmApi.GET("/{clusterId}/hosts/count", {
                         params: { path: { clusterId: cid } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Active } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Completing } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDrain } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Draining } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.Lost } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/buckets/count", {
+                    jmApi.GET("/{clusterId}/buckets/count", {
                         params: { path: { clusterId: cid }, query: { Status: BucketStatus.ReadyToDelete } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
 
-                    jmApi.GET("/jm-api/{clusterId}/jobs", {
+                    jmApi.GET("/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Succeeded, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/jobs", {
+                    jmApi.GET("/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Failed, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     }),
                     
-                    jmApi.GET("/jm-api/{clusterId}/jobs", {
+                    jmApi.GET("/{clusterId}/jobs", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Cancelled, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
@@ -347,7 +339,8 @@
                     executedAt: bestJobTimestampIso(j),
                     durationText: "—"
                 }));
-            } catch {
+            } catch (e) {
+                console.error("Dashboard refresh failed", e);
                 metrics = zeroMetrics();
                 recentlyExecutedJobs = [];
             }

@@ -235,14 +235,6 @@
         console.log("Bulk Abort", [...selected]);
     }
 
-    async function ensureConfigLoaded() {
-        if (apiBaseUrl) return;
-        const res = await fetch("/jobmaster-config.json");
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText} - /jobmaster-config.json`);
-        const cfg = (await res.json()) as JobmasterConfig;
-        apiBaseUrl = cfg.apiBaseUrl;
-    }
-
     async function refreshNow() {
         if (!refresh) return;
 
@@ -256,21 +248,20 @@
                 pageIndex = 0;
             }
 
-            await ensureConfigLoaded();
-            const jm = ApiClientUtil.CreateApiClient(apiBaseUrl, fetch);
+            const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
             try {
                 const safeOffset = Math.max(0, pageIndex) * pageSize;
 
                 const filters = buildJobsQuery();
                 const [jobsCount, apiJobs] = await Promise.all([
-                    jm.GET("/jm-api/{clusterId}/jobs/count", {
+                    jm.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: filters }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
-                    jm.GET("/jm-api/{clusterId}/jobs", {
+                    jm.GET("/{clusterId}/jobs", {
                         params: {
                             path: { clusterId: cid },
                             query: { ...filters, CountLimit: pageSize, Offset: safeOffset }

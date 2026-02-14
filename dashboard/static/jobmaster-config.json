@@ -1,5 +1,5 @@
 {
-  "apiBaseUrl": "/jm-api",
+  "apiBaseUrl": "https://localhost:7247/jm-api",
   "defaultThemeId": "jobmaster-dark",
   "auth": {
     "enabled": false,

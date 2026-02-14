@@ -180,27 +180,34 @@ Log.Information("Starting up");
 
 builder.Services.AddSerilog();
 
-builder.Services.AddCors(options =>
+if (builder.Environment.IsDevelopment())
 {
-    options.AddDefaultPolicy(
-        policy =>
-        {
-            policy.AllowAnyOrigin() // Allow requests from any origin
-                .AllowAnyMethod()
-                .AllowAnyHeader();
-        });
-});
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(
+            policy =>
+            {
+                policy.AllowAnyOrigin() // Allow requests from any origin
+                    .AllowAnyMethod()
+                    .AllowAnyHeader();
+            });
+    });
+}
 
 var app = builder.Build();
-
-app.MapJobMasterApi();
-
-await app.Services.StartJobMasterRuntimeAsync();
-
 
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseHttpsRedirection();
+
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors();
+}
+
+app.MapJobMasterApi();
+
+await app.Services.StartJobMasterRuntimeAsync();
 
 
 app.MapPost("/schedule-job", async(int qty, string ? lane, string? clusterId, TimeSpan? delay, IJobMasterScheduler jobScheduler) =>

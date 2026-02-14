@@ -8,7 +8,23 @@ type AuthProvider =
     | { type: "JWT_CUSTOM_FORM"; transport?: { header?: string; scheme?: string } }
     | { type: "JWT_SSO"; transport?: { header?: string; scheme?: string } };
 
+type JobmasterConfig = {
+    apiBaseUrl: string;
+};
+
 export class ApiClientUtil {
+    private static configCache: JobmasterConfig | null = null;
+
+    private static async loadJobmasterConfig(fetchFn: typeof fetch): Promise<JobmasterConfig> {
+        if (ApiClientUtil.configCache) return ApiClientUtil.configCache;
+
+        const res = await fetchFn("/jobmaster-config.json");
+        if (!res.ok) throw new Error(`${res.status} ${res.statusText} - /jobmaster-config.json`);
+        const cfg = (await res.json()) as JobmasterConfig;
+        ApiClientUtil.configCache = cfg;
+        return cfg;
+    }
+    
     private static async buildAuthHeaders(): Promise<Record<string, string>> {
         const headers: Record<string, string> = {};
         const { apiKey, user, pwd, jwt, authProvider } = await getAllSecrets();
@@ -44,13 +60,25 @@ export class ApiClientUtil {
     }
 
     private static normalizeBaseUrl(apiBaseUrl: string | null | undefined): string {
-        const base = (apiBaseUrl ?? "").trim();
-        if (!base) return "";
+        const raw = (apiBaseUrl ?? "").trim();
+        if (!raw) return "";
 
-        return base.replace(/\/?jm-api\/?$/i, "");
+        // Full URL: keep origin + any path prefix.
+        try {
+            const u = new URL(raw);
+            const prefix = u.pathname.replace(/\/+$/g, "");
+            return `${u.origin}${prefix}`;
+        } catch {
+            // Not a full URL
+        }
+
+        // Relative base path (same origin). Ensure leading slash.
+        const prefix = raw.replace(/\/+$/g, "");
+        if (!prefix) return "";
+        return prefix.startsWith("/") ? prefix : `/${prefix}`;
     }
 
-    static CreateApiClient(apiBaseUrl: string | null | undefined, fetchFn: typeof fetch) {
+    private static CreateApiClient(apiBaseUrl: string | null | undefined, fetchFn: typeof fetch) {
         const baseUrl = ApiClientUtil.normalizeBaseUrl(apiBaseUrl);
 
         return createClient<paths>({
@@ -68,5 +96,10 @@ export class ApiClientUtil {
                 });
             }
         });
+    }
+
+    static async CreateApiClientFromConfig(fetchFn: typeof fetch) {
+        const cfg = await ApiClientUtil.loadJobmasterConfig(fetchFn);
+        return ApiClientUtil.CreateApiClient(cfg.apiBaseUrl, fetchFn);
     }
 }
