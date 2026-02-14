@@ -10,6 +10,8 @@
     import { DateTimeUtil } from "$lib/helper/datetime-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
+		import { resolve } from '$app/paths';
+		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 
     const refreshIntervalSec = 20;
 
@@ -322,6 +324,9 @@
         }, refreshIntervalSec * 1000);
     }
 
+		const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
+		const copiedId = copyFeedback.copiedId;
+
     onMount(() => {
         nowTicker = window.setInterval(() => {
             uiNow = new Date();
@@ -337,8 +342,9 @@
     });
 
     onDestroy(() => {
-        if (nowTicker) window.clearInterval(nowTicker);
-        if (poller) window.clearInterval(poller);
+			copyFeedback.destroy();
+			if (nowTicker) window.clearInterval(nowTicker);
+			if (poller) window.clearInterval(poller);
     });
 </script>
 
@@ -369,7 +375,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: {DateTimeUtil.lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
+								<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
 
                 <button class="btn btn-ghost btn-sm btn-square" aria-label="Refresh now" on:click={refreshNow} disabled={isRefreshing}>
                     <svg xmlns="http://www.w3.org/2000/svg" class={"h-5 w-5 " + (isRefreshing ? "animate-spin" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
@@ -486,13 +492,44 @@
                                 />
                             </td>
 
-                            <td class="font-medium">
-                                <span class="tooltip tooltip-bottom" data-tip={j.jobId}>
-                                    <a class="link link-hover" href={`/jobs/${j.jobId}`} aria-label={`Open job ${j.jobId}`}>
-                                        {j.jobId}
-                                    </a>
-                                </span>
-                            </td>
+													<td class="font-medium">
+														<div class="flex items-center gap-2">
+															<span class="tooltip tooltip-bottom" data-tip={j.jobId}>
+																	<a
+																		class="link link-hover"
+																		href={resolve(`/${clusterId()}/jobs/${j.jobId}`)}
+																		aria-label={`Open job ${j.jobId}`}
+																	>
+																			{j.jobId}
+																	</a>
+															</span>
+
+															<span
+																class="tooltip tooltip-bottom"
+																class:tooltip-success={$copiedId === j.jobId}
+																data-tip={$copiedId === j.jobId ? "Copied!" : "Copy Job ID"}
+															>
+																<button
+																	type="button"
+																	class={`btn btn-ghost btn-xs btn-square ${$copiedId === j.jobId ? "text-success hover:bg-success/20" : ""}`}
+																	aria-label={$copiedId === j.jobId ? `Copied job id ${j.jobId}` : `Copy job id ${j.jobId}`}
+																	on:click|preventDefault|stopPropagation={() => copyFeedback.copy(j.jobId)}
+																>
+																	<svg
+																		xmlns="http://www.w3.org/2000/svg"
+																		class="h-4 w-4"
+																		class:text-success={$copiedId === j.jobId}
+																		viewBox="0 0 24 24"
+																		fill="currentColor"
+																	>
+																		<path
+																			d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm4 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h12v14Z"
+																		/>
+																	</svg>
+																</button>
+															</span>
+														</div>
+													</td>
 
                             <td>{j.definitionId}</td>
 

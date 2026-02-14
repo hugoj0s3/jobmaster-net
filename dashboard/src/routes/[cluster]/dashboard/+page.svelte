@@ -391,7 +391,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-                <span>Last updated: {DateTimeUtil.lastUpdatedAgo(uiNow, lastUpdatedAt)} ago</span>
+							<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
                 <button
                         class="btn btn-ghost btn-sm btn-square"
                         aria-label="Refresh now"
