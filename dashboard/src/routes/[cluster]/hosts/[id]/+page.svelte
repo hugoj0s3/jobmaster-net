@@ -1,72 +1,186 @@
 <!-- src/routes/hosts/[id]/+page.svelte -->
 <script lang="ts">
-	// Mock data (replace with your API data)
-	const hostName = "Payroll-Worker-01";
-	const ip = "192.168.1.13";
-	const ram = "8 GB";
-	const lastUpdated = "7s ago";
+	import { onMount, onDestroy } from "svelte";
+	import { page } from "$app/stores";
+	import { ApiClientUtil } from "$lib/api/api-client-util";
+	import type { components } from "$lib/api/schema";
+	import { HostStatusUtil, type HostStatusLabel } from "$lib/helper/host-status-utils";
+	import AreaChart from "$lib/components/AreaChart.svelte";
 
-	const status = {
-		label: "Offline",
-		dotClass: "bg-error",
-		badgeClass: "badge badge-error badge-outline",
-		sub: "Last Heartbeat",
-		value: "1m 34s ago"
-	};
+	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
-	const kpis = [
+	const clusterId = () => $page.params.cluster;
+	const hostId = () => $page.params.id;
+
+	let host: ApiHostModel | null = null;
+	let workers: any[] = [];
+	let isRefreshing = false;
+	let lastUpdatedAt = new Date();
+	let poller: number | undefined;
+	const refreshIntervalSec = 10;
+
+	$: hostName = host?.displayName ?? host?.id ?? "Unknown";
+
+	$: hostStatus = deriveStatus(host);
+
+	function deriveStatus(h: ApiHostModel | null): { label: HostStatusLabel; dotClass: string; badgeClass: string } {
+		if (!h || (h.cpuUsagePercent == null && h.memoryTotalBytes == null)) {
+			return {
+				label: HostStatusUtil.Label.Offline,
+				dotClass: HostStatusUtil.getDotClass(HostStatusUtil.Label.Offline),
+				badgeClass: `badge badge-outline ${HostStatusUtil.getBadgeClass(HostStatusUtil.Label.Offline)}`
+			};
+		}
+		const cpu = h.cpuUsagePercent ?? 0;
+		const memTotal = h.memoryTotalBytes ?? 0;
+		const memUsed = h.memoryUsedBytes ?? 0;
+		const memPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
+
+		const label: HostStatusLabel =
+			cpu > 90 || memPercent > 90
+				? HostStatusUtil.Label.Warning
+				: HostStatusUtil.Label.Online;
+
+		return {
+			label,
+			dotClass: HostStatusUtil.getDotClass(label),
+			badgeClass: `badge badge-outline ${HostStatusUtil.getBadgeClass(label)}`
+		};
+	}
+
+	$: cpuPercent = host?.cpuUsagePercent != null ? Math.round(host.cpuUsagePercent) : null;
+
+	$: memTotal = host?.memoryTotalBytes ?? 0;
+	$: memUsed = host?.memoryUsedBytes ?? 0;
+	$: memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : null;
+	$: memGbUsed = memTotal > 0 ? (memUsed / 1024 ** 3).toFixed(1) : null;
+	$: memGbTotal = memTotal > 0 ? (memTotal / 1024 ** 3).toFixed(1) : null;
+
+	$: kpis = [
 		{
 			title: "CPU Load",
-			value: "52%",
-			sub: "3.2 cores / 4",
+			value: cpuPercent != null ? `${cpuPercent}%` : "—",
+			sub: host?.threadCount != null ? `${host.threadCount} threads` : "",
 			class: "bg-base-200/60 border-base-300"
 		},
 		{
 			title: "Memory Usage",
-			value: "66%",
-			sub: "5.3 GB / 8GB",
+			value: memPercent != null ? `${memPercent}%` : "—",
+			sub: memGbUsed != null ? `${memGbUsed} GB / ${memGbTotal} GB` : "",
 			class: "bg-base-200/60 border-base-300"
 		},
 		{
-			title: "Load Average",
-			value: "3.5",
-			sub: "3.5 (1m) / 3.2 (5m) / 1.6 (15m)",
+			title: "Threads / Handles",
+			value: host?.threadCount != null ? `${host.threadCount}` : "—",
+			sub: host?.handleCount != null ? `${host.handleCount} handles` : "",
 			class: "bg-base-200/60 border-base-300"
 		}
 	];
 
-	const workers = [
-		{
-			name: "DNS-Worker-01",
-			id: "b3...516",
-			lastHeartbeat: "18s ago",
-			pf: 1.0,
-			lane: "Full",
-			status: "Offline"
-		},
-		{
-			name: "Payroll-Worker-02",
-			id: "b1...2b4",
-			lastHeartbeat: "1m 34s ago",
-			pf: 1.0,
-			lane: "Payroll",
-			status: "Offline"
-		},
-		{
-			name: "Log-Worker-01",
-			id: "37...aa8",
-			lastHeartbeat: "1m 4s ago",
-			pf: 1.0,
-			lane: "Fulfill",
-			status: "Offline"
+	$: lastUpdated = lastUpdatedAt.toLocaleString("en-US", {
+		month: "numeric",
+		day: "numeric",
+		year: "numeric",
+		hour: "numeric",
+		minute: "2-digit",
+		second: "2-digit",
+		hour12: true
+	});
+
+	type MetricPoint = { time: number; value: number };
+
+	let cpuHistory: MetricPoint[] = [];
+	let memHistory: MetricPoint[] = [];
+
+	const MAX_HISTORY_POINTS = 8640;
+
+	const rangeSec: Record<string, number> = {
+		"1m": 60,
+		"15m": 15 * 60,
+		"1h": 60 * 60,
+		"8h": 8 * 60 * 60,
+		"24h": 24 * 60 * 60
+	};
+
+	function pushMetric(arr: MetricPoint[], value: number | null | undefined): MetricPoint[] {
+		if (value == null) return arr;
+		const next = [...arr, { time: Date.now(), value }];
+		return next.length > MAX_HISTORY_POINTS ? next.slice(next.length - MAX_HISTORY_POINTS) : next;
+	}
+
+	function filterByRange(arr: MetricPoint[], range: string): MetricPoint[] {
+		const cutoff = Date.now() - (rangeSec[range] ?? 3600) * 1000;
+		return arr.filter((p) => p.time >= cutoff);
+	}
+
+	$: cpuChartData = filterByRange(cpuHistory, selectedRange);
+	$: memChartData = filterByRange(memHistory, selectedRange);
+
+	async function refreshNow() {
+		isRefreshing = true;
+		try {
+			const cid = clusterId();
+			const hid = hostId();
+			if (!cid || !hid) return;
+
+			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+
+			const hostResponse = await jmApi.GET("/{clusterId}/hosts/{hostId}", {
+				params: { path: { clusterId: cid, hostId: hid } }
+			});
+
+			if (hostResponse.error) {
+				console.error("API error (host):", hostResponse.error);
+				return;
+			}
+
+			host = (hostResponse.data ?? null) as ApiHostModel | null;
+
+			if (host) {
+				cpuHistory = pushMetric(cpuHistory, host.cpuUsagePercent);
+				const mt = host.memoryTotalBytes ?? 0;
+				const mu = host.memoryUsedBytes ?? 0;
+				const mp = mt > 0 ? (mu / mt) * 100 : undefined;
+				memHistory = pushMetric(memHistory, mp);
+			}
+
+			try {
+				const workersResponse = await jmApi.GET("/{clusterId}/workers", {
+					params: { path: { clusterId: cid } }
+				});
+				const allWorkers = ((workersResponse.data ?? []) as any[]);
+				workers = allWorkers.filter((w: any) => w.hostId === hid || w.hostDisplayName === host?.displayName);
+			} catch (e) {
+				console.error("Failed to fetch workers:", e);
+			}
+
+			lastUpdatedAt = new Date();
+		} catch (error) {
+			console.error("Failed to fetch host:", error);
+		} finally {
+			isRefreshing = false;
 		}
-	];
+	}
+
+	function restartPoller() {
+		if (poller) window.clearInterval(poller);
+		poller = window.setInterval(() => {
+			refreshNow();
+		}, refreshIntervalSec * 1000);
+	}
 
 	let tab: "metrics" | "workers" = "metrics";
 	const ranges = ["1m", "15m", "1h", "8h", "24h"];
 	let selectedRange = "1h";
 
-	let autoRefresh = false;
+	onMount(() => {
+		refreshNow();
+		restartPoller();
+	});
+
+	onDestroy(() => {
+		if (poller) window.clearInterval(poller);
+	});
 </script>
 
 <!-- Page background -->
@@ -79,7 +193,7 @@
 				<div class="space-y-2">
 					<div class="text-sm breadcrumbs">
 						<ul>
-							<li><a class="link link-hover">Hosts</a></li>
+							<li><a href="/{clusterId()}/hosts" class="link link-hover">Hosts</a></li>
 							<li>{hostName}</li>
 						</ul>
 					</div>
@@ -90,42 +204,23 @@
 
 					<div class="flex flex-wrap items-center gap-3 text-sm text-base-content/70">
             <span class="inline-flex items-center gap-2">
-              <span class="inline-block h-2 w-2 rounded-full {status.dotClass}"></span>
-              <span class={status.badgeClass}>{status.label}</span>
+              <span class="inline-block h-2 w-2 rounded-full {hostStatus.dotClass}"></span>
+              <span class={hostStatus.badgeClass}>{hostStatus.label}</span>
             </span>
-						<span class="opacity-60">•</span>
-						<span>{ip}</span>
-						<span class="opacity-60">•</span>
-						<span>{ram}</span>
+						{#if memGbTotal}
+							<span class="opacity-60">•</span>
+							<span>{memGbTotal} GB RAM</span>
+						{/if}
 					</div>
 				</div>
 
 				<div class="flex flex-col items-end gap-2">
 					<div class="flex items-center gap-2 text-sm text-base-content/60">
 						<span>Last updated: {lastUpdated}</span>
-						<button class="btn btn-ghost btn-sm">Refresh</button>
-						<button class="btn btn-ghost btn-sm btn-square" aria-label="settings">
-							<!-- gear -->
-							<svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="opacity-80">
-								<path
-									d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-									stroke="currentColor"
-									stroke-width="1.5"
-								/>
-								<path
-									d="M19.4 15a8.4 8.4 0 0 0 .1-2l2-1.2-2-3.4-2.2.7a7.9 7.9 0 0 0-1.7-1l-.3-2.3H9.7L9.4 8a7.9 7.9 0 0 0-1.7 1l-2.2-.7-2 3.4 2 1.2a8.4 8.4 0 0 0 0 2l-2 1.2 2 3.4 2.2-.7c.5.4 1.1.7 1.7 1l.3 2.3h5.6l.3-2.3c.6-.3 1.2-.6 1.7-1l2.2.7 2-3.4-2-1.2Z"
-									stroke="currentColor"
-									stroke-width="1.5"
-									stroke-linejoin="round"
-								/>
-							</svg>
+						<button class="btn btn-ghost btn-sm" on:click={refreshNow} disabled={isRefreshing}>
+							{#if isRefreshing}Refreshing…{:else}Refresh{/if}
 						</button>
 					</div>
-
-					<label class="label cursor-pointer gap-3">
-						<span class="label-text text-sm text-base-content/60">Auto-refresh</span>
-						<input type="checkbox" class="toggle toggle-sm" bind:checked={autoRefresh} />
-					</label>
 				</div>
 			</div>
 
@@ -135,7 +230,7 @@
 				<div class="card border border-base-300 bg-base-200/60">
 					<div class="card-body gap-3">
 						<div class="flex items-center justify-between">
-							<div class="text-sm font-semibold text-base-content/80">{status.label}</div>
+							<div class="text-sm font-semibold text-base-content/80">{hostStatus.label}</div>
 							<div class="text-error">
 								<!-- lightning -->
 								<svg width="26" height="26" viewBox="0 0 24 24" fill="none">
@@ -149,8 +244,8 @@
 							</div>
 						</div>
 
-						<div class="text-3xl font-semibold">{status.value}</div>
-						<div class="text-sm text-base-content/60">{status.sub}</div>
+						<div class="text-3xl font-semibold">{hostStatus.label}</div>
+						<div class="text-sm text-base-content/60">Host ID: {host?.id ?? '—'}</div>
 					</div>
 				</div>
 
@@ -249,23 +344,20 @@
 								</div>
 							</div>
 
-							<!-- Placeholder chart -->
-							<div class="mt-4 h-40 rounded-xl border border-base-300 bg-base-100/40">
-								<div class="flex h-full items-center justify-center text-sm text-base-content/50">
-									Chart placeholder ({selectedRange})
-								</div>
+							<div class="mt-4 rounded-xl border border-base-300 bg-base-100/40 p-2">
+								<AreaChart
+									data={cpuChartData}
+									maxValue={100}
+									color="#36d399"
+									label="CPU"
+									unit="%"
+								/>
 							</div>
 
-							<div class="mt-4 flex flex-wrap gap-4 text-sm">
-                <span class="inline-flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-success"></span> Online
-                </span>
+							<div class="mt-2 flex flex-wrap gap-4 text-sm text-base-content/60">
 								<span class="inline-flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-warning"></span> Warning
-                </span>
-								<span class="inline-flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-error"></span> Offline
-                </span>
+									<span class="h-2 w-2 rounded-full bg-success"></span> CPU %
+								</span>
 							</div>
 						</div>
 					</div>
@@ -287,20 +379,20 @@
 								</div>
 							</div>
 
-							<!-- Placeholder chart -->
-							<div class="mt-4 h-40 rounded-xl border border-base-300 bg-base-100/40">
-								<div class="flex h-full items-center justify-center text-sm text-base-content/50">
-									Chart placeholder ({selectedRange})
-								</div>
+							<div class="mt-4 rounded-xl border border-base-300 bg-base-100/40 p-2">
+								<AreaChart
+									data={memChartData}
+									maxValue={100}
+									color="#3abff8"
+									label="Memory"
+									unit="%"
+								/>
 							</div>
 
-							<div class="mt-4 flex flex-wrap gap-4 text-sm text-base-content/70">
-                <span class="inline-flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-warning"></span> File I/O
-                </span>
+							<div class="mt-2 flex flex-wrap gap-4 text-sm text-base-content/60">
 								<span class="inline-flex items-center gap-2">
-                  <span class="h-2 w-2 rounded-full bg-info"></span> Disk I/O (KB/s)
-                </span>
+									<span class="h-2 w-2 rounded-full bg-info"></span> Memory %
+								</span>
 							</div>
 						</div>
 					</div>
@@ -331,22 +423,23 @@
 									<tr>
 										<td class="font-medium">
 											<div class="flex items-center gap-3">
-												<span class="h-2 w-2 rounded-full bg-success opacity-80"></span>
-												{w.name}
+												<span class="h-2 w-2 rounded-full {w.isAlive ? 'bg-success' : 'bg-error'} opacity-80"></span>
+												{w.displayName ?? w.id ?? '—'}
 											</div>
 										</td>
-										<td class="font-mono text-sm opacity-80">{w.id}</td>
-										<td class="opacity-80">{w.lastHeartbeat}</td>
+										<td class="font-mono text-sm opacity-80">{w.id ?? '—'}</td>
+										<td class="opacity-80">{w.lastHeartbeatAt ?? '—'}</td>
 										<td>
-											<div class="flex items-center gap-3">
-												<span class="opacity-80">{w.pf.toFixed(1)}</span>
-												<progress class="progress progress-primary w-28" value="15" max="100"></progress>
-											</div>
+											<span class="opacity-80">{w.parallelismFactor ?? '—'}</span>
 										</td>
-										<td class="opacity-80">{w.lane}</td>
+										<td class="opacity-80">{w.workerLane ?? '—'}</td>
 										<td class="text-right">
-											<span class="badge badge-error badge-outline">{w.status}</span>
+											<span class="badge {w.isAlive ? 'badge-success' : 'badge-error'} badge-outline">{w.isAlive ? 'Online' : 'Offline'}</span>
 										</td>
+									</tr>
+								{:else}
+									<tr>
+										<td colspan="6" class="text-center opacity-60 py-6">No workers assigned to this host.</td>
 									</tr>
 								{/each}
 								</tbody>
@@ -354,7 +447,7 @@
 						</div>
 
 						<div class="mt-2 text-sm text-base-content/60">
-							<button class="btn btn-ghost btn-sm">View all Workers</button>
+							{workers.length} worker{workers.length !== 1 ? 's' : ''} assigned
 						</div>
 					</div>
 				</div>
@@ -393,22 +486,26 @@
 								<tbody>
 								{#each workers as w}
 									<tr>
-										<td class="font-medium">{w.name}</td>
-										<td class="font-mono text-sm opacity-80">{w.id}</td>
-										<td class="opacity-80">{w.lastHeartbeat}</td>
-										<td class="opacity-80">{w.pf.toFixed(1)}</td>
-										<td class="opacity-80">{w.lane}</td>
+										<td class="font-medium">{w.displayName ?? w.id ?? '—'}</td>
+										<td class="font-mono text-sm opacity-80">{w.id ?? '—'}</td>
+										<td class="opacity-80">{w.lastHeartbeatAt ?? '—'}</td>
+										<td class="opacity-80">{w.parallelismFactor ?? '—'}</td>
+										<td class="opacity-80">{w.workerLane ?? '—'}</td>
 										<td class="text-right">
-											<span class="badge badge-error badge-outline">{w.status}</span>
+											<span class="badge {w.isAlive ? 'badge-success' : 'badge-error'} badge-outline">{w.isAlive ? 'Online' : 'Offline'}</span>
 										</td>
+									</tr>
+								{:else}
+									<tr>
+										<td colspan="6" class="text-center opacity-60 py-6">No workers assigned to this host.</td>
 									</tr>
 								{/each}
 								</tbody>
 							</table>
 						</div>
 
-						<div class="mt-2 flex justify-end">
-							<button class="btn btn-link btn-sm">View all Workers →</button>
+						<div class="mt-2 flex justify-end text-sm text-base-content/60">
+							{workers.length} worker{workers.length !== 1 ? 's' : ''} assigned
 						</div>
 					</div>
 				</div>

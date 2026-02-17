@@ -5,7 +5,6 @@ type RecurringScheduleStatusEnum = components["schemas"]["RecurringScheduleStatu
 export class RecurringSchedulesStatusUtil {
 	static readonly Label = {
 		Active: "Active",
-		Paused: "Paused",
 		Inactive: "Inactive",
 		Completed: "Completed",
 		Failed: "Failed"
@@ -13,7 +12,7 @@ export class RecurringSchedulesStatusUtil {
 
 	static getLabel(status: number | null | undefined): RecurringScheduleStatusLabel {
 		if (status === 1) return RecurringSchedulesStatusUtil.Label.Active;
-		if (status === 2) return RecurringSchedulesStatusUtil.Label.Paused;
+		if (status === 2) return RecurringSchedulesStatusUtil.Label.Inactive;
 		if (status === 3) return RecurringSchedulesStatusUtil.Label.Inactive;
 		if (status === 4) return RecurringSchedulesStatusUtil.Label.Completed;
 		if (status === 5) return RecurringSchedulesStatusUtil.Label.Failed;
@@ -24,10 +23,18 @@ export class RecurringSchedulesStatusUtil {
 		if (label === RecurringSchedulesStatusUtil.Label.Active) return "badge-success";
 		if (label === RecurringSchedulesStatusUtil.Label.Completed) return "badge-success";
 		if (label === RecurringSchedulesStatusUtil.Label.Failed) return "badge-error";
-		if (label === RecurringSchedulesStatusUtil.Label.Paused) return "badge-warning";
 		if (label === RecurringSchedulesStatusUtil.Label.Inactive) return "badge-ghost";
 
 		throw new Error(`Unknown recurring schedule status label: ${label}`);
+	}
+
+	static getBadgeClassByStatus(status: number | null | undefined): string {
+		if (status === 1) return "badge-success";
+		if (status === 2) return "badge-warning";
+		if (status === 3) return "badge-ghost";
+		if (status === 4) return "badge-success";
+		if (status === 5) return "badge-error";
+		return "badge-ghost";
 	}
 }
 

@@ -165,10 +165,12 @@
 			<!-- Top: back + title + actions -->
 			<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 				<div class="space-y-2">
-					<button class="btn btn-ghost btn-sm w-fit" on:click={goBack}>
-						<span class="text-lg leading-none">‹</span>
-						Back
-					</button>
+					<div class="text-sm breadcrumbs">
+						<ul>
+							<li><a href="/{clusterId()}/recurring-schedules" class="link link-hover">Recurring Schedules</a></li>
+							<li>{scheduleName}</li>
+						</ul>
+					</div>
 
 					<h1 class="text-3xl font-semibold tracking-tight">{scheduleName}</h1>
 				</div>
@@ -265,7 +267,7 @@
 									<div class="flex items-center justify-between gap-4">
 										<div class="text-sm opacity-70">Status</div>
 										<div class="flex items-center gap-2">
-											<span class="h-2 w-2 rounded-full {statusLabel === 'Active' ? 'bg-success' : statusLabel === 'Paused' ? 'bg-warning' : 'bg-ghost'}"></span>
+											<span class="h-2 w-2 rounded-full {statusLabel === 'Active' ? 'bg-success' : statusLabel === 'Inactive' ? 'bg-warning' : 'bg-ghost'}"></span>
 											<span class="font-medium">{statusLabel}</span>
 										</div>
 									</div>

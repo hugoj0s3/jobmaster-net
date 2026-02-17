@@ -1,36 +1,46 @@
 <script lang="ts">
+	import { onMount, onDestroy } from "svelte";
+	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
+	import { ApiClientUtil } from "$lib/api/api-client-util";
+	import type { components } from "$lib/api/schema";
+	import Pager from "$lib/components/Pager.svelte";
+
+	type ApiHostModel = components["schemas"]["ApiHostModel"];
+
+	const clusterId = () => $page.params.cluster;
+
 	type HostStatus = "Online" | "Offline" | "Warning";
 
 	type HostRow = {
+		id: string;
 		status: HostStatus;
 		host: string;
 		ip: string;
-		cpu: number; // %
-		memPercent?: number; // %
-		memGb?: number; // GB
+		cpu: number;
+		memPercent?: number;
+		memGb?: number;
 		workers?: number;
 		uptime?: string;
 	};
 
-	const rows: HostRow[] = [
-		{ status: "Online", host: "DNS-Worker-01",        ip: "192.168.1.10", cpu: 5,  memPercent: 74, memGb: 3.7, workers: 2, uptime: "5d 19h" },
-		{ status: "Online", host: "FileImport-Worker-01", ip: "192.168.1.11", cpu: 8,  memPercent: 81, memGb: 4.0, workers: 3, uptime: "2d 12h" },
-		{ status: "Online", host: "FileImport-Worker-02", ip: "192.168.1.12", cpu: 17, memPercent: 66, memGb: 3.2, workers: 3, uptime: "12d 4h" },
-		{ status: "Online", host: "Payroll-Worker-01",    ip: "192.168.1.13", cpu: 53, memPercent: 65, memGb: 2.8, workers: 2, uptime: "15h 21m" },
-		{ status: "Online", host: "Payroll-Worker-02",    ip: "192.168.1.14", cpu: 59, memPercent: 69, memGb: 3.0, workers: 2, uptime: "8d 17h" },
-		{ status: "Online", host: "Deployment-Worker-01", ip: "192.168.1.21", cpu: 12, memPercent: 44, memGb: 1.8, workers: 1, uptime: "24h 1m" },
-		{ status: "Online", host: "Log-Worker-01",        ip: "192.168.1.22", cpu: 6,  memPercent: 88, memGb: 3.5, workers: 2, uptime: "—" },
-		// Offline (failed)
-		{ status: "Offline", host: "DNS-Worker-02",       ip: "192.168.1.20", cpu: 0 },
-	];
+	let rows: HostRow[] = [];
+	let isRefreshing = false;
+	let lastUpdatedAt = new Date();
+	let poller: number | undefined;
+	const refreshIntervalSec = 10;
 
 	let activeTab: "All" | "Online" | "Offline" = "All";
 	let q = "";
 	let sortBy: "host" | "cpu" | "mem" = "host";
 	let sortDir: "asc" | "desc" = "asc";
 
-	const onlineCount = rows.filter(r => r.status === "Online").length;
-	const offlineCount = rows.filter(r => r.status === "Offline").length;
+	let pageIndex = 0;
+	let pageSize = 10;
+
+	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
+	$: offlineCount = rows.filter(r => r.status === "Offline").length;
+	$: warningCount = rows.filter(r => r.status === "Warning").length;
 
 	$: avgCpu =
 		Math.round(
@@ -46,9 +56,90 @@
 			Math.max(1, rows.filter(r => r.status !== "Offline" && typeof r.memPercent === "number").length)
 		);
 
+	$: lastUpdated = lastUpdatedAt.toLocaleString('en-US', {
+		month: 'numeric',
+		day: 'numeric',
+		year: 'numeric',
+		hour: 'numeric',
+		minute: '2-digit',
+		second: '2-digit',
+		hour12: true
+	});
+
+	function mapHostToRow(host: ApiHostModel): HostRow {
+		const memTotal = host.memoryTotalBytes ?? 0;
+		const memUsed = host.memoryUsedBytes ?? 0;
+		const memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : undefined;
+		const memGb = memTotal > 0 ? Number((memUsed / (1024 ** 3)).toFixed(1)) : undefined;
+
+		const cpu = host.cpuUsagePercent ?? 0;
+		
+		let status: HostStatus;
+		if (host.cpuUsagePercent == null && host.memoryTotalBytes == null) {
+			status = "Offline";
+		} else if (cpu > 90 || (memPercent != null && memPercent > 90)) {
+			status = "Warning";
+		} else {
+			status = "Online";
+		}
+
+		return {
+			id: host.id ?? "",
+			status,
+			host: host.displayName ?? host.id ?? "Unknown",
+			ip: "—",
+			cpu: Math.round(cpu),
+			memPercent,
+			memGb,
+			workers: undefined,
+			uptime: undefined
+		};
+	}
+
+	async function refreshNow() {
+		isRefreshing = true;
+		try {
+			const cid = clusterId();
+			if (!cid) return;
+
+			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+
+			const response = await jmApi.GET("/{clusterId}/hosts", {
+				params: { path: { clusterId: cid } }
+			});
+
+			if (response.error) {
+				console.error("API error:", response.error);
+				return;
+			}
+
+			const apiHosts = (response.data ?? []) as ApiHostModel[];
+			rows = apiHosts.map(mapHostToRow);
+			lastUpdatedAt = new Date();
+		} catch (error) {
+			console.error("Failed to fetch hosts:", error);
+			rows = [];
+		} finally {
+			isRefreshing = false;
+		}
+	}
+
+	function restartPoller() {
+		if (poller) window.clearInterval(poller);
+		poller = window.setInterval(() => {
+			refreshNow();
+		}, refreshIntervalSec * 1000);
+	}
+
 	function tabFilter(r: HostRow) {
 		if (activeTab === "All") return true;
+		if (activeTab === "Online") return r.status === "Online" || r.status === "Warning";
 		return r.status === activeTab;
+	}
+
+	function handleTabChange(tab: "All" | "Online" | "Offline") {
+		activeTab = tab;
+		pageIndex = 0;
 	}
 
 	function textFilter(r: HostRow) {
@@ -59,25 +150,33 @@
 	function sortValue(r: HostRow) {
 		if (sortBy === "host") return r.host.toLowerCase();
 		if (sortBy === "cpu") return r.cpu ?? 0;
-		// mem
 		return r.memPercent ?? -1;
 	}
 
-	$: filtered = rows
-		.filter(tabFilter)
-		.filter(textFilter)
+	$: filteredAll = rows
+		.filter(r => {
+			if (activeTab === "Online") return r.status === "Online" || r.status === "Warning";
+			if (activeTab === "Offline") return r.status === "Offline";
+			return true;
+		})
+		.filter(r => {
+			if (!q.trim()) return true;
+			const s = `${r.host} ${r.ip} ${r.status}`.toLowerCase();
+			return s.includes(q.trim().toLowerCase());
+		})
 		.sort((a, b) => {
-			const av = sortValue(a);
-			const bv = sortValue(b);
+			const av = sortBy === "host" ? a.host.toLowerCase() : sortBy === "cpu" ? (a.cpu ?? 0) : (a.memPercent ?? -1);
+			const bv = sortBy === "host" ? b.host.toLowerCase() : sortBy === "cpu" ? (b.cpu ?? 0) : (b.memPercent ?? -1);
 			const cmp = av < bv ? -1 : av > bv ? 1 : 0;
 			return sortDir === "asc" ? cmp : -cmp;
 		});
 
-	// Fake "Last updated"
-	let lastUpdated = "10s ago";
+	$: totalCount = filteredAll.length;
+	$: paginatedHosts = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+	$: currentCount = paginatedHosts.length;
+
 	function refresh() {
-		lastUpdated = "just now";
-		setTimeout(() => (lastUpdated = "10s ago"), 1200);
+		refreshNow();
 	}
 
 	function badgeColor(status: HostStatus) {
@@ -91,6 +190,15 @@
 		if (status === "Warning") return "bg-warning";
 		return "bg-error";
 	}
+
+	onMount(() => {
+		refreshNow();
+		restartPoller();
+	});
+
+	onDestroy(() => {
+		if (poller) window.clearInterval(poller);
+	});
 </script>
 
 <div class="min-h-screen bg-base-300 text-base-content">
@@ -102,20 +210,14 @@
 			</div>
 
 			<div class="flex items-center gap-3">
-				<div class="text-sm opacity-70">Last updated: <span class="font-medium opacity-100">{lastUpdated}</span></div>
-				<button class="btn btn-ghost btn-sm" on:click={refresh} title="Refresh">
+				<div class="text-sm opacity-70">Last execution: <span class="font-medium opacity-100">{lastUpdated}</span></div>
+				<button class="btn btn-ghost btn-sm" class:loading={isRefreshing} on:click={refresh} title="Refresh" disabled={isRefreshing}>
           <span class="inline-flex items-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v7h-7"/>
             </svg>
             Refresh
           </span>
-				</button>
-				<button class="btn btn-ghost btn-sm" title="Settings">
-					<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-						<path d="M12 15.5A3.5 3.5 0 1 0 12 8.5a3.5 3.5 0 0 0 0 7z"/>
-						<path d="M19.4 15a7.97 7.97 0 0 0 .1-2l2-1.5-2-3.5-2.4.5a7.8 7.8 0 0 0-1.7-1L14.8 3h-5.6L8.6 7.5a7.8 7.8 0 0 0-1.7 1L4.5 8l-2 3.5 2 1.5a7.97 7.97 0 0 0 .1 2l-2 1.5 2 3.5 2.4-.5a7.8 7.8 0 0 0 1.7 1L9.2 21h5.6l.6-4.5a7.8 7.8 0 0 0 1.7-1l2.4.5 2-3.5-2-1.5z"/>
-					</svg>
 				</button>
 			</div>
 		</div>
@@ -148,7 +250,6 @@
 							<div class="text-sm opacity-70 mt-1">Hosts Offline</div>
 						</div>
 
-						<!-- FAILED icon (no lightning) -->
 						<div class="rounded-2xl bg-error/15 p-3 text-error" title="Failed/Offline">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<circle cx="12" cy="12" r="9"/>
@@ -200,18 +301,18 @@
 				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<!-- Tabs -->
 					<div class="tabs tabs-bordered">
-						<button class:tab-active={activeTab === "All"} class="tab" on:click={() => (activeTab = "All")}>
+						<button class:tab-active={activeTab === "All"} class="tab" on:click={() => handleTabChange("All")}>
 							All <span class="ml-2 badge badge-ghost">{rows.length}</span>
 						</button>
-						<button class:tab-active={activeTab === "Online"} class="tab" on:click={() => (activeTab = "Online")}>
+						<button class:tab-active={activeTab === "Online"} class="tab" on:click={() => handleTabChange("Online")}>
 							Online <span class="ml-2 badge badge-success">{onlineCount}</span>
 						</button>
-						<button class:tab-active={activeTab === "Offline"} class="tab" on:click={() => (activeTab = "Offline")}>
+						<button class:tab-active={activeTab === "Offline"} class="tab" on:click={() => handleTabChange("Offline")}>
 							Offline <span class="ml-2 badge badge-error">{offlineCount}</span>
 						</button>
 					</div>
 
-					<!-- Search + Sort -->
+					<!-- Search + Sort + Pager -->
 					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
 						<label class="input input-bordered flex items-center gap-2 w-full sm:w-[340px]">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -234,6 +335,15 @@
 								{sortDir === "asc" ? "A→Z" : "Z→A"}
 							</button>
 						</div>
+
+						<Pager
+							bind:pageIndex
+							bind:pageSize
+							{totalCount}
+							{currentCount}
+							disabled={isRefreshing}
+							showPageSize={true}
+						/>
 					</div>
 				</div>
 
@@ -252,8 +362,8 @@
 						</tr>
 						</thead>
 						<tbody>
-						{#each filtered as r (r.host)}
-							<tr class={r.status === "Offline" ? "opacity-80" : ""}>
+						{#each paginatedHosts as r (r.id)}
+							<tr class="cursor-pointer hover {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(`/${clusterId()}/hosts/${r.id}`)}>
 								<td>
 									<div class="flex items-center gap-2">
 										<span class={`inline-block h-2.5 w-2.5 rounded-full ${dotClass(r.status)}`} />
@@ -290,7 +400,7 @@
 									{#if r.status === "Offline"}
 										<span class="badge badge-ghost">Offline</span>
 									{:else}
-										{r.workers}
+										{r.workers ?? "—"}
 									{/if}
 								</td>
 
@@ -298,7 +408,7 @@
 									{#if r.status === "Offline"}
 										<span class="opacity-60">Offline</span>
 									{:else}
-										{r.uptime}
+										{r.uptime ?? "—"}
 									{/if}
 								</td>
 							</tr>
@@ -308,28 +418,10 @@
 				</div>
 
 				<!-- Footer -->
-				<div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-2">
-					<div class="flex items-center gap-6 text-sm opacity-80">
-						<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
-						<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-warning"></span> Warning</div>
-						<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-error"></span> Offline</div>
-					</div>
-
-					<div class="flex items-center justify-between md:justify-end gap-4">
-						<div class="text-sm opacity-70">Displaying {filtered.length} hosts</div>
-
-						<div class="join">
-							<button class="btn btn-sm join-item">Previous</button>
-							<button class="btn btn-sm btn-active join-item">1</button>
-							<button class="btn btn-sm join-item">Next</button>
-						</div>
-
-						<select class="select select-bordered select-sm">
-							<option>10 rows</option>
-							<option>25 rows</option>
-							<option>50 rows</option>
-						</select>
-					</div>
+				<div class="flex items-center gap-6 text-sm opacity-80">
+					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
+					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-warning"></span> Warning</div>
+					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-error"></span> Offline</div>
 				</div>
 			</div>
 		</div>

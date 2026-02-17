@@ -88,7 +88,7 @@
 	}
 
 	function scheduleBadge(r: RecurringScheduleRow): string {
-		return `badge ${RecurringSchedulesStatusUtil.getBadgeClass(r.scheduleStatus)}`;
+		return `badge ${RecurringSchedulesStatusUtil.getBadgeClassByStatus(r.status)}`;
 	}
 
 	function lastJobBadge(status: JobStatusLabel): string {
@@ -189,8 +189,6 @@
 					schedule.recurrenceExpression ??
 					schedule.scheduleExpression ??
 					undefined;
-
-				console.log(schedule);
 
 				return {
 					id: schedule.id ?? "",
@@ -353,7 +351,6 @@
 					<select class="select select-bordered select-sm" bind:value={statusFilter}>
 						<option>All Statuses</option>
 						<option>Active</option>
-						<option>Paused</option>
 						<option>Inactive</option>
 						<option>Completed</option>
 						<option>Failed</option>
@@ -567,7 +564,7 @@
 
 						<div class="flex items-center gap-3 pt-1">
 							<input class="toggle toggle-lg" type="checkbox" bind:checked={startPaused} />
-							<span class="text-white/70">Start Paused</span>
+							<span class="text-white/70">Start Inactive</span>
 						</div>
 					</div>
 
