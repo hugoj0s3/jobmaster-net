@@ -33,3 +33,12 @@ export const ClusterMode = {
     Passive: 2,
     Archived: 3
 } as const satisfies Record<string, components["schemas"]["ClusterMode"]>;
+
+export const RecurrenceExpressionTypeId = {
+	NaturalCron: "NaturalCron",
+	TimeSpanInterval: "TimeSpanInterval",
+	NeverRecurs: "Never-Recurs"
+} as const;
+
+export type RecurrenceExpressionTypeId =
+	(typeof RecurrenceExpressionTypeId)[keyof typeof RecurrenceExpressionTypeId];
