@@ -1,5 +1,12 @@
 <!-- src/routes/buckets/[id]/+page.svelte -->
 <script lang="ts">
+	import { onMount } from "svelte";
+	import { page } from "$app/stores";
+	import { ApiClientUtil } from "$lib/api/api-client-util";
+	import type { components } from "$lib/api/schema";
+	import { BucketStatus, JobStatus } from "$lib/api/enums";
+	import { DateTimeUtil } from "$lib/helper/datetime-util";
+
 	type ActiveJob = {
 		name: string;
 		id: string;
@@ -12,74 +19,237 @@
 	};
 
 	type HistoryJob = { id: string; completedAt: string };
-	type LogItem = { time: string; message: string; jobId: string };
+	type LogItem = { key: string; time: string; message: string; jobId: string };
 
-	// Mock view-model (replace with real API data)
-	const bucket = {
-		name: "Payroll-Bucket-01",
-		health: "Healthy",
-		host: "Host 1",
-		agent: "Postgres-1",
-		worker: "Payroll",
-		createdAgo: "3 days ago",
-		status: "Opening",
-		warnings: 3,
-		lastUpdated: "12s ago",
-	};
+	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
+	type ApiJobModel = components["schemas"]["ApiJobModel"];
 
-	const stats = {
-		capacityPct: 81,
-		capacityUsed: "81 GB",
-		capacityTotal: "100 GB",
-		queuedJobs: 3,
-		avgQueueTime: "180ms",
-		avgRunDuration: "1.2s",
-	};
+	const clusterId = () => $page.params.cluster;
+	const bucketId = () => $page.params.id;
 
-	const activeJobs: ActiveJob[] = [
-		{
-			name: "File Import",
-			id: "abcde123",
-			since: "5 min",
-			state: "Queued",
-			agent: "Postgres-Worker-01",
-			assigned: "",
-			queueTime: "180ms",
-			runDuration: "1.1s",
-		},
-		{
-			name: "Settle Payroll",
-			id: "xyz7890",
-			since: "2 min",
-			state: "Processing",
-			agent: "Postgres-Worker-01",
-			assigned: "",
-			queueTime: "1.4s",
-			runDuration: "1.3s",
-		},
-		{
-			name: "Payroll Consolidation",
-			id: "",
-			since: "1 min",
-			state: "Processing",
-			agent: "Postgres-Worker-01",
-			assigned: "",
-			queueTime: "1.1s",
-			runDuration: "--",
-		},
-	];
+	let bucket: ApiBucketModel | null = null;
+	let isRefreshing = false;
+	let lastUpdatedAt = new Date();
+	let refreshError: string | null = null;
 
-	const jobHistory: HistoryJob[] = [
-		{ id: "abcd1221", completedAt: "6 min ago" },
-		{ id: "fghj999", completedAt: "8 min ago" },
-	];
+	let activeJobs: ActiveJob[] = [];
+	let jobHistory: HistoryJob[] = [];
+	let activeApiJobs: ApiJobModel[] = [];
+	let historyApiJobs: ApiJobModel[] = [];
+	let bucketLog: LogItem[] = [];
 
-	const bucketLog: LogItem[] = [
-		{ time: "1m ago", message: "Payroll Consolidation job moved to Processing", jobId: "deigh456" },
-		{ time: "2m ago", message: "Settle Payroll job moved to Processing", jobId: "xyz7890" },
-		{ time: "6m ago", message: "File Import job queued", jobId: "abcde123" },
-		{ time: "9m ago", message: "Bucket ownership claimed by Postgres-Worker-01", jobId: "" },
-	];
+	function safeMsBetween(startIso: string | null | undefined, endIso: string | null | undefined): number | null {
+		if (!startIso || !endIso) return null;
+		const s = Date.parse(startIso);
+		const e = Date.parse(endIso);
+		if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
+		const diff = e - s;
+		return diff >= 0 ? diff : null;
+	}
+
+	function avg(nums: number[]): number | null {
+		if (nums.length === 0) return null;
+		return nums.reduce((a, b) => a + b, 0) / nums.length;
+	}
+
+	function formatDuration(ms: number | null): string {
+		if (ms == null || Number.isNaN(ms)) return "—";
+		if (ms < 1000) return `${Math.round(ms)}ms`;
+		return `${(ms / 1000).toFixed(1)}s`;
+	}
+
+	function safeFormatDateTime(d: string | null | undefined): string {
+		if (!d) return "—";
+		try {
+			return DateTimeUtil.formatDateTime(new Date(d));
+		} catch {
+			return "—";
+		}
+	}
+
+	async function refreshNow() {
+		isRefreshing = true;
+		refreshError = null;
+		try {
+			const cid = clusterId();
+			const bid = bucketId();
+			if (!cid || !bid) return;
+
+			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+
+			const [bucketResp, activeJobsResp, historyJobsResp] = await Promise.all([
+				jm.GET("/{clusterId}/buckets/{bucketId}", {
+					params: { path: { clusterId: cid, bucketId: bid } }
+				}),
+				jm.GET("/{clusterId}/jobs", {
+					params: {
+						path: { clusterId: cid },
+						query: {
+							BucketId: bid,
+							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.AssignedToBucket],
+							CountLimit: 200,
+							OrderByProperty: "createdAt",
+							OrderByAsc: false
+						}
+					}
+				}),
+				jm.GET("/{clusterId}/jobs", {
+					params: {
+						path: { clusterId: cid },
+						query: {
+							BucketId: bid,
+							Statuses: [JobStatus.Succeeded, JobStatus.Failed, JobStatus.Cancelled],
+							CountLimit: 50,
+							OrderByProperty: "succeedExecutedAt",
+							OrderByAsc: false
+						}
+					}
+				})
+			]);
+
+			if (bucketResp.error) {
+				console.error("API error (bucket detail):", bucketResp.error);
+				refreshError = "Failed to load bucket.";
+				return;
+			}
+			bucket = (bucketResp.data ?? null) as ApiBucketModel | null;
+
+			if (activeJobsResp.error) {
+				console.error("API error (bucket active jobs):", activeJobsResp.error);
+				refreshError = "Failed to load bucket jobs.";
+				activeJobs = [];
+				activeApiJobs = [];
+			} else {
+				const jobs = ((activeJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
+				activeApiJobs = jobs;
+				activeJobs = jobs.map((j) => {
+					const createdAt = j.createdAt ? Date.parse(j.createdAt) : NaN;
+					const since = Number.isFinite(createdAt) ? DateTimeUtil.formatAgeShort(Date.now() - createdAt) : "—";
+					const queueMs = safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null);
+					const runMs =
+						j.status === JobStatus.Processing && j.processingStartedAt
+							? safeMsBetween(j.processingStartedAt ?? null, new Date().toISOString())
+							: null;
+					const state =
+						j.status === JobStatus.Queued
+							? "Queued"
+							: j.status === JobStatus.Processing
+								? "Processing"
+								: "Queued";
+					return {
+						name: j.jobDefinitionId ?? j.id ?? "—",
+						id: j.id ?? "",
+						since,
+						state,
+						agent: j.agentConnectionId ?? "—",
+						assigned: j.agentWorkerId ?? "",
+						queueTime: formatDuration(queueMs),
+						runDuration: formatDuration(runMs)
+					};
+				});
+			}
+
+			if (historyJobsResp.error) {
+				console.error("API error (bucket history jobs):", historyJobsResp.error);
+				jobHistory = [];
+				historyApiJobs = [];
+			} else {
+				const jobs = ((historyJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
+				historyApiJobs = jobs;
+				jobHistory = jobs.map((j) => ({
+					id: j.id ?? "—",
+					completedAt: safeFormatDateTime(j.succeedExecutedAt ?? null)
+				}));
+			}
+
+			lastUpdatedAt = new Date();
+		} catch (e) {
+			console.error("Failed to refresh bucket detail:", e);
+			refreshError = "Failed to refresh.";
+		} finally {
+			isRefreshing = false;
+		}
+	}
+
+	onMount(() => {
+		refreshNow();
+	});
+
+	$: bucketName = bucket?.name ?? bucket?.id ?? "Bucket";
+	$: bucketHost = bucket?.hostDisplayName ?? bucket?.hostId ?? "—";
+	$: bucketAgent = bucket?.agentConnectionName ?? bucket?.agentConnectionId ?? "—";
+	$: bucketWorker = bucket?.workerLane ?? bucket?.agentWorkerId ?? "—";
+	$: bucketCreatedAt = bucket?.createdAt;
+	$: bucketLastExecutionAt = bucket?.lastStatusChangeAt;
+	$: lastUpdatedLabel = DateTimeUtil.formatDateTime(lastUpdatedAt);
+	$: bucketStatus = bucket?.status;
+	$: bucketStatusBadge =
+		bucketStatus === BucketStatus.Active
+			? "badge-success"
+			: bucketStatus === BucketStatus.Lost
+				? "badge-error"
+				: bucketStatus === BucketStatus.Draining || bucketStatus === BucketStatus.ReadyToDrain || bucketStatus === BucketStatus.Completing
+					? "badge-warning"
+					: bucketStatus === BucketStatus.ReadyToDelete
+						? "badge-ghost"
+						: "badge-ghost";
+	$: bucketStatusDot =
+		bucketStatus === BucketStatus.Active
+			? "bg-success"
+			: bucketStatus === BucketStatus.Lost
+				? "bg-error"
+				: bucketStatus === BucketStatus.Draining || bucketStatus === BucketStatus.ReadyToDrain || bucketStatus === BucketStatus.Completing
+					? "bg-warning"
+					: "bg-base-content/30";
+
+	$: queuedJobsCount = activeApiJobs.filter((j) => j.status === JobStatus.Queued).length;
+	$: avgQueueMs = avg(
+		activeApiJobs
+			.map((j) => safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null))
+			.filter((v): v is number => v != null)
+	);
+	$: avgRunMs = avg(
+		historyApiJobs
+			.map((j) => safeMsBetween(j.processingStartedAt ?? null, j.succeedExecutedAt ?? null))
+			.filter((v): v is number => v != null)
+	);
+	$: avgQueueLabel = formatDuration(avgQueueMs);
+	$: avgRunLabel = formatDuration(avgRunMs);
+
+	$: bucketLog = (() => {
+		const items: { time: number; message: string; jobId: string }[] = [];
+		const now = Date.now();
+
+		const push = (iso: string | null | undefined, message: string, jobId: string) => {
+			if (!iso) return;
+			const t = Date.parse(iso);
+			if (!Number.isFinite(t)) return;
+			items.push({ time: t, message, jobId });
+		};
+
+		for (const j of activeApiJobs) {
+			const id = j.id ?? "";
+			push(j.createdAt ?? null, "Job queued", id);
+			push(j.processingStartedAt ?? null, "Job moved to Processing", id);
+		}
+		for (const j of historyApiJobs) {
+			const id = j.id ?? "";
+			push(j.processingStartedAt ?? null, "Job moved to Processing", id);
+			if (j.status === JobStatus.Succeeded) push(j.succeedExecutedAt ?? null, "Job succeeded", id);
+			if (j.status === JobStatus.Failed) push(j.succeedExecutedAt ?? null, "Job failed", id);
+			if (j.status === JobStatus.Cancelled) push(j.succeedExecutedAt ?? null, "Job cancelled", id);
+		}
+
+		return items
+			.sort((a, b) => b.time - a.time)
+			.slice(0, 50)
+			.map((x) => ({
+				key: `${x.time}|${x.message}|${x.jobId}`,
+				time: `${DateTimeUtil.formatAgeShort(now - x.time)} ago`,
+				message: x.message,
+				jobId: x.jobId
+			}));
+	})();
 
 	let q = "";
 
@@ -101,19 +271,30 @@
 	<div class="mx-auto max-w-7xl px-6 py-6">
 		<!-- Top bar -->
 		<div class="flex flex-wrap items-center justify-between gap-3">
-			<a class="link link-hover text-sm opacity-70" href="/buckets">← Back to Buckets</a>
+			<a class="link link-hover text-sm opacity-70" href={`/${clusterId()}/buckets`}>← Back to Buckets</a>
 
 			<div class="flex items-center gap-3">
 				<div class="text-sm opacity-70">
-					<span class="hidden sm:inline">Last updated:</span>
-					<span class="font-semibold">{bucket.lastUpdated}</span>
+					<span class="hidden sm:inline">Last execution:</span>
+					<span class="font-semibold">{safeFormatDateTime(bucketLastExecutionAt)}</span>
 				</div>
-				<button class="btn btn-sm btn-ghost">
-					<span class="i">⟳</span>
-					Refresh
+				<button
+					class="btn btn-sm btn-ghost btn-square"
+					aria-label="Refresh"
+					title={isRefreshing ? "Refreshing..." : "Refresh"}
+					disabled={isRefreshing}
+					on:click={refreshNow}
+				>
+					<span class={"i text-2xl leading-none " + (isRefreshing ? "animate-spin" : "")}>⟳</span>
 				</button>
 			</div>
 		</div>
+
+		{#if refreshError}
+			<div class="alert alert-error mt-4">
+				<span>{refreshError}</span>
+			</div>
+		{/if}
 
 		<!-- Title -->
 		<div class="mt-3">
@@ -132,48 +313,31 @@
 
 						<div>
 							<div class="flex items-center gap-2">
-								<div class="text-xl font-semibold">{bucket.name}</div>
-								<span class="badge badge-success badge-outline">●</span>
+								<div class="text-xl font-semibold">{bucketName}</div>
+								<span class={"badge badge-outline gap-2 " + bucketStatusBadge}>
+									<span class={"inline-block h-2 w-2 rounded-full " + bucketStatusDot}></span>
+								</span>
 							</div>
-							<div class="text-sm opacity-70">{bucket.health}</div>
+							<div class="text-sm opacity-70">{bucket?.status ?? "—"}</div>
 
 							<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm opacity-80">
-								<span>Host: <span class="font-semibold">{bucket.host}</span></span>
+								<span>Host: <span class="font-semibold">{bucketHost}</span></span>
 								<span class="opacity-40">|</span>
-								<span>Agent: <span class="font-semibold">{bucket.agent}</span></span>
+								<span>Agent: <span class="font-semibold">{bucketAgent}</span></span>
 								<span class="opacity-40">|</span>
-								<span>Worker: <span class="font-semibold">🏷 {bucket.worker}</span></span>
+								<span>Worker: <span class="font-semibold">🏷 {bucketWorker}</span></span>
 								<span class="opacity-40">|</span>
-								<span>{bucket.createdAgo}</span>
+								<span>{safeFormatDateTime(bucketCreatedAt)}</span>
 								<span class="opacity-40">|</span>
-								<span>‹ {bucket.status}</span>
-								<span class="badge badge-ghost badge-sm">⚠ {bucket.warnings}</span>
+								<span>‹ {bucket?.status ?? "—"}</span>
+								<span class="badge badge-ghost badge-sm">{lastUpdatedLabel}</span>
 							</div>
 						</div>
 					</div>
-
-					<button class="btn btn-sm btn-warning btn-outline">Draining Bucket</button>
 				</div>
 
 				<!-- Stats row -->
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-					<!-- Capacity -->
-					<div class="card bg-base-200/60">
-						<div class="card-body">
-							<div class="flex items-start justify-between gap-3">
-								<div>
-									<div class="text-sm opacity-70">Capacity</div>
-									<div class="mt-1 text-3xl font-semibold">{stats.capacityPct}%</div>
-								</div>
-								<div class="radial-progress" style="--value:{stats.capacityPct}; --size:3.1rem; --thickness:0.45rem;">
-									<span class="text-xs">{stats.capacityPct}%</span>
-								</div>
-							</div>
-							<div class="mt-2 text-sm opacity-70">
-								{stats.capacityUsed} / {stats.capacityTotal}
-							</div>
-						</div>
-					</div>
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 
 					<!-- Queued jobs -->
 					<div class="card bg-base-200/60">
@@ -188,9 +352,8 @@
 									</ul>
 								</details>
 							</div>
-							<div class="mt-1 text-3xl font-semibold">{stats.queuedJobs}</div>
+							<div class="mt-1 text-3xl font-semibold">{queuedJobsCount}</div>
 							<progress class="progress progress-primary mt-3" value="55" max="100"></progress>
-							<div class="mt-2 text-xs opacity-60">{stats.capacityUsed} / {stats.capacityTotal}</div>
 						</div>
 					</div>
 
@@ -207,9 +370,9 @@
 									</ul>
 								</details>
 							</div>
-							<div class="mt-1 text-3xl font-semibold">{stats.avgQueueTime}</div>
+							<div class="mt-1 text-3xl font-semibold">{avgQueueLabel}</div>
 							<progress class="progress progress-secondary mt-3" value="35" max="100"></progress>
-							<div class="mt-2 text-xs opacity-60">{stats.avgQueueTime}</div>
+							<div class="mt-2 text-xs opacity-60">{avgQueueLabel}</div>
 						</div>
 					</div>
 
@@ -226,9 +389,9 @@
 									</ul>
 								</details>
 							</div>
-							<div class="mt-1 text-3xl font-semibold">{stats.avgRunDuration}</div>
+							<div class="mt-1 text-3xl font-semibold">{avgRunLabel}</div>
 							<progress class="progress progress-accent mt-3" value="45" max="100"></progress>
-							<div class="mt-2 text-xs opacity-60">1.4s ago</div>
+							<div class="mt-2 text-xs opacity-60">{avgRunLabel}</div>
 						</div>
 					</div>
 				</div>
@@ -345,16 +508,7 @@
 					<div class="flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2">
 							<h3 class="text-lg font-semibold">Bucket Log</h3>
-							<details class="dropdown dropdown-end">
-								<summary class="btn btn-ghost btn-sm">⋯</summary>
-								<ul class="menu dropdown-content z-[1] w-44 rounded-box bg-base-100 p-2 shadow">
-									<li><a>Copy</a></li>
-									<li><a>Export</a></li>
-								</ul>
-							</details>
 						</div>
-
-						<button class="btn btn-sm btn-error btn-outline">Abandon Bucket</button>
 					</div>
 
 					<div class="overflow-x-auto">
@@ -367,7 +521,7 @@
 							</tr>
 							</thead>
 							<tbody>
-							{#each bucketLog as l (l.time + l.message)}
+							{#each bucketLog as l (l.key)}
 								<tr>
 									<td class="opacity-80">{l.time}</td>
 									<td class="opacity-90">{l.message}</td>

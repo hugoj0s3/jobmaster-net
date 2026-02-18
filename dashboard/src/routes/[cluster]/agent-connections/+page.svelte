@@ -1,4 +1,8 @@
 <script lang="ts">
+	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
+	import Pager from "$lib/components/Pager.svelte";
+
 	type Health = "OK" | "Warning" | "Error";
 
 	type AgentConnRow = {
@@ -15,84 +19,71 @@
 		selected?: boolean;
 	};
 
-	const allClusters = ["All", "QA - Testing", "Production", "Test Cluster", "Dev Cluster"];
+	export let data: { agentConnections: any[]; error: string | null };
+
+	const clusterId = () => $page.params.cluster;
+
+	const allClusters = ["All", clusterId()];
 
 	let clusterFilter = "All";
 	let query = "";
-	let rowsPerPage = 6;
-	let page = 1;
+	let pageIndex = 0;
+	let pageSize = 10;
 
-	let rows: AgentConnRow[] = [
-		{
-			id: "payroll-worker-02",
-			name: "Payroll-Worker-02",
-			sub: "PostgreSQL  v12.0.0",
-			cluster: "QA - Testing",
-			clusterSub: "PostgreSQL v12.0.0",
-			health: "Warning",
-			workers: 3,
-			bucketsUsed: 14,
-			bucketsTotal: 15,
-			draining: 1,
-			selected: true
-		},
-		{
-			id: "postgres-01",
-			name: "Postgres-01",
-			sub: "PostgreSQL  v12.0.0",
-			cluster: "QA - Testing",
-			clusterSub: "PostgreSQL v12.0.0",
-			health: "OK",
-			workers: 7,
-			bucketsUsed: 8,
-			bucketsTotal: 10
-		},
-		{
-			id: "mssql-agent-01",
-			name: "MSSQL-Agent-01",
-			sub: "SQL Server v2019",
-			cluster: "Production",
-			clusterSub: "SQL Server v2019",
-			health: "OK",
-			workers: 5,
-			bucketsUsed: 10,
-			bucketsTotal: 20
-		},
-		{
-			id: "nats-worker-01",
-			name: "NATS-Worker-01",
-			sub: "NATS",
-			cluster: "Test Cluster",
-			clusterSub: "NATS",
-			health: "OK",
-			workers: 12,
-			bucketsUsed: 22,
-			bucketsTotal: 30,
-			draining: 2
-		},
-		{
-			id: "postgres-02",
-			name: "Postgres-02",
-			sub: "PostgreSQL  v14.0.0",
-			cluster: "Dev Cluster",
-			clusterSub: "PostgreSQL v14.0.0",
-			health: "Error",
-			workers: 0,
-			bucketsUsed: 0,
-			bucketsTotal: 15
-		},
-		{
-			id: "mysql-agent-01",
-			name: "MySQL-Agent-01",
-			sub: "MySQL v8.0.2",
-			cluster: "Production",
-			clusterSub: "MySQL v8.0.2",
-			health: "OK",
-			workers: 8,
-			bucketsUsed: 20,
-			bucketsTotal: 25
+	type SortCol = "name" | "cluster" | "health" | "workers" | "buckets";
+	let sortBy: SortCol = "name";
+	let sortAsc = true;
+
+	function toggleSort(col: SortCol) {
+		if (sortBy === col) {
+			sortAsc = !sortAsc;
+		} else {
+			sortBy = col;
+			sortAsc = true;
 		}
-	];
+		pageIndex = 0;
+	}
+
+	const sortIcon = (col: SortCol) => {
+		if (sortBy !== col) return "⇅";
+		return sortAsc ? "↑" : "↓";
+	};
+
+	let rows: AgentConnRow[] = [];
+
+	function mapHealth(x: any): Health {
+		const v = String(x ?? "").toLowerCase();
+		if (v === "ok" || v === "healthy") return "OK";
+		if (v === "warning" || v === "warn") return "Warning";
+		if (v === "error" || v === "err" || v === "failed") return "Error";
+		return "OK";
+	}
+
+	function mapConnToRow(c: any): AgentConnRow {
+		const id = String(c?.id ?? c?.agentConnectionId ?? c?.name ?? "");
+		const name = String(c?.displayName ?? c?.name ?? id ?? "Unknown");
+		const health = mapHealth(c?.health ?? c?.status ?? c?.state);
+
+		const bucketsUsed = Number(c?.bucketsUsed ?? c?.bucketUsed ?? c?.bucketCountUsed ?? 0);
+		const bucketsTotal = Number(c?.bucketsTotal ?? c?.bucketTotal ?? c?.bucketCountTotal ?? 0);
+		const draining = c?.draining != null ? Number(c.draining) : undefined;
+
+		return {
+			id,
+			name,
+			sub: String(c?.sub ?? c?.agentType ?? c?.type ?? "—"),
+			cluster: String(c?.cluster ?? clusterId()),
+			clusterSub: String(c?.clusterSub ?? c?.clusterType ?? "—"),
+			health,
+			workers: Number(c?.workers ?? c?.workersBound ?? c?.workerCount ?? 0),
+			bucketsUsed,
+			bucketsTotal: bucketsTotal || Math.max(bucketsUsed, 1),
+			draining,
+			selected: false
+		};
+	}
+
+	$: rows = (data?.agentConnections ?? []).map(mapConnToRow);
 
 	const healthBadge = (h: Health) => {
 		if (h === "OK") return "badge badge-success gap-2";
@@ -120,25 +111,31 @@
 		});
 	};
 
-	$: list = filtered();
-	$: totalPages = Math.max(1, Math.ceil(list.length / rowsPerPage));
-	$: page = Math.min(page, totalPages);
-	$: start = (page - 1) * rowsPerPage;
-	$: view = list.slice(start, start + rowsPerPage);
+	const healthOrder: Record<Health, number> = { "OK": 0, "Warning": 1, "Error": 2 };
 
-	function selectRow(id: string) {
-		rows = rows.map((r) => ({ ...r, selected: r.id === id }));
-	}
+	$: sorted = filtered().sort((a, b) => {
+		const dir = sortAsc ? 1 : -1;
+		switch (sortBy) {
+			case "name":
+				return a.name.localeCompare(b.name) * dir;
+			case "cluster":
+				return a.cluster.localeCompare(b.cluster) * dir;
+			case "health":
+				return (healthOrder[a.health] - healthOrder[b.health]) * dir;
+			case "workers":
+				return (a.workers - b.workers) * dir;
+			case "buckets":
+				return (a.bucketsUsed - b.bucketsUsed) * dir;
+			default:
+				return 0;
+		}
+	});
 
-	function toggleAll(e: Event) {
-		const checked = (e.currentTarget as HTMLInputElement).checked;
-		rows = rows.map((r) => ({ ...r, selected: checked }));
-	}
+	$: list = sorted;
+	$: totalCount = list.length;
+	$: view = list.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+	$: currentCount = view.length;
 
-	function toggleRow(id: string, e: Event) {
-		const checked = (e.currentTarget as HTMLInputElement).checked;
-		rows = rows.map((r) => (r.id === id ? { ...r, selected: checked } : r));
-	}
 </script>
 
 <div class="min-h-screen bg-base-300 relative overflow-hidden">
@@ -150,16 +147,16 @@
 				<p class="text-base-content/60 mt-2">Select an agent connection to view details.</p>
 			</div>
 
-			<div class="flex items-center gap-3">
-				<button class="btn btn-success btn-sm gap-2">
-					<span class="text-lg leading-none">＋</span>
-					Ad Connection
-				</button>
-			</div>
 		</div>
 
 		<!-- Filters -->
 		<div class="mt-8 flex items-center justify-end gap-3">
+			{#if data?.error}
+				<div class="alert alert-error text-sm">
+					<span>{data.error}</span>
+				</div>
+			{/if}
+
 			<div class="join">
 				<button class="btn btn-sm btn-ghost join-item pointer-events-none text-base-content/70">
 					Cluster: {clusterFilter}
@@ -188,47 +185,47 @@
 
 		<!-- Table Card -->
 		<div class="mt-6 rounded-2xl bg-base-200/60 backdrop-blur border border-base-content/10 shadow-xl">
+			<div class="flex justify-end px-5 pt-4">
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					{totalCount}
+					{currentCount}
+					showPageSize={true}
+				/>
+			</div>
 			<div class="overflow-x-auto">
 				<table class="table">
 					<thead>
 					<tr class="text-base-content/70">
-						<th class="w-12">
-							<input
-								type="checkbox"
-								class="checkbox checkbox-sm"
-								checked={rows.every((r) => r.selected)}
-								on:change={toggleAll}
-								aria-label="Select all"
-							/>
-						</th>
-						<th>
+						<th class="cursor-pointer select-none" on:click={() => toggleSort("name")}>
 							<div class="flex items-center gap-2">
 								<span>Agent Connection</span>
-								<span class="opacity-40">⇅</span>
+								<span class:opacity-40={sortBy !== "name"}>{sortIcon("name")}</span>
 							</div>
 						</th>
-						<th>
+						<th class="cursor-pointer select-none" on:click={() => toggleSort("cluster")}>
 							<div class="flex items-center gap-2">
 								<span>Cluster</span>
-								<span class="opacity-40">⇅</span>
+								<span class:opacity-40={sortBy !== "cluster"}>{sortIcon("cluster")}</span>
 							</div>
 						</th>
-						<th>
+						<th class="cursor-pointer select-none" on:click={() => toggleSort("health")}>
 							<div class="flex items-center gap-2">
 								<span>Health</span>
-								<span class="opacity-40">⇅</span>
+								<span class:opacity-40={sortBy !== "health"}>{sortIcon("health")}</span>
 							</div>
 						</th>
-						<th class="text-right">
+						<th class="cursor-pointer select-none text-right" on:click={() => toggleSort("workers")}>
 							<div class="flex items-center justify-end gap-2">
 								<span># Workers</span>
-								<span class="opacity-40">⇅</span>
+								<span class:opacity-40={sortBy !== "workers"}>{sortIcon("workers")}</span>
 							</div>
 						</th>
-						<th>
+						<th class="cursor-pointer select-none" on:click={() => toggleSort("buckets")}>
 							<div class="flex items-center gap-2">
 								<span>Buckets</span>
-								<span class="opacity-40">⇅</span>
+								<span class:opacity-40={sortBy !== "buckets"}>{sortIcon("buckets")}</span>
 							</div>
 						</th>
 					</tr>
@@ -237,20 +234,9 @@
 					<tbody>
 					{#each view as r (r.id)}
 						<tr
-							class={`cursor-pointer transition
-                  ${r.selected ? "bg-primary/10 outline outline-1 outline-primary/30" : "hover:bg-base-100/40"}`}
-							on:click={() => selectRow(r.id)}
+							class="cursor-pointer transition hover:bg-base-100/40"
+							on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}
 						>
-							<td>
-								<input
-									type="checkbox"
-									class="checkbox checkbox-sm"
-									checked={!!r.selected}
-									on:click|stopPropagation
-									on:change={(e) => toggleRow(r.id, e)}
-									aria-label={`Select ${r.name}`}
-								/>
-							</td>
 
 							<td>
 								<div class="flex flex-col">
@@ -297,40 +283,6 @@
 				</table>
 			</div>
 
-			<!-- Footer / Pagination -->
-			<div class="flex items-center justify-between px-5 py-4 border-t border-base-content/10">
-				<div class="flex items-center gap-2 text-sm text-base-content/70">
-					<span>Rows per page:</span>
-					<select
-						class="select select-bordered select-sm"
-						bind:value={rowsPerPage}
-						on:change={() => (page = 1)}
-						aria-label="Rows per page"
-					>
-						<option value={6}>6</option>
-						<option value={10}>10</option>
-						<option value={20}>20</option>
-					</select>
-				</div>
-
-				<div class="flex items-center gap-2">
-					<button class="btn btn-ghost btn-sm" on:click={() => (page = Math.max(1, page - 1))} aria-label="Previous">
-						‹
-					</button>
-
-					<div class="join">
-						<button class="btn btn-outline btn-sm join-item pointer-events-none w-12">{page}</button>
-						<button class="btn btn-ghost btn-sm join-item pointer-events-none text-base-content/60">/</button>
-						<button class="btn btn-ghost btn-sm join-item pointer-events-none text-base-content/60 w-12">
-							{totalPages}
-						</button>
-					</div>
-
-					<button class="btn btn-ghost btn-sm" on:click={() => (page = Math.min(totalPages, page + 1))} aria-label="Next">
-						›
-					</button>
-				</div>
-			</div>
 		</div>
 	</div>
 </div>

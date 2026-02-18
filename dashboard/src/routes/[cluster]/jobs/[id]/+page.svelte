@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from "svelte";
+	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
@@ -7,51 +7,22 @@
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
 
-	type RecurringScheduleRow = {
-		id: string;
-		jobType: string;
-		handler: string;
-		description: string;
-		frequency: string;
-		tz?: string;
-		nextRun: string;
-		lastStatusLabel: JobStatusLabel | "—";
-		lastStatusAgo: string;
-		priorityLabel: PriorityLabel | "—";
-		rawStatus?: number | null;
-		rawPriority?: number | null;
-	};
+	type ApiJobModel = components["schemas"]["ApiJobModel"];
 
-	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
+	const jobId = () => $page.params.id;
 
-	let query = "";
-	let statusFilter: "All Statuses" | JobStatusLabel | "—" = "All Statuses";
-	let typeFilter = "All Job Types";
+	let job: ApiJobModel | null = null;
+	let isLoading = true;
+	let refreshError: string | null = null;
+	let lastUpdatedAt = new Date();
+	let poller: number | undefined;
+	const refreshIntervalSec = 15;
 
-	let rows: RecurringScheduleRow[] = [];
+	$: statusLabel = safeStatusLabel(job?.status);
+	$: priorityLabel = safePriorityLabel(job?.priority);
 
-	$: filtered = rows.filter((r) => {
-		const q = query.trim().toLowerCase();
-		const matchesQuery =
-			!q ||
-			`${r.jobType} ${r.handler} ${r.description} ${r.frequency} ${r.tz ?? ""}`
-				.toLowerCase()
-				.includes(q);
-
-		const matchesStatus = statusFilter === "All Statuses" ? true : r.lastStatusLabel === statusFilter;
-		const matchesType = typeFilter === "All Job Types" ? true : r.jobType === typeFilter;
-
-		return matchesQuery && matchesStatus && matchesType;
-	});
-
-	function clearFilters() {
-		query = "";
-		statusFilter = "All Statuses";
-		typeFilter = "All Job Types";
-	}
-
-	function statusLabel(status: number | null | undefined): JobStatusLabel | "—" {
+	function safeStatusLabel(status: number | null | undefined): JobStatusLabel | "—" {
 		try {
 			return JobStatusUtil.getLabel(status ?? null);
 		} catch {
@@ -59,7 +30,7 @@
 		}
 	}
 
-	function priorityLabel(priority: number | null | undefined): PriorityLabel | "—" {
+	function safePriorityLabel(priority: number | null | undefined): PriorityLabel | "—" {
 		try {
 			return PriorityUtil.getLabel(priority ?? null);
 		} catch {
@@ -67,588 +38,377 @@
 		}
 	}
 
-	function statusBadgeClass(status: number | null | undefined): string {
-		const label = statusLabel(status);
+	function statusBadgeClass(label: JobStatusLabel | "—"): string {
 		if (label === "—") return "badge-ghost";
 		return JobStatusUtil.getBadgeClass(label);
 	}
 
-	function priorityBadgeClass(priority: number | null | undefined): string {
-		const label = priorityLabel(priority);
+	function priorityBadgeClass(label: PriorityLabel | "—"): string {
 		if (label === "—") return "badge-ghost";
 		return PriorityUtil.getBadgeClass(label);
 	}
 
-	let uiNow = new Date();
-	let nowTicker: number | undefined;
-
-	let lastUpdatedAt: Date | null = null;
-	let isRefreshing = false;
-	let refresh = true;
-	let poller: number | undefined;
-
-	function safeToLocaleString(d: Date | null) {
-		return d ? d.toLocaleString() : "—";
-	}
-
-	function asString(v: unknown, fallback = ""): string {
-		return typeof v === "string" ? v : fallback;
-	}
-
-	function asNumber(v: unknown): number | null {
-		return typeof v === "number" && Number.isFinite(v) ? v : null;
-	}
-
-	function firstString(obj: Record<string, unknown>, keys: string[], fallback = ""): string {
-		for (const k of keys) {
-			const val = obj[k];
-			if (typeof val === "string" && val.trim()) return val;
+	function formatDateTime(iso: string | null | undefined): string {
+		if (!iso) return "—";
+		try {
+			return new Date(iso).toLocaleString();
+		} catch {
+			return "—";
 		}
-		return fallback;
 	}
 
-	function mapRecurringScheduleRow(model: unknown): RecurringScheduleRow {
-		const m = (model ?? {}) as Record<string, unknown>;
-
-		const id = asString(m["id"], "") || asString(m["recurringScheduleId"], "");
-
-		const handler = firstString(m, ["handler", "handlerType", "jobHandler", "jobType"], "—");
-		const jobType = firstString(m, ["jobType", "definitionId", "jobDefinitionId"], handler || "—");
-		const description = asString(m["description"], "");
-
-		const tz = asString(m["tz"], "") || asString(m["timeZone"], "") || undefined;
-
-		const frequency =
-			asString(m["frequency"], "") ||
-			asString(m["cron"], "") ||
-			asString(m["cronExpression"], "") ||
-			asString(m["schedule"], "") ||
-			"—";
-
-		const nextRunIso =
-			asString(m["nextRunAt"], "") ||
-			asString(m["nextRun"], "") ||
-			asString(m["nextExecutionAt"], "") ||
-			"";
-		const nextRun = nextRunIso ? new Date(nextRunIso).toLocaleString() : "—";
-
-		const rawStatus = asNumber(m["status"]);
-		const rawPriority = asNumber(m["priority"]);
-
-		const lastStatusLabel = statusLabel(rawStatus);
-		const prioLabel = priorityLabel(rawPriority);
-
-		const lastExecutedIso =
-			asString(m["lastExecutedAt"], "") ||
-			asString(m["lastExecutionAt"], "") ||
-			asString(m["lastRunAt"], "") ||
-			asString(m["lastJobExecutedAt"], "") ||
-			"";
-
-
-
-		return {
-			id,
-			jobType,
-			handler,
-			description,
-			frequency,
-			tz,
-			nextRun,
-			lastStatusLabel,
-			lastStatusAgo,
-			priorityLabel: prioLabel,
-			rawStatus,
-			rawPriority
-		};
+	function formatDuration(startIso: string | null | undefined, endIso: string | null | undefined): string {
+		if (!startIso || !endIso) return "—";
+		const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+		if (!Number.isFinite(ms) || ms < 0) return "—";
+		if (ms < 1000) return `${Math.round(ms)}ms`;
+		if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+		return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 	}
+
+	function metadataEntries(meta: Record<string, unknown> | null | undefined): Array<[string, string]> {
+		if (!meta) return [];
+		return Object.entries(meta).map(([k, v]) => {
+			if (typeof v === "string") return [k, v];
+			if (v === null || v === undefined) return [k, "—"];
+			try { return [k, JSON.stringify(v)]; } catch { return [k, String(v)]; }
+		});
+	}
+
+	function msgDataEntries(data: Record<string, unknown> | null | undefined): Array<[string, string]> {
+		if (!data) return [];
+		return Object.entries(data).map(([k, v]) => {
+			if (typeof v === "string") return [k, v];
+			if (v === null || v === undefined) return [k, "—"];
+			try { return [k, JSON.stringify(v)]; } catch { return [k, String(v)]; }
+		});
+	}
+
+	$: lastUpdated = lastUpdatedAt.toLocaleString();
 
 	async function refreshNow() {
-		if (!refresh) return;
-
-		isRefreshing = true;
+		isLoading = true;
+		refreshError = null;
 		try {
 			const cid = clusterId();
-			if (!cid) return;
+			const jid = jobId();
+			if (!cid || !jid) return;
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const r = await jm.GET("/{clusterId}/recurring-schedules", {
-				params: {
-					path: { clusterId: cid },
-					query: {
-						CountLimit: 200,
-						Offset: 0
-					}
-				}
+			const response = await jm.GET("/{clusterId}/jobs/{id}", {
+				params: { path: { clusterId: cid, id: jid } }
 			});
 
-			if (r.error) throw r.error;
+			if (response.error) {
+				console.error("API error (job detail):", response.error);
+				refreshError = "Failed to load job details.";
+				return;
+			}
 
-			const data = (r.data ?? []) as unknown;
-			const list = Array.isArray(data) ? data : [];
-
-			rows = list.map(mapRecurringScheduleRow);
+			job = (response.data ?? null) as ApiJobModel | null;
 			lastUpdatedAt = new Date();
-		} catch {
-			rows = [];
-			lastUpdatedAt = new Date();
+		} catch (e) {
+			console.error("Failed to fetch job:", e);
+			refreshError = e instanceof Error ? e.message : String(e);
 		} finally {
-			isRefreshing = false;
-			lastUpdatedAt = new Date();
+			isLoading = false;
 		}
 	}
 
 	function restartPoller() {
 		if (poller) window.clearInterval(poller);
 		poller = window.setInterval(() => {
-			if (refresh) refreshNow();
+			refreshNow();
 		}, refreshIntervalSec * 1000);
 	}
 
-	let createOpen = false;
-
-	let jobName = "";
-	let description = "";
-	let handler = "";
-	let frequency = "";
-	let startPaused = false;
-
-	const handlers = [
-		"RenewalJobHandler",
-		"CleanupOldReportsHandler",
-		"BackupDatabaseHandler",
-		"HelloJobHandler",
-		"InvoiceProcessingHandler"
-	];
-
-	const frequencies = [
-		"Every minute",
-		"Every 5 minutes",
-		"Every hour",
-		"Every 2 hours",
-		"Every 6 hours",
-		"Daily at 03:00 AM",
-		"Every Monday at 12:00 PM"
-	];
-
-	function openCreate() {
-		createOpen = true;
-	}
-
-	function closeCreate() {
-		createOpen = false;
-	}
-
-	function openSettings() {
-		console.log("Settings clicked");
-	}
-
-	function submitCreate() {
-		console.log({ jobName, description, handler, frequency, startPaused });
-
-		jobName = "";
-		description = "";
-		handler = "";
-		frequency = "";
-		startPaused = false;
-
-		closeCreate();
-	}
-
 	onMount(() => {
-		nowTicker = window.setInterval(() => {
-			uiNow = new Date();
-		}, 1000);
-
 		refreshNow();
 		restartPoller();
-
-		return () => {
-			if (nowTicker) window.clearInterval(nowTicker);
-			if (poller) window.clearInterval(poller);
-		};
 	});
 
 	onDestroy(() => {
-		if (nowTicker) window.clearInterval(nowTicker);
 		if (poller) window.clearInterval(poller);
 	});
 </script>
 
 <div class="min-h-screen bg-base-200">
-	<div class="mx-auto max-w-6xl p-6">
-		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<div>
-				<h1 class="text-2xl font-semibold">Recurring Schedules</h1>
+	<div class="mx-auto max-w-6xl px-6 py-6">
+		{#if isLoading && !job}
+			<div class="flex items-center justify-center py-20">
+				<span class="loading loading-spinner loading-lg"></span>
 			</div>
-
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last execution: {safeToLocaleString(lastUpdatedAt)}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refreshNow}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-
-				<button class="btn btn-ghost btn-sm btn-square ml-1" aria-label="Settings" on:click={openSettings}>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-4 w-4"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-						<path
-							d="M19.4 15a1.8 1.8 0 0 0 .4 2l.1.1a2.2 2.2 0 0 1 0 3.1 2.2 2.2 0 0 1-3.1 0l-.1-.1a1.8 1.8 0 0 0-2-.4 1.8 1.8 0 0 0-1 1.6V22a2.2 2.2 0 0 1-4.4 0v-.2a1.8 1.8 0 0 0-1-1.6 1.8 1.8 0 0 0-2 .4l-.1.1a2.2 2.2 0 0 1-3.1 0 2.2 2.2 0 0 1 0-3.1l.1-.1a1.8 1.8 0 0 0 .4-2 1.8 1.8 0 0 0-1.6-1H2a2.2 2.2 0 0 1 0-4.4h.2a1.8 1.8 0 0 0 1.6-1 1.8 1.8 0 0 0-.4-2l-.1-.1a2.2 2.2 0 0 1 0-3.1 2.2 2.2 0 0 1 3.1 0l.1.1a1.8 1.8 0 0 0 2 .4 1.8 1.8 0 0 0 1-1.6V2a2.2 2.2 0 0 1 4.4 0v.2a1.8 1.8 0 0 0 1 1.6 1.8 1.8 0 0 0 2-.4l.1-.1a2.2 2.2 0 0 1 3.1 0 2.2 2.2 0 0 1 0 3.1l-.1.1a1.8 1.8 0 0 0-.4 2 1.8 1.8 0 0 0 1.6 1H22a2.2 2.2 0 0 1 0 4.4h-.2a1.8 1.8 0 0 0-1.6 1Z"
-						/>
-					</svg>
-				</button>
+		{:else if refreshError && !job}
+			<div class="alert alert-error">
+				<span>{refreshError}</span>
 			</div>
-		</div>
+		{:else if job}
+			<!-- Header -->
+			<div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+				<div class="space-y-2">
+					<div class="text-sm breadcrumbs opacity-70">
+						<ul>
+							<li><a href="/{clusterId()}/jobs" class="link link-hover">Jobs</a></li>
+							<li>{job.id ?? "—"}</li>
+						</ul>
+					</div>
 
-		<div class="mt-6 rounded-2xl bg-base-100/60 shadow-xl backdrop-blur">
-			<div class="p-4">
-				<label class="input input-bordered flex items-center gap-2 w-full">
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class="h-4 w-4 opacity-70"
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
+					<h1 class="text-3xl font-semibold tracking-tight">Job Detail</h1>
+
+					<div class="flex flex-wrap items-center gap-2">
+						<span class={"badge " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
+						<span class={"badge " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
+						{#if job.workerLane}
+							<span class="badge badge-ghost">{job.workerLane}</span>
+						{/if}
+					</div>
+				</div>
+
+				<div class="flex items-center gap-3 text-sm opacity-80">
+					<span>Last updated: {lastUpdated}</span>
+					<button
+						class="btn btn-ghost btn-sm btn-square"
+						aria-label="Refresh now"
+						on:click={refreshNow}
+						disabled={isLoading}
 					>
-						<circle cx="11" cy="11" r="7"></circle>
-						<path d="M21 21l-4.3-4.3"></path>
-					</svg>
-					<input class="grow" type="text" placeholder="Search schedules..." bind:value={query} />
-				</label>
-			</div>
-
-			<div
-				class="flex flex-col gap-3 border-t border-base-300/60 px-4 py-3 md:flex-row md:items-center md:justify-between"
-			>
-				<div class="flex flex-wrap items-center gap-3">
-					<select class="select select-bordered select-sm" bind:value={statusFilter}>
-						<option>All Statuses</option>
-						{#each Array.from(new Set(rows.map((r) => r.lastStatusLabel))).filter((s) => s !== "—") as st}
-							<option value={st}>{st}</option>
-						{/each}
-					</select>
-
-					<select class="select select-bordered select-sm" bind:value={typeFilter}>
-						<option>All Job Types</option>
-						{#each Array.from(new Set(rows.map((r) => r.jobType))).filter(Boolean) as jt}
-							<option value={jt}>{jt}</option>
-						{/each}
-					</select>
-
-					<button class="btn btn-ghost btn-sm" on:click={clearFilters}>
-						Clear filters
 						<svg
 							xmlns="http://www.w3.org/2000/svg"
-							class="h-4 w-4 opacity-70"
+							class={"h-4 w-4 " + (isLoading ? "animate-spin" : "")}
 							viewBox="0 0 24 24"
 							fill="none"
 							stroke="currentColor"
 							stroke-width="2"
 						>
-							<path d="M21 12a9 9 0 1 1-2.64-6.36" />
+							<path d="M21 12a9 9 0 1 1-3-6.7" />
 							<path d="M21 3v6h-6" />
 						</svg>
 					</button>
 				</div>
-
-				<div class="flex items-center gap-2 opacity-70">
-					<button class="btn btn-ghost btn-sm" aria-label="View toggle">
-						<span class="inline-flex items-center gap-2">
-							<span class="h-3 w-3 rounded-full bg-current opacity-40"></span>
-							<span class="h-3 w-3 rounded-sm border border-current opacity-40"></span>
-						</span>
-					</button>
-				</div>
 			</div>
 
-			<div class="overflow-x-auto">
-				<table class="table">
-					<thead>
-					<tr class="text-sm">
-						<th class="w-[26%]">Job Type</th>
-						<th class="w-[28%]">Description</th>
-						<th class="w-[18%]">Frequency</th>
-						<th class="w-[13%]">Next Run</th>
-						<th class="w-[14%]">Last Status</th>
-						<th class="w-[1%]"></th>
-					</tr>
-					</thead>
+			{#if refreshError}
+				<div class="alert alert-warning mt-4 text-sm">
+					<span>{refreshError}</span>
+				</div>
+			{/if}
 
-					<tbody>
-					{#each filtered as r}
-						<tr class="hover">
-							<td>
-								<div class="flex items-center gap-3">
-									<div class="h-10 w-10 rounded-xl bg-base-300/60 grid place-items-center">
-										<svg
-											xmlns="http://www.w3.org/2000/svg"
-											class="h-5 w-5 opacity-80"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-										>
-											<path d="M21 8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1Z" />
-											<path d="M21 16a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-1a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v1Z" />
-										</svg>
-									</div>
+			<!-- Main content grid -->
+			<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
+				<!-- Identity -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Identity</h2>
+						<div class="divider my-2"></div>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Job ID</span>
+								<span class="font-mono font-medium">{job.id ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Definition ID</span>
+								<span class="font-medium">{job.jobDefinitionId ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Source ID</span>
+								<span class="font-medium">{job.sourceId ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Cluster</span>
+								<span class="font-medium">{job.clusterId ?? clusterId()}</span>
+							</div>
+						</div>
+					</div>
+				</div>
 
-									<div class="leading-tight">
-										<div class="font-medium">{r.jobType}</div>
-										<div class="text-xs opacity-60">{r.handler}</div>
-									</div>
-								</div>
-							</td>
+				<!-- Status & Scheduling -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Status & Scheduling</h2>
+						<div class="divider my-2"></div>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Status</span>
+								<span class={"badge " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Priority</span>
+								<span class={"badge " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Scheduled At</span>
+								<span class="font-medium">{formatDateTime(job.scheduledAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Original Scheduled At</span>
+								<span class="font-medium">{formatDateTime(job.originalScheduledAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Created At</span>
+								<span class="font-medium">{formatDateTime(job.createdAt)}</span>
+							</div>
+						</div>
+					</div>
+				</div>
 
-							<td>
-								<div class="leading-tight">
-									<div class="font-medium opacity-90">{r.description}</div>
-									<div class="text-xs opacity-60">
-										{#if r.tz}{r.tz}{:else}&​nbsp;{/if}
-									</div>
-								</div>
-							</td>
+				<!-- Execution -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Execution</h2>
+						<div class="divider my-2"></div>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Processing Started</span>
+								<span class="font-medium">{formatDateTime(job.processingStartedAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Succeeded / Executed At</span>
+								<span class="font-medium">{formatDateTime(job.succeedExecutedAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Process Deadline</span>
+								<span class="font-medium">{formatDateTime(job.processDeadline)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Run Duration</span>
+								<span class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Timeout</span>
+								<span class="font-mono font-medium">{job.timeout ?? "—"}</span>
+							</div>
+						</div>
+					</div>
+				</div>
 
-							<td>
-								<div class="leading-tight">
-									<div class="font-medium">{r.frequency}</div>
-									{#if r.tz}
-										<div class="text-xs opacity-60">{r.tz}</div>
+				<!-- Failure & Retries -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Failure & Retries</h2>
+						<div class="divider my-2"></div>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Number of Failures</span>
+								<span class="font-semibold">{job.numberOfFailures ?? 0}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Max Retries</span>
+								<span class="font-semibold">{job.maxNumberOfRetries ?? 0}</span>
+							</div>
+							{#if typeof job.numberOfFailures === "number" && typeof job.maxNumberOfRetries === "number" && job.maxNumberOfRetries > 0}
+								<progress
+									class="progress progress-error w-full"
+									value={job.numberOfFailures}
+									max={job.maxNumberOfRetries}
+								></progress>
+							{/if}
+						</div>
+					</div>
+				</div>
+
+				<!-- Infrastructure -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Infrastructure</h2>
+						<div class="divider my-2"></div>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Bucket ID</span>
+								<span class="font-mono font-medium">
+									{#if job.bucketId}
+										<a href="/{clusterId()}/buckets/{job.bucketId}" class="link link-hover link-primary">{job.bucketId}</a>
 									{:else}
-										<div class="text-xs opacity-60">&​nbsp;</div>
+										—
 									{/if}
-								</div>
-							</td>
-
-							<td class="opacity-90">{r.nextRun}</td>
-
-							<td>
-								<div class="flex items-center gap-2">
-									<span class={"badge " + statusBadgeClass(r.rawStatus)}>{r.lastStatusLabel}</span>
-									<span class="text-xs opacity-60">{r.lastStatusAgo}</span>
-								</div>
-							</td>
-
-							<td>
-								<button class="btn btn-ghost btn-sm" aria-label="Row actions">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-4 w-4"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path
-											d="M12 20a1 1 0 0 0 1-1v-1.1a7.9 7.9 0 0 0 2.2-1.3l.9.5a1 1 0 0 0 1.3-.4l1-1.7a1 1 0 0 0-.3-1.3l-.9-.6a8.3 8.3 0 0 0 0-2.6l.9-.6a1 1 0 0 0 .3-1.3l-1-1.7a1 1 0 0 0-1.3-.4l-.9.5A7.9 7.9 0 0 0 13 6.1V5a1 1 0 0 0-2 0v1.1a7.9 7.9 0 0 0-2.2 1.3l-.9-.5a1 1 0 0 0-1.3.4l-1 1.7a1 1 0 0 0 .3 1.3l.9.6a8.3 8.3 0 0 0 0 2.6l-.9.6a1 1 0 0 0-.3 1.3l1 1.7a1 1 0 0 0 1.3.4l.9-.5A7.9 7.9 0 0 0 11 17.9V19a1 1 0 0 0 1 1Z"
-										/>
-										<path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
-									</svg>
-								</button>
-							</td>
-						</tr>
-					{/each}
-
-					{#if filtered.length === 0}
-						<tr>
-							<td colspan="6">
-								<div class="py-8 text-center opacity-70">
-									{#if isRefreshing}Loading...{:else}No schedules found.{/if}
-								</div>
-							</td>
-						</tr>
-					{/if}
-					</tbody>
-				</table>
-			</div>
-
-			<div class="flex items-center justify-between border-t border-base-300/60 px-4 py-3">
-				<div class="text-sm opacity-70">
-					{Math.min(filtered.length, 200)} of {rows.length}
-					{#if lastUpdatedAt}
-						<span class="opacity-60 ml-2"
-						>(updated {DateTimeUtil.lastUpdatedAgo(uiNow, lastUpdatedAt)} ago)</span
-						>
-					{/if}
+								</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Agent Connection</span>
+								<span class="font-mono font-medium">
+									{#if job.agentConnectionId}
+										<a href="/{clusterId()}/agent-connections/{job.agentConnectionId}" class="link link-hover link-primary">{job.agentConnectionId}</a>
+									{:else}
+										—
+									{/if}
+								</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Agent Worker ID</span>
+								<span class="font-mono font-medium">{job.agentWorkerId ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Host</span>
+								<span class="font-medium">
+									{#if job.hostId}
+										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? job.hostId}</a>
+									{:else}
+										{job.hostDisplayName ?? "—"}
+									{/if}
+								</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Worker Lane</span>
+								<span class="font-medium">{job.workerLane ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Trigger Source</span>
+								<span class="font-medium">{job.triggerSourceType ?? "—"}</span>
+							</div>
+						</div>
+					</div>
 				</div>
 
-				<div class="join">
-					<button class="btn btn-sm join-item" disabled aria-label="Previous page">‹</button>
-					<button class="btn btn-sm join-item" disabled aria-label="Next page">›</button>
+				<!-- Metadata -->
+				<div class="card bg-base-100 shadow">
+					<div class="card-body">
+						<h2 class="card-title text-base">Metadata</h2>
+						<div class="divider my-2"></div>
+						{#if metadataEntries(job.metadata).length === 0}
+							<div class="text-sm opacity-60">No metadata.</div>
+						{:else}
+							<div class="space-y-2 text-sm">
+								{#each metadataEntries(job.metadata) as [k, v] (k)}
+									<div class="flex items-start justify-between gap-4">
+										<span class="opacity-70 shrink-0">{k}</span>
+										<span class="font-mono text-right break-all">{v}</span>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</div>
+				</div>
+
+				<!-- Message Data (full width) -->
+				<div class="card bg-base-100 shadow lg:col-span-2">
+					<div class="card-body">
+						<h2 class="card-title text-base">Message Data</h2>
+						<div class="divider my-2"></div>
+						{#if msgDataEntries(job.msgData).length === 0}
+							<div class="text-sm opacity-60">No message data.</div>
+						{:else}
+							<div class="overflow-x-auto">
+								<table class="table table-sm">
+									<thead>
+										<tr>
+											<th>Key</th>
+											<th>Value</th>
+										</tr>
+									</thead>
+									<tbody>
+										{#each msgDataEntries(job.msgData) as [k, v] (k)}
+											<tr>
+												<td class="font-medium opacity-80">{k}</td>
+												<td class="font-mono break-all">{v}</td>
+											</tr>
+										{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</div>
 				</div>
 			</div>
-		</div>
+		{/if}
 	</div>
-
-	{#if createOpen}
-		<div class="fixed inset-0 z-50">
-			<div class="absolute inset-0 bg-black/60 backdrop-blur-sm" on:click={closeCreate} />
-
-			<div class="absolute inset-0 flex items-center justify-center p-4">
-				<div
-					class="w-full max-w-3xl rounded-2xl border border-white/10 bg-[#2b2f43]/80 shadow-2xl backdrop-blur"
-					on:click|stopPropagation
-					role="dialog"
-					aria-modal="true"
-					aria-label="New Recurring Schedule"
-				>
-					<div class="flex items-center justify-between px-8 pt-7">
-						<h2 class="text-2xl font-semibold text-white/90">New Recurring Schedule</h2>
-
-						<button
-							class="btn btn-ghost btn-sm h-9 min-h-9 w-9 rounded-xl bg-white/10 hover:bg-white/15"
-							aria-label="Close"
-							on:click={closeCreate}
-						>
-							<svg
-								xmlns="http://www.w3.org/2000/svg"
-								class="h-5 w-5 text-white/80"
-								viewBox="0 0 24 24"
-								fill="none"
-								stroke="currentColor"
-								stroke-width="2"
-							>
-								<path d="M18 6 6 18" />
-								<path d="M6 6l12 12" />
-							</svg>
-						</button>
-					</div>
-
-					<div class="px-8 pb-6 pt-6 space-y-6">
-						<div class="form-control">
-							<label class="label py-0 mb-2">
-								<span class="label-text text-white/70 font-medium">
-									Job Name <span class="text-pink-400">*</span>
-								</span>
-							</label>
-							<input
-								class="input input-bordered w-full bg-white/5 border-white/15 focus:border-white/30 text-white placeholder:text-white/35"
-								placeholder="Enter job name"
-								bind:value={jobName}
-							/>
-						</div>
-
-						<div class="form-control">
-							<label class="label py-0 mb-2">
-								<span class="label-text text-white/70 font-medium">Description</span>
-							</label>
-							<textarea
-								class="textarea textarea-bordered w-full min-h-[92px] bg-white/5 border-white/15 focus:border-white/30 text-white placeholder:text-white/35"
-								placeholder="Enter description (optional)"
-								bind:value={description}
-							/>
-						</div>
-
-						<div class="form-control">
-							<label class="label py-0 mb-2">
-								<span class="label-text text-white/70 font-medium">
-									Select Handler <span class="text-pink-400">*</span>
-								</span>
-							</label>
-							<div class="relative">
-								<select
-									class="select select-bordered w-full bg-white/5 border-white/15 focus:border-white/30 text-white"
-									bind:value={handler}
-								>
-									<option value="" disabled selected>Select handler type</option>
-									{#each handlers as h}
-										<option value={h}>{h}</option>
-									{/each}
-								</select>
-
-								<div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/60">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-5 w-5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path d="m6 9 6 6 6-6" />
-									</svg>
-								</div>
-							</div>
-						</div>
-
-						<div class="form-control">
-							<label class="label py-0 mb-2">
-								<span class="label-text text-white/70 font-medium">
-									Frequency <span class="text-pink-400">*</span>
-								</span>
-							</label>
-
-							<div class="relative">
-								<select
-									class="select select-bordered w-full bg-white/5 border-white/15 focus:border-white/30 text-white"
-									bind:value={frequency}
-								>
-									<option value="" disabled selected>Select frequency</option>
-									{#each frequencies as f}
-										<option value={f}>{f}</option>
-									{/each}
-								</select>
-
-								<div class="pointer-events-none absolute right-4 top-1/2 -translate-y-1/2 text-white/60">
-									<svg
-										xmlns="http://www.w3.org/2000/svg"
-										class="h-5 w-5"
-										viewBox="0 0 24 24"
-										fill="none"
-										stroke="currentColor"
-										stroke-width="2"
-									>
-										<path d="m6 9 6 6 6-6" />
-									</svg>
-								</div>
-							</div>
-						</div>
-
-						<div class="flex items-center gap-3 pt-1">
-							<input class="toggle toggle-lg" type="checkbox" bind:checked={startPaused} />
-							<span class="text-white/70">Start Paused</span>
-						</div>
-					</div>
-
-					<div class="flex items-center justify-end gap-3 px-8 pb-7">
-						<button class="btn btn-ghost bg-white/10 hover:bg-white/15 text-white/80" on:click={closeCreate}>
-							Cancel
-						</button>
-
-						<button
-							class="btn border-0 bg-fuchsia-500 hover:bg-fuchsia-400 text-white"
-							on:click={submitCreate}
-							disabled={!jobName || !handler || !frequency}
-							class:opacity-60={!jobName || !handler || !frequency}
-						>
-							Create Schedule
-						</button>
-					</div>
-				</div>
-			</div>
-		</div>
-	{/if}
 </div>

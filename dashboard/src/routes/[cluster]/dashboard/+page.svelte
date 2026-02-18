@@ -7,6 +7,10 @@
     import { DateTimeUtil } from "$lib/helper/datetime-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { SettingsStorage, type DashboardSettings } from "$lib/dashboard-settings-storage";
+    import { createCopyFeedback } from "$lib/helper/clipboard-util";
+
+    const copyFeedback = createCopyFeedback();
+    const copiedId = copyFeedback.copiedId;
 
     const clusterId = () => $page.params.cluster;
 
@@ -378,6 +382,7 @@
     onDestroy(() => {
         if (nowTicker) window.clearInterval(nowTicker);
         if (poller) window.clearInterval(poller);
+        copyFeedback.destroy();
     });
 </script>
 
@@ -636,7 +641,27 @@
                                 <tbody>
                                 {#each recentlyExecutedJobs as j (j.jobId)}
                                     <tr class="hover">
-                                        <td class="font-medium">{j.jobId}</td>
+                                        <td class="font-medium">
+                                            <span class="inline-flex items-center gap-1">
+                                                <a href="/{clusterId()}/jobs/{j.jobId}" class="link link-hover link-primary">{j.jobId}</a>
+                                                <button
+                                                    class="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
+                                                    aria-label="Copy Job ID"
+                                                    on:click={() => copyFeedback.copy(j.jobId)}
+                                                >
+                                                    {#if $copiedId === j.jobId}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <path d="M20 6 9 17l-5-5"/>
+                                                        </svg>
+                                                    {:else}
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                                                            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                                                        </svg>
+                                                    {/if}
+                                                </button>
+                                            </span>
+                                        </td>
                                         <td>
                                             <span class={`badge badge-sm ${JobStatusUtil.getBadgeClass(j.status)}`}>
                                                 {j.status}

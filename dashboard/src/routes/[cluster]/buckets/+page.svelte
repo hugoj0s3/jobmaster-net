@@ -1,11 +1,13 @@
 <script lang="ts">
 	import { onDestroy, onMount } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus, JobStatus } from "$lib/api/enums";
 	import Pager from "$lib/components/Pager.svelte";
 	import AreaChart from "$lib/components/AreaChart.svelte";
+	import { createCopyFeedback } from "$lib/helper/clipboard-util";
 
 	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
@@ -69,6 +71,9 @@
 	let pageIndex = 0;
 	let poller: number | undefined;
 
+	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
+	const copiedId = copyFeedback.copiedId;
+
 	$: filtered = allBuckets
 		.filter((r) => (statusFilter === "all" ? true : r.status === statusFilter))
 		.filter((r) => r.name.toLowerCase().includes(search.trim().toLowerCase()));
@@ -105,6 +110,12 @@
 	function formatDate(iso: string | undefined): string {
 		if (!iso) return "—";
 		return new Date(iso).toLocaleString();
+	}
+
+	function goToBucket(bucketId: string) {
+		const cid = clusterId();
+		if (!cid) return;
+		goto(`/${encodeURIComponent(cid)}/buckets/${encodeURIComponent(bucketId)}`);
 	}
 
 	function pushMetric(arr: MetricPoint[], value: number | null | undefined): MetricPoint[] {
@@ -284,6 +295,7 @@
 
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
+		copyFeedback.destroy();
 	});
 </script>
 
@@ -551,11 +563,19 @@
 						</thead>
 						<tbody>
 						{#each paginatedBuckets as r (r.id)}
-							<tr class="hover">
+							<tr class="hover cursor-pointer" on:click={() => goToBucket(r.id)}>
 								<td>
 									<div class="flex items-center gap-3">
 										<span class={`h-2.5 w-2.5 rounded-full ${dotFor(r.status)}`}></span>
 										<div class="font-medium">{r.name}</div>
+										<button
+											class={`btn btn-ghost btn-xs btn-square opacity-70 ${$copiedId === r.id ? "text-success" : ""}`}
+											aria-label="Copy bucket id"
+											title={$copiedId === r.id ? "Copied" : "Copy bucket id"}
+											on:click|stopPropagation={() => copyFeedback.copy(r.id)}
+										>
+											{$copiedId === r.id ? "✓" : "⧉"}
+										</button>
 									</div>
 								</td>
 								<td>{r.agentConnectionName}</td>
