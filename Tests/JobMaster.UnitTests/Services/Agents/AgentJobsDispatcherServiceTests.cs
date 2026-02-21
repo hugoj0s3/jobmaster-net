@@ -21,7 +21,7 @@ public class AgentJobsDispatcherServiceTests
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
         clusterConfig.MarkAsReady();
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
 
         var job = new JobRawModel(clusterId)
@@ -63,7 +63,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.PushSavePendingJob(It.IsAny<JobRawModel>()))
             .Returns("job-id-1");
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -108,7 +108,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.PushToProcessing(It.IsAny<JobRawModel>()))
             .Returns("job-id-2");
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -156,7 +156,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.BulkPushSavePendingJobAsync(bucketId, It.IsAny<IList<JobRawModel>>()))
             .ReturnsAsync(() => new List<string>(new[] { "job-id-1", "job-id-2" }));
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);

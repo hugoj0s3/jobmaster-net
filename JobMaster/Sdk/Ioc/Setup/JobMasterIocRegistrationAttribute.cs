@@ -20,7 +20,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
     /// <summary>
     /// Registers all services from modules matching the specified repository type
     /// </summary>
-    public static void RegisterAllForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId) 
+    public static void RegisterProviderExtensionsForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId) 
     { 
         foreach (var type in GetRegistrationTypes())
         {
@@ -50,7 +50,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
         }
     }
     
-    public static void RegisterAllForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
+    public static void RegisterProviderExtensionsForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
     {
         foreach (var type in GetRegistrationTypes())
         {

@@ -303,7 +303,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         };
 
         var workerLaneSegment = string.IsNullOrWhiteSpace(workerLane) ? string.Empty : $":{workerLane}";
-        bucketModel.Name = $"{workerName}{workerLaneSegment}:Bucket-{JobMasterIdUtil.NewNanoId()}";
+        bucketModel.Name = $"{workerName}{workerLaneSegment}:{priority}:Bucket-{JobMasterIdUtil.NewNanoId()}";
         bucketModel.Id = $"{bucketModel.Name}:{JobMasterIdUtil.NewShortId()}";
         
         if (!JobMasterStringUtils.IsValidForId(bucketModel.Id))

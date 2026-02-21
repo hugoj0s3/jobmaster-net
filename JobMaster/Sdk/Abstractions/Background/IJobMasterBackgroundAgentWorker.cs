@@ -9,7 +9,6 @@ internal interface IJobMasterBackgroundAgentWorker
 {
     AgentConnectionId AgentConnectionId { get; }
     string AgentWorkerId { get; }
-    string WorkerName { get; }
     string? WorkerLane { get; }
     string AgentRepositoryTypeId { get; }
     IReadOnlyDictionary<JobMasterPriority, int> BucketQty { get; }

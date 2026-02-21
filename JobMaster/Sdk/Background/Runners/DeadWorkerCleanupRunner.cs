@@ -73,7 +73,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
                     continue;
                 }
                 
-                var maxTimeToLive = JobMasterConstants.HeartbeatThreshold.Add(JobMasterConstants.DeadWorkerCleanupGracePeriod);
+                var maxTimeToLive = JobMasterConstants.AgentHeartbeatThreshold.Add(JobMasterConstants.DeadWorkerCleanupGracePeriod);
                 if (deadWorker.LastHeartbeat > DateTime.UtcNow.Subtract(maxTimeToLive)) 
                 {
                     continue;

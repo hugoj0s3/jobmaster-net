@@ -63,7 +63,7 @@ internal class KeepAliveRunner : JobMasterRunner
     {
         try
         {
-            masterHeartbeatService.Heartbeat(BackgroundAgentWorker.AgentWorkerId);
+            masterHeartbeatService.Heartbeat(ResourceHeartbeatType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
             return Task.FromResult(OnTickResult.Success(this));
         }
         catch (Exception e)

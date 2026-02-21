@@ -159,7 +159,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             conn.Execute(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.JobMetadata);
             conn.Execute(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -209,7 +209,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             await conn.ExecuteAsync(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.JobMetadata);
             await conn.ExecuteAsync(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -267,7 +267,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         var sqlText = @$"
 SELECT COUNT(*) 
 FROM {t} j 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 {whereSql}";
         return conn.ExecuteScalar<long>(sqlText, args);
     }
@@ -453,11 +453,11 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
 
                 // Delete Metadata associated
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.JobMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
 
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 
@@ -483,8 +483,8 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
         var sqlText = $@"
 SELECT {selectCols} 
 FROM {TableName()} j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
  WHERE j.{Col(x => x.ClusterId)} = @ClusterId AND j.{Col(x => x.Id)} = @Id
 ";
         var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId, GroupId = MasterGenericRecordGroupIds.JobMetadata };
@@ -497,7 +497,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         var sqlText = $@"
 SELECT {Col(x => x.Id)} 
 FROM {TableName()} j 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 {whereSql}";
         sb.Append(sqlText);
         var sortBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", $" ORDER BY j.{Col(x => x.ScheduledAt)} ASC, j.{Col(x => x.CreatedAt)} ASC ");
@@ -536,15 +536,15 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
 WITH jobs_page AS (
     SELECT j.*
     FROM {t} j
-    LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
     {whereSql}
     {order}
     {offsetClause}
 )
 SELECT {selectCols}
 FROM jobs_page j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 {order}";
 
             return (queryText, concatedArgs);
@@ -625,7 +625,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             args.Add("WorkerLane", c.WorkerLane);
         }
 
-        var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args);
+        var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.JobMetadata);
         if (!string.IsNullOrEmpty(exists)) where.Add(exists);
 
         var whereSql = "WHERE " + string.Join(" AND ", where);
@@ -744,8 +744,8 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             $@"
 SELECT {selectCols} 
 FROM {jobTableName} j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 {whereSql}
 {order}";
         

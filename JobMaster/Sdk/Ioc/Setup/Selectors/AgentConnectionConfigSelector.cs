@@ -63,4 +63,10 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         def.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
         return this;
     }
+    
+    public IAgentConnectionConfigSelector ProtectConnectionChanges(bool protectConnectionChanges)
+    {
+        def.ProtectConnectionChanges = protectConnectionChanges;
+        return this;
+    }
 }

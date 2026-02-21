@@ -138,7 +138,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             conn.Execute(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
             conn.Execute(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -186,7 +186,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             await conn.ExecuteAsync(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
             await conn.ExecuteAsync(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -411,10 +411,10 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
 
                 // Delete associated metadata
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.RecurringScheduleMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 
@@ -436,8 +436,8 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
         var sqlText = $@"
 SELECT {selectCols} 
 FROM {t} s 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
         var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = id };
         return (sqlText, args);
@@ -467,14 +467,14 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
 WITH schedules_page AS (
     SELECT s.*
     FROM {t} s
-    LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
     {whereSql}
     ORDER BY {order}
     {offsetClause}
 )
 SELECT {selectCols} FROM schedules_page s
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 ORDER BY {order}";
 
             return (queryText, concatedArgs);
@@ -483,8 +483,8 @@ ORDER BY {order}";
         var sb = new StringBuilder();
         sb.Append($@"
 SELECT {selectCols} FROM {t} s
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}  
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}  
 {whereSql} 
 ORDER BY {order}");
 
@@ -585,7 +585,7 @@ ORDER BY {order}");
             args.Add("RecurringScheduleType", (int)c.RecurringScheduleType.Value);
         }
         
-        var metadataFilter = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args);
+        var metadataFilter = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.RecurringScheduleMetadata);
         if (!string.IsNullOrEmpty(metadataFilter))
         {
             where.Add(metadataFilter);
@@ -715,8 +715,8 @@ ORDER BY {order}");
         var sqlText = $@"
 SELECT * 
 FROM {t} s 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId 
   and s.{Col(x => x.ClusterId)} = @ClusterId
   and s.{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType";

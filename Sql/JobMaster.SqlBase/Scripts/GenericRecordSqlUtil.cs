@@ -13,6 +13,34 @@ internal class GenericRecordSqlUtil
     private readonly JobMasterConfigDictionary additionalConnConfig;
     private readonly string clusterId;
 
+    private static readonly IReadOnlyDictionary<string, string> GroupIdToFamilySuffix =
+        new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            { MasterGenericRecordGroupIds.Bucket, "_topology" },
+            { MasterGenericRecordGroupIds.AgentWorker, "_topology" },
+            { MasterGenericRecordGroupIds.Host, "_topology" },
+            { MasterGenericRecordGroupIds.AgentConnection, "_topology" },
+            
+            { MasterGenericRecordGroupIds.Sentinel, "_runtime" },
+            { MasterGenericRecordGroupIds.AgentWorkerHeartbeat, "_runtime" },
+            { MasterGenericRecordGroupIds.AgentConnectionHeartbeat, "_runtime" },
+            { MasterGenericRecordGroupIds.HostHeartbeat, "_runtime" },
+            
+            { MasterGenericRecordGroupIds.HostStats, "_host_stats" },
+            
+            { MasterGenericRecordGroupIds.Log, "_log" },
+            { MasterGenericRecordGroupIds.JobMetadata, "_job_metadata" },
+            { MasterGenericRecordGroupIds.RecurringScheduleMetadata, "_recurring_schedule_metadata" },
+            // ClusterConfiguration → no suffix (default table)
+        };
+
+    internal static readonly IReadOnlyList<string> AllFamilySuffixes = GroupIdToFamilySuffix.Values.Distinct().ToList();
+
+    internal static string ResolveFamilySuffix(string groupId)
+    {
+        return GroupIdToFamilySuffix.TryGetValue(groupId, out var suffix) ? suffix : string.Empty;
+    }
+
     public GenericRecordSqlUtil(ISqlGenerator sql, JobMasterConfigDictionary additionalConnConfig, string clusterId)
     {
         this.sql = sql;
@@ -50,12 +78,13 @@ internal class GenericRecordSqlUtil
     
     public (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
     {
-        var baseSelectSql = BaseSelectSql();
+        var t = EntryTable(groupId);
+        var baseSelectSql = BaseSelectSql(groupId);
         var uniqueId = GenericRecordEntry.UniqueId(clusterId, groupId, entryId);
 
         var sql = $@"
 {baseSelectSql}
-where {EntryTable()}.{Col(x => x.RecordUniqueId)} = @UniqueId
+where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
 ";
         if (!includeExpired)
         {
@@ -65,10 +94,11 @@ where {EntryTable()}.{Col(x => x.RecordUniqueId)} = @UniqueId
         return (sql, new {UniqueId = uniqueId, NowUtc = DateTime.UtcNow });
     }
     
-    public string BaseSelectSql()
+    public string BaseSelectSql(string groupId)
     {
-        var t = EntryTable();
-        var cRecordId    = EntryTable() + "." + Col(x => x.RecordUniqueId);
+        var t = EntryTable(groupId);
+        var vt = EntryValueTable(groupId);
+        var cRecordId    = t + "." + Col(x => x.RecordUniqueId);
         var cClusterId   = Col(x => x.ClusterId);
         var cGroupId     = Col(x => x.GroupId);
         var cEntryId     = Col(x => x.EntryId);
@@ -95,7 +125,7 @@ SELECT {cRecordId},
        {ColVal(x => x.ValueDateTime)},
        {ColVal(x => x.ValueGuid)}
 FROM {t}
-left join {EntryValueTable()} on {EntryValueTable()}.{ColVal(x => x.RecordUniqueId)} = {t}.{ColVal(x => x.RecordUniqueId)}";
+left join {vt} on {vt}.{ColVal(x => x.RecordUniqueId)} = {t}.{ColVal(x => x.RecordUniqueId)}";
     }
     
     public (string Sql, object Args) BuildQuerySql(string groupId, GenericRecordQueryCriteria criteria)
@@ -134,7 +164,7 @@ left join {EntryValueTable()} on {EntryValueTable()}.{ColVal(x => x.RecordUnique
             { "NowUtc", DateTime.UtcNow }
         };
 
-        var exists = BuildWhereClause(criteria.Filters, "e", "v2", args);
+        var exists = BuildWhereClause(criteria.Filters, "e", "v2", args, groupId);
         if (!string.IsNullOrEmpty(exists)) 
             where.Add(exists);
 
@@ -156,8 +186,8 @@ left join {EntryValueTable()} on {EntryValueTable()}.{ColVal(x => x.RecordUnique
             _ => $"base.{Col(x => x.CreatedAt)} DESC, base.{Col(x => x.RecordUniqueId)} DESC"
         };
 
-        var t = EntryTable();
-        var vt = EntryValueTable();
+        var t = EntryTable(groupId);
+        var vt = EntryValueTable(groupId);
 
         var baseSelect = $@"
 WITH base AS (
@@ -240,11 +270,11 @@ ORDER BY {baseOrderBy}
             { "NowUtc", DateTime.UtcNow }
         };
 
-        var exists = BuildWhereClause(criteria.Filters, "e", "v2", args);
+        var exists = BuildWhereClause(criteria.Filters, "e", "v2", args, groupId);
         if (!string.IsNullOrEmpty(exists))
             where.Add(exists);
 
-        var t = EntryTable();
+        var t = EntryTable(groupId);
         var countSql = $@"
 SELECT COUNT(*)
 FROM {t} e
@@ -399,7 +429,7 @@ WHERE {string.Join(" AND ", where)}
 
     // Convenience: build EXISTS clause string for a list of value filters.
     // Also merges the generated parameter values into the provided args dictionary.
-    public string BuildWhereClause(IList<GenericRecordValueFilter>? filters, string entryTableAlias, string entryValueTableAlias, IDictionary<string, object?> args)
+    public string BuildWhereClause(IList<GenericRecordValueFilter>? filters, string entryTableAlias, string entryValueTableAlias, IDictionary<string, object?> args, string? groupId = null)
     {
         if (filters is null || filters.Count == 0) return string.Empty;
 
@@ -422,9 +452,10 @@ WHERE {string.Join(" AND ", where)}
         var clauses = filterArgs.Select(x => x.Item1).Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
         if (clauses.Count == 0) return string.Empty;
 
+        var vt = groupId != null ? EntryValueTable(groupId) : EntryValueTable();
         var exists = $" exists (  " +
                      $"           select 1 " +
-                     $"             from {EntryValueTable()} as {entryValueTableAlias} " +
+                     $"             from {vt} as {entryValueTableAlias} " +
                      $"           where {entryTableAlias}.{Col(x => x.RecordUniqueId)} = {entryValueTableAlias}.{ColVal(x => x.RecordUniqueId)}" +
                      $"           and {string.Join(" AND ", clauses)}" +
                      $"   ) ";
@@ -432,13 +463,35 @@ WHERE {string.Join(" AND ", where)}
         return exists;
     }
     
-    public string EntryTable() => sql.TableNameFor<GenericRecordEntry>(additionalConnConfig);
+    private string EntryTable() => sql.TableNameFor<GenericRecordEntry>(additionalConnConfig);
 
-    public string EntryValueTable()
+    public string EntryTable(string groupId)
+    {
+        var suffix = ResolveFamilySuffix(groupId);
+        return string.IsNullOrEmpty(suffix) ? EntryTable() : $"{EntryTable()}{suffix}";
+    }
+
+    private string EntryValueTable()
     {
         var tablePrefix = sql.GetTablePrefix(additionalConnConfig);
         var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
         return $"{prefix}generic_record_entry_value";
+    }
+
+    public string EntryValueTable(string groupId)
+    {
+        var suffix = ResolveFamilySuffix(groupId);
+        return string.IsNullOrEmpty(suffix) ? EntryValueTable() : $"{EntryValueTable()}{suffix}";
+    }
+
+    public string EntryTableForSuffix(string suffix)
+    {
+        return string.IsNullOrEmpty(suffix) ? EntryTable() : $"{EntryTable()}{suffix}";
+    }
+
+    public string EntryValueTableForSuffix(string suffix)
+    {
+        return string.IsNullOrEmpty(suffix) ? EntryValueTable() : $"{EntryValueTable()}{suffix}";
     }
 
     public string Col(System.Linq.Expressions.Expression<Func<GenericRecordEntry, object?>> prop) => sql.ColumnNameFor(prop);
@@ -448,8 +501,8 @@ WHERE {string.Join(" AND ", where)}
 
     public (string Sql, IDictionary<string, object?> Args) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
     {
-        var t = EntryTable();
-        var cRecordId    = EntryTable() + "." + Col(x => x.RecordUniqueId);
+        var t = EntryTable(entry.GroupId);
+        var cRecordId    = t + "." + Col(x => x.RecordUniqueId);
         var cSubjectType = Col(x => x.SubjectType);
         var cSubjectId   = Col(x => x.SubjectId);
         var cExpiresAt   = Col(x => x.ExpiresAt);
@@ -474,7 +527,7 @@ WHERE {cRecordId} = @RecordUniqueId;");
 
     public (string Sql, IDictionary<string, object?> Args) BuildInsertEntrySql(SqlGenericRecordEntry entry)
     {
-        var t = EntryTable();
+        var t = EntryTable(entry.GroupId);
         // Include EntryIdGuid column; ensure your DDL has been updated accordingly
         var cols = $@"
 {Col(x => x.RecordUniqueId)},
@@ -510,7 +563,7 @@ WHERE {cRecordId} = @RecordUniqueId;");
     {
         if (entry.Values.Count == 0) return;
 
-        var vt = EntryValueTable();
+        var vt = EntryValueTable(entry.GroupId);
         var insertSql = $@"INSERT INTO {vt} (
 {ColVal(x => x.RecordUniqueId)},
 {ColVal(x => x.KeyName)},
@@ -543,7 +596,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
     {
         if (entry.Values.Count == 0) return;
 
-        var vt = EntryValueTable();
+        var vt = EntryValueTable(entry.GroupId);
         var insertSql = $@"INSERT INTO {vt} (
 {ColVal(x => x.RecordUniqueId)},
 {ColVal(x => x.KeyName)},
@@ -574,31 +627,31 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
     
     
 
-    public string BuildDeleteValuesSql(string idParamName = "@RecordUniqueId")
+    public string BuildDeleteValuesSql(string groupId, string idParamName = "@RecordUniqueId")
     {
-        var vt = EntryValueTable();
+        var vt = EntryValueTable(groupId);
         var cRecordId = Col(x => x.RecordUniqueId);
         return $"DELETE FROM {vt} WHERE {cRecordId} = {idParamName};";
     }
 
-    public string BuildDeleteEntrySql(string idParamName = "@RecordUniqueId")
+    public string BuildDeleteEntrySql(string groupId, string idParamName = "@RecordUniqueId")
     {
-        var t = EntryTable();
+        var t = EntryTable(groupId);
         var cRecordId = Col(x => x.RecordUniqueId);
         return $"DELETE FROM {t} WHERE {cRecordId} = {idParamName};";
     }
     
-    public string BuildDeleteValuesMultipleSql(string idsParamName = "@RecordUniqueIds")
+    public string BuildDeleteValuesMultipleSql(string groupId, string idsParamName = "@RecordUniqueIds")
     {
-        var vt = EntryValueTable();
+        var vt = EntryValueTable(groupId);
         var cRecordId = Col(x => x.RecordUniqueId);
         var inClause = sql.InClauseFor(cRecordId, idsParamName);
         return $"DELETE FROM {vt} WHERE {inClause};";
     }
 
-    public string BuildDeleteEntryMultipleSql(string idsParamName = "@RecordUniqueIds")
+    public string BuildDeleteEntryMultipleSql(string groupId, string idsParamName = "@RecordUniqueIds")
     {
-        var t = EntryTable();
+        var t = EntryTable(groupId);
         var cRecordId = Col(x => x.RecordUniqueId);
         var inClause = sql.InClauseFor(cRecordId, idsParamName);
         return $"DELETE FROM {t} WHERE {inClause};";
@@ -746,7 +799,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
     
     public (string, IList<object>) BuildInsertEntryValuesSql(SqlGenericRecordEntry entry)
     {
-        var vt = EntryValueTable();
+        var vt = EntryValueTable(entry.GroupId);
         var insertSql = $@"INSERT INTO {vt} (
 {ColVal(x => x.RecordUniqueId)},
 {ColVal(x => x.KeyName)},

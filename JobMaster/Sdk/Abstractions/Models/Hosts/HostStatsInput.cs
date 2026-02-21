@@ -1,18 +1,15 @@
-namespace JobMaster.Api.ApiModels;
+﻿namespace JobMaster.Sdk.Abstractions.Models.Hosts;
 
-public class ApiHostModel
+internal class HostStatsInput
 {
-    public string Id { get; set; } = string.Empty;
-    public string DisplayName { get; set; } = string.Empty;
-    
     public double? CpuUsagePercent { get; set; }
     public long? MemoryTotalBytes { get; set; }
     public long? MemoryUsedBytes { get; set; }
     
     public int ThreadCount { get; set; }
     public int HandleCount { get; set; }
-    public int ProcessorCount { get; set; }
+   
     public long GcTotalMemory { get; set; }
-    public string? OsDescription { get; set; }
+    
     public long? DiskAvailableBytes { get; set; }
 }

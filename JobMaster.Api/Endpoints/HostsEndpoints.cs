@@ -56,7 +56,11 @@ internal static class HostsEndpoints
                 MemoryTotalBytes = totalBytes,
                 MemoryUsedBytes = usedBytes,
                 ThreadCount = rng.Next(20, 500),
-                HandleCount = rng.Next(200, 5000)
+                HandleCount = rng.Next(200, 5000),
+                ProcessorCount = rng.Next(2, 16),
+                GcTotalMemory = (long)(rng.NextDouble() * 1024 * 1024 * 1024),
+                OsDescription = $"Windows Server 2019",
+                DiskAvailableBytes = (long)(rng.NextDouble() * 1024L * 1024 * 1024 * 500)
             });
         }
 

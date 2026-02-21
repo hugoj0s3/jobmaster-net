@@ -15,17 +15,17 @@ namespace JobMaster.Sdk.Services.Agents;
 
 internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
 {
-    private IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory = null!;
+    private IAgentComponentFactory agentComponentFactory = null!;
     private readonly IJobMasterRuntime jobMasterRuntime;
     private readonly IJobMasterLogger logger;
 
     public AgentJobsDispatcherService(
         JobMasterClusterConnectionConfig clusterConnectionConfig, 
-        IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory,
+        IAgentComponentFactory agentComponentFactory,
         IJobMasterRuntime jobMasterRuntime,
         IJobMasterLogger logger) : base(clusterConnectionConfig)
     {
-        this.agentJobsDispatcherRepositoryFactory = agentJobsDispatcherRepositoryFactory;
+        this.agentComponentFactory = agentComponentFactory;
         this.jobMasterRuntime = jobMasterRuntime;
         this.logger = logger;
     }
@@ -183,7 +183,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
 
     private IAgentJobsDispatcherRepository GetJobDispatcherRepository(AgentConnectionId agentConnectionId)
     {
-        return agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        return agentComponentFactory.GetRepository(agentConnectionId);
     }
     
     private OperationThrottler GetOperationThrottler(AgentConnectionId agentConnectionId)

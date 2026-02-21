@@ -15,14 +15,14 @@ namespace JobMaster.Sdk.Background.Runners;
 
 internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRunnersFactory
 {
-    private readonly IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory;
+    private readonly IAgentComponentFactory agentComponentFactory;
     private IJobMasterClusterAwareComponentFactory AwareComponentFactory => JobMasterClusterAwareComponentFactories.GetFactory(this.ClusterConnConfig.ClusterId);
     
     public BucketRunnersFactory(
-        IAgentJobsDispatcherRepositoryFactory agentJobsDispatcherRepositoryFactory, 
+        IAgentComponentFactory agentComponentFactory, 
         JobMasterClusterConnectionConfig clusterConnectionConfig) : base(clusterConnectionConfig)
     {
-        this.agentJobsDispatcherRepositoryFactory = agentJobsDispatcherRepositoryFactory;
+        this.agentComponentFactory = agentComponentFactory;
     }
     
     
@@ -38,7 +38,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
         if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
         {
@@ -59,7 +59,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
         if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
         {
@@ -80,7 +80,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
         if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
         {
@@ -101,7 +101,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
         
         if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
         {
@@ -122,7 +122,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
         
         if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
         {
@@ -141,7 +141,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
 
     public ISaveRecurringSchedulerRunner NewSaveRecurringSchedulerRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, AgentConnectionId agentConnectionId)
     {
-        var agentJobsDispatcherRepository = agentJobsDispatcherRepositoryFactory.GetRepository(agentConnectionId);
+        var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
         
         if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
         {

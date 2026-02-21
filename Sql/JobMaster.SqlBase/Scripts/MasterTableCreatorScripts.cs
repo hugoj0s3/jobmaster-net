@@ -9,10 +9,32 @@ internal static class MasterTableCreatorScripts
 {
     public static string CreateGenericRecordTablesScript(ISqlGenerator sqlGenerator, string tablePrefix = "")
     {
-       var script1 = CreateGenericRecordEntry(sqlGenerator, tablePrefix);
-       var script2 = CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix);
+       var scripts = new List<string>();
        
-       return $"{script1}\n{script2}";
+       // Default table (no suffix) - used by ClusterConfiguration
+       scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, string.Empty));
+       scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, string.Empty));
+       
+       // Family tables
+       foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+       {
+           scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, suffix));
+           scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, suffix));
+       }
+       
+       return string.Join("\n", scripts);
+    }
+
+    public static IReadOnlyList<string> AllGenericRecordTableNames(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var names = new List<string>();
+        var baseEntryName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+        names.Add(baseEntryName);
+        foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+        {
+            names.Add($"{baseEntryName}{suffix}");
+        }
+        return names;
     }
 
     public static string CreateRecurringScheduleTablesScript(ISqlGenerator sqlGenerator, string tablePrefix)
@@ -282,9 +304,10 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
-       var tableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var baseTableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var tableName = string.IsNullOrEmpty(familySuffix) ? baseTableName : $"{baseTableName}{familySuffix}";
        
         var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
         var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -377,11 +400,12 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
         var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
        
-         var tableName = $"{prefix}generic_record_entry_value";
+         var baseValueTableName = $"{prefix}generic_record_entry_value";
+         var tableName = string.IsNullOrEmpty(familySuffix) ? baseValueTableName : $"{baseValueTableName}{familySuffix}";
 
          var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
          var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -421,10 +445,12 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{valueDateTime} {valueDateTimeType}");
         columns.Add($"{valueGuid} {valueGuidType}");
         
-        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value");
-        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value");
+        var sfx = string.IsNullOrEmpty(familySuffix) ? "" : familySuffix;
+        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value{sfx}");
+        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value{sfx}");
         var primaryKey = $" CONSTRAINT {primaryKeyName} PRIMARY KEY ({recordIdCol}, {keyNameCol})";
-        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)} ({recordIdCol})";
+        var entryTableName = string.IsNullOrEmpty(familySuffix) ? sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix) : $"{sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)}{familySuffix}";
+        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {entryTableName} ({recordIdCol})";
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)}, \n {primaryKey},\n {foreignKey}); \n";
         
         var indexScripts = new List<string>();

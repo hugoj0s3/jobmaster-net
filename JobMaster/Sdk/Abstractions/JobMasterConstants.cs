@@ -10,7 +10,7 @@ internal static class JobMasterConstants
     /// The maximum time allowed between worker heartbeats before a worker is considered dead.
     /// Workers must send heartbeats more frequently than this threshold to be considered alive.
     /// </summary>
-    public static readonly TimeSpan HeartbeatThreshold = TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan AgentHeartbeatThreshold = TimeSpan.FromSeconds(30);
     
     /// <summary>
     /// The grace period added to HeartbeatThreshold before permanently cleaning up a dead worker.

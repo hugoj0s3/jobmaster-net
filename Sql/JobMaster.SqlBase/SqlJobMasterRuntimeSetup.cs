@@ -67,12 +67,18 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var sql = SqlGeneratorFactory.Get(RepositoryTypeId);
             var tablePrefix = sql.GetTablePrefix(clusterConfig.AdditionalConnConfig);
             
-            var genericRecordTableExistsSql = sql.TableExistsSql(tablePrefix, sql.TableNameFor<GenericRecordEntry>());
-            var genericRecordTableExists = await conn.QueryFirstOrDefaultAsync<bool>(genericRecordTableExistsSql, transaction: transaction);
-            if (!genericRecordTableExists)
+            // Provision generic record family tables (default + all family suffixes)
+            var allEntryTableNames = MasterTableCreatorScripts.AllGenericRecordTableNames(sql, tablePrefix);
+            foreach (var entryTableName in allEntryTableNames)
             {
-                var genericRecordTablesScript = MasterTableCreatorScripts.CreateGenericRecordTablesScript(sql, tablePrefix);
-                await conn.ExecuteAsync(genericRecordTablesScript, transaction: transaction);
+                var tableExistsSql = sql.TableExistsSql(tablePrefix, entryTableName);
+                var tableExists = await conn.QueryFirstOrDefaultAsync<bool>(tableExistsSql, transaction: transaction);
+                if (!tableExists)
+                {
+                    var genericRecordTablesScript = MasterTableCreatorScripts.CreateGenericRecordTablesScript(sql, tablePrefix);
+                    await conn.ExecuteAsync(genericRecordTablesScript, transaction: transaction);
+                    break; // All tables created at once, no need to check the rest
+                }
             }
             
             var distributedLockerTableExistsSql = sql.TableExistsSql(tablePrefix, "distributed_lock");

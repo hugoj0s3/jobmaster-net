@@ -28,8 +28,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 {
     public AgentConnectionId AgentConnectionId { get; private set; } = null!;
     public string AgentWorkerId { get; private set; } = string.Empty;
-
-    public string WorkerName { get; private set; } = string.Empty;
+    
     public string? WorkerLane { get; private set; }
 
     public string AgentRepositoryTypeId { get; private set; } = string.Empty;
@@ -124,11 +123,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var workerName = workerDefinition.WorkerName;
         var workerLane = workerDefinition.WorkerLane;
         
-        if (string.IsNullOrEmpty(workerName))
-        {
-            throw new ArgumentException("Worker name cannot be empty");
-        }
-        
         var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeInactive: true);
         if (clusterConfig == null)
         {
@@ -160,7 +154,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             AgentRepositoryTypeId = agentConnectionString.RepositoryTypeId,
             ClusterConnConfig = clusterConfig,
             ServiceProvider = serviceProvider,
-            WorkerName = workerName,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
             BatchSize = workerDefinition.BatchSize,
             BucketAwareSemaphoreSlim = new SemaphoreSlim(qtyOfBuckets),

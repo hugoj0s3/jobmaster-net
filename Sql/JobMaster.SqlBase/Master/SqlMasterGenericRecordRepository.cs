@@ -108,7 +108,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             }
 
             // Replace values: clear and insert fresh to reflect current payload
-            conn.Execute(BuildDeleteValuesSql(), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             InsertEntryValues(conn, transaction, sqlEntry);
 
             transaction.Commit();
@@ -136,7 +136,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             }
             
             // Replace values: clear and insert fresh to reflect current payload
-            await conn.ExecuteAsync(BuildDeleteValuesSql(), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             await InsertEntryValuesAsync(conn, transaction, sqlEntry);
 
             transaction.Commit();
@@ -197,7 +197,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             
             conn.Execute(sqlText, args, transaction);
             // replace values
-            conn.Execute(BuildDeleteValuesSql(), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             InsertEntryValues(conn, transaction, sqlEntry);
             
             transaction.Commit();
@@ -219,7 +219,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
             
             await conn.ExecuteAsync(sqlText, args, transaction);
-            await conn.ExecuteAsync(BuildDeleteValuesSql(), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             await InsertEntryValuesAsync(conn, transaction, sqlEntry);
             
             transaction.Commit();
@@ -239,8 +239,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         var recordUniqueId = GenericRecordEntry.UniqueId(ClusterConnConfig.ClusterId, groupId, id);
         try
         {
-            conn.Execute(BuildDeleteValuesSql(), new { RecordUniqueId = recordUniqueId });
-            conn.Execute(BuildDeleteEntrySql(), new { RecordUniqueId = recordUniqueId });
+            conn.Execute(BuildDeleteValuesSql(groupId), new { RecordUniqueId = recordUniqueId });
+            conn.Execute(BuildDeleteEntrySql(groupId), new { RecordUniqueId = recordUniqueId });
             
             transaction.Commit();
         }
@@ -258,8 +258,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         var recordUniqueId = GenericRecordEntry.UniqueId(ClusterConnConfig.ClusterId, groupId, id);
         try
         {
-            await conn.ExecuteAsync(BuildDeleteValuesSql(), new { RecordUniqueId = recordUniqueId }, transaction);
-            await conn.ExecuteAsync(BuildDeleteEntrySql(), new { RecordUniqueId = recordUniqueId }, transaction);
+            await conn.ExecuteAsync(BuildDeleteValuesSql(groupId), new { RecordUniqueId = recordUniqueId }, transaction);
+            await conn.ExecuteAsync(BuildDeleteEntrySql(groupId), new { RecordUniqueId = recordUniqueId }, transaction);
             transaction.Commit();
         }
         catch (Exception)
@@ -278,8 +278,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = EntryTable();
-            var cRecordId  = EntryTable() + "." + Col(x => x.RecordUniqueId);
+            var t = genericUtil.EntryTable(groupId);
+            var cRecordId  = t + "." + Col(x => x.RecordUniqueId);
             var cClusterId = Col(x => x.ClusterId);
             var cGroupId   = Col(x => x.GroupId);
             var cCreatedAt = Col(x => x.CreatedAt);
@@ -305,7 +305,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
             }
 
             // Delete values first
-            var vt = EntryValueTable();
+            var vt = genericUtil.EntryValueTable(groupId);
             var cValRecordId = ColVal(x => x.RecordUniqueId);
             var delValuesSql = $"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}";
             await conn.ExecuteAsync(delValuesSql, new { RecordUniqueIds = ids }, tx);
@@ -333,43 +333,48 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
         using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            // Batch size tuned to avoid parameter limits on SQL Server and large command texts in general
-            for (int offset = 0; offset < records.Count; offset += MaxBatchSize)
+            // Group records by family so each INSERT targets the correct table
+            var byFamily = records.GroupBy(r => GenericRecordSqlUtil.ResolveFamilySuffix(r.GroupId));
+            foreach (var familyGroup in byFamily)
             {
-                var batch = records.Skip(offset).Take(Math.Min(MaxBatchSize, records.Count - offset)).ToList();
-
-                // Map to SQL entries first
-                var sqlEntries = batch.Select(MapToSqlEntry).ToList();
-
-                // Build one multi-values INSERT for entries
-                var t = EntryTable();
-                var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.SubjectType)}, {Col(x => x.SubjectId)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}";
-                var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
-                var dynParams = new DynamicParameters();
-
-                for (int i = 0; i < sqlEntries.Count; i++)
+                var familyRecords = familyGroup.ToList();
+                for (int offset = 0; offset < familyRecords.Count; offset += MaxBatchSize)
                 {
-                    var e = sqlEntries[i];
-                    sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @SubjectType_{i}, @SubjectId_{i}, @CreatedAt_{i}, @ExpiresAt_{i})");
-                    if (i < sqlEntries.Count - 1) sb.Append(",\n"); else sb.Append(";");
+                    var batch = familyRecords.Skip(offset).Take(Math.Min(MaxBatchSize, familyRecords.Count - offset)).ToList();
 
-                    dynParams.Add($"RecordUniqueId_{i}", e.RecordUniqueId);
-                    dynParams.Add($"ClusterId_{i}", e.ClusterId);
-                    dynParams.Add($"GroupId_{i}", e.GroupId);
-                    dynParams.Add($"EntryId_{i}", e.EntryId);
-                    dynParams.Add($"EntryIdGuid_{i}", e.EntryIdGuid);
-                    dynParams.Add($"SubjectType_{i}", e.SubjectType);
-                    dynParams.Add($"SubjectId_{i}", e.SubjectId);
-                    dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
-                    dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
-                }
+                    // Map to SQL entries first
+                    var sqlEntries = batch.Select(MapToSqlEntry).ToList();
 
-                await conn.ExecuteAsync(sb.ToString(), dynParams, transaction);
+                    // Build one multi-values INSERT for entries
+                    var t = genericUtil.EntryTable(batch[0].GroupId);
+                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.SubjectType)}, {Col(x => x.SubjectId)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}";
+                    var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
+                    var dynParams = new DynamicParameters();
 
-                // Insert values for each entry (uses Dapper multi-exec under the hood per entry)
-                foreach (var e in sqlEntries)
-                {
-                    await InsertEntryValuesAsync(conn, transaction, e);
+                    for (int i = 0; i < sqlEntries.Count; i++)
+                    {
+                        var e = sqlEntries[i];
+                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @SubjectType_{i}, @SubjectId_{i}, @CreatedAt_{i}, @ExpiresAt_{i})");
+                        if (i < sqlEntries.Count - 1) sb.Append(",\n"); else sb.Append(";");
+
+                        dynParams.Add($"RecordUniqueId_{i}", e.RecordUniqueId);
+                        dynParams.Add($"ClusterId_{i}", e.ClusterId);
+                        dynParams.Add($"GroupId_{i}", e.GroupId);
+                        dynParams.Add($"EntryId_{i}", e.EntryId);
+                        dynParams.Add($"EntryIdGuid_{i}", e.EntryIdGuid);
+                        dynParams.Add($"SubjectType_{i}", e.SubjectType);
+                        dynParams.Add($"SubjectId_{i}", e.SubjectId);
+                        dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
+                        dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
+                    }
+
+                    await conn.ExecuteAsync(sb.ToString(), dynParams, transaction);
+
+                    // Insert values for each entry (uses Dapper multi-exec under the hood per entry)
+                    foreach (var e in sqlEntries)
+                    {
+                        await InsertEntryValuesAsync(conn, transaction, e);
+                    }
                 }
             }
 
@@ -386,54 +391,63 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
     {
         if (limit <= 0) throw new ArgumentException("Limit must be greater than 0");
         
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var t = EntryTable();
-            var cRecordId   = EntryTable() + "." + Col(x => x.RecordUniqueId);
-            var cClusterId  = Col(x => x.ClusterId);
-            var cExpiresAt  = Col(x => x.ExpiresAt);
+        var totalDeleted = 0;
+        // Iterate over all family suffixes plus the default (empty) table
+        var suffixes = new List<string> { string.Empty };
+        suffixes.AddRange(GenericRecordSqlUtil.AllFamilySuffixes);
 
-            // Select ids to delete (scoped to cluster and expired), ordered and limited
-            var selectSql = new StringBuilder($@"SELECT {cRecordId}
+        foreach (var suffix in suffixes)
+        {
+            using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+            using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+            try
+            {
+                var t = genericUtil.EntryTableForSuffix(suffix);
+                var cRecordId   = t + "." + Col(x => x.RecordUniqueId);
+                var cClusterId  = Col(x => x.ClusterId);
+                var cExpiresAt  = Col(x => x.ExpiresAt);
+
+                var selectSql = new StringBuilder($@"SELECT {cRecordId}
 FROM {t}
 WHERE {cClusterId} = @ClusterId AND {cExpiresAt} IS NOT NULL AND {cExpiresAt} <= @ExpiresAtTo
 ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
 
-            selectSql.AppendLine();
-            selectSql.Append(sql.OffsetQueryFor(limit, 0));
+                selectSql.AppendLine();
+                selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
-            var ids = (await conn.QueryAsync<string>(selectSql.ToString(), new
-            {
-                ClusterId = ClusterConnConfig.ClusterId,
-                ExpiresAtTo = DateTime.SpecifyKind(expiresAtTo, DateTimeKind.Utc)
-            }, tx)).ToList();
+                var ids = (await conn.QueryAsync<string>(selectSql.ToString(), new
+                {
+                    ClusterId = ClusterConnConfig.ClusterId,
+                    ExpiresAtTo = DateTime.SpecifyKind(expiresAtTo, DateTimeKind.Utc)
+                }, tx)).ToList();
 
-            if (ids.Count == 0)
-            {
+                if (ids.Count == 0)
+                {
+                    tx.Commit();
+                    continue;
+                }
+
+                // Delete values first
+                var vt = genericUtil.EntryValueTableForSuffix(suffix);
+                var cValRecordId = ColVal(x => x.RecordUniqueId);
+                var delValuesSql = $"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}";
+                await conn.ExecuteAsync(delValuesSql, new { RecordUniqueIds = ids }, tx);
+
+                // Then delete entries
+                var delEntriesSql = $"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}";
+                await conn.ExecuteAsync(delEntriesSql, new { RecordUniqueIds = ids }, tx);
+
                 tx.Commit();
-                return 0;
+                totalDeleted += ids.Count;
             }
-
-            // Delete values first
-            var vt = EntryValueTable();
-            var cValRecordId = ColVal(x => x.RecordUniqueId);
-            var delValuesSql = $"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}";
-            await conn.ExecuteAsync(delValuesSql, new { RecordUniqueIds = ids }, tx);
-
-            // Then delete entries
-            var delEntriesSql = $"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}";
-            await conn.ExecuteAsync(delEntriesSql, new { RecordUniqueIds = ids }, tx);
-
-            tx.Commit();
-            return ids.Count;
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
+
+        return totalDeleted;
     }
 
     public int Count(string groupId, GenericRecordQueryCriteria? criteria = null)
@@ -453,11 +467,6 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         var (sqlText, args) = genericUtil.BuildCountSql(groupId, criteria);
         return await conn.ExecuteScalarAsync<int>(sqlText, args);
     }
-    
-    // Helpers
-    private string EntryTable() => genericUtil.EntryTable();
-
-    private string EntryValueTable() => genericUtil.EntryValueTable();
 
     private string Col(Expression<Func<GenericRecordEntry, object?>> prop) => genericUtil.Col(prop);
     
@@ -513,13 +522,13 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         await conn.ExecuteAsync(insertSql, rows, tx);
     }
 
-    private string BuildDeleteValuesSql()
+    private string BuildDeleteValuesSql(string groupId)
     {
-        return genericUtil.BuildDeleteValuesSql();
+        return genericUtil.BuildDeleteValuesSql(groupId);
     }
 
-    private string BuildDeleteEntrySql()
+    private string BuildDeleteEntrySql(string groupId)
     {
-        return genericUtil.BuildDeleteEntrySql();
+        return genericUtil.BuildDeleteEntrySql(groupId);
     }
 }

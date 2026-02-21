@@ -2,7 +2,9 @@ using JobMaster.NatsJetStream.Agents;
 using JobMaster.NatsJetStream.Background;
 using JobMaster.Sdk;
 using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Ioc.Setup;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.NatsJetStream;
 
@@ -13,6 +15,8 @@ internal static class NatsJetStreamIocRegistration
     
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
+        registration.AddFootprintResolver<NatsJetStreamAgentFootprintResolver>(RepositoryType);
+
         // Wire the generic dispatcher to use NatsJetStream raw repositories
         registration.AddRepositoryDispatcher<NatsJetStreamJobsDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository>(RepositoryType);
        

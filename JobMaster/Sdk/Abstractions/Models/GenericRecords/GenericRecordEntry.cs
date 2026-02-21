@@ -11,12 +11,22 @@ namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 internal static class MasterGenericRecordGroupIds
 {
-    public const string Bucket = "Bucket";
     public const string ClusterConfiguration = "ClusterConfiguration";
+
+    public const string Host = "Host";
     public const string AgentWorker = "AgentWorker";
+    public const string Bucket = "Bucket";
+    public const string AgentConnection = "AgentConnection"; // Don't store connection string or any sensitive information.
+    
+    
     public const string Sentinel = "Sentinel";
     public const string AgentWorkerHeartbeat = "AgentWorkerHeartbeat";
+    public const string AgentConnectionHeartbeat = "AgentConnectionHeartbeat";
+    public const string HostHeartbeat = "HostHeartbeat";
+    public const string HostStats = "HostStats";
+    
     public const string Log = "Log";
+    
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
 }
