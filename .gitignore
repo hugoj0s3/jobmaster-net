@@ -147,3 +147,5 @@ riderModule.iml
 
 # Windsurf rules
 /.windsurf/rules/
+
+*.cs text=auto
