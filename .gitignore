@@ -89,7 +89,6 @@ csx/
 AppPackages/
 
 # Others
-sql/
 *.Cache
 ClientBin/
 [Ss]tyle[Cc]op.*
@@ -148,4 +147,6 @@ riderModule.iml
 # Windsurf rules
 /.windsurf/rules/
 
-*.cs text=auto
+# nuget packages
+*.nupkg
+*.snupkg
