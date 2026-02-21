@@ -9,6 +9,7 @@
 	import { RecurrenceExpressionTypeId } from "$lib/api/enums";
 	import { RecurrenceExpressionUtil } from '$lib/helper/recurrence-expression-util';
 	import { goto } from '$app/navigation';
+	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 
 	type RecurringScheduleStatus = components["schemas"]["RecurringScheduleStatus"];
 	type RecurringScheduleType = components["schemas"]["RecurringScheduleType"];
@@ -31,9 +32,18 @@
 
 	let rows: RecurringScheduleRow[] = [];
 
-	let query = "";
-	let statusFilter: "All Statuses" | RecurringScheduleStatusLabel = "All Statuses";
-	let typeFilter = "All Job Types";
+	const urlParamDefs = {
+		q: { defaultValue: "" },
+		status: { defaultValue: "All Statuses" as "All Statuses" | RecurringScheduleStatusLabel },
+		type: { defaultValue: "All Job Types" },
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 12, ...Serializers.number }
+	};
+
+	const _initParams = readUrlParams(urlParamDefs);
+	let query = _initParams.q;
+	let statusFilter: "All Statuses" | RecurringScheduleStatusLabel = _initParams.status;
+	let typeFilter = _initParams.type;
 
 	let refreshIntervalSec = 20;
 	let lastUpdatedAt = new Date();
@@ -59,8 +69,20 @@
 
 	$: jobTypes = Array.from(new Set(rows.map((r) => r.jobType)));
 
-	let pageIndex = 0;
-	let pageSize = 12;
+	let pageIndex = _initParams.page;
+	let pageSize = _initParams.size;
+
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			q: query,
+			status: statusFilter,
+			type: typeFilter,
+			page: pageIndex,
+			size: pageSize
+		});
+	}
+
+	$: query, statusFilter, typeFilter, pageIndex, pageSize, syncToUrl();
 
 	let lastFilterKey = "";
 	$: {
@@ -271,7 +293,7 @@
 			</div>
 		</div>
 
-		<div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+		<div class="mt-6 flex flex-col gap-3">
 			<div class="flex flex-wrap items-center gap-3">
 				<select class="select select-sm select-bordered" bind:value={statusFilter}>
 					<option>All Statuses</option>
@@ -287,21 +309,23 @@
 						<option value={jt}>{jt}</option>
 					{/each}
 				</select>
+			</div>
 
+			<div class="flex flex-wrap items-center justify-between gap-3">
 				<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
 					<span class="opacity-60">🔎</span>
 					<input class="grow" type="text" placeholder="Search schedules..." bind:value={query} />
 				</label>
-			</div>
 
-			<Pager
-				bind:pageIndex
-				bind:pageSize
-				totalCount={filtered.length}
-				currentCount={paged.length}
-				disabled={isRefreshing}
-				showPageSize={true}
-			/>
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					totalCount={filtered.length}
+					currentCount={paged.length}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
+			</div>
 		</div>
 
 		<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -374,7 +398,6 @@
 			</div>
 
 			</div>
-		</div>
 	</div>
 
 </div>

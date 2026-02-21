@@ -2,6 +2,7 @@
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import Pager from "$lib/components/Pager.svelte";
+	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	type Health = "OK" | "Warning" | "Error";
 
@@ -23,13 +24,34 @@
 
 	const clusterId = () => $page.params.cluster;
 
-	let query = "";
-	let pageIndex = 0;
-	let pageSize = 10;
-
 	type SortCol = "name" | "cluster" | "health" | "workers" | "buckets";
-	let sortBy: SortCol = "name";
-	let sortAsc = true;
+
+	const urlParamDefs = {
+		q: { defaultValue: "" },
+		sortBy: { defaultValue: "name" as SortCol },
+		sortAsc: { defaultValue: true, ...Serializers.boolean },
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 10, ...Serializers.number }
+	};
+
+	const _initParams = readUrlParams(urlParamDefs);
+	let query = _initParams.q;
+	let pageIndex = _initParams.page;
+	let pageSize = _initParams.size;
+	let sortBy: SortCol = _initParams.sortBy;
+	let sortAsc = _initParams.sortAsc;
+
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			q: query,
+			sortBy,
+			sortAsc,
+			page: pageIndex,
+			size: pageSize
+		});
+	}
+
+	$: query, sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
 
 	function toggleSort(col: SortCol) {
 		if (sortBy === col) {
@@ -144,7 +166,7 @@
 			</div>
 		{/if}
 
-		<div class="mt-6 flex items-center justify-end gap-3">
+		<div class="flex items-center justify-between gap-3 mt-6">
 			<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
 				<span class="opacity-60">🔎</span>
 				<input
@@ -154,18 +176,17 @@
 					bind:value={query}
 				/>
 			</label>
+
+			<Pager
+				bind:pageIndex
+				bind:pageSize
+				{totalCount}
+				{currentCount}
+				showPageSize={true}
+			/>
 		</div>
 
-		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
-			<div class="flex justify-end px-5 pt-4">
-				<Pager
-					bind:pageIndex
-					bind:pageSize
-					{totalCount}
-					{currentCount}
-					showPageSize={true}
-				/>
-			</div>
+		<div class="mt-2 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="overflow-x-auto">
 				<table class="table">
 					<thead>

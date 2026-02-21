@@ -5,11 +5,12 @@
 
     export let title: string = "Filters";
     export let showWhenEmpty: boolean = false;
+    export let initialValues: FilterValues = {};
 
     const dispatch = createEventDispatcher<{ change: FilterValues }>();
 
-    const draftValues = writable<FilterValues>({});
-    const appliedValues = writable<FilterValues>({});
+    const draftValues = writable<FilterValues>({ ...initialValues });
+    const appliedValues = writable<FilterValues>({ ...initialValues });
 
     function isActiveValue(value: FilterValue): boolean {
         if (value === null || value === undefined) return false;
@@ -69,7 +70,7 @@
 </script>
 
 {#if showWhenEmpty || open || $hasActive}
-    <div class="mt-4">
+    <div>
         <div class="flex flex-wrap items-center gap-2">
             <button class="btn btn-ghost btn-sm" on:click={() => (open = !open)} aria-expanded={open}>
                 {title}
@@ -94,7 +95,7 @@
         </div>
     </div>
 {:else}
-    <div class="mt-4">
+    <div>
         <button class="btn btn-ghost btn-sm" on:click={() => (open = true)}>{title}</button>
     </div>
 {/if}

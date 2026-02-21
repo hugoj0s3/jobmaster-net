@@ -7,6 +7,7 @@
 	import { BucketStatus } from "$lib/api/enums";
 	import Pager from "$lib/components/Pager.svelte";
 	import { createCopyFeedback } from "$lib/helper/clipboard-util";
+	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
@@ -39,8 +40,16 @@
 	let lastUpdatedAt = new Date();
 	let isRefreshing = false;
 
-	let statusFilter: "all" | BucketStatusLabel = "all";
-	let search = "";
+	const urlParamDefs = {
+		status: { defaultValue: "all" as "all" | BucketStatusLabel },
+		search: { defaultValue: "" },
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 12, ...Serializers.number }
+	};
+
+	const _initParams = readUrlParams(urlParamDefs);
+	let statusFilter: "all" | BucketStatusLabel = _initParams.status;
+	let search = _initParams.search;
 
 	let allBuckets: BucketRow[] = [];
 
@@ -52,8 +61,19 @@
 		draining: 0
 	};
 
-	let pageSize = 12;
-	let pageIndex = 0;
+	let pageSize = _initParams.size;
+	let pageIndex = _initParams.page;
+
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			status: statusFilter,
+			search,
+			page: pageIndex,
+			size: pageSize
+		});
+	}
+
+	$: statusFilter, search, pageIndex, pageSize, syncToUrl();
 	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
@@ -309,32 +329,32 @@
 
 		<!-- Table -->
 		<section class="mt-10">
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<div class="flex flex-nowrap items-center gap-3">
-					<select class="select select-sm select-bordered" bind:value={statusFilter}>
-						<option value="all">Status: All</option>
-						<option value="Active">Active</option>
-						<option value="Completing">Completing</option>
-						<option value="ReadyToDrain">Ready to Drain</option>
-						<option value="Draining">Draining</option>
-						<option value="Lost">Lost</option>
-						<option value="ReadyToDelete">Ready to Delete</option>
-					</select>
+			<div class="flex flex-col gap-3">
+				<select class="select select-sm select-bordered w-fit" bind:value={statusFilter}>
+					<option value="all">Status: All</option>
+					<option value="Active">Active</option>
+					<option value="Completing">Completing</option>
+					<option value="ReadyToDrain">Ready to Drain</option>
+					<option value="Draining">Draining</option>
+					<option value="Lost">Lost</option>
+					<option value="ReadyToDelete">Ready to Delete</option>
+				</select>
 
+				<div class="flex items-center justify-between gap-3">
 					<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
 						<span class="opacity-60">🔎</span>
 						<input class="grow" placeholder="Search buckets..." bind:value={search} />
 					</label>
-				</div>
 
-				<Pager
-					bind:pageIndex
-					bind:pageSize
-					totalCount={bucketsTotalCount}
-					currentCount={paginatedBuckets.length}
-					disabled={isRefreshing}
-					showPageSize={true}
-				/>
+					<Pager
+						bind:pageIndex
+						bind:pageSize
+						totalCount={bucketsTotalCount}
+						currentCount={paginatedBuckets.length}
+						disabled={isRefreshing}
+						showPageSize={true}
+					/>
+				</div>
 			</div>
 
 				<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">

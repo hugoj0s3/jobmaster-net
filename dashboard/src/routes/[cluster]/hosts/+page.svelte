@@ -5,6 +5,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import Pager from "$lib/components/Pager.svelte";
+	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -30,13 +31,36 @@
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
 
-	let activeTab: "All" | "Online" | "Offline" = "All";
-	let q = "";
-	let sortBy: "host" | "cpu" | "mem" = "host";
-	let sortDir: "asc" | "desc" = "asc";
+	const urlParamDefs = {
+		tab: { defaultValue: "All" as "All" | "Online" | "Offline" },
+		q: { defaultValue: "" },
+		sortBy: { defaultValue: "host" as "host" | "cpu" | "mem" },
+		sortDir: { defaultValue: "asc" as "asc" | "desc" },
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 10, ...Serializers.number }
+	};
 
-	let pageIndex = 0;
-	let pageSize = 10;
+	const _initParams = readUrlParams(urlParamDefs);
+	let activeTab: "All" | "Online" | "Offline" = _initParams.tab;
+	let q = _initParams.q;
+	let sortBy: "host" | "cpu" | "mem" = _initParams.sortBy;
+	let sortDir: "asc" | "desc" = _initParams.sortDir;
+
+	let pageIndex = _initParams.page;
+	let pageSize = _initParams.size;
+
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			tab: activeTab,
+			q,
+			sortBy,
+			sortDir,
+			page: pageIndex,
+			size: pageSize
+		});
+	}
+
+	$: activeTab, q, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
 
 	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
@@ -296,8 +320,19 @@
 			</div>
 		</div>
 
+		<div class="flex justify-end mt-6">
+			<Pager
+				bind:pageIndex
+				bind:pageSize
+				{totalCount}
+				{currentCount}
+				disabled={isRefreshing}
+				showPageSize={true}
+			/>
+		</div>
+
 		<!-- Filters row -->
-		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-6">
+		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-4">
 			<div class="card-body gap-4">
 				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<!-- Tabs -->
@@ -335,14 +370,6 @@
 							</button>
 						</div>
 
-						<Pager
-							bind:pageIndex
-							bind:pageSize
-							{totalCount}
-							{currentCount}
-							disabled={isRefreshing}
-							showPageSize={true}
-						/>
 					</div>
 				</div>
 

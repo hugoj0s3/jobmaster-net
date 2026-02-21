@@ -160,13 +160,9 @@
 
         if (type === "multiselect") {
             const arr = Array.isArray(v) ? v : [];
-            const labels = options
-                .filter((o) => arr.some((x) => isEqual(x, o.value)))
-                .map((o) => o.label);
-            if (labels.length === 0) return "";
-            const first = labels.slice(0, 2).join(", ");
-            const more = labels.length > 2 ? ", …" : "";
-            return `${first}${more} (${labels.length} Total)`;
+            const count = options.filter((o) => arr.some((x) => isEqual(x, o.value))).length;
+            if (count === 0) return "";
+            return `${count} selected`;
         }
 
         if (type === "single") {
