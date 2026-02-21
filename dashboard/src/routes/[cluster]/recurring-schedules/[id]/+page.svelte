@@ -148,8 +148,8 @@
 	$: lastJobStatusLabel = schedule?.lastJobStatus ? JobStatusUtil.getLabel(schedule.lastJobStatus) : null;
 </script>
 
-<div class="min-h-screen bg-base-200">
-	<div class="mx-auto max-w-6xl p-6">
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
 		{#if isLoading && !schedule}
 			<div class="flex items-center justify-center py-20">
 				<span class="loading loading-spinner loading-lg"></span>
@@ -175,37 +175,7 @@
 					<h1 class="text-3xl font-semibold tracking-tight">{scheduleName}</h1>
 				</div>
 
-				<div class="flex flex-wrap items-center gap-3">
-					<button class="btn btn-primary btn-sm">
-						<span class="inline-flex items-center gap-2">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-								<path d="M8 5v14l11-7z" />
-							</svg>
-							Run Now
-						</span>
-					</button>
 
-					<button class="btn btn-warning btn-sm">
-						<span class="inline-flex items-center gap-2">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-								<path d="M6 5h4v14H6zM14 5h4v14h-4z" />
-							</svg>
-							Pause
-						</span>
-					</button>
-
-					<button class="btn btn-error btn-outline btn-sm">
-						<span class="inline-flex items-center gap-2">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M3 6h18" />
-								<path d="M8 6V4h8v2" />
-								<path d="M19 6l-1 14H6L5 6" />
-								<path d="M10 11v6M14 11v6" />
-							</svg>
-							Delete
-						</span>
-					</button>
-				</div>
 			</div>
 
 			<!-- Content grid -->
@@ -213,13 +183,13 @@
 				<!-- Left column -->
 				<div class="lg:col-span-2 space-y-6">
 					<!-- Details card -->
-					<div class="rounded-2xl bg-base-100/60 shadow-xl backdrop-blur border border-base-300/40">
-						<div class="flex items-center justify-between px-6 py-4 border-b border-base-300/50">
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+						<div class="flex items-center justify-between px-6 pt-5 pb-2">
 							<h2 class="text-lg font-semibold">Details</h2>
 							<span class={getScheduleBadgeClass()}>{statusLabel}</span>
 						</div>
 
-						<div class="p-6">
+						<div class="px-6 pb-5">
 							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 								<div class="space-y-3">
 									<div class="flex items-center justify-between gap-4">
@@ -277,12 +247,12 @@
 					</div>
 
 					<!-- Upcoming runs placeholder -->
-					<div class="rounded-2xl bg-base-100/60 shadow-xl backdrop-blur border border-base-300/40">
-						<div class="flex items-center justify-between px-6 py-4 border-b border-base-300/50">
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+						<div class="flex items-center justify-between px-6 pt-5 pb-2">
 							<h2 class="text-lg font-semibold">Upcoming Runs</h2>
 						</div>
 
-						<div class="p-6 text-center opacity-70">
+						<div class="px-6 pb-5 text-center opacity-70">
 							<p>Upcoming runs information not available in current API response</p>
 						</div>
 					</div>
@@ -290,12 +260,12 @@
 
 				<!-- Right column: Recent activity placeholder -->
 				<div class="space-y-6">
-					<div class="rounded-2xl bg-base-100/60 shadow-xl backdrop-blur border border-base-300/40">
-						<div class="flex items-center justify-between px-6 py-4 border-b border-base-300/50">
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+						<div class="flex items-center justify-between px-6 pt-5 pb-2">
 							<h2 class="text-lg font-semibold">Recent Activity</h2>
 						</div>
 
-						<div class="p-6 text-center opacity-70">
+						<div class="px-6 pb-5 text-center opacity-70">
 							<p>Recent activity information not available in current API response</p>
 						</div>
 					</div>

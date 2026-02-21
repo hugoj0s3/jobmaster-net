@@ -386,11 +386,11 @@
     });
 </script>
 
-<div class="min-h-[calc(100vh-theme(spacing.14))] bg-base-100">
-    <div class="w-full px-2 py-2">
+<div class="min-h-screen bg-base-100">
+    <div class="mx-auto max-w-6xl px-6 py-6">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="flex items-center gap-3">
-                <h1 class="text-2xl font-semibold tracking-tight text-base-content">Overview</h1>
+                <h1 class="text-3xl font-semibold tracking-tight">Overview</h1>
 
                 <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
             </div>
@@ -621,7 +621,7 @@
 
         {#if recentlyExecutedJobs.length > 0}
             <div class="mt-6">
-                <div class="card bg-base-200/70 shadow-xl backdrop-blur">
+                <div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
                     <div class="card-body">
                         <div class="flex items-center justify-between">
                             <div class="text-lg font-semibold">Recently Executed Jobs</div>
@@ -629,8 +629,8 @@
 
                         <div class="mt-4 overflow-x-auto">
                             <table class="table">
-                                <thead class="opacity-60">
-                                <tr>
+                                <thead>
+                                <tr class="text-base-content/70">
                                     <th>JobId</th>
                                     <th>Status</th>
                                     <th>Definition Id</th>
@@ -640,7 +640,7 @@
                                 </thead>
                                 <tbody>
                                 {#each recentlyExecutedJobs as j (j.jobId)}
-                                    <tr class="hover">
+                                    <tr class="hover cursor-pointer">
                                         <td class="font-medium">
                                             <span class="inline-flex items-center gap-1">
                                                 <a href="/{clusterId()}/jobs/{j.jobId}" class="link link-hover link-primary">{j.jobId}</a>

@@ -183,11 +183,8 @@
 	});
 </script>
 
-<!-- Page background -->
-<div class="min-h-screen w-full bg-base-100">
-	<!-- Top spacing container (no navbar/sidebar) -->
-	<div class="mx-auto w-full max-w-6xl px-6 py-8">
-		<!-- Header row -->
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
 		<div class="flex flex-col gap-4">
 			<div class="flex items-start justify-between gap-4">
 				<div class="space-y-2">
@@ -227,7 +224,7 @@
 			<!-- KPI cards row -->
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-4">
 				<!-- Status card -->
-				<div class="card border border-base-300 bg-base-200/60">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body gap-3">
 						<div class="flex items-center justify-between">
 							<div class="text-sm font-semibold text-base-content/80">{hostStatus.label}</div>
@@ -250,7 +247,7 @@
 				</div>
 
 				{#each kpis as k}
-					<div class={"card border " + k.class}>
+					<div class={"card border border-base-300/60 shadow-lg " + k.class}>
 						<div class="card-body gap-3">
 							<div class="flex items-center justify-between">
 								<div class="text-sm font-semibold text-base-content/80">{k.title}</div>
@@ -274,8 +271,8 @@
 				{/each}
 			</div>
 
-			<!-- Tabs + actions -->
-			<div class="flex flex-col gap-3 pt-2 md:flex-row md:items-center md:justify-between">
+			<!-- Tabs -->
+			<div class="pt-2">
 				<div role="tablist" class="tabs tabs-bordered">
 					<button
 						role="tab"
@@ -292,33 +289,6 @@
 						Workers Assigned
 					</button>
 				</div>
-
-				<div class="flex items-center gap-2">
-					<details class="dropdown dropdown-end">
-						<summary class="btn btn-outline btn-sm">Actions</summary>
-						<ul class="menu dropdown-content z-[1] mt-2 w-52 rounded-box bg-base-200 p-2 shadow">
-							<li><a>Restart host</a></li>
-							<li><a>Mark as drained</a></li>
-							<li><a>View logs</a></li>
-						</ul>
-					</details>
-
-					<button class="btn btn-ghost btn-sm btn-square" aria-label="panel settings">
-						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" class="opacity-80">
-							<path
-								d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"
-								stroke="currentColor"
-								stroke-width="1.5"
-							/>
-							<path
-								d="M19.4 15a8.4 8.4 0 0 0 .1-2l2-1.2-2-3.4-2.2.7a7.9 7.9 0 0 0-1.7-1l-.3-2.3H9.7L9.4 8a7.9 7.9 0 0 0-1.7 1l-2.2-.7-2 3.4 2 1.2a8.4 8.4 0 0 0 0 2l-2 1.2 2 3.4 2.2-.7c.5.4 1.1.7 1.7 1l.3 2.3h5.6l.3-2.3c.6-.3 1.2-.6 1.7-1l2.2.7 2-3.4-2-1.2Z"
-								stroke="currentColor"
-								stroke-width="1.5"
-								stroke-linejoin="round"
-							/>
-						</svg>
-					</button>
-				</div>
 			</div>
 		</div>
 
@@ -327,7 +297,7 @@
 			<div class="mt-6 space-y-6">
 				<!-- Charts row -->
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-					<div class="card border border-base-300 bg-base-200/40">
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 						<div class="card-body">
 							<div class="flex items-center justify-between">
 								<h2 class="card-title text-base">CPU Usage</h2>
@@ -362,7 +332,7 @@
 						</div>
 					</div>
 
-					<div class="card border border-base-300 bg-base-200/40">
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 						<div class="card-body">
 							<div class="flex items-center justify-between">
 								<h2 class="card-title text-base">Memory Usage</h2>
@@ -399,7 +369,7 @@
 				</div>
 
 				<!-- Workers table -->
-				<div class="card border border-base-300 bg-base-200/40">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<div class="flex items-center justify-between gap-3">
 							<h2 class="card-title text-base">Workers Assigned</h2>
@@ -420,7 +390,7 @@
 								</thead>
 								<tbody>
 								{#each workers as w}
-									<tr>
+									<tr class="hover">
 										<td class="font-medium">
 											<div class="flex items-center gap-3">
 												<span class="h-2 w-2 rounded-full {w.isAlive ? 'bg-success' : 'bg-error'} opacity-80"></span>
@@ -455,7 +425,7 @@
 		{:else}
 			<!-- Workers tab (simple view) -->
 			<div class="mt-6">
-				<div class="card border border-base-300 bg-base-200/40">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<div class="flex items-center justify-between gap-3">
 							<h2 class="card-title text-base">Workers Assigned</h2>
@@ -485,7 +455,7 @@
 								</thead>
 								<tbody>
 								{#each workers as w}
-									<tr>
+									<tr class="hover">
 										<td class="font-medium">{w.displayName ?? w.id ?? '—'}</td>
 										<td class="font-mono text-sm opacity-80">{w.id ?? '—'}</td>
 										<td class="opacity-80">{w.lastHeartbeatAt ?? '—'}</td>
@@ -514,12 +484,3 @@
 	</div>
 </div>
 
-<style>
-    /* Optional: subtle "glow" vibe similar to the screenshot */
-    :global(body) {
-        background: radial-gradient(1200px 600px at 70% 0%, rgba(120, 90, 255, 0.18), transparent 60%),
-        radial-gradient(900px 500px at 20% 20%, rgba(0, 180, 255, 0.12), transparent 55%),
-        radial-gradient(900px 600px at 80% 60%, rgba(255, 120, 180, 0.10), transparent 55%),
-        hsl(var(--b1));
-    }
-</style>

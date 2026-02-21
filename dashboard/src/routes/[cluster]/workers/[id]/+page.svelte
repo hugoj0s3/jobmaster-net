@@ -135,8 +135,8 @@
 	});
 </script>
 
-<div class="min-h-screen bg-base-200">
-	<div class="mx-auto max-w-6xl px-5 py-6">
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
 		<!-- Top row (title + refresh meta) -->
 		<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 			<div class="space-y-2">
@@ -190,7 +190,7 @@
 			<!-- Left column -->
 			<div class="space-y-4">
 				<!-- Statistics -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Statistics</h2>
 
@@ -234,7 +234,7 @@
 			<!-- Right column -->
 			<div class="space-y-4">
 				<!-- Configuration -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Configuration</h2>
 
@@ -265,7 +265,7 @@
 				</div>
 
 				<!-- Connection -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Connection</h2>
 
@@ -288,7 +288,7 @@
 			</div>
 
 			<!-- Buckets (full width on large screens) -->
-			<div class="card bg-base-100 shadow lg:col-span-2">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<h2 class="card-title text-base">Buckets</h2>
@@ -298,7 +298,7 @@
 					<div class="overflow-x-auto">
 						<table class="table">
 							<thead>
-							<tr>
+							<tr class="text-base-content/70">
 								<th>ID</th>
 								<th>Priority</th>
 								<th>Status</th>
@@ -308,7 +308,7 @@
 							<tbody>
 							{#each buckets as b}
 								{@const sLabel = bucketStatusLabel(b.status)}
-								<tr>
+								<tr class="hover">
 									<td class="font-mono text-xs">{b.id ?? '—'}</td>
 									<td>{priorityLabel(b.priority)}</td>
 									<td><span class={badgeForStatus(sLabel)}>{sLabel}</span></td>

@@ -267,9 +267,8 @@
 	}
 </script>
 
-<div class="min-h-screen bg-base-200">
-	<div class="mx-auto max-w-7xl px-6 py-6">
-		<!-- Top bar -->
+<div class="min-h-screen bg-base-100">
+	<div class="w-full px-6 py-6">
 		<div class="flex flex-wrap items-center justify-between gap-3">
 			<a class="link link-hover text-sm opacity-70" href={`/${clusterId()}/buckets`}>← Back to Buckets</a>
 
@@ -302,7 +301,7 @@
 		</div>
 
 		<!-- Summary card -->
-		<div class="card mt-4 bg-base-100 shadow">
+		<div class="card mt-4 bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body gap-4">
 				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 					<div class="flex items-center gap-4">
@@ -340,36 +339,18 @@
 				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
 
 					<!-- Queued jobs -->
-					<div class="card bg-base-200/60">
+					<div class="card bg-base-100 border border-base-300/60">
 						<div class="card-body">
-							<div class="flex items-center justify-between">
-								<div class="text-sm opacity-70">Queued Jobs</div>
-								<details class="dropdown dropdown-end">
-									<summary class="btn btn-ghost btn-xs">⋯</summary>
-									<ul class="menu dropdown-content z-[1] w-44 rounded-box bg-base-100 p-2 shadow">
-										<li><a>View queued</a></li>
-										<li><a>Export</a></li>
-									</ul>
-								</details>
-							</div>
+							<div class="text-sm opacity-70">Queued Jobs</div>
 							<div class="mt-1 text-3xl font-semibold">{queuedJobsCount}</div>
 							<progress class="progress progress-primary mt-3" value="55" max="100"></progress>
 						</div>
 					</div>
 
 					<!-- Avg queue time -->
-					<div class="card bg-base-200/60">
+					<div class="card bg-base-100 border border-base-300/60">
 						<div class="card-body">
-							<div class="flex items-center justify-between">
-								<div class="text-sm opacity-70">Avg Queue Time</div>
-								<details class="dropdown dropdown-end">
-									<summary class="btn btn-ghost btn-xs">⋯</summary>
-									<ul class="menu dropdown-content z-[1] w-44 rounded-box bg-base-100 p-2 shadow">
-										<li><a>Last 15m</a></li>
-										<li><a>Last 1h</a></li>
-									</ul>
-								</details>
-							</div>
+							<div class="text-sm opacity-70">Avg Queue Time</div>
 							<div class="mt-1 text-3xl font-semibold">{avgQueueLabel}</div>
 							<progress class="progress progress-secondary mt-3" value="35" max="100"></progress>
 							<div class="mt-2 text-xs opacity-60">{avgQueueLabel}</div>
@@ -377,18 +358,9 @@
 					</div>
 
 					<!-- Avg run duration -->
-					<div class="card bg-base-200/60">
+					<div class="card bg-base-100 border border-base-300/60">
 						<div class="card-body">
-							<div class="flex items-center justify-between">
-								<div class="text-sm opacity-70">Avg Run Duration</div>
-								<details class="dropdown dropdown-end">
-									<summary class="btn btn-ghost btn-xs">⋯</summary>
-									<ul class="menu dropdown-content z-[1] w-44 rounded-box bg-base-100 p-2 shadow">
-										<li><a>Last 15m</a></li>
-										<li><a>Last 1h</a></li>
-									</ul>
-								</details>
-							</div>
+							<div class="text-sm opacity-70">Avg Run Duration</div>
 							<div class="mt-1 text-3xl font-semibold">{avgRunLabel}</div>
 							<progress class="progress progress-accent mt-3" value="45" max="100"></progress>
 							<div class="mt-2 text-xs opacity-60">{avgRunLabel}</div>
@@ -404,7 +376,6 @@
 				<div class="flex items-center gap-3">
 					<h2 class="text-xl font-semibold">Active Jobs</h2>
 					<span class="badge badge-ghost">{activeJobs.length}</span>
-					<button class="btn btn-sm btn-ghost">Abort All</button>
 				</div>
 
 				<label class="input input-bordered flex w-full items-center gap-2 md:w-80">
@@ -413,12 +384,12 @@
 				</label>
 			</div>
 
-			<div class="card mt-3 bg-base-100 shadow">
+			<div class="card mt-3 bg-base-200/60 border border-base-300/60 shadow-lg">
 				<div class="card-body p-0">
 					<div class="overflow-x-auto">
 						<table class="table table-zebra">
 							<thead>
-							<tr>
+							<tr class="text-base-content/70">
 								<th>Job</th>
 								<th class="hidden md:table-cell">ID</th>
 								<th>Since</th>
@@ -459,27 +430,17 @@
 		<!-- Bottom panels -->
 		<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
 			<!-- Job History -->
-			<div class="card bg-base-100 shadow">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 				<div class="card-body">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-2">
-							<h3 class="text-lg font-semibold">Job History</h3>
-							<span class="badge badge-ghost">412</span>
-						</div>
-						<details class="dropdown dropdown-end">
-							<summary class="btn btn-ghost btn-sm">Filter</summary>
-							<ul class="menu dropdown-content z-[1] w-48 rounded-box bg-base-100 p-2 shadow">
-								<li><a>Total</a></li>
-								<li><a>Completed Jobs</a></li>
-								<li><a>Failed Jobs</a></li>
-							</ul>
-						</details>
+					<div class="flex items-center gap-2">
+						<h3 class="text-lg font-semibold">Job History</h3>
+						<span class="badge badge-ghost">412</span>
 					</div>
 
 					<div class="overflow-x-auto">
-						<table class="table table-sm">
+						<table class="table table-sm table-zebra">
 							<thead>
-							<tr>
+							<tr class="text-base-content/70">
 								<th>Job ID</th>
 								<th class="text-right">Completed</th>
 							</tr>
@@ -503,7 +464,7 @@
 			</div>
 
 			<!-- Bucket Log -->
-			<div class="card bg-base-100 shadow">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 				<div class="card-body">
 					<div class="flex items-center justify-between gap-3">
 						<div class="flex items-center gap-2">
@@ -512,9 +473,9 @@
 					</div>
 
 					<div class="overflow-x-auto">
-						<table class="table table-sm">
+						<table class="table table-sm table-zebra">
 							<thead>
-							<tr>
+							<tr class="text-base-content/70">
 								<th>Time</th>
 								<th>Message</th>
 								<th class="text-right">Job ID</th>

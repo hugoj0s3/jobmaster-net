@@ -201,36 +201,41 @@
 	});
 </script>
 
-<div class="min-h-screen bg-base-300 text-base-content">
-	<div class="max-w-7xl mx-auto px-6 py-8">
-		<!-- Header -->
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
-			<div>
-				<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
-			</div>
+			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
 
-			<div class="flex items-center gap-3">
-				<div class="text-sm opacity-70">Last execution: <span class="font-medium opacity-100">{lastUpdated}</span></div>
-				<button class="btn btn-ghost btn-sm" class:loading={isRefreshing} on:click={refresh} title="Refresh" disabled={isRefreshing}>
-          <span class="inline-flex items-center gap-2">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v7h-7"/>
-            </svg>
-            Refresh
-          </span>
+			<div class="flex items-center gap-3 text-sm opacity-80">
+				<span>Last execution: {lastUpdated}</span>
+				<button
+					class="btn btn-ghost btn-sm btn-square"
+					aria-label="Refresh now"
+					on:click={refresh}
+					disabled={isRefreshing}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M21 12a9 9 0 1 1-3-6.7" />
+						<path d="M21 3v6h-6" />
+					</svg>
 				</button>
 			</div>
 		</div>
 
-		<!-- KPI Cards -->
 		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
-			<div class="card bg-base-200 shadow">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<div class="text-sm opacity-70">Hosts Online</div>
-							<div class="text-4xl font-semibold mt-1">{onlineCount}</div>
-							<div class="text-sm opacity-70 mt-1">Hosts Online</div>
+							<div class="text-sm text-base-content/70">Hosts Online</div>
+							<div class="mt-1 text-4xl font-semibold">{onlineCount}</div>
 						</div>
 						<div class="rounded-2xl bg-success/15 p-3 text-success">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -241,16 +246,14 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-200 shadow">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<div class="text-sm opacity-70">Hosts Offline</div>
-							<div class="text-4xl font-semibold mt-1">{offlineCount}</div>
-							<div class="text-sm opacity-70 mt-1">Hosts Offline</div>
+							<div class="text-sm text-base-content/70">Hosts Offline</div>
+							<div class="mt-1 text-4xl font-semibold">{offlineCount}</div>
 						</div>
-
-						<div class="rounded-2xl bg-error/15 p-3 text-error" title="Failed/Offline">
+						<div class="rounded-2xl bg-error/15 p-3 text-error">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<circle cx="12" cy="12" r="9"/>
 								<path d="M15 9l-6 6M9 9l6 6"/>
@@ -260,13 +263,12 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-200 shadow">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<div class="text-sm opacity-70">Avg. CPU Usage</div>
-							<div class="text-4xl font-semibold mt-1">{avgCpu}%</div>
-							<div class="text-sm opacity-70 mt-1">Avg. CPU Usage</div>
+							<div class="text-sm text-base-content/70">Avg. CPU Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgCpu}%</div>
 						</div>
 						<div class="rounded-2xl bg-secondary/15 p-3 text-secondary">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -277,13 +279,12 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-200 shadow">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<div class="text-sm opacity-70">Avg. Memory Usage</div>
-							<div class="text-4xl font-semibold mt-1">{avgMem}%</div>
-							<div class="text-sm opacity-70 mt-1">Avg. Memory Usage</div>
+							<div class="text-sm text-base-content/70">Avg. Memory Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgMem}%</div>
 						</div>
 						<div class="rounded-2xl bg-info/15 p-3 text-info">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -296,7 +297,7 @@
 		</div>
 
 		<!-- Filters row -->
-		<div class="card bg-base-200 shadow mt-6">
+		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-6">
 			<div class="card-body gap-4">
 				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
 					<!-- Tabs -->
@@ -314,10 +315,8 @@
 
 					<!-- Search + Sort + Pager -->
 					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
-						<label class="input input-bordered flex items-center gap-2 w-full sm:w-[340px]">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 opacity-60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>
-							</svg>
+						<label class="input input-bordered flex items-center gap-2 w-full sm:w-80">
+							<span class="opacity-60">🔎</span>
 							<input class="grow" placeholder="Search Hosts" bind:value={q} />
 						</label>
 
@@ -347,11 +346,10 @@
 					</div>
 				</div>
 
-				<!-- Table -->
 				<div class="overflow-x-auto">
-					<table class="table table-zebra">
+					<table class="table">
 						<thead>
-						<tr>
+						<tr class="text-base-content/70">
 							<th>Status</th>
 							<th>Host</th>
 							<th>IP Address</th>
@@ -363,7 +361,7 @@
 						</thead>
 						<tbody>
 						{#each paginatedHosts as r (r.id)}
-							<tr class="cursor-pointer hover {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(`/${clusterId()}/hosts/${r.id}`)}>
+							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(`/${clusterId()}/hosts/${r.id}`)}>
 								<td>
 									<div class="flex items-center gap-2">
 										<span class={`inline-block h-2.5 w-2.5 rounded-full ${dotClass(r.status)}`} />
@@ -417,7 +415,6 @@
 					</table>
 				</div>
 
-				<!-- Footer -->
 				<div class="flex items-center gap-6 text-sm opacity-80">
 					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
 					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-warning"></span> Warning</div>

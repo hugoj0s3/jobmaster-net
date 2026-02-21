@@ -133,7 +133,7 @@
 	});
 </script>
 
-<div class="min-h-screen bg-base-200">
+<div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-6xl px-6 py-6">
 		{#if isLoading && !job}
 			<div class="flex items-center justify-center py-20">
@@ -197,7 +197,7 @@
 			<!-- Main content grid -->
 			<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<!-- Identity -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Identity</h2>
 						<div class="divider my-2"></div>
@@ -223,7 +223,7 @@
 				</div>
 
 				<!-- Status & Scheduling -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Status & Scheduling</h2>
 						<div class="divider my-2"></div>
@@ -253,7 +253,7 @@
 				</div>
 
 				<!-- Execution -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Execution</h2>
 						<div class="divider my-2"></div>
@@ -283,7 +283,7 @@
 				</div>
 
 				<!-- Failure & Retries -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Failure & Retries</h2>
 						<div class="divider my-2"></div>
@@ -308,7 +308,7 @@
 				</div>
 
 				<!-- Infrastructure -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Infrastructure</h2>
 						<div class="divider my-2"></div>
@@ -360,7 +360,7 @@
 				</div>
 
 				<!-- Metadata -->
-				<div class="card bg-base-100 shadow">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<h2 class="card-title text-base">Metadata</h2>
 						<div class="divider my-2"></div>
@@ -380,7 +380,7 @@
 				</div>
 
 				<!-- Message Data (full width) -->
-				<div class="card bg-base-100 shadow lg:col-span-2">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
 						<h2 class="card-title text-base">Message Data</h2>
 						<div class="divider my-2"></div>
@@ -388,9 +388,9 @@
 							<div class="text-sm opacity-60">No message data.</div>
 						{:else}
 							<div class="overflow-x-auto">
-								<table class="table table-sm">
+								<table class="table table-sm table-zebra">
 									<thead>
-										<tr>
+										<tr class="text-base-content/70">
 											<th>Key</th>
 											<th>Value</th>
 										</tr>

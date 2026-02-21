@@ -213,9 +213,8 @@
 	}
 </script>
 
-<div class="min-h-screen bg-base-200">
-	<div class="mx-auto max-w-6xl px-6 py-6">
-		<!-- Header -->
+<div class="min-h-screen bg-base-100">
+	<div class="w-full px-6 py-6">
 		<div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 			<div class="flex flex-col gap-2">
 				<div class="text-sm breadcrumbs opacity-70">
@@ -265,7 +264,7 @@
 
 		<!-- Summary cards -->
 		<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-12">
-			<div class="card bg-base-100 shadow md:col-span-3">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<div class="text-sm opacity-70">Health</div>
@@ -278,7 +277,7 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-100 shadow md:col-span-3">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<div class="text-sm opacity-70">Workers Bound</div>
@@ -291,7 +290,7 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-100 shadow md:col-span-3">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<div class="text-sm opacity-70">Buckets</div>
@@ -305,7 +304,7 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-100 shadow md:col-span-3">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<div class="text-sm opacity-70">Version</div>
@@ -332,7 +331,7 @@
 
 		<!-- Connection info (side-by-side) -->
 		<div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-			<div class="card bg-base-100 shadow h-full">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg h-full">
 				<div class="card-body py-4">
 					<div class="card-title text-base opacity-80">Connection Info</div>
 					<div class="divider my-2"></div>
@@ -347,7 +346,7 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-100 shadow h-full">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg h-full">
 				<div class="card-body py-4">
 					<div class="card-title text-base opacity-80">Bound Cluster</div>
 					<div class="divider my-2"></div>
@@ -367,7 +366,7 @@
 		</div>
 
 		<!-- Workers attached (compact preview cards, side-by-side) -->
-		<div class="mt-6 card bg-base-100 shadow">
+		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body">
 				<div class="flex items-center justify-between">
 					<div class="card-title">Workers Attached</div>
@@ -428,7 +427,7 @@
 		</div>
 
 		<!-- Buckets -->
-		<div class="mt-6 card bg-base-100 shadow">
+		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body">
 				<div class="flex items-center justify-between">
 					<div class="card-title">Buckets</div>

@@ -100,15 +100,9 @@
         return JobStatusUtil.getBadgeClass(status);
     }
 
-    let selected = new Set<string>();
-
-    $: allSelected = jobs.length > 0 && selected.size === jobs.length;
-    $: someSelected = selected.size > 0 && selected.size < jobs.length;
-
     let lastPageIndexForRefresh = pageIndex;
     $: if (pageIndex !== lastPageIndexForRefresh) {
         lastPageIndexForRefresh = pageIndex;
-        selected = new Set();
         refreshNow();
     }
 
@@ -116,7 +110,6 @@
     $: if (pageSize !== lastPageSizeForRefresh) {
         lastPageSizeForRefresh = pageSize;
         pageIndex = 0;
-        selected = new Set();
         refreshNow();
     }
 
@@ -134,16 +127,6 @@
         } as const;
     }
 
-    function toggleAll(checked: boolean) {
-        selected = checked ? new Set(jobs.map((j) => j.jobId)) : new Set();
-    }
-
-    function toggleOne(jobId: string, checked: boolean) {
-        const next = new Set(selected);
-        if (checked) next.add(jobId);
-        else next.delete(jobId);
-        selected = next;
-    }
 
     function formatIso(iso: string) {
         const d = new Date(iso);
@@ -195,47 +178,6 @@
         return Object.entries(job.metadata).filter(([k]) => k.startsWith("!"));
     }
 
-    function canRunAgain(job: Job) {
-        return (
-            job.status === JobStatusUtil.Label.Succeeded ||
-            job.status === JobStatusUtil.Label.Failed ||
-            job.status === JobStatusUtil.Label.Cancelled
-        );
-    }
-
-    function canRunNow(job: Job) {
-        return job.status === JobStatusUtil.Label.HeldOnMaster || job.status === JobStatusUtil.Label.AssignedToBucket;
-    }
-
-    function canCancel(job: Job) {
-        return job.status === JobStatusUtil.Label.HeldOnMaster;
-    }
-
-    function canAbort(_job: Job) {
-        return true;
-    }
-
-    $: selectedJobs = jobs.filter((j) => selected.has(j.jobId));
-    $: bulkRunAgainEnabled = selectedJobs.length > 0 && selectedJobs.every(canRunAgain);
-    $: bulkRunNowEnabled = selectedJobs.length > 0 && selectedJobs.every(canRunNow);
-    $: bulkCancelEnabled = selectedJobs.length > 0 && selectedJobs.every(canCancel);
-    $: bulkAbortEnabled = selectedJobs.length > 0 && selectedJobs.every(canAbort);
-
-    function bulkRunAgain() {
-        console.log("Bulk Run Again", [...selected]);
-    }
-
-    function bulkRunNow() {
-        console.log("Bulk Run Now", [...selected]);
-    }
-
-    function bulkCancel() {
-        console.log("Bulk Cancel", [...selected]);
-    }
-
-    function bulkAbort() {
-        console.log("Bulk Abort", [...selected]);
-    }
 
     async function refreshNow() {
         if (!refresh) return;
@@ -303,13 +245,11 @@
                     };
                 });
 
-                selected = new Set([...selected].filter((id) => jobs.some((j) => j.jobId === id)));
 
                 lastUpdatedAt = new Date();
             } catch {
                 jobsTotalCount = 0;
                 jobs = [];
-                selected = new Set();
             }
         } finally {
             isRefreshing = false;
@@ -349,20 +289,10 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-    <div
-            class="pointer-events-none fixed inset-0 opacity-50"
-            style="
-      background:
-        radial-gradient(1200px 600px at 30% 10%, rgba(45,212,191,0.10), transparent 60%),
-        radial-gradient(900px 500px at 70% 20%, rgba(96,165,250,0.10), transparent 60%),
-        radial-gradient(900px 500px at 80% 80%, rgba(167,139,250,0.10), transparent 60%);
-    "
-    />
-
-    <div class="relative w-full px-6 py-6">
+    <div class="mx-auto max-w-6xl px-6 py-6">
         <div class="flex items-center justify-between gap-4">
             <div class="flex items-center gap-4 min-w-0">
-                <h1 class="text-4xl font-semibold">Jobs</h1>
+                <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
 
                 <Pager
                     bind:pageIndex
@@ -377,8 +307,20 @@
             <div class="flex items-center gap-3 text-sm opacity-80">
 								<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
 
-                <button class="btn btn-ghost btn-sm btn-square" aria-label="Refresh now" on:click={refreshNow} disabled={isRefreshing}>
-                    <svg xmlns="http://www.w3.org/2000/svg" class={"h-5 w-5 " + (isRefreshing ? "animate-spin" : "")} fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <button
+                    class="btn btn-ghost btn-sm btn-square"
+                    aria-label="Refresh now"
+                    on:click={refreshNow}
+                    disabled={isRefreshing}
+                >
+                    <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="2"
+                    >
                         <path d="M21 12a9 9 0 1 1-3-6.7" />
                         <path d="M21 3v6h-6" />
                     </svg>
@@ -386,42 +328,11 @@
             </div>
         </div>
 
-        {#if selected.size > 0}
-            <div
-                    class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-box border border-base-300 bg-base-200/60 px-4 py-3 backdrop-blur"
-            >
-                <div class="text-sm opacity-80">
-                    <span class="font-semibold">{selected.size}</span>
-                    selected
-                </div>
-
-                <div class="flex flex-wrap gap-2">
-                    <button class="btn btn-sm" on:click={bulkCancel} disabled={!bulkCancelEnabled}>
-                        Cancel ({selected.size})
-                    </button>
-                    <button class="btn btn-sm" on:click={bulkAbort} disabled={!bulkAbortEnabled}>
-                        Abort ({selected.size})
-                    </button>
-                    <button class="btn btn-sm" on:click={bulkRunNow} disabled={!bulkRunNowEnabled}>
-                        Run Now ({selected.size})
-                    </button>
-                    <button class="btn btn-sm" on:click={bulkRunAgain} disabled={!bulkRunAgainEnabled}>
-                        Clone & Run ({selected.size})
-                    </button>
-
-                    <button class="btn btn-ghost btn-sm" on:click={() => (selected = new Set())}>
-                        Clear
-                    </button>
-                </div>
-            </div>
-        {/if}
-
         <FilterContainer
             title="Filters"
             on:change={(e) => {
                 filterValues = e.detail;
                 pageIndex = 0;
-                selected = new Set();
                 refreshNow();
             }}
         >
@@ -453,21 +364,11 @@
             />
         </FilterContainer>
 
-        <div class="mt-4 card bg-base-200/50 shadow-xl backdrop-blur">
+        <div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
             <div class="overflow-x-auto">
                 <table class="table">
-                    <thead class="opacity-70">
-                    <tr>
-                        <th class="w-10">
-                            <input
-                                    type="checkbox"
-                                    class="checkbox checkbox-sm"
-                                    checked={allSelected}
-                                    indeterminate={someSelected}
-                                    on:change={(e) => toggleAll((e.currentTarget as HTMLInputElement).checked)}
-                                    aria-label="Select all"
-                            />
-                        </th>
+                    <thead>
+                    <tr class="text-base-content/70">
                         <th>JobId</th>
                         <th>DefinitionId</th>
                         <th>Metadata</th>
@@ -481,17 +382,7 @@
 
                     <tbody>
                     {#each jobs as j (j.jobId)}
-                        <tr class="hover">
-                            <td>
-                                <input
-                                        type="checkbox"
-                                        class="checkbox checkbox-sm"
-                                        checked={selected.has(j.jobId)}
-                                        on:change={(e) => toggleOne(j.jobId, (e.currentTarget as HTMLInputElement).checked)}
-                                        aria-label={`Select ${j.jobId}`}
-                                />
-                            </td>
-
+                        <tr class="hover cursor-pointer">
 													<td class="font-medium">
 														<div class="flex items-center gap-2">
 															<span class="tooltip tooltip-bottom" data-tip={j.jobId}>
@@ -504,30 +395,22 @@
 																	</a>
 															</span>
 
-															<span
-																class="tooltip tooltip-bottom"
-																class:tooltip-success={$copiedId === j.jobId}
-																data-tip={$copiedId === j.jobId ? "Copied!" : "Copy Job ID"}
+															<button
+																class="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
+																aria-label="Copy Job ID"
+																on:click|preventDefault|stopPropagation={() => copyFeedback.copy(j.jobId)}
 															>
-																<button
-																	type="button"
-																	class={`btn btn-ghost btn-xs btn-square ${$copiedId === j.jobId ? "text-success hover:bg-success/20" : ""}`}
-																	aria-label={$copiedId === j.jobId ? `Copied job id ${j.jobId}` : `Copy job id ${j.jobId}`}
-																	on:click|preventDefault|stopPropagation={() => copyFeedback.copy(j.jobId)}
-																>
-																	<svg
-																		xmlns="http://www.w3.org/2000/svg"
-																		class="h-4 w-4"
-																		class:text-success={$copiedId === j.jobId}
-																		viewBox="0 0 24 24"
-																		fill="currentColor"
-																	>
-																		<path
-																			d="M16 1H4a2 2 0 0 0-2 2v12h2V3h12V1Zm4 4H8a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2Zm0 16H8V7h12v14Z"
-																		/>
+																{#if $copiedId === j.jobId}
+																	<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 text-success" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																		<path d="M20 6 9 17l-5-5"/>
 																	</svg>
-																</button>
-															</span>
+																{:else}
+																	<svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+																		<rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+																		<path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+																	</svg>
+																{/if}
+															</button>
 														</div>
 													</td>
 

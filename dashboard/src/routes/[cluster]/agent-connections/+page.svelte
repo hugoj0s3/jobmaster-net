@@ -23,9 +23,6 @@
 
 	const clusterId = () => $page.params.cluster;
 
-	const allClusters = ["All", clusterId()];
-
-	let clusterFilter = "All";
 	let query = "";
 	let pageIndex = 0;
 	let pageSize = 10;
@@ -99,16 +96,13 @@
 
 	const filtered = () => {
 		const q = query.trim().toLowerCase();
-		return rows.filter((r) => {
-			const byCluster = clusterFilter === "All" || r.cluster === clusterFilter;
-			const byQuery =
-				!q ||
-				r.name.toLowerCase().includes(q) ||
-				r.sub.toLowerCase().includes(q) ||
-				r.cluster.toLowerCase().includes(q) ||
-				r.clusterSub.toLowerCase().includes(q);
-			return byCluster && byQuery;
-		});
+		if (!q) return rows;
+		return rows.filter((r) =>
+			r.name.toLowerCase().includes(q) ||
+			r.sub.toLowerCase().includes(q) ||
+			r.cluster.toLowerCase().includes(q) ||
+			r.clusterSub.toLowerCase().includes(q)
+		);
 	};
 
 	const healthOrder: Record<Health, number> = { "OK": 0, "Warning": 1, "Error": 2 };
@@ -138,53 +132,31 @@
 
 </script>
 
-<div class="min-h-screen bg-base-300 relative overflow-hidden">
-	<div class="relative max-w-6xl mx-auto px-8 py-10">
-		<!-- Header -->
-		<div class="flex items-start justify-between gap-6">
-			<div>
-				<h1 class="text-4xl font-semibold tracking-tight">Agent Connections</h1>
-				<p class="text-base-content/60 mt-2">Select an agent connection to view details.</p>
-			</div>
-
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
+		<div class="flex items-start justify-between gap-4">
+			<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
 		</div>
 
-		<!-- Filters -->
-		<div class="mt-8 flex items-center justify-end gap-3">
-			{#if data?.error}
-				<div class="alert alert-error text-sm">
-					<span>{data.error}</span>
-				</div>
-			{/if}
-
-			<div class="join">
-				<button class="btn btn-sm btn-ghost join-item pointer-events-none text-base-content/70">
-					Cluster: {clusterFilter}
-				</button>
-				<select
-					class="select select-sm select-bordered join-item"
-					bind:value={clusterFilter}
-					aria-label="Cluster filter"
-				>
-					{#each allClusters as c}
-						<option value={c}>{c}</option>
-					{/each}
-				</select>
+		{#if data?.error}
+			<div class="alert alert-error text-sm mt-4">
+				<span>{data.error}</span>
 			</div>
+		{/if}
 
-			<label class="input input-bordered input-sm flex items-center gap-2 w-[320px]">
-				<span class="opacity-60">🔍</span>
+		<div class="mt-6 flex items-center justify-end gap-3">
+			<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
+				<span class="opacity-60">🔎</span>
 				<input
 					type="text"
 					class="grow"
-					placeholder="Search..."
+					placeholder="Search agent connections..."
 					bind:value={query}
 				/>
 			</label>
 		</div>
 
-		<!-- Table Card -->
-		<div class="mt-6 rounded-2xl bg-base-200/60 backdrop-blur border border-base-content/10 shadow-xl">
+		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="flex justify-end px-5 pt-4">
 				<Pager
 					bind:pageIndex
@@ -234,7 +206,7 @@
 					<tbody>
 					{#each view as r (r.id)}
 						<tr
-							class="cursor-pointer transition hover:bg-base-100/40"
+							class="hover cursor-pointer transition"
 							on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}
 						>
 
@@ -279,6 +251,14 @@
 							</td>
 						</tr>
 					{/each}
+
+					{#if view.length === 0}
+						<tr>
+							<td colspan="5" class="py-10 text-center text-base-content/60">
+								No agent connections match your filters.
+							</td>
+						</tr>
+					{/if}
 					</tbody>
 				</table>
 			</div>

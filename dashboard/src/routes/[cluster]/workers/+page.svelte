@@ -196,70 +196,76 @@
 	});
 </script>
 
-<div class="min-h-screen w-full bg-base-100 text-base-content">
-	<div class="pointer-events-none fixed inset-0 opacity-60" />
-
-	<main class="relative mx-auto max-w-6xl px-8 py-10">
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-6xl px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
-			<h1 class="text-5xl font-bold tracking-tight text-base-content">Workers</h1>
+			<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
 
-			<div class="flex items-center gap-4 text-sm text-base-content/60">
-				<span>Last execution: <span class="text-base-content/80">{lastUpdated}</span></span>
+			<div class="flex items-center gap-3 text-sm opacity-80">
+				<span>Last execution: {lastUpdated}</span>
 				<button
-					class="btn btn-ghost btn-sm text-base-content/80 hover:text-base-content"
+					class="btn btn-ghost btn-sm btn-square"
+					aria-label="Refresh now"
 					on:click={refresh}
+					disabled={isRefreshing}
 				>
-					⟳ <span class="ml-1 font-semibold">Refresh</span>
-				</button>
-				<button
-					class="btn btn-ghost btn-sm text-base-content/80 hover:text-base-content"
-					aria-label="Settings"
-				>
-					⚙
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M21 12a9 9 0 1 1-3-6.7" />
+						<path d="M21 3v6h-6" />
+					</svg>
 				</button>
 			</div>
 		</div>
 
-		<section class="mt-10 grid grid-cols-1 gap-6 md:grid-cols-4">
-			<div class="card bg-base-200/60 border border-base-300/60 rounded-2xl shadow-lg">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+		<section class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<p class="text-base-content/70">Workers Online</p>
-							<p class="mt-2 text-5xl font-extrabold text-base-content">{onlineCount}</p>
-							<p class="mt-2 text-base-content/40">Workers Online</p>
+							<div class="text-sm text-base-content/70">Workers Online</div>
+							<div class="mt-1 text-4xl font-semibold">{onlineCount}</div>
 						</div>
-						<div class="h-14 w-14 rounded-2xl bg-success/20 grid place-items-center text-success text-2xl">
-							✓
+						<div class="rounded-2xl bg-success/15 p-3 text-success">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M20 6 9 17l-5-5"/>
+							</svg>
 						</div>
 					</div>
 				</div>
 			</div>
 
-			<div class="card bg-base-200/60 border border-base-300/60 rounded-2xl shadow-lg">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<p class="text-base-content/70">Workers Offline</p>
-							<p class="mt-2 text-5xl font-extrabold text-base-content">{offlineCount}</p>
-							<p class="mt-2 text-base-content/40">Workers Offline</p>
+							<div class="text-sm text-base-content/70">Workers Offline</div>
+							<div class="mt-1 text-4xl font-semibold">{offlineCount}</div>
 						</div>
-						<div class="h-14 w-14 rounded-2xl bg-error/20 grid place-items-center text-error text-2xl">
-							⨯
+						<div class="rounded-2xl bg-error/15 p-3 text-error">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="9"/>
+								<path d="M15 9l-6 6M9 9l6 6"/>
+							</svg>
 						</div>
 					</div>
 				</div>
 			</div>
 
-			<div class="card bg-base-200/60 border border-base-300/60 rounded-2xl shadow-lg">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<p class="text-base-content/70">Avg. CPU Usage</p>
-							<p class="mt-2 text-5xl font-extrabold text-base-content">{avgCpu}%</p>
-							<p class="mt-2 text-base-content/40">Avg. CPU Usage</p>
+							<div class="text-sm text-base-content/70">Avg. CPU Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgCpu}%</div>
 						</div>
-						<div class="h-14 w-14 rounded-2xl bg-secondary/20 grid place-items-center text-secondary">
+						<div class="rounded-2xl bg-secondary/15 p-3 text-secondary">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 								<path d="M8 2h8v4H8z"/><path d="M6 6h12v16H6z"/><path d="M9 10h6M9 14h6M9 18h6"/>
 							</svg>
@@ -268,106 +274,74 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-200/60 border border-base-300/60 rounded-2xl shadow-lg">
-				<div class="card-body">
-					<div class="flex items-start justify-between">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
 						<div>
-							<p class="text-base-content/70">Avg. Memory Usage</p>
-							<p class="mt-2 text-5xl font-extrabold text-base-content">{avgMem}%</p>
-							<p class="mt-2 text-base-content/40">Avg. Memory Usage</p>
+							<div class="text-sm text-base-content/70">Avg. Memory Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgMem}%</div>
 						</div>
-						<div class="h-14 w-14 rounded-2xl bg-info/20 grid place-items-center text-info text-2xl">
-							▦
+						<div class="rounded-2xl bg-info/15 p-3 text-info">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M7 7h10v10H7z"/><path d="M4 10h3M17 10h3M4 14h3M17 14h3M10 4v3M14 4v3M10 17v3M14 17v3"/>
+							</svg>
 						</div>
 					</div>
 				</div>
 			</div>
 		</section>
 
-		<section class="mt-8 card bg-base-200/60 border border-base-300/60 rounded-2xl shadow-lg">
-			<div class="card-body">
-				<div class="flex justify-end">
-					<Pager
-						bind:pageIndex
-						bind:pageSize
-						{totalCount}
-						{currentCount}
-						disabled={isRefreshing}
-						showPageSize={true}
-					/>
-				</div>
-
-				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-					<div class="flex items-center gap-10">
-						<button
-							class="btn btn-ghost px-0 text-base-content/70 hover:text-base-content"
-							class:font-semibold={tab === "All"}
-							on:click={() => (tab = "All")}
-						>
-							All
-							<span class="ml-3 badge rounded-full bg-base-300/50 border-base-300/60 text-base-content/80"
-							>{allCount}</span
-							>
+		<section class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
+			<div class="card-body gap-4">
+				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+					<div class="tabs tabs-bordered">
+						<button class:tab-active={tab === "All"} class="tab" on:click={() => (tab = "All")}>
+							All <span class="ml-2 badge badge-ghost">{allCount}</span>
 						</button>
-
-						<button
-							class="btn btn-ghost px-0 text-base-content/70 hover:text-base-content"
-							class:font-semibold={tab === "Online"}
-							on:click={() => (tab = "Online")}
-						>
-							Online
-							<span class="ml-3 badge rounded-full bg-success text-black border-0">{onlineCount}</span>
+						<button class:tab-active={tab === "Online"} class="tab" on:click={() => (tab = "Online")}>
+							Online <span class="ml-2 badge badge-success">{onlineCount}</span>
 						</button>
-
-						<button
-							class="btn btn-ghost px-0 text-base-content/70 hover:text-base-content"
-							class:font-semibold={tab === "Offline"}
-							on:click={() => (tab = "Offline")}
-						>
-							Offline
-							<span class="ml-3 badge rounded-full bg-error text-black border-0">{offlineCount}</span>
+						<button class:tab-active={tab === "Offline"} class="tab" on:click={() => (tab = "Offline")}>
+							Offline <span class="ml-2 badge badge-error">{offlineCount}</span>
 						</button>
 					</div>
 
-					<div class="flex flex-wrap items-center gap-3 w-full lg:w-auto lg:justify-end">
-						<label
-							class="input input-bordered bg-transparent border-base-300/60 text-base-content w-full sm:w-[320px] rounded-xl"
-						>
+					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
+						<label class="input input-bordered flex items-center gap-2 w-full sm:w-80">
 							<span class="opacity-60">🔎</span>
-							<input class="placeholder:text-base-content/40" placeholder="Search Workers" bind:value={query} />
+							<input class="grow" placeholder="Search Workers" bind:value={query} />
 						</label>
 
 						<div class="join">
-							<button class="btn join-item bg-transparent border-base-300/60 text-base-content/80 rounded-xl">
-								Sort: {sortBy}
-							</button>
-
-							<details class="dropdown dropdown-end join-item">
-								<summary class="btn bg-transparent border-base-300/60 text-base-content/80 rounded-xl">▾</summary>
-								<ul class="menu dropdown-content mt-2 w-44 rounded-xl bg-base-200 border border-base-300 shadow">
-									<li><button on:click={() => (sortBy = "Host")}>Host</button></li>
-									<li><button on:click={() => (sortBy = "CPU")}>CPU</button></li>
-									<li><button on:click={() => (sortBy = "Memory")}>Memory</button></li>
-								</ul>
-							</details>
-
+							<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
+								<option value="Host">Sort: Host</option>
+								<option value="CPU">Sort: CPU</option>
+								<option value="Memory">Sort: Memory</option>
+							</select>
 							<button
-								class="btn join-item bg-transparent border-base-300/60 text-base-content/80 rounded-xl"
+								class="btn btn-bordered join-item"
 								on:click={() => (asc = !asc)}
 								title="Toggle sort direction"
 							>
 								{asc ? "A→Z" : "Z→A"}
 							</button>
 						</div>
+
+						<Pager
+							bind:pageIndex
+							bind:pageSize
+							{totalCount}
+							{currentCount}
+							disabled={isRefreshing}
+							showPageSize={true}
+						/>
 					</div>
 				</div>
-
-				<div class="divider my-3 opacity-30" />
 
 				<div class="overflow-x-auto">
 					<table class="table">
 						<thead>
-						<tr class="text-base-content/60">
+						<tr class="text-base-content/70">
 							<th>Status</th>
 							<th>Worker</th>
 							<th>Host</th>
@@ -380,7 +354,7 @@
 
 						<tbody>
 						{#each filtered as r (r.id)}
-							<tr class="hover:bg-base-300/30 cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${r.id}`)}>
+							<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${r.id}`)}>
 								<td>
 									<div class="flex items-center gap-3">
 										<span class={"h-2.5 w-2.5 rounded-full " + statusDot(r.status)} />
@@ -430,5 +404,5 @@
 				</div>
 			</div>
 		</section>
-	</main>
+	</div>
 </div>
