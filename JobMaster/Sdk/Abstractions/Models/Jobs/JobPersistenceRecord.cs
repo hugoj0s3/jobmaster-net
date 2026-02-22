@@ -15,6 +15,9 @@ internal class JobPersistenceRecord
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
 
+    public string? HostId { get; set; }
+    public string? HostDisplayName { get; set; }
+
     public int Priority { get; set; }
 
     public DateTime OriginalScheduledAt { get; set; }
@@ -40,9 +43,9 @@ internal class JobPersistenceRecord
 
     public DateTime? ProcessDeadline { get; set; }
 
-    public DateTime? ProcessingStartedAt { get; set; }
+    public DateTime? ProcessStartedAt { get; set; }
 
-    public DateTime? SucceedExecutedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
     
     public string? WorkerLane { get; set; }
     

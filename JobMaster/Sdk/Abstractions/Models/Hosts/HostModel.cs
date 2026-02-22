@@ -16,7 +16,9 @@ internal class HostModel : JobMasterBaseModel
     public int ProcessorCount { get; set; }
     public string? OsDescription { get; set; }
     
-    public DateTime LastHeartbeat { get; set; }
+    public DateTime? LastHeartbeat { get; set; }
     public DateTime CreatedAt { get; set; }
     public HostStatsModel? LastStats { get; set; } = null!;
+    
+    public bool IsAlive() => (LastHeartbeat)  > DateTime.UtcNow.AddMinutes(-5);
 }

@@ -206,7 +206,7 @@ internal class JobMasterClusterConnectionConfig
 
         lock (StaticLock)
         {
-            if (TryGet(clusterId, includeInactive: true) != null)
+            if (TryGet(clusterId, includeNotReady: true) != null)
             {
                 throw new ArgumentException($"Cluster ID '{clusterId}' already exists.", nameof(clusterId));
             }
@@ -226,10 +226,10 @@ internal class JobMasterClusterConnectionConfig
         }
     }
     
-    public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeInactive = false)
+    public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeNotReady = false)
     {
         return ClusterConfigs
-            .Where(c => includeInactive || c.IsReady)
+            .Where(c => includeNotReady || c.IsReady)
             .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
@@ -248,7 +248,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (StaticLock)
         {
-            var config = TryGet(clusterId, includeInactive: true);
+            var config = TryGet(clusterId, includeNotReady: true);
             DefaultConfig = config ?? throw new KeyNotFoundException($"Cluster config '{clusterId}' not found or inactive.");
         }
     }

@@ -60,7 +60,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         var jobQueryCriteria = new JobQueryCriteria()
         {
             CountLimit = BackgroundAgentWorker.BatchSize,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             ScheduledTo = utcNow.Add(transientThreshold),
             IsLocked = false,
             Offset = 0,
@@ -114,7 +114,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         // Assign buckets first because the cache, assign buckets in separate foreach loop.
         foreach (var job in jobs)
         {
-            if (job.Status != JobMasterJobStatus.HeldOnMaster)
+            if (job.Status != JobMasterJobStatus.OnMaster)
             {
                 logger.Error($"Job {job.Id} is not held on master. This is not allowed.", JobMasterLogSubjectType.Job, job.Id);
             }

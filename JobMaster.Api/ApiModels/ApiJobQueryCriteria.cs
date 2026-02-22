@@ -1,20 +1,22 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using Microsoft.AspNetCore.Mvc;
 
 namespace JobMaster.Api.ApiModels;
 
 public class ApiJobQueryCriteria
 {
     public JobMasterJobStatus? Status { get; set; }
-    public IList<JobMasterJobStatus> Statuses { get; set; } = new List<JobMasterJobStatus>();
+   
+    public JobMasterJobStatus[]? Statuses { get; set; }
 
     public JobMasterPriority? Priority { get; set; }
     
     public DateTime? ScheduledTo { get; set; }
     public DateTime? ScheduledFrom { get; set; }
     public DateTime? ProcessDeadlineTo { get; set; }
-    public IList<JobMasterTriggerSourceType> TriggerSourceTypes { get; set; } = new List<JobMasterTriggerSourceType>();
+    public JobMasterTriggerSourceType[]? TriggerSourceTypes { get; set; }
     public string? SourceId { get; set; }
     
     public string? JobDefinitionId { get; set; }
@@ -39,7 +41,7 @@ public class ApiJobQueryCriteria
             sourceId = SourceId!.FromBase64();
         }
 
-        var triggerSourceTypes = (TriggerSourceTypes ?? new List<JobMasterTriggerSourceType>()).ToList();
+        var triggerSourceTypes = (TriggerSourceTypes ?? Array.Empty<JobMasterTriggerSourceType>()).ToList();
 
         return new JobQueryCriteria
         {

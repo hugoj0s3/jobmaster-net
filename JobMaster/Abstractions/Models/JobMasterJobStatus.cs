@@ -3,13 +3,14 @@ namespace JobMaster.Abstractions.Models;
 public enum JobMasterJobStatus
 {
     SavePending = 1,
-    HeldOnMaster = 2,
-    AssignedToBucket = 3,
+    OnMaster = 2,
+    InBucket = 3,
     Processing = 4,
     Succeeded = 5,
     Queued = 6,
     Failed = 7,
     Cancelled = 8,
+    Aborted = 9,
 }
 
 public static class JobMasterJobStatusUtil
@@ -22,5 +23,5 @@ public static class JobMasterJobStatusUtil
         new List<JobMasterJobStatus> { JobMasterJobStatus.Succeeded, JobMasterJobStatus.Failed, JobMasterJobStatus.Cancelled };
     
     public static IList<JobMasterJobStatus> GetBucketStatuses() => 
-        new List<JobMasterJobStatus> { JobMasterJobStatus.AssignedToBucket, JobMasterJobStatus.Queued };
+        new List<JobMasterJobStatus> { JobMasterJobStatus.InBucket, JobMasterJobStatus.Queued };
 }

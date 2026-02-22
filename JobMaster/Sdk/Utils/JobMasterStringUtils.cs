@@ -186,4 +186,28 @@ internal static class JobMasterStringUtils
 
         return sb.ToString();
     }
+    
+    /// <summary>
+    /// Normalize id to detect duplicates
+    /// </summary>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public static string NormalizeId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var sb = new StringBuilder(value.Length);
+
+        foreach (var ch in value)
+        {
+            // ignore separators
+            if (ch == '.' || ch == '-' || ch == '_' || ch == ':')
+                continue;
+
+            sb.Append(char.ToUpperInvariant(ch));
+        }
+
+        return sb.ToString();
+    }
 }

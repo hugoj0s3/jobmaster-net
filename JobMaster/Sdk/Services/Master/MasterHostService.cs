@@ -50,8 +50,8 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
 
         return allHostRecords.Select(x =>
         {
-            var lastHeartbeat = allHeartbeats.GetOrDefault(x.Id) ?? x.CreatedAt;
-            return ToHostModel(lastHeartbeat, x);
+            var lastHeartbeat = allHeartbeats.GetOrDefault(x.Id);
+            return ToHostModel(x, lastHeartbeat);
         }).ToList();
     }
 
@@ -211,7 +211,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         return hostStats;
     }
     
-    private static HostModel ToHostModel(DateTime lastHeartbeatAt, HostRecord record)
+    private static HostModel ToHostModel(HostRecord record, DateTime? lastHeartbeatAt)
     {
         var hostId = HostId.Recover(record.HostDisplayName, record.Id);
         return new HostModel(record.ClusterId)

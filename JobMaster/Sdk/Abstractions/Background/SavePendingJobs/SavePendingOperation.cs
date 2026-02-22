@@ -127,7 +127,7 @@ internal class SavePendingOperation
             jobRaw.IsOnBoarding() && 
             engine.OnBoardingControl.CountAvailability() > 0)
         {
-            jobRaw.AssignToBucket(backgroundAgentWorker.AgentConnectionId, backgroundAgentWorker.AgentWorkerId, bucketId);
+            jobRaw.AssignToBucket(currentBucket);
             
             logger.Debug("Short-circuit adding direct into the execution engine", JobMasterLogSubjectType.Job, jobRaw.Id);
             try
@@ -186,7 +186,7 @@ internal class SavePendingOperation
         }
 
         var agentWorkerId = selectedBucket.AgentWorkerId!;
-        jobRaw.AssignToBucket(selectedBucket.AgentConnectionId, agentWorkerId, selectedBucket.Id);
+        jobRaw.AssignToBucket(selectedBucket);
         try
         {
             await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
@@ -201,7 +201,7 @@ internal class SavePendingOperation
         {
             logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
             
-            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, selectedBucket.AgentConnectionId, selectedBucket.Id, jobRaw);
+            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(jobRaw);
             
             return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: selectedBucket.Id, publishedMessageId: publishedMessageId);
         }

@@ -7,4 +7,7 @@ internal interface IAgentComponentFactory : IJobMasterClusterAwareComponent
 {
     IAgentJobsDispatcherRepository GetRepository(AgentConnectionId agentConnectionId);
     IAgentFootprintResolver GetFootprintResolver(AgentConnectionId agentConnectionId);
+    
+    IAgentJobsDispatcherRepository GetRepository(string agentConnectionId);
+    IAgentFootprintResolver GetFootprintResolver(string agentConnectionId);
 }

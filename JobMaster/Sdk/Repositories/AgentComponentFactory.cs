@@ -22,7 +22,7 @@ internal class AgentComponentFactory : JobMasterClusterAwareComponent, IAgentCom
     
     public IAgentJobsDispatcherRepository GetRepository(AgentConnectionId agentConnectionId)
     {
-        if (!agentConnectionId.IsActive())
+        if (!agentConnectionId.IsValid())
         {
             throw new Exception($"Agent connection {agentConnectionId} is not active");
         }
@@ -33,19 +33,26 @@ internal class AgentComponentFactory : JobMasterClusterAwareComponent, IAgentCom
     public IAgentFootprintResolver GetFootprintResolver(AgentConnectionId agentConnectionId)
     {
         var connectionId = agentConnectionId.IdValue;
+        return GetFootprintResolver(connectionId);
+    }
+
+    public IAgentFootprintResolver GetFootprintResolver(string connectionId)
+    {
         if (footprintResolversByAgentConnectionId.TryGetValue(connectionId, out var footprintResolver))
         {
             return footprintResolver;
         }
         
-        var repo = 
-            AwareComponentFactory.GetFootprintResolver(connectionId);
-        
         var config = GetAgentConnectionConfig(connectionId);
+        
+      
         if (config == null)
         {
             throw new Exception($"Connection string for agent {connectionId} not found");
         }
+        
+        var repo = 
+            AwareComponentFactory.GetFootprintResolver(config.RepositoryTypeId);
         
         repo.Initialize(config);
         
@@ -54,7 +61,7 @@ internal class AgentComponentFactory : JobMasterClusterAwareComponent, IAgentCom
         return footprintResolversByAgentConnectionId[connectionId];
     }
 
-    private IAgentJobsDispatcherRepository GetRepository(string agentConnectionId)
+    public IAgentJobsDispatcherRepository GetRepository(string agentConnectionId)
     {
          if (repositoriesByAgentConnectionId.TryGetValue(agentConnectionId, out var repository))
          {
@@ -76,7 +83,7 @@ internal class AgentComponentFactory : JobMasterClusterAwareComponent, IAgentCom
     private JobMasterAgentConnectionConfig? GetAgentConnectionConfig(string agentConnectionId)
     {
         var agentCnnConfig = JobMasterClusterConnectionConfig
-            .TryGet(this.ClusterConnConfig.ClusterId)?
+            .TryGet(this.ClusterConnConfig.ClusterId, includeNotReady: true)?
             .TryGetAgentConnectionConfig(agentConnectionId);
         
         return agentCnnConfig;

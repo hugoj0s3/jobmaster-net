@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -18,6 +19,8 @@ internal class BucketModel : JobMasterBaseModel
     public string Id { get; internal set; } = string.Empty;
     public string Name { get; internal set; } = string.Empty;
     public AgentConnectionId AgentConnectionId { get; internal set; } = null!;
+    public HostId HostId { get; internal set; } = null!;
+    
     public string? AgentWorkerId { get; internal set; }
     public string RepositoryTypeId { get; internal set; } = string.Empty;
     public JobMasterPriority Priority { get; internal set; }
@@ -127,5 +130,15 @@ internal class BucketModel : JobMasterBaseModel
     public bool IsStandaloneBucket(string clusterDefinitionClusterId)
     {
         return ClusterId == clusterDefinitionClusterId && AgentConnectionId.Name == JobMasterConstants.StandaloneAgentConnName;
+    }
+
+    public bool CanAssign()
+    {
+        if (string.IsNullOrEmpty(Id) || !AgentConnectionId.IsNotNullAndValid() || string.IsNullOrEmpty(AgentWorkerId))
+        {
+            return  false;
+        }
+        
+        return true;
     }
 }

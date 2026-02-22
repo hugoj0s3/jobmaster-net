@@ -81,14 +81,15 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         return ToModel(worker);
     }
 
-    public async Task<string> RegisterWorkerAsync(string agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
+    public async Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string agentConnectionId, string? workerName, string? workerLane,
+        AgentWorkerMode mode, double parallelismFactor)
     {
         var worker = await CreateValidatedWorkerAsync(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
         var workerRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker);
         await masterGenericRecordRepository.InsertAsync(workerRecord);
         NotifyChanges();
         
-        return worker.Id;
+        return (worker.Id, HostId.Recover(worker.HostDisplayName, worker.HostId));
     }
 
     public void DeleteWorker(string workerId)
@@ -161,7 +162,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             !useCache)
         {
             var allWorkerRecords = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.AgentWorker);
-            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList<AgentWorkerRecord>();
+            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList();
 
             jobMasterInMemoryCache.Set(cacheKey, allAgentWorkers);
             return allAgentWorkers;
@@ -221,10 +222,10 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         AgentWorkerMode mode,
         double parallelismFactor)
     {
-        if (workerLane != null && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
+        if (!string.IsNullOrEmpty(workerLane) && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
             throw new ArgumentException($"Invalid worker lane format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerLane}'", nameof(workerLane));
 
-        if (workerName != null && !JobMasterStringUtils.IsValidForSegment(workerName, 25))
+        if (!string.IsNullOrEmpty(workerName) && !JobMasterStringUtils.IsValidForSegment(workerName, 25))
             throw new ArgumentException($"Invalid worker name format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerName}'", nameof(workerName));
         
         hostId ??= await masterHostService.RegisterNewHostAsync();
@@ -240,8 +241,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             workerName += "-" + hostId.HostNameSanitized + "-" + randomFriendlyName;
         }
         
-        workerName += $"-{JobMasterIdUtil.NewNanoId()}";
-        var workerId = $"{hostId.IdValue}:{JobMasterIdUtil.NewShortId()}";
+        workerName += $"-{JobMasterIdGenUtil.TimestampId()}";
+        var workerId = $"{hostId.IdValue}:{JobMasterIdGenUtil.NewShortId()}";
         
         if (!JobMasterStringUtils.IsValidForId(workerId))
             throw new ArgumentException($"Invalid worker ID format. Only letters, numbers, underscore (_), hyphen (-), dot(.), and colon (:) are allowed. Received: '{workerName}'", nameof(workerName));
@@ -255,6 +256,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             WorkerLane = workerLane,
             CreatedAt = DateTime.UtcNow,
             HostId = hostId.IdValue,
+            HostDisplayName = hostId.HostDisplayName,
             ParallelismFactor = parallelismFactor
         };
         
@@ -293,6 +295,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         public TimeSpan? StopGracePeriod { get; set; }
         
         public string HostId { get; set; } = null!;
+        
+        public string HostDisplayName { get; set; } = null!;
 
         public AgentWorkerModel ToModel(DateTime lastHeartbeat, bool isAlive)
         {
@@ -307,6 +311,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
                 WorkerLane = WorkerLane,
                 Mode = Mode,
                 ParallelismFactor = ParallelismFactor,
+                HostId = Abstractions.Models.Hosts.HostId.Recover(HostDisplayName, HostId),
             };
         }
     }

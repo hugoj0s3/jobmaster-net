@@ -5,11 +5,14 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,8 +50,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             throw new InvalidOperationException("JobMasterRuntime is already started");
         }
-        
-        PreValidation();
 
         using var scope = serviceProvider.CreateScope();
         
@@ -62,19 +63,47 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             await runtimeSetup.OnStartingAsync(scope.ServiceProvider);
         }
+        
+        PreValidation();
 
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
-            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+            var agentComponentFactory = componentFactory.GetComponent<IAgentComponentFactory>();
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
             var masterAgentConnectionService = componentFactory.GetComponent<IMasterAgentConnectionService>();
+            var logger = componentFactory.GetComponent<IJobMasterLogger>();
+            
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
             
             var agentDefinitions = clusterDefinition.AgentConnections;
             foreach (var agentDefinition in agentDefinitions)
             {
-                var footprintResolver = componentFactory.GetFootprintResolver(agentDefinition.AgentRepoType!);
-                var footprint = footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentDefinition.AgentConnectionName);
+                var agentConfig = clusterCnnCfg.TryGetAgentConnectionConfig(agentDefinition.AgentConnectionName);
+                if (agentConfig == null)
+                {
+                    throw new Exception($"Agent connection {agentDefinition.AgentConnectionName} not found");
+                }
+
+                var agentConnectionId = new AgentConnectionId(agentConfig.Id);
+                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId);
+                
+                var footprintResolver = agentComponentFactory.GetFootprintResolver(agentConfig.Id);
+                var footprint = await footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentConfig.Id);
+                
+                if (existingConnection != null && existingConnection.Footprint != footprint)
+                {
+                    if (agentDefinition.ProtectConnectionChanges)
+                    {
+                        throw new Exception(
+                            $"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, " +
+                            $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
+                    }
+                    
+                    logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, updating...");
+                }
+                
+                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, footprint);
             }
             
             
@@ -180,6 +209,16 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException("Multiple clusters configured but no default cluster defined. Mark one as default.");
             }
         }
+        
+        var clusterDupes = JobMasterClusterConnectionConfig
+            .GetAllConfigs()
+            .GroupBy(x => JobMasterStringUtils.NormalizeId(x.ClusterId)).Where(x => x.Count() > 1)
+            .ToList();
+        
+        if (clusterDupes.Any())
+        {
+            throw new InvalidOperationException($"Multiple clusters configured with the same id. {string.Join(", ", clusterDupes.Select(x => x.Key))}");
+        }
 
         // Validation of all clusters first.
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
@@ -225,9 +264,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
             
             // Ensure no duplicates
-            if (agentDefinitions.GroupBy(x => x.AgentConnectionName.ToLower()).Any(x => x.ToList().Count > 1))
+            var agentDupes = agentDefinitions
+                .GroupBy(x => JobMasterStringUtils.NormalizeId(x.AgentConnectionName))
+                .Where(x => x.ToList().Count > 1).ToList();
+            if (agentDupes.Any())
             {
-                throw new InvalidOperationException("Duplicate agent connection names found");
+                throw new InvalidOperationException($"Duplicate agent connection names found. {string.Join(", ", agentDupes.Select(x => x.Key))}");
             }
             
             if ((clusterDefinition.ClusterMode == ClusterMode.Passive || clusterDefinition.ClusterMode == ClusterMode.Archived) && 
@@ -251,11 +293,25 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             
             // Ensure no duplicates
-            if (workerDefinitions
-                .Where(x => string.IsNullOrEmpty(x.WorkerName))
-                .GroupBy(x => x.WorkerName!.ToLower()).Any(x => x.ToList().Count > 1))
+            var workDupes = workerDefinitions
+                .Where(x => !string.IsNullOrEmpty(x.WorkerName))
+                .GroupBy(x => JobMasterStringUtils.NormalizeId(x.WorkerName!)).Where(x => x.ToList().Count > 1)
+                .ToList();
+            if (workDupes.Any())
             {
-                throw new InvalidOperationException("Duplicate worker names found");
+                throw new InvalidOperationException($"Duplicate worker names found {string.Join(", ", workDupes.Select(x => x.Key))}");
+            }
+            
+            var distinctWorkLanes = workerDefinitions
+                .Where(x => !string.IsNullOrEmpty(x.WorkerLane))
+                .Select(x => x.WorkerLane)
+                .Distinct()
+                .ToList();
+            
+            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x)).Where(x => x.ToList().Count > 1).ToList();
+            if (workLanesDupes.Any())
+            {
+                throw new InvalidOperationException($"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
             }
         }
     }

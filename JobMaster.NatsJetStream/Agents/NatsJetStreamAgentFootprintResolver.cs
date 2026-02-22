@@ -25,6 +25,7 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
         var kvStore = await EnsureKvStoreAsync(clusterId);
 
         var key = agentConnectionId;
+        key = key.Replace("-", "_").Replace(".", "_").Replace(":", "_");
 
         // 1. Try get existing footprint
         try
@@ -41,7 +42,7 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
         }
 
         // 2. Generate new footprint
-        var footprint = Guid.NewGuid().ToString();
+        var footprint = Guid.NewGuid().ToString("N");
 
         // 3. Try to create (insert only if missing)
         try
@@ -88,13 +89,13 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
         try
         {
             // Try to get existing KV store
-            var kvStore = await natsKvContext.GetStoreAsync($"{clusterId}:{KvSuffixStoreName}");
+            var kvStore = await natsKvContext.GetStoreAsync($"{clusterId.Replace("-", "_")}_{KvSuffixStoreName}");
             return kvStore;
         }
         catch
         {
             // If it doesn't exist, create it
-            var kvConfig = new NatsKVConfig($"{clusterId}:{KvSuffixStoreName}")
+            var kvConfig = new NatsKVConfig($"{clusterId.Replace("-", "_")}_{KvSuffixStoreName}")
             {
                 History = 1,
                 MaxBytes = 1024 * 1024 * 10

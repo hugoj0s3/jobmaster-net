@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Utils;
 
@@ -129,6 +130,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterJobStatus Status { get; internal set;}
     public  string? BucketId { get; internal set; }
     public  AgentConnectionId? AgentConnectionId { get; internal set; }
+    public  HostId? HostId { get; internal set; }
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
@@ -139,9 +141,9 @@ internal class Job : JobMasterBaseModel
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     public DateTime? ProcessDeadline { get; internal set; }
 
-    public DateTime? ProcessingStartedAt { get; internal set; }
+    public DateTime? ProcessStartedAt { get; internal set; }
 
-    public DateTime? SucceedExecutedAt { get; internal set; }
+    public DateTime? CompletedAt { get; internal set; }
     public  TimeSpan Timeout { get; internal set; }
     public  int MaxNumberOfRetries { get; internal set; }
     public IWriteableMessageData MsgData { get; internal set; } = new MessageData();

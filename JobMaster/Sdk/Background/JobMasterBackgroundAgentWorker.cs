@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners;
@@ -28,7 +29,8 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 {
     public AgentConnectionId AgentConnectionId { get; private set; } = null!;
     public string AgentWorkerId { get; private set; } = string.Empty;
-    
+    public HostId HostId { get; private set; } = null!;
+
     public string? WorkerLane { get; private set; }
 
     public string AgentRepositoryTypeId { get; private set; } = string.Empty;
@@ -143,13 +145,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         
         var agentConnectionString = clusterConfig.GetAgentConnectionConfig(agentConnName);
-        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
+        var (workerId, hostId) = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
         {
             AgentConnectionId = new AgentConnectionId(agentConnectionId),
             AgentWorkerId = workerId,
+            HostId = hostId,
             JobMasterAgentConnectionConfig = agentConnectionString,
             AgentRepositoryTypeId = agentConnectionString.RepositoryTypeId,
             ClusterConnConfig = clusterConfig,
@@ -184,8 +187,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     public async Task StartAsync()
     {
         logger.Info("Starting JobMasterBackgroundAgentWorker", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
-        var heartBeatRunner = new KeepAliveRunner(this);
+        var heartBeatRunner = new KeepAliveWorkerRunner(this);
         await heartBeatRunner.StartAsync();
+        
+        var agentConnectionHeartBeatRunner = new KeepAliveAgentConnectionRunner(this);
+        await agentConnectionHeartBeatRunner.StartAsync();
+        
+        var hostHeartBeatRunner = new KeepAliveHostRunner(this);
+        await hostHeartBeatRunner.StartAsync();
         
         if (this.Mode == AgentWorkerMode.Full)
         {

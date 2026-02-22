@@ -9,8 +9,9 @@ internal class HostId
     {
         ClusterId = clusterId;
         HostDisplayName = hostDisplayName;
-        HostNameSanitized = JobMasterStringUtils.SanitizeForSegment(hostDisplayName, 25);
-        InstanceId = JobMasterIdUtil.NewShortId();
+        HostNameSanitized = JobMasterStringUtils.SanitizeForSegment(hostDisplayName, 63);
+        
+        InstanceId = JobMasterIdGenUtil.NewShortId();
     }
     
     [JsonConstructor]
@@ -48,5 +49,18 @@ internal class HostId
         };
         
         return result;
+    }
+
+    public bool IsValid()
+    {
+       return !string.IsNullOrEmpty(ClusterId) && !string.IsNullOrEmpty(HostNameSanitized) && !string.IsNullOrEmpty(InstanceId);
+    }
+}
+
+internal static class HostIdExtensions
+{
+    public static bool IsNotNullAndValid(this HostId? hostId)
+    {
+        return hostId != null && hostId.IsValid();
     }
 }

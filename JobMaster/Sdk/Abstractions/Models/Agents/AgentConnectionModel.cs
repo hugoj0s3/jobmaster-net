@@ -16,4 +16,8 @@ internal class AgentConnectionModel : JobMasterBaseModel
     public DateTime CreatedAt { get; set; }
     public DateTime FootprintCreatedAt { get; set; }
     public DateTime? LastHeartbeatAt { get; set; }
+    
+    public string RepositoryTypeId { get; set; } = string.Empty;
+    
+    public bool IsAlive() => (LastHeartbeatAt ?? FootprintCreatedAt) > DateTime.UtcNow.AddMinutes(-5);
 }

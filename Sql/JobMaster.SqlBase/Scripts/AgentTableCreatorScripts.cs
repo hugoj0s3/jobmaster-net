@@ -66,4 +66,38 @@ internal class AgentTableCreatorScripts
 
         return $"{create}\n{idx}";
     }
+
+    public static string CreateAgentConnectionFootprint(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var prefix = tablePrefix == string.Empty ? string.Empty : tablePrefix;
+        var tableName = $"{prefix}agent_connection_footprint";
+
+        // Reuse cluster_id type from GenericRecordEntry for consistency
+        var clusterIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.ClusterId);
+        var clusterIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.ClusterId, length: 250, nullable: false);
+
+        var agentConnectionIdCol = "agent_connection_id";
+        var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var footprintCol = "footprint";
+        var footprintType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var lastUpdatedAtCol = "last_updated_at";
+        var lastUpdatedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var columns = new List<string>
+        {
+            $"{clusterIdCol} {clusterIdType}",
+            $"{agentConnectionIdCol} {agentConnectionIdType}",
+            $"{footprintCol} {footprintType}",
+            $"{lastUpdatedAtCol} {lastUpdatedAtType}"
+        };
+
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_connection_footprint");
+        var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {agentConnectionIdCol})";
+
+        var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
+
+        return create;
+    }
 }

@@ -71,7 +71,7 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var allEntryTableNames = MasterTableCreatorScripts.AllGenericRecordTableNames(sql, tablePrefix);
             foreach (var entryTableName in allEntryTableNames)
             {
-                var tableExistsSql = sql.TableExistsSql(tablePrefix, entryTableName);
+                var tableExistsSql = sql.TableExistsSql(string.Empty, entryTableName);
                 var tableExists = await conn.QueryFirstOrDefaultAsync<bool>(tableExistsSql, transaction: transaction);
                 if (!tableExists)
                 {
@@ -164,6 +164,15 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             {
                 var messageTableScript = AgentTableCreatorScripts.CreateMessageDispatcherTableScript(agentSql, agentTablePrefix);
                 await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
+            }
+
+            // agent_connection_footprint
+            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_connection_footprint");
+            var footprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(footprintTableExistsSql, transaction: agentTransaction);
+            if (!footprintTableExists)
+            {
+                var footprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFootprint(agentSql, agentTablePrefix);
+                await agentDbConnection.ExecuteAsync(footprintTableScript, transaction: agentTransaction);
             }
                 
             agentTransaction.Commit();

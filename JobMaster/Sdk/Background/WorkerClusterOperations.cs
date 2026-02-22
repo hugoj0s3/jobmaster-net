@@ -25,6 +25,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     private readonly IMasterBucketsService masterBucketsService;
     private readonly IMasterAgentWorkersService masterAgentWorkersService = null!;
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService = null!;
+    private readonly IMasterJobExecutionService masterJobExecutionService = null!;
     private readonly IJobMasterLogger logger = null!;
     private readonly JobMasterLockKeys lockKeys = null!;
 
@@ -36,6 +37,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         IMasterBucketsService masterBucketsService, 
         IMasterAgentWorkersService masterAgentWorkersService, 
         IMasterRecurringSchedulesService masterRecurringSchedulesService, 
+        IMasterJobExecutionService masterJobExecutionService,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.agentJobsDispatcherService = agentJobsDispatcherService;
@@ -44,21 +46,21 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         this.masterBucketsService = masterBucketsService;
         this.masterAgentWorkersService = masterAgentWorkersService;
         this.masterRecurringSchedulesService = masterRecurringSchedulesService;
+        this.masterJobExecutionService = masterJobExecutionService;
         this.logger = logger;
         this.lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
 
     public async Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
     {
-        if (jobRaw.Status != JobMasterJobStatus.HeldOnMaster && 
+        if (jobRaw.Status != JobMasterJobStatus.OnMaster && 
             jobRaw.Status != JobMasterJobStatus.SavePending)
         {
             return;
         }
-
-        var agentWorkerId = bucket.AgentWorkerId!;
+        
         var originalStatus = jobRaw.Status;
-        jobRaw.AssignToBucket(bucket.AgentConnectionId, agentWorkerId, bucket.Id);
+        jobRaw.AssignToBucket(bucket);
 
         await masterJobsService.UpsertAsync(jobRaw);
         
@@ -86,7 +88,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
             }
             
-            await agentJobsDispatcherService.AddToProcessingAsync(agentWorkerId, bucket.AgentConnectionId, bucket.Id, jobRaw);
+            await agentJobsDispatcherService.AddToProcessingAsync(jobRaw);
         }
         catch (Exception ex)
         {
@@ -119,14 +121,29 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
     }
 
-    public void Upsert(JobRawModel jobRawModel)
+    public void Upsert(JobRawModel jobRawModel, JobExecution? jobExecution = null)
     {
         masterJobsService.Upsert(jobRawModel);
+        
+        if (jobExecution != null)
+        {
+            masterJobExecutionService.Save(jobExecution);
+        }
     }
     
-    public async Task UpsertAsync(JobRawModel jobRawModel)
+    public async Task UpsertAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null)
     {
         await masterJobsService.UpsertAsync(jobRawModel);
+        
+        if (jobExecution != null)
+        {
+            await masterJobExecutionService.SaveAsync(jobExecution);
+        }
+    }
+
+    public Task SaveJobExecutionAsync(JobExecution jobExecution)
+    {
+        return masterJobExecutionService.SaveAsync(jobExecution);
     }
 
     public void Upsert(RecurringScheduleRawModel jobRawModel)

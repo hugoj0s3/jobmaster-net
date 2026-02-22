@@ -13,11 +13,11 @@ internal abstract class SqlAgentFootprintResolver : IAgentFootprintResolver
 {
     private readonly IDbConnectionManager dbConnectionManager;
 
-    private JobMasterConfigDictionary additionalConnConfig;
-    private string connString;
-    private ISqlGenerator sql;
+    private JobMasterConfigDictionary additionalConnConfig = null!;
+    private string connString = string.Empty;
+    private ISqlGenerator sql = null!;
 
-    public SqlAgentFootprintResolver(IDbConnectionManager dbConnectionManager)
+    protected SqlAgentFootprintResolver(IDbConnectionManager dbConnectionManager)
     {
         this.dbConnectionManager = dbConnectionManager;
     }
@@ -33,7 +33,7 @@ where cluster_id = @clusterId and
         
         if (!string.IsNullOrEmpty(footprint))
         {
-            return footprint;
+            return footprint!;
         }
 
         footprint = Guid.NewGuid().ToString();
@@ -69,10 +69,8 @@ WHERE cluster_id = @clusterId
 
     public abstract string AgentRepoTypeId { get; }
 
-    protected string FootprintTableName()
+    private string FootprintTableName()
     {
-        var tablePrefix = sql.GetTablePrefix(additionalConnConfig);
-        var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
-        return $"{prefix}footprint";
+        return $"{sql.GetTablePrefix(additionalConnConfig)}agent_connection_footprint";
     }
 }

@@ -136,7 +136,9 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
         var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             triggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
+            ProcessStartedAt = rec.ProcessStartedAt,
+            CompletedAt = rec.CompletedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -186,7 +188,9 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         
         var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             TriggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
+            ProcessStartedAt = rec.ProcessStartedAt,
+            CompletedAt = rec.CompletedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -647,7 +651,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
             Col(x => x.CreatedAt), Col(x => x.SourceId),
             Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.ProcessDeadline),
-            Col(x => x.ProcessingStartedAt), Col(x => x.SucceedExecutedAt),
+            Col(x => x.ProcessStartedAt), Col(x => x.CompletedAt),
             Col(x => x.WorkerLane), Col(x => x.Version)
         };
         var vals = new[]
@@ -658,7 +662,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
             "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
-            "@ProcessingStartedAt", "@SucceedExecutedAt",
+            "@ProcessStartedAt", "@CompletedAt",
             "@WorkerLane", "@Version",
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
@@ -685,8 +689,8 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{Col(x => x.PartitionLockId)} = @PartitionLockId",
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.ProcessDeadline)} = @ProcessDeadline",
-            $"{Col(x => x.ProcessingStartedAt)} = @ProcessingStartedAt",
-            $"{Col(x => x.SucceedExecutedAt)} = @SucceedExecutedAt",
+            $"{Col(x => x.ProcessStartedAt)} = @ProcessStartedAt",
+            $"{Col(x => x.CompletedAt)} = @CompletedAt",
             $"{Col(x => x.WorkerLane)} = @WorkerLane",
             $"{Col(x => x.Version)} = @Version",
         });
@@ -717,8 +721,8 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{jobAlias}.{Col(x => x.PartitionLockId)}",
             $"{jobAlias}.{Col(x => x.PartitionLockExpiresAt)}",
             $"{jobAlias}.{Col(x => x.ProcessDeadline)}",
-            $"{jobAlias}.{Col(x => x.ProcessingStartedAt)}",
-            $"{jobAlias}.{Col(x => x.SucceedExecutedAt)}",
+            $"{jobAlias}.{Col(x => x.ProcessStartedAt)}",
+            $"{jobAlias}.{Col(x => x.CompletedAt)}",
             $"{jobAlias}.{Col(x => x.WorkerLane)}",
             $"{jobAlias}.{Col(x => x.Version)}",
 
@@ -819,8 +823,8 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
                 PartitionLockId = first.PartitionLockId,
                 PartitionLockExpiresAt = first.PartitionLockExpiresAt,
                 ProcessDeadline = first.ProcessDeadline,
-                ProcessingStartedAt = first.ProcessingStartedAt,
-                SucceedExecutedAt = first.SucceedExecutedAt,
+                ProcessStartedAt = first.ProcessStartedAt,
+                CompletedAt = first.CompletedAt,
                 Metadata = metadata,
                 WorkerLane = first.WorkerLane,
                 Version = first.Version,

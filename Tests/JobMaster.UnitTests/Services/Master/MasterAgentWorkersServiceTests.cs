@@ -41,7 +41,7 @@ public class MasterAgentWorkersServiceTests
             randomFriendlyNameService.Object);
 
         var act = async () =>
-            await sut.RegisterWorkerAsync("agent", "invalid name", workerLane: null, AgentWorkerMode.Full, 1);
+            await sut.RegisterWorkerAsync("agent", "invalid name", workerLane: null, mode: AgentWorkerMode.Full, parallelismFactor: 1);
         await act.Should().ThrowAsync<ArgumentException>().WithParameterName("workerName");
 
         repo.Verify(x => x.Insert(It.IsAny<GenericRecordEntry>()), Times.Never);
@@ -87,11 +87,11 @@ public class MasterAgentWorkersServiceTests
             hostService.Object,
             new RandomFriendlyNameService(clusterConfig));
 
-        var workerId = await sut.RegisterWorkerAsync(
+        var (workerId, hostId) = await sut.RegisterWorkerAsync(
             $"{clusterId}:agent",
             "worker",
             workerLane: "lane",
-            AgentWorkerMode.Full,
+            mode: AgentWorkerMode.Full,
             parallelismFactor: 1);
 
         workerId.Should().NotBeNullOrWhiteSpace();

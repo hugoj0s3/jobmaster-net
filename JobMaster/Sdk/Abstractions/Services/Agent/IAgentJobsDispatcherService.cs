@@ -17,8 +17,7 @@ internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
     
     Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw);
     
-    string AddToProcessing(string workerId, AgentConnectionId agentConnectionId, string bucketId, JobRawModel jobRaw);
-    Task<string> AddToProcessingAsync(string workerId, AgentConnectionId agentConnectionId, string bucketId, JobRawModel jobRaw);
+    Task<string> AddToProcessingAsync(JobRawModel jobRaw);
     
     Task<IList<JobRawModel>> DequeueToProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo);
     

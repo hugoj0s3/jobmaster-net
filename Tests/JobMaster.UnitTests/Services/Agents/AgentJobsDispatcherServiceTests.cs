@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -31,7 +32,7 @@ public class AgentJobsDispatcherServiceTests
             ScheduledAt = DateTime.UtcNow,
             OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
             AgentConnectionId = null,
@@ -90,7 +91,7 @@ public class AgentJobsDispatcherServiceTests
     }
 
     [Fact]
-    public void AddToProcessing_ShouldAssignToBucket_AndPushToRepository()
+    public async Task AddToProcessing_ShouldAssignToBucket_AndPushToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -120,14 +121,16 @@ public class AgentJobsDispatcherServiceTests
             ScheduledAt = DateTime.UtcNow,
             OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
         };
 
-        sut.AddToProcessing(workerId, agentConnId, bucketId, job);
+        job.AssignToBucket(new BucketModel(clusterId) { Id = bucketId, AgentConnectionId = agentConnId, AgentWorkerId = workerId });
 
-        job.Status.Should().Be(JobMasterJobStatus.AssignedToBucket);
+        await sut.AddToProcessingAsync(job);
+
+        job.Status.Should().Be(JobMasterJobStatus.InBucket);
         job.BucketId.Should().Be(bucketId);
         job.AgentWorkerId.Should().Be(workerId);
         job.AgentConnectionId.Should().NotBeNull();
@@ -169,7 +172,7 @@ public class AgentJobsDispatcherServiceTests
                 ScheduledAt = DateTime.UtcNow,
                 OriginalScheduledAt = DateTime.UtcNow,
                 Priority = JobMasterPriority.High,
-                Status = JobMasterJobStatus.HeldOnMaster,
+                Status = JobMasterJobStatus.OnMaster,
                 Timeout = TimeSpan.FromSeconds(1),
                 MaxNumberOfRetries = 0,
                 AgentConnectionId = agentConnId,

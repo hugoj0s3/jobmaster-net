@@ -2,9 +2,8 @@ using System.Text;
 
 namespace JobMaster.Sdk.Utils;
 
-internal class JobMasterIdUtil
+internal class JobMasterIdGenUtil
 {
-    private static readonly DateTime NanoIdEpoch = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     private const string NanoIdAlphabet = "abcdefghjkmnpqrstuvwxyz23456789";
     private const int NanoIdLength = 5;
 
@@ -30,19 +29,12 @@ internal class JobMasterIdUtil
         }
     }
     
-    public static string NewNanoId() {
+    public static string TimestampId() {
         lock (IdLock)
         {
-            var chars = new char[NanoIdLength];
-            for (int i = 0; i < NanoIdLength; i++)
-            {
-                chars[i] = NanoIdAlphabet[JobMasterRandomUtil.GetInt(0, NanoIdAlphabet.Length)];
-            }
-
-            var seconds = ((int)(DateTime.UtcNow - NanoIdEpoch).TotalSeconds).ToString("x");
-            var timestamp = seconds.Length > 5 ? seconds.Substring(seconds.Length - 5) : seconds.PadLeft(5, '0');
-
-            return timestamp + new string(chars);
+            var nanoIdEpoch = new DateTime(DateTime.UtcNow.Year - 1, 1, 1, 0, 0, 0);
+            var timestamp = ((int)(DateTime.UtcNow - nanoIdEpoch).TotalSeconds).ToString("x");
+            return timestamp;
         }
     }
     

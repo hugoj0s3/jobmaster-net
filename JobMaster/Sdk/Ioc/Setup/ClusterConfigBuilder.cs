@@ -148,7 +148,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
+        clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
         
         JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
@@ -207,6 +209,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterId(string clusterId)
     {
+        if (!JobMasterStringUtils.IsValidForSegment(clusterId, 25))
+        {
+            throw new ArgumentException($"ClusterId {clusterId} is not valid for segment. It must be between 1 and 25 characters long and contain only letters, numbers, hyphens, and underscores.");
+        }
+        
         this.clusterDefinition.ClusterId = clusterId;
         return this;
     }

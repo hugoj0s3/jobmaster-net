@@ -17,7 +17,6 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 {
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;
     private readonly JobMasterInMemoryKeys cacheKeys;
-    private readonly JobMasterSentinelKeys sentinelKeys;
     private readonly IJobMasterInMemoryCache jobMasterInMemoryCache;
     private readonly IMasterHeartbeatService masterHeartbeatService;
     private readonly IMasterBucketsService masterBucketsService;
@@ -25,21 +24,18 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
     public MasterAgentConnectionService(
         JobMasterClusterConnectionConfig clusterConnConfig,
         IMasterGenericRecordRepository masterGenericRecordRepository,
-        JobMasterInMemoryKeys cacheKeys,
-        JobMasterSentinelKeys sentinelKeys,
         IJobMasterInMemoryCache jobMasterInMemoryCache,
         IMasterHeartbeatService masterHeartbeatService,
         IMasterBucketsService masterBucketsService) : base(clusterConnConfig)
     {
         this.masterGenericRecordRepository = masterGenericRecordRepository;
-        this.cacheKeys = cacheKeys;
-        this.sentinelKeys = sentinelKeys;
+        this.cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
         this.jobMasterInMemoryCache = jobMasterInMemoryCache;
         this.masterHeartbeatService = masterHeartbeatService;
         this.masterBucketsService = masterBucketsService;
     }
 
-    public async Task<AgentConnectionModel> SaveConnectionAsync(AgentConnectionId agentConnectionId, string footprint)
+    public async Task<AgentConnectionModel> SaveConnectionAsync(AgentConnectionId agentConnectionId, string repositoryTypeId, string footprint)
     {
         var agentConnectionRecord = await GetRecordAsync(agentConnectionId);
         if (agentConnectionRecord is null)
@@ -50,6 +46,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
                 Footprint = footprint,
                 CreatedAt = DateTime.UtcNow,
                 FootprintCreatedAt = DateTime.UtcNow,
+                RepositoryTypeId = repositoryTypeId
             };
         }
 
@@ -89,7 +86,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         return records.Select(x => ToModel(x, heartbeats.GetOrDefault(x.Id))).ToList();
     }
 
-    public async Task<bool> SafeDeleteConnection(AgentConnectionId agentConnectionId)
+    public async Task<bool> SafeDeleteConnectionAsync(AgentConnectionId agentConnectionId)
     {
         var buckets = await this.masterBucketsService.QueryAsync(new MasterBucketQueryCriteria()
         {
@@ -147,6 +144,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
             CreatedAt = agentConnectionRecord.CreatedAt,
             FootprintCreatedAt = agentConnectionRecord.FootprintCreatedAt,
             LastHeartbeatAt = lastHeartbeatAt,
+            RepositoryTypeId = agentConnectionRecord.RepositoryTypeId,
         };
     }
 
@@ -170,10 +168,15 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         public AgentConnectionRecord(string clusterId) : base(clusterId)
         {
         }
+        
+        protected AgentConnectionRecord()
+        {
+        }
 
         public string Id { get; set; } = string.Empty;
         public string Footprint { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public DateTime FootprintCreatedAt { get; set; }
+        public string RepositoryTypeId { get; set; } = string.Empty;
     }
 }

@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Agent;
@@ -97,7 +98,14 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         // In Insert method
         ValidateAgentAndWorker(agentConnectionId, workerId, worker, agentConfiguration);
 
-        var bucketModel = CreateAndValidateBucketRecord(agentConnectionId, workerId, priority, worker!.Name, worker?.WorkerLane, agentConfiguration.RepositoryTypeId);
+        var bucketModel = CreateAndValidateBucketRecord(
+            agentConnectionId, 
+            worker!.HostId, 
+            workerId, 
+            priority, 
+            worker!.Name, 
+            worker?.WorkerLane, 
+            agentConfiguration.RepositoryTypeId);
 
         var genericRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Bucket, bucketModel.Id, bucketModel);
         await masterGenericRecordRepository.InsertAsync(genericRecord);
@@ -287,13 +295,21 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         return null;
     }
 
-    private BucketModel CreateAndValidateBucketRecord(AgentConnectionId agentConnectionId, string workerId, JobMasterPriority priority,
-        string workerName, string? workerLane, string repositoryTypeId)
+    private static readonly ConcurrentDictionary<string, int> Seq = new();
+    private BucketModel CreateAndValidateBucketRecord(
+        AgentConnectionId agentConnectionId, 
+        HostId hostId, 
+        string workerId, 
+        JobMasterPriority priority,
+        string workerName,  
+        string? workerLane, 
+        string repositoryTypeId)
     {
         var bucketModel = new BucketModel(ClusterConnConfig.ClusterId)
         {
             AgentConnectionId = agentConnectionId,
             AgentWorkerId = workerId,
+            HostId = hostId,
             Priority = priority,
             Status = BucketStatus.Active,
             CreatedAt = DateTime.UtcNow,
@@ -302,14 +318,19 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             RepositoryTypeId = repositoryTypeId,
         };
 
-        var workerLaneSegment = string.IsNullOrWhiteSpace(workerLane) ? string.Empty : $":{workerLane}";
-        bucketModel.Name = $"{workerName}{workerLaneSegment}:{priority}:Bucket-{JobMasterIdUtil.NewNanoId()}";
-        bucketModel.Id = $"{bucketModel.Name}:{JobMasterIdUtil.NewShortId()}";
+        bucketModel.Name = $"{workerName}:{priority}:bucket-";
+        var seq = Seq.AddOrUpdate(bucketModel.Name, 0, (key, oldVal) => oldVal + 1);
+        bucketModel.Name += seq;
         
+        bucketModel.Id = $"{bucketModel.Name}:{JobMasterIdGenUtil.NewShortId()}";
+
         if (!JobMasterStringUtils.IsValidForId(bucketModel.Id))
+        {
             throw new ArgumentException(
                 $"Invalid bucket ID format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. Received: '{bucketModel.Id}'",
                 nameof(bucketModel.Id));
+        }
+            
 
         return bucketModel;
     }

@@ -4,6 +4,7 @@ using System.Reflection;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Utils;
 
@@ -29,6 +30,8 @@ internal static class MasterGenericRecordGroupIds
     
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
+    
+    public const string JobExecution = "JobExecution";
 }
 
 internal class GenericRecordEntry : JobMasterBaseModel
@@ -268,7 +271,11 @@ internal class GenericRecordEntry : JobMasterBaseModel
             return dto.ToUniversalTime();
         }
 
-        if (t == typeof(Guid))     return value is Guid g ? g : Guid.Parse(value.ToString()!);
+        if (t == typeof(Guid))
+        {
+            return value is Guid g ? g : Guid.Parse(value.ToString()!);
+        }    
+            
         
 #if NET6_0_OR_GREATER
         // Optional: support DateOnly/TimeOnly if you use them
@@ -287,6 +294,11 @@ internal class GenericRecordEntry : JobMasterBaseModel
         if (t == typeof(AgentConnectionId))
         {
             return value is AgentConnectionId connId ? connId.IdValue : null;
+        }
+        
+        if (t == typeof(HostId))
+        {
+            return value is HostId hostId ? hostId.IdValue + "||" + hostId.HostDisplayName : null;
         }
         
         // Complex types → JSON string using internal serializer/options
@@ -375,6 +387,31 @@ internal class GenericRecordEntry : JobMasterBaseModel
             catch (ArgumentException)
             {
                return null;
+            }
+        }
+
+        if (t == typeof(HostId))
+        {
+            try
+            {
+                var value = stored?.ToString();
+                if (string.IsNullOrWhiteSpace(value))
+                    return null;
+
+                // split into at most 2 parts in case display name contains '||' defensively
+                var parts = value!.Split(["||"], 2, StringSplitOptions.None);
+                if (parts.Length != 2)
+                    return null;
+
+                var id = parts[0];
+                var displayName = parts[1];
+
+                // Use Recover helper so you keep the same rules everywhere
+                return HostId.Recover(displayName, id);
+            }
+            catch (ArgumentException)
+            {
+                return null;
             }
         }
 
