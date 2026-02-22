@@ -42,14 +42,12 @@
 
 	const urlParamDefs = {
 		status: { defaultValue: "all" as "all" | BucketStatusLabel },
-		search: { defaultValue: "" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 12, ...Serializers.number }
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
 	let statusFilter: "all" | BucketStatusLabel = _initParams.status;
-	let search = _initParams.search;
 
 	let allBuckets: BucketRow[] = [];
 
@@ -67,21 +65,19 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			status: statusFilter,
-			search,
 			page: pageIndex,
 			size: pageSize
 		});
 	}
 
-	$: statusFilter, search, pageIndex, pageSize, syncToUrl();
+	$: statusFilter, pageIndex, pageSize, syncToUrl();
 	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
 	const copiedId = copyFeedback.copiedId;
 
 	$: filtered = allBuckets
-		.filter((r) => (statusFilter === "all" ? true : r.status === statusFilter))
-		.filter((r) => r.name.toLowerCase().includes(search.trim().toLowerCase()));
+		.filter((r) => (statusFilter === "all" ? true : r.status === statusFilter));
 
 	$: bucketsTotalCount = filtered.length;
 	$: paginatedBuckets = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
@@ -340,12 +336,7 @@
 					<option value="ReadyToDelete">Ready to Delete</option>
 				</select>
 
-				<div class="flex items-center justify-between gap-3">
-					<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
-						<span class="opacity-60">🔎</span>
-						<input class="grow" placeholder="Search buckets..." bind:value={search} />
-					</label>
-
+				<div class="flex items-center justify-end gap-3">
 					<Pager
 						bind:pageIndex
 						bind:pageSize

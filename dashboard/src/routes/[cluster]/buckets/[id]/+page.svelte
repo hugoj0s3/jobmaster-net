@@ -251,8 +251,6 @@
 			}));
 	})();
 
-	let q = "";
-
 	const stateBadge: Record<ActiveJob["state"], string> = {
 		Queued: "badge-ghost",
 		Processing: "badge-warning",
@@ -260,11 +258,6 @@
 		Failed: "badge-error",
 	};
 
-	function filteredActiveJobs() {
-		const s = q.trim().toLowerCase();
-		if (!s) return activeJobs;
-		return activeJobs.filter((j) => (j.name + " " + j.id + " " + j.state + " " + j.agent).toLowerCase().includes(s));
-	}
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -378,10 +371,6 @@
 					<span class="badge badge-ghost">{activeJobs.length}</span>
 				</div>
 
-				<label class="input input-bordered flex w-full items-center gap-2 md:w-80">
-					<span class="opacity-60">🔎</span>
-					<input class="grow" placeholder="Search jobs..." bind:value={q} />
-				</label>
 			</div>
 
 			<div class="card mt-3 bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -401,7 +390,7 @@
 							</tr>
 							</thead>
 							<tbody>
-							{#each filteredActiveJobs() as j (j.name + j.id)}
+							{#each activeJobs as j (j.name + j.id)}
 								<tr>
 									<td>
 										<div class="flex items-center gap-2">

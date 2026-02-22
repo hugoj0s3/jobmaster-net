@@ -27,7 +27,6 @@
 	type SortCol = "name" | "cluster" | "health" | "workers" | "buckets";
 
 	const urlParamDefs = {
-		q: { defaultValue: "" },
 		sortBy: { defaultValue: "name" as SortCol },
 		sortAsc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -35,7 +34,6 @@
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	let query = _initParams.q;
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 	let sortBy: SortCol = _initParams.sortBy;
@@ -43,7 +41,6 @@
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			q: query,
 			sortBy,
 			sortAsc,
 			page: pageIndex,
@@ -51,7 +48,7 @@
 		});
 	}
 
-	$: query, sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
+	$: sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
 
 	function toggleSort(col: SortCol) {
 		if (sortBy === col) {
@@ -116,20 +113,9 @@
 		return "⛔";
 	};
 
-	const filtered = () => {
-		const q = query.trim().toLowerCase();
-		if (!q) return rows;
-		return rows.filter((r) =>
-			r.name.toLowerCase().includes(q) ||
-			r.sub.toLowerCase().includes(q) ||
-			r.cluster.toLowerCase().includes(q) ||
-			r.clusterSub.toLowerCase().includes(q)
-		);
-	};
-
 	const healthOrder: Record<Health, number> = { "OK": 0, "Warning": 1, "Error": 2 };
 
-	$: sorted = filtered().sort((a, b) => {
+	$: sorted = rows.slice().sort((a, b) => {
 		const dir = sortAsc ? 1 : -1;
 		switch (sortBy) {
 			case "name":
@@ -166,17 +152,7 @@
 			</div>
 		{/if}
 
-		<div class="flex items-center justify-between gap-3 mt-6">
-			<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
-				<span class="opacity-60">🔎</span>
-				<input
-					type="text"
-					class="grow"
-					placeholder="Search agent connections..."
-					bind:value={query}
-				/>
-			</label>
-
+		<div class="flex items-center justify-end gap-3 mt-6">
 			<Pager
 				bind:pageIndex
 				bind:pageSize

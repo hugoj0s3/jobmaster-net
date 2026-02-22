@@ -58,7 +58,6 @@
 
 	const urlParamDefs = {
 		tab: { defaultValue: "All" as "All" | "Online" | "Offline" },
-		q: { defaultValue: "" },
 		sortBy: { defaultValue: "Host" as "Host" | "CPU" | "Memory" },
 		asc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -68,7 +67,6 @@
 	const _initParams = readUrlParams(urlParamDefs);
 	type Tab = "All" | "Online" | "Offline";
 	let tab: Tab = _initParams.tab;
-	let query = _initParams.q;
 	let sortBy: "Host" | "CPU" | "Memory" = _initParams.sortBy;
 	let asc = _initParams.asc;
 
@@ -78,7 +76,6 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			tab: tab,
-			q: query,
 			sortBy,
 			asc,
 			page: pageIndex,
@@ -86,7 +83,7 @@
 		});
 	}
 
-	$: tab, query, sortBy, asc, pageIndex, pageSize, syncToUrl();
+	$: tab, sortBy, asc, pageIndex, pageSize, syncToUrl();
 
 	function mapWorkerToRow(w: any, hostsMap: Map<string, ApiHostModel>): WorkerRow {
 		const isAlive = w.isAlive === true;
@@ -182,13 +179,7 @@
 	$: filteredAll = rows
 		.filter((r) => {
 			if (tab !== "All" && r.status !== tab) return false;
-			const q = query.trim().toLowerCase();
-			if (!q) return true;
-			return (
-				r.name.toLowerCase().includes(q) ||
-				r.lane.toLowerCase().includes(q) ||
-				(r.hostName ?? "").toLowerCase().includes(q)
-			);
+			return true;
 		})
 		.sort((a, b) => {
 			const dir = asc ? 1 : -1;
@@ -204,7 +195,7 @@
 	$: filtered = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = filtered.length;
 
-	$: if (tab || query || sortBy || asc) pageIndex = 0;
+	$: if (tab || sortBy || asc) pageIndex = 0;
 
 	function refresh() {
 		refreshNow();
@@ -342,11 +333,6 @@
 					</div>
 
 					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
-						<label class="input input-bordered flex items-center gap-2 w-full sm:w-80">
-							<span class="opacity-60">🔎</span>
-							<input class="grow" placeholder="Search Workers" bind:value={query} />
-						</label>
-
 						<div class="join">
 							<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
 								<option value="Host">Sort: Host</option>

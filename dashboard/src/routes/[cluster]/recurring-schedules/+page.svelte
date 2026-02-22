@@ -33,7 +33,6 @@
 	let rows: RecurringScheduleRow[] = [];
 
 	const urlParamDefs = {
-		q: { defaultValue: "" },
 		status: { defaultValue: "All Statuses" as "All Statuses" | RecurringScheduleStatusLabel },
 		type: { defaultValue: "All Job Types" },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -41,7 +40,6 @@
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	let query = _initParams.q;
 	let statusFilter: "All Statuses" | RecurringScheduleStatusLabel = _initParams.status;
 	let typeFilter = _initParams.type;
 
@@ -53,18 +51,11 @@
 	const clusterId = () => $page.params.cluster;
 
 	$: filtered = rows.filter((r) => {
-		const q = query.trim().toLowerCase();
-		const matchesQuery =
-			!q ||
-			`${r.jobType} ${r.handler} ${r.description} ${r.frequency} ${r.tz ?? ""}`
-				.toLowerCase()
-				.includes(q);
-
 		const matchesStatus = statusFilter === "All Statuses" ? true : r.scheduleStatus === statusFilter;
 
 		const matchesType = typeFilter === "All Job Types" ? true : r.jobType === typeFilter;
 
-		return matchesQuery && matchesStatus && matchesType;
+		return matchesStatus && matchesType;
 	});
 
 	$: jobTypes = Array.from(new Set(rows.map((r) => r.jobType)));
@@ -74,7 +65,6 @@
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			q: query,
 			status: statusFilter,
 			type: typeFilter,
 			page: pageIndex,
@@ -82,11 +72,11 @@
 		});
 	}
 
-	$: query, statusFilter, typeFilter, pageIndex, pageSize, syncToUrl();
+	$: statusFilter, typeFilter, pageIndex, pageSize, syncToUrl();
 
 	let lastFilterKey = "";
 	$: {
-		const nextKey = `${query}|${statusFilter}|${typeFilter}`;
+		const nextKey = `${statusFilter}|${typeFilter}`;
 		if (nextKey !== lastFilterKey) {
 			lastFilterKey = nextKey;
 			pageIndex = 0;
@@ -104,7 +94,6 @@
 	$: paged = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
 
 	function clearFilters() {
-		query = "";
 		statusFilter = "All Statuses";
 		typeFilter = "All Job Types";
 	}
@@ -311,12 +300,7 @@
 				</select>
 			</div>
 
-			<div class="flex flex-wrap items-center justify-between gap-3">
-				<label class="input input-bordered input-sm flex items-center gap-2 w-full sm:w-80">
-					<span class="opacity-60">🔎</span>
-					<input class="grow" type="text" placeholder="Search schedules..." bind:value={query} />
-				</label>
-
+			<div class="flex flex-wrap items-center justify-end gap-3">
 				<Pager
 					bind:pageIndex
 					bind:pageSize

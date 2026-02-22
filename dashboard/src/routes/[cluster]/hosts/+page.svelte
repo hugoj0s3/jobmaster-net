@@ -33,7 +33,6 @@
 
 	const urlParamDefs = {
 		tab: { defaultValue: "All" as "All" | "Online" | "Offline" },
-		q: { defaultValue: "" },
 		sortBy: { defaultValue: "host" as "host" | "cpu" | "mem" },
 		sortDir: { defaultValue: "asc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -42,7 +41,6 @@
 
 	const _initParams = readUrlParams(urlParamDefs);
 	let activeTab: "All" | "Online" | "Offline" = _initParams.tab;
-	let q = _initParams.q;
 	let sortBy: "host" | "cpu" | "mem" = _initParams.sortBy;
 	let sortDir: "asc" | "desc" = _initParams.sortDir;
 
@@ -52,7 +50,6 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			tab: activeTab,
-			q,
 			sortBy,
 			sortDir,
 			page: pageIndex,
@@ -60,7 +57,7 @@
 		});
 	}
 
-	$: activeTab, q, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
+	$: activeTab, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
 
 	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
@@ -166,11 +163,6 @@
 		pageIndex = 0;
 	}
 
-	function textFilter(r: HostRow) {
-		const s = `${r.host} ${r.ip} ${r.status}`.toLowerCase();
-		return s.includes(q.trim().toLowerCase());
-	}
-
 	function sortValue(r: HostRow) {
 		if (sortBy === "host") return r.host.toLowerCase();
 		if (sortBy === "cpu") return r.cpu ?? 0;
@@ -182,11 +174,6 @@
 			if (activeTab === "Online") return r.status === "Online" || r.status === "Warning";
 			if (activeTab === "Offline") return r.status === "Offline";
 			return true;
-		})
-		.filter(r => {
-			if (!q.trim()) return true;
-			const s = `${r.host} ${r.ip} ${r.status}`.toLowerCase();
-			return s.includes(q.trim().toLowerCase());
 		})
 		.sort((a, b) => {
 			const av = sortBy === "host" ? a.host.toLowerCase() : sortBy === "cpu" ? (a.cpu ?? 0) : (a.memPercent ?? -1);
@@ -348,13 +335,7 @@
 						</button>
 					</div>
 
-					<!-- Search + Sort + Pager -->
 					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
-						<label class="input input-bordered flex items-center gap-2 w-full sm:w-80">
-							<span class="opacity-60">🔎</span>
-							<input class="grow" placeholder="Search Hosts" bind:value={q} />
-						</label>
-
 						<div class="join">
 							<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
 								<option value="host">Sort: Host</option>
