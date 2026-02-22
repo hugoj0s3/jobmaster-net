@@ -25,7 +25,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var job = NewJob(
             jobDefinitionId: "job-def-rt-" + Guid.NewGuid(),
-            status: JobMasterJobStatus.AssignedToBucket,
+            status: JobMasterJobStatus.InBucket,
             scheduledAt: now.AddMinutes(1),
             workerLane: "LANE_RT");
 
@@ -39,8 +39,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.PartitionLockId = 42;
         job.PartitionLockExpiresAt = now.AddMinutes(30);
         job.ProcessDeadline = now.AddMinutes(20);
-        job.ProcessingStartedAt = now.AddMinutes(-2);
-        job.SucceedExecutedAt = now.AddMinutes(-1);
+        job.ProcessStartedAt = now.AddMinutes(-2);
+        job.CompletedAt = now.AddMinutes(-1);
         job.MsgData = "{\"a\":1,\"b\":\"x\"}";
         job.Metadata = "{\"meta_k\":\"meta_v\",\"n\":5}";
 
@@ -76,8 +76,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.PartitionLockId = 11;
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(15);
         updated.ProcessDeadline = DateTime.UtcNow.AddMinutes(5);
-        updated.ProcessingStartedAt = DateTime.UtcNow.AddMinutes(-10);
-        updated.SucceedExecutedAt = DateTime.UtcNow.AddMinutes(-1);
+        updated.ProcessStartedAt = DateTime.UtcNow.AddMinutes(-10);
+        updated.CompletedAt = DateTime.UtcNow.AddMinutes(-1);
         updated.MsgData = "{\"x\":\"y\"}";
         updated.Metadata = "{\"k\":\"v\"}";
 
@@ -146,8 +146,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var defA = "defA-" + Guid.NewGuid();
         var defB = "defB-" + Guid.NewGuid();
 
-        var j1 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_1");
-        var j2 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(2), workerLane: "LANE_2");
+        var j1 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_1");
+        var j2 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(2), workerLane: "LANE_2");
         var j3 = NewJob(jobDefinitionId: defB, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(3), workerLane: "LANE_1");
 
         await Fixture.MasterJobs.AddAsync(j1);
@@ -156,7 +156,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var criteria = new JobQueryCriteria
         {
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             JobDefinitionId = defA,
             ScheduledFrom = baseTime.AddSeconds(30),
             ScheduledTo = baseTime.AddMinutes(2).AddSeconds(30),
@@ -182,7 +182,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     public async Task Query_ShouldSupport_Status_Filter()
     {
         var def = "defStatus-" + Guid.NewGuid();
-        await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster));
+        await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster));
         await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded));
 
         var c = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.Succeeded, CountLimit = 100 };
@@ -347,8 +347,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var def = "defLane-" + Guid.NewGuid();
         var baseTime = DateTime.UtcNow;
 
-        var lane1 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_A");
-        var lane2 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(2), workerLane: "LANE_B");
+        var lane1 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_A");
+        var lane2 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(2), workerLane: "LANE_B");
 
         await Fixture.MasterJobs.AddAsync(lane1);
         await Fixture.MasterJobs.AddAsync(lane2);
@@ -461,7 +461,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
     internal virtual JobRawModel NewJob(
         string? jobDefinitionId = null,
-        JobMasterJobStatus status = JobMasterJobStatus.HeldOnMaster,
+        JobMasterJobStatus status = JobMasterJobStatus.OnMaster,
         DateTime? scheduledAt = null,
         string? workerLane = null)
     {
@@ -516,8 +516,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         AssertDateTimeEquivalent(ToUtcN(expected.PartitionLockExpiresAt), ToUtcN(actual.PartitionLockExpiresAt));
 
         AssertDateTimeEquivalent(ToUtcN(expected.ProcessDeadline), ToUtcN(actual.ProcessDeadline));
-        AssertDateTimeEquivalent(ToUtcN(expected.ProcessingStartedAt), ToUtcN(actual.ProcessingStartedAt));
-        AssertDateTimeEquivalent(ToUtcN(expected.SucceedExecutedAt), ToUtcN(actual.SucceedExecutedAt));
+        AssertDateTimeEquivalent(ToUtcN(expected.ProcessStartedAt), ToUtcN(actual.ProcessStartedAt));
+        AssertDateTimeEquivalent(ToUtcN(expected.CompletedAt), ToUtcN(actual.CompletedAt));
         Assert.Equal(expected.WorkerLane, actual.WorkerLane);
     }
 
@@ -567,15 +567,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var cutoff = baseTime.AddMinutes(5);
 
         var oldSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(1));
-        oldSucceeded.SucceedExecutedAt = baseTime.AddMinutes(1);
+        oldSucceeded.CompletedAt = baseTime.AddMinutes(1);
 
         var oldFailed = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Failed, scheduledAt: baseTime.AddMinutes(3));
-        oldFailed.SucceedExecutedAt = baseTime.AddMinutes(3);
+        oldFailed.CompletedAt = baseTime.AddMinutes(3);
 
         var recentSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(10));
-        recentSucceeded.SucceedExecutedAt = baseTime.AddMinutes(10);
+        recentSucceeded.CompletedAt = baseTime.AddMinutes(10);
 
-        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1));
+        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1));
 
         await Fixture.MasterJobs.AddAsync(oldSucceeded);
         await Fixture.MasterJobs.AddAsync(oldFailed);
@@ -607,7 +607,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         for (var i = 0; i < 10; i++)
         {
             var j = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(i));
-            j.SucceedExecutedAt = baseTime.AddMinutes(i);
+            j.CompletedAt = baseTime.AddMinutes(i);
             await Fixture.MasterJobs.AddAsync(j);
         }
 
@@ -630,8 +630,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
-        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.HeldOnMaster, scheduledAt: baseTime.AddMinutes(1));
-        var assignedToBucket = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.AssignedToBucket, scheduledAt: baseTime.AddMinutes(2));
+        var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1));
+        var assignedToBucket = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.InBucket, scheduledAt: baseTime.AddMinutes(2));
         var processing = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Processing, scheduledAt: baseTime.AddMinutes(3));
         var pendingRetry = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Queued, scheduledAt: baseTime.AddMinutes(4));
 
@@ -707,8 +707,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             PartitionLockId = job.PartitionLockId,
             PartitionLockExpiresAt = job.PartitionLockExpiresAt,
             ProcessDeadline = job.ProcessDeadline,
-            ProcessingStartedAt = job.ProcessingStartedAt,
-            SucceedExecutedAt = job.SucceedExecutedAt,
+            ProcessStartedAt = job.ProcessStartedAt,
+            CompletedAt = job.CompletedAt,
             WorkerLane = job.WorkerLane,
             Version = job.Version
         };

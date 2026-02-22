@@ -4,7 +4,9 @@ using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -75,6 +77,9 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
     public int? PartitionLockId { get; internal set; }
     
     [JsonInclude]
+    public HostId? HostId { get; internal set; }
+    
+    [JsonInclude]
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     
     [JsonInclude]
@@ -120,12 +125,23 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         AgentWorkerId = null;
     }
 
-    public void AssignPendingRecurringScheduleToBucket(AgentConnectionId agentConnectionId, string agentWorkerId, string bucketId)
+    public void AssignPendingRecurringScheduleToBucket(BucketModel bucketModel)
     {
+        if (bucketModel == null)
+        {
+            throw new ArgumentNullException(nameof(bucketModel));
+        }
+
+        if (!bucketModel.CanAssign())
+        {
+            throw new InvalidOperationException("invalid bucketId or agentConnectionId or agentWorkerId");
+        }
+        
         Status = RecurringScheduleStatus.PendingSave;
-        BucketId = bucketId;
-        AgentConnectionId = agentConnectionId;
-        AgentWorkerId = agentWorkerId;
+        BucketId = bucketModel.Id;
+        AgentConnectionId = bucketModel.AgentConnectionId;
+        AgentWorkerId = bucketModel.AgentWorkerId;
+        HostId = bucketModel.HostId;
     }
 
     public bool TryToCancel()

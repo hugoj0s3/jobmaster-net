@@ -24,7 +24,8 @@
     
 
     <ItemGroup>
-      <PackageReference Include="NATS.Client.JetStream" Version="2.7.0" />
+      <PackageReference Include="NATS.Client.JetStream" Version="2.7.2" />
+      <PackageReference Include="NATS.Client.KeyValueStore" Version="2.7.2" />
       <PackageReference Include="Nito.AsyncEx.Context" Version="5.1.2" />
     </ItemGroup>
 

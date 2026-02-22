@@ -36,7 +36,7 @@ internal sealed class AgentConnectionId
         Name = parts[1];
     }
 
-    public bool IsActive()
+    public bool IsValid()
     {
         var clusterConnection = JobMasterClusterConnectionConfig.TryGet(this.ClusterId);
         if (clusterConnection == null || !clusterConnection.IsReady)
@@ -44,7 +44,7 @@ internal sealed class AgentConnectionId
             return false;
         }
 
-        return clusterConnection.GetAllAgentConnectionConfigs().Any(x => x.Name == this.Name);
+        return true;
     }
     
     public override string ToString()
@@ -55,8 +55,8 @@ internal sealed class AgentConnectionId
 
 internal static class AgentConnectionIdExtensions
 {
-    public static bool IsNotNullAndActive(this AgentConnectionId? agentConnectionId)
+    public static bool IsNotNullAndValid(this AgentConnectionId? agentConnectionId)
     {
-        return agentConnectionId != null && agentConnectionId.IsActive();
+        return agentConnectionId != null && agentConnectionId.IsValid();
     }
 }

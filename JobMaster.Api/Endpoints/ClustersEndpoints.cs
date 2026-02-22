@@ -44,7 +44,7 @@ internal static class ClustersEndpoints
         [FromRoute] string clusterId,
         CancellationToken ct)
     {
-        var clusterConnConfig = JobMasterClusterConnectionConfig.TryGet(clusterId, includeInactive: true);
+        var clusterConnConfig = JobMasterClusterConnectionConfig.TryGet(clusterId, includeNotReady: true);
         if (clusterConnConfig == null)
         {
             return Results.NotFound();

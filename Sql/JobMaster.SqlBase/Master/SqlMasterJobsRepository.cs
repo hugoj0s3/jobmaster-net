@@ -136,7 +136,9 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
 
         var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             triggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
+            ProcessStartedAt = rec.ProcessStartedAt,
+            CompletedAt = rec.CompletedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -159,7 +161,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             conn.Execute(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.JobMetadata);
             conn.Execute(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -186,7 +188,9 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         
         var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.JobDefinitionId,
             TriggerSourceType = rec.TriggerSourceType, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.Priority, rec.ScheduledAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
-            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline, rec.ProcessingStartedAt, rec.SucceedExecutedAt, rec.WorkerLane }, trans);
+            SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
+            ProcessStartedAt = rec.ProcessStartedAt,
+            CompletedAt = rec.CompletedAt, rec.WorkerLane }, trans);
         
         if (rowsAffected == 0)
         {
@@ -209,7 +213,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
             await conn.ExecuteAsync(updateSql, parameters, trans);
 
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
+            var deleteValueSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.JobMetadata);
             await conn.ExecuteAsync(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
 
             var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
@@ -267,7 +271,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         var sqlText = @$"
 SELECT COUNT(*) 
 FROM {t} j 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 {whereSql}";
         return conn.ExecuteScalar<long>(sqlText, args);
     }
@@ -453,11 +457,11 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
 
                 // Delete Metadata associated
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.JobMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
 
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 
@@ -483,8 +487,8 @@ ORDER BY {cScheduledAt} ASC, {cId} ASC");
         var sqlText = $@"
 SELECT {selectCols} 
 FROM {TableName()} j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
  WHERE j.{Col(x => x.ClusterId)} = @ClusterId AND j.{Col(x => x.Id)} = @Id
 ";
         var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId, GroupId = MasterGenericRecordGroupIds.JobMetadata };
@@ -497,7 +501,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
         var sqlText = $@"
 SELECT {Col(x => x.Id)} 
 FROM {TableName()} j 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
 {whereSql}";
         sb.Append(sqlText);
         var sortBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", $" ORDER BY j.{Col(x => x.ScheduledAt)} ASC, j.{Col(x => x.CreatedAt)} ASC ");
@@ -536,15 +540,15 @@ LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x
 WITH jobs_page AS (
     SELECT j.*
     FROM {t} j
-    LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
     {whereSql}
     {order}
     {offsetClause}
 )
 SELECT {selectCols}
 FROM jobs_page j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 {order}";
 
             return (queryText, concatedArgs);
@@ -625,7 +629,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             args.Add("WorkerLane", c.WorkerLane);
         }
 
-        var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args);
+        var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.JobMetadata);
         if (!string.IsNullOrEmpty(exists)) where.Add(exists);
 
         var whereSql = "WHERE " + string.Join(" AND ", where);
@@ -647,7 +651,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
             Col(x => x.CreatedAt), Col(x => x.SourceId),
             Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.ProcessDeadline),
-            Col(x => x.ProcessingStartedAt), Col(x => x.SucceedExecutedAt),
+            Col(x => x.ProcessStartedAt), Col(x => x.CompletedAt),
             Col(x => x.WorkerLane), Col(x => x.Version)
         };
         var vals = new[]
@@ -658,7 +662,7 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
             "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
-            "@ProcessingStartedAt", "@SucceedExecutedAt",
+            "@ProcessStartedAt", "@CompletedAt",
             "@WorkerLane", "@Version",
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
@@ -685,8 +689,8 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             $"{Col(x => x.PartitionLockId)} = @PartitionLockId",
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.ProcessDeadline)} = @ProcessDeadline",
-            $"{Col(x => x.ProcessingStartedAt)} = @ProcessingStartedAt",
-            $"{Col(x => x.SucceedExecutedAt)} = @SucceedExecutedAt",
+            $"{Col(x => x.ProcessStartedAt)} = @ProcessStartedAt",
+            $"{Col(x => x.CompletedAt)} = @CompletedAt",
             $"{Col(x => x.WorkerLane)} = @WorkerLane",
             $"{Col(x => x.Version)} = @Version",
         });
@@ -717,8 +721,8 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             $"{jobAlias}.{Col(x => x.PartitionLockId)}",
             $"{jobAlias}.{Col(x => x.PartitionLockExpiresAt)}",
             $"{jobAlias}.{Col(x => x.ProcessDeadline)}",
-            $"{jobAlias}.{Col(x => x.ProcessingStartedAt)}",
-            $"{jobAlias}.{Col(x => x.SucceedExecutedAt)}",
+            $"{jobAlias}.{Col(x => x.ProcessStartedAt)}",
+            $"{jobAlias}.{Col(x => x.CompletedAt)}",
             $"{jobAlias}.{Col(x => x.WorkerLane)}",
             $"{jobAlias}.{Col(x => x.Version)}",
 
@@ -744,8 +748,8 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
             $@"
 SELECT {selectCols} 
 FROM {jobTableName} j
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 {whereSql}
 {order}";
         
@@ -819,8 +823,8 @@ LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = 
                 PartitionLockId = first.PartitionLockId,
                 PartitionLockExpiresAt = first.PartitionLockExpiresAt,
                 ProcessDeadline = first.ProcessDeadline,
-                ProcessingStartedAt = first.ProcessingStartedAt,
-                SucceedExecutedAt = first.SucceedExecutedAt,
+                ProcessStartedAt = first.ProcessStartedAt,
+                CompletedAt = first.CompletedAt,
                 Metadata = metadata,
                 WorkerLane = first.WorkerLane,
                 Version = first.Version,

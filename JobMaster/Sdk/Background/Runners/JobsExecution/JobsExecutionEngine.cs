@@ -327,7 +327,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 
                 return;
             }
-            
+            JobExecution? execution = null;
             try
             {
                 RecurringScheduleContext? recurringScheduleContext = null;
@@ -374,8 +374,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 
                 timeoutCancellationToken.ThrowIfCancellationRequested();
                 
-                jobRawModel.ProcessingStarted();
-                await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
+                execution = jobRawModel.ProcessingStarted();
+                await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel, execution);
 
                 await using var scope = backgroundAgentWorker.ServiceProvider.CreateAsyncScope();
                 var job = jobRawModel.ToJob();
@@ -406,8 +406,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 await jobHandler.HandleAsync(jobContext);
 
                 jobRawModel.MarkAsSucceeded();
+                execution.Succeed();
                 await backgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.Upsert(jobRawModel), millisecondsToDelay: 50);
+                    .ExecWithRetryAsync(o => o.Upsert(jobRawModel, execution), millisecondsToDelay: 50);
 
                 stopwatch.Stop();
                 logger.Debug($"ExecuteJobAsync completed successfully in {stopwatch.ElapsedMilliseconds}ms", JobMasterLogSubjectType.Job, jobRawModel.Id);
@@ -420,11 +421,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 {
                     message = $"Job {jobRawModel.JobDefinitionId} timeout after {stopwatch.ElapsedMilliseconds}ms. reached end of retries";
                 }
+                
+                execution?.Fail(message);
 
                 logger.Error(message, JobMasterLogSubjectType.JobExecution, jobRawModel.Id);
 
                 await backgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.Upsert(jobRawModel), millisecondsToDelay: 50);
+                    .ExecWithRetryAsync(o => o.Upsert(jobRawModel, execution), millisecondsToDelay: 50);
             }
             catch (JobMasterVersionConflictException ce)
             {
@@ -435,18 +438,25 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     return;
                 }
 
-                if (existingJob.Status == JobMasterJobStatus.HeldOnMaster)
+                if (existingJob.Status == JobMasterJobStatus.OnMaster)
                 {
                     logger.Warn("Job execution conflict. Job is held on master", JobMasterLogSubjectType.JobExecution, jobRawModel.Id);
                     return;
                 }
 
                 logger.Error($"Job execution conflict. Job is probably running on another process. Trying to hold on master for safety. Status: ({existingJob.Status})", JobMasterLogSubjectType.JobExecution, jobRawModel.Id, exception: ce);
+
+                if (execution != null)
+                {
+                    execution.Fail($"Job execution conflict. Job is probably running on another process. Trying to hold on master for safety. Status: ({existingJob.Status})");
+                    await backgroundAgentWorker.WorkerClusterOperations
+                        .ExecWithRetryAsync(o => o.SaveJobExecutionAsync(execution), millisecondsToDelay: 50);
+                }
             }
             catch (Exception e)
             {
                 stopwatch.Stop();
-                await HandleErrorAsync(jobRawModel, stopwatch, e);
+                await HandleErrorAsync(jobRawModel, execution, stopwatch, e);
             }
             finally
             {
@@ -550,18 +560,20 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.logger.Info($"Graceful flush complete for {BucketId}.");
     }
 
-    private async Task HandleErrorAsync(JobRawModel job, Stopwatch stopwatch, Exception e)
+    private async Task HandleErrorAsync(JobRawModel job, JobExecution? execution, Stopwatch stopwatch, Exception e)
     {
         string message = $"Job {job.JobDefinitionId} failed after {stopwatch.ElapsedMilliseconds}ms";
         if (!job.TryRetry())
         {
             message = $"Job {job.JobDefinitionId} failed after {stopwatch.ElapsedMilliseconds}ms. reached end of retries";
-        } 
+        }
+        
+        execution?.Fail(message);
                 
         logger.Error(message, JobMasterLogSubjectType.JobExecution, job.Id, exception: e);
 
         await backgroundAgentWorker.WorkerClusterOperations
-            .ExecWithRetryAsync(o => o.Upsert(job), millisecondsToDelay: 50);
+            .ExecWithRetryAsync(o => o.Upsert(job, execution), millisecondsToDelay: 50);
     }
     
     private enum RecurringScheduleValidationResult

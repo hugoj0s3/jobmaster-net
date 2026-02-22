@@ -1,4 +1,5 @@
 using JobMaster.Sdk;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
 using JobMaster.SqlBase.Connections;
@@ -27,6 +28,8 @@ internal static class SqlServerIocRegistration
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
         registration.ClusterServices.AddKeyedSingleton<IDbConnectionManager, SqlServerDbConnectionManager>(RepositoryType);
+        registration.ClusterServices.AddKeyedSingleton<IAgentFootprintResolver, SqlServerAgentFootprintResolver>(RepositoryType);
+        registration.AddFootprintResolver<SqlServerAgentFootprintResolver>(RepositoryType);
         registration.AddRepositoryDispatcher<SqlServerJobsDispatcherRepository, SqlServerRawMessagesDispatcherRepository, SqlServerRawMessagesDispatcherRepository>(RepositoryType);
     }
 }

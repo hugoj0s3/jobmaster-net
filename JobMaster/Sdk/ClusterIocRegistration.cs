@@ -60,6 +60,12 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         ClusterServices.AddSingleton(factory);
     }
     
+    public void AddFootprintResolver<TFootprintResolver>(string repositoryTypeId) 
+        where TFootprintResolver : class, IAgentFootprintResolver
+    {
+        ClusterServices.AddKeyedTransient<IAgentFootprintResolver, TFootprintResolver>(ClusterServiceKeys.GetFootprintResolverKey(repositoryTypeId));
+    }
+    
     public void AddRepositoryDispatcher<TRepositoryDispatcher, TSavePendingRepository, TProcessingRepository>(string repositoryTypeId) 
         where TRepositoryDispatcher : class, IAgentJobsDispatcherRepository<TSavePendingRepository, TProcessingRepository>
         where TSavePendingRepository : class, IAgentRawMessagesDispatcherRepository

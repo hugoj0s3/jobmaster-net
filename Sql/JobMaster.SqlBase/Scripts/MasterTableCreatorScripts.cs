@@ -9,10 +9,32 @@ internal static class MasterTableCreatorScripts
 {
     public static string CreateGenericRecordTablesScript(ISqlGenerator sqlGenerator, string tablePrefix = "")
     {
-       var script1 = CreateGenericRecordEntry(sqlGenerator, tablePrefix);
-       var script2 = CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix);
+       var scripts = new List<string>();
        
-       return $"{script1}\n{script2}";
+       // Default table (no suffix) - used by ClusterConfiguration
+       scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, string.Empty));
+       scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, string.Empty));
+       
+       // Family tables
+       foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+       {
+           scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, suffix));
+           scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, suffix));
+       }
+       
+       return string.Join("\n", scripts);
+    }
+
+    public static IReadOnlyList<string> AllGenericRecordTableNames(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var names = new List<string>();
+        var baseEntryName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+        names.Add(baseEntryName);
+        foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+        {
+            names.Add($"{baseEntryName}{suffix}");
+        }
+        return names;
     }
 
     public static string CreateRecurringScheduleTablesScript(ISqlGenerator sqlGenerator, string tablePrefix)
@@ -227,17 +249,23 @@ internal static class MasterTableCreatorScripts
         var processDeadlineCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessDeadline);
         var processDeadlineType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var processingStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessingStartedAt);
-        var processingStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var processStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessStartedAt);
+        var processStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var succeedExecutedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.SucceedExecutedAt);
-        var succeedExecutedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var completedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.CompletedAt);
+        var completedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
         
         var workerLaneCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.WorkerLane);
         var workerLaneType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
         
         var versionCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
+        
+        var hostIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostId);
+        var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
         var columns = new List<string>
         {
@@ -261,10 +289,12 @@ internal static class MasterTableCreatorScripts
             $"{partitionLockIdCol} {partitionLockIdType}",
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{processDeadlineCol} {processDeadlineType}",
-            $"{processingStartedAtCol} {processingStartedAtType}",
-            $"{succeedExecutedAtCol} {succeedExecutedAtType}",
+            $"{processStartedAtCol} {processStartedAtType}",
+            $"{completedAtCol} {completedAtType}",
             $"{workerLaneCol} {workerLaneType}",
-            $"{versionCol} {versionType}"
+            $"{versionCol} {versionType}",
+            $"{hostIdCol} {hostIdType}",
+            $"{hostDisplayNameCol} {hostDisplayNameType}"
         };
 
         var pk = $" CONSTRAINT pk_{tableName}job PRIMARY KEY ({clusterIdCol}, {idCol})";
@@ -282,9 +312,10 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
-       var tableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var baseTableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var tableName = string.IsNullOrEmpty(familySuffix) ? baseTableName : $"{baseTableName}{familySuffix}";
        
         var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
         var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -377,11 +408,12 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
         var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
        
-         var tableName = $"{prefix}generic_record_entry_value";
+         var baseValueTableName = $"{prefix}generic_record_entry_value";
+         var tableName = string.IsNullOrEmpty(familySuffix) ? baseValueTableName : $"{baseValueTableName}{familySuffix}";
 
          var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
          var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -421,28 +453,31 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{valueDateTime} {valueDateTimeType}");
         columns.Add($"{valueGuid} {valueGuidType}");
         
-        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value");
-        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value");
+        var sfx = string.IsNullOrEmpty(familySuffix) ? "" : familySuffix;
+        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value{sfx}");
+        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value{sfx}");
         var primaryKey = $" CONSTRAINT {primaryKeyName} PRIMARY KEY ({recordIdCol}, {keyNameCol})";
-        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)} ({recordIdCol})";
+        var entryTableName = string.IsNullOrEmpty(familySuffix) ? sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix) : $"{sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)}{familySuffix}";
+        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {entryTableName} ({recordIdCol})";
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)}, \n {primaryKey},\n {foreignKey}); \n";
         
         var indexScripts = new List<string>();
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_text", (keyNameCol, false, 250), (valueTextCol, true, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_binary", (keyNameCol, false, 250), (valueBinaryCol, true, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_int64", (keyNameCol, false, 250), (valueInt64, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_bool", (keyNameCol, false, 250), (valueBool, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_decimal", (keyNameCol, false, 250), (valueDecimal, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_datetime", (keyNameCol, false, 250), (valueDateTime, false, (int?)null)));
+        var indexPrefix = $"idx_{tableName}";
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_text", (keyNameCol, false, 250), (valueTextCol, true, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_binary", (keyNameCol, false, 250), (valueBinaryCol, true, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_int64", (keyNameCol, false, 250), (valueInt64, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_bool", (keyNameCol, false, 250), (valueBool, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_decimal", (keyNameCol, false, 250), (valueDecimal, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_datetime", (keyNameCol, false, 250), (valueDateTime, false, (int?)null)));
 
         // Composite indexes for common EXISTS filters:
         //   ... WHERE v2.record_unique_id = e.record_unique_id AND v2.key_name = @Key AND v2.value_* = @Value
         // KeyName + Value + RecordUniqueId supports filtering + join without scanning.
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_int64_record", (keyNameCol, false, 250), (valueInt64, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_bool_record", (keyNameCol, false, 250), (valueBool, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_decimal_record", (keyNameCol, false, 250), (valueDecimal, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_datetime_record", (keyNameCol, false, 250), (valueDateTime, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_guid_record", (keyNameCol, false, 250), (valueGuid, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_int64_record", (keyNameCol, false, 250), (valueInt64, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_bool_record", (keyNameCol, false, 250), (valueBool, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_decimal_record", (keyNameCol, false, 250), (valueDecimal, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_datetime_record", (keyNameCol, false, 250), (valueDateTime, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_guid_record", (keyNameCol, false, 250), (valueGuid, false, (int?)null), (recordIdCol, false, 450)));
 
         createTableScript = $"{createTableScript}\n{string.Join("\n", indexScripts)}";
 

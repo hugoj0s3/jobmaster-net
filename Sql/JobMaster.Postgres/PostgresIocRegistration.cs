@@ -2,6 +2,7 @@ using JobMaster.Postgres.Agents;
 using JobMaster.Postgres.Master;
 using JobMaster.SqlBase.Connections;
 using JobMaster.Sdk;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
 using Microsoft.Extensions.DependencyInjection;
@@ -26,6 +27,7 @@ internal static class PostgresIocRegistration
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
         registration.ClusterServices.AddKeyedSingleton<IDbConnectionManager, PostgresDbConnectionManager>(RepositoryType);
+        registration.AddFootprintResolver<PostgresAgentFootprintResolver>(RepositoryType);
         registration.AddRepositoryDispatcher<PostgresJobsDispatcherRepository, PostgresRawMessagesDispatcherRepository, PostgresRawMessagesDispatcherRepository>(PostgresRepositoryConstants.RepositoryTypeId);
     }
 }

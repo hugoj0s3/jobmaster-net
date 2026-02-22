@@ -1,11 +1,10 @@
 using JobMaster.Api.ApiModels;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
-using System;
-using System.Collections.Generic;
-using System.Linq;
 
 namespace JobMaster.Api.Endpoints;
 
@@ -15,75 +14,61 @@ internal static class HostsEndpoints
     {
         var hosts = group.GetClusterEntityGroup("hosts");
 
-        // TODO: This is a mock endpoint (randomized values) until host telemetry is implemented.
-
-        hosts.MapGet("/", ListHostsAsync)
-            .Produces<List<ApiHostModel>>(StatusCodes.Status200OK);
-
-        hosts.MapGet("/count", CountHostsAsync)
-            .Produces<int>(StatusCodes.Status200OK);
-
-        hosts.MapGet("/{hostId}", GetHostAsync)
-            .Produces<ApiHostModel>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
+        hosts.MapGet("/", ListHostsAsync);
+        hosts.MapGet("/count", CountHostsAsync);
+        hosts.MapGet("/{hostId}", GetHostAsync);
 
         return group;
     }
 
-    private static Task<IResult> CountHostsAsync(
+    private static async Task<IResult> CountHostsAsync(
         [FromRoute] string clusterId,
         CancellationToken ct)
     {
-        var count = GetMockHosts(clusterId).Count;
-        return Task.FromResult(Results.Ok(count));
-    }
-
-    private static List<ApiHostModel> GetMockHosts(string clusterId)
-    {
-        var seed = clusterId?.GetHashCode(StringComparison.Ordinal) ?? 0;
-        var rng = new Random(seed);
-
-        var result = new List<ApiHostModel>();
-        var count = rng.Next(4, 9);
-
-        for (var i = 1; i <= count; i++)
+        var service = EndpointUtils.GetClusterAwareComponent<IMasterHostService>(clusterId);
+        if (service == null)
         {
-            var totalGb = rng.Next(8, 257);
-            var totalBytes = totalGb * 1024L * 1024 * 1024;
-
-            var usedPercent = rng.NextDouble() * 0.85;
-            var usedBytes = (long)(totalBytes * usedPercent);
-
-            result.Add(new ApiHostModel
-            {
-                Id = $"host-{i}",
-                DisplayName = $"Host {i}",
-                CpuUsagePercent = Math.Round(rng.NextDouble() * 100, 2),
-                MemoryTotalBytes = totalBytes,
-                MemoryUsedBytes = usedBytes,
-                ThreadCount = rng.Next(20, 500),
-                HandleCount = rng.Next(200, 5000)
-            });
+            return Results.NotFound();
         }
 
-        return result;
+        var hosts = await service.QueryAllAsync();
+        return Results.Ok(hosts.Count);
     }
 
-    private static Task<IResult> ListHostsAsync(
+    private static async Task<IResult> ListHostsAsync(
         [FromRoute] string clusterId,
         CancellationToken ct)
     {
-        var result = GetMockHosts(clusterId);
-        return Task.FromResult(Results.Ok(result));
+        var service = EndpointUtils.GetClusterAwareComponent<IMasterHostService>(clusterId);
+        if (service == null)
+        {
+            return Results.NotFound();
+        }
+
+        var hosts = await service.QueryAllAsync();
+        var result = hosts.Select(ApiHostModel.FromDomain).ToList();
+        return Results.Ok(result);
     }
 
-    private static Task<IResult> GetHostAsync(
+    private static async Task<IResult> GetHostAsync(
         [FromRoute] string clusterId,
         [FromRoute] string hostId,
         CancellationToken ct)
     {
-        var list = GetMockHosts(clusterId);
-        var item = list.FirstOrDefault(x => string.Equals(x.Id, hostId, StringComparison.OrdinalIgnoreCase));
-        return Task.FromResult(item == null ? Results.NotFound() : Results.Ok(item));
+        var service = EndpointUtils.GetClusterAwareComponent<IMasterHostService>(clusterId);
+        if (service == null)
+        {
+            return Results.NotFound();
+        }
+
+        var hosts = await service.QueryAllAsync();
+        var host = hosts.FirstOrDefault(h => string.Equals(h.Id.IdValue, hostId, StringComparison.OrdinalIgnoreCase));
+        if (host == null)
+        {
+            return Results.NotFound();
+        }
+
+        return Results.Ok(ApiHostModel.FromDomain(host));
     }
+
 }

@@ -70,7 +70,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return;
         }
 
-        rawModel.AssignSavePendingJobToBucket(bucket.AgentConnectionId, bucket.AgentWorkerId!, bucket.Id);
+        rawModel.AssignSavePendingJobToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel);
     }
     
@@ -95,7 +95,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
                 continue;
             }
 
-            jobRawModel.AssignSavePendingJobToBucket(bucket.AgentConnectionId, bucket.AgentWorkerId!, bucket.Id);
+            jobRawModel.AssignSavePendingJobToBucket(bucket);
             jobsToSave.Add(jobRawModel);
         }
 
@@ -124,7 +124,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return;
         }
 
-        rawModel.AssignPendingRecurringScheduleToBucket(bucket.AgentConnectionId, bucket.AgentWorkerId!, bucket.Id); 
+        rawModel.AssignPendingRecurringScheduleToBucket(bucket); 
         agentJobsDispatcherService.AddSavePendingRecur(rawModel);
     }
 
@@ -146,7 +146,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return;
         }
 
-        job.AssignSavePendingJobToBucket(bucket.AgentConnectionId, bucket.AgentWorkerId!, bucket.Id);
+        job.AssignSavePendingJobToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingJob(job);
     }
 
@@ -167,7 +167,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return;
         }
 
-        rawModel.AssignPendingRecurringScheduleToBucket(bucket.AgentConnectionId, bucket.AgentWorkerId!, bucket.Id);
+        rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel);
     }
 

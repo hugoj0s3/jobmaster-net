@@ -20,20 +20,10 @@ internal static class JobsEndpoints
     {
         var jobs = group.GetClusterEntityGroup("jobs");
 
-        jobs.MapGet("/", QueryJobsAsync)
-            .Produces<List<ApiJobModel>>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces<string>(StatusCodes.Status400BadRequest);
-
-        jobs.MapGet("/count", CountJobsAsync)
-            .Produces<int>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces<string>(StatusCodes.Status400BadRequest);
-
-        jobs.MapGet("/{id}", GetJobAsync)
-            .Produces<ApiJobModel>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound)
-            .Produces<string>(StatusCodes.Status400BadRequest);
+        jobs.MapGet("/", QueryJobsAsync);
+        jobs.MapGet("/count", CountJobsAsync);
+        jobs.MapGet("/{id}", GetJobAsync);
+        jobs.MapGet("/{id}/executions", GetJobExecutionsAsync);
 
         return group;
     }
@@ -120,5 +110,34 @@ internal static class JobsEndpoints
         }
         
         return Results.Ok(ApiJobModel.FromDomain(result));
+    }
+
+    private static async Task<IResult> GetJobExecutionsAsync(
+        [FromRoute] string clusterId,
+        [FromRoute] string id,
+        CancellationToken ct)
+    {
+        var service = EndpointUtils.GetClusterAwareComponent<IMasterJobExecutionService>(clusterId);
+        if (service == null)
+        {
+            return Results.NotFound();
+        }
+
+        Guid guid;
+        try
+        {
+            guid = id.FromBase64();
+        }
+        catch (Exception)
+        {
+            return Results.BadRequest($"Invalid job id '{id}'.");
+        }
+
+        var executions = await service.QueryAsync(guid);
+        var result = executions
+            .Select(ApiJobExecution.FromDomain)
+            .ToList();
+
+        return Results.Ok(result);
     }
 }

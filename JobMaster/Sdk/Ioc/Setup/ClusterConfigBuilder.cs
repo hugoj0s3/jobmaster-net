@@ -130,6 +130,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.ClusterServices.AddSingleton<IBucketSelectorAlgorithm, RandomBucketSelectorAlgorithm>();
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
+        
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobsService, MasterJobsService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterChangesSentinelService, MasterChangesSentinelService>();
@@ -141,13 +142,17 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IAgentJobsDispatcherService, AgentJobsDispatcherService>();
         clusterServiceRegistration.AddJobMasterComponent<IJobMasterSchedulerClusterAware, JobMasterSchedulerClusterAware>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
-        clusterServiceRegistration.AddJobMasterComponent<IAgentJobsDispatcherRepositoryFactory, AgentJobsDispatcherRepositoryFactory>();
+        clusterServiceRegistration.AddJobMasterComponent<IAgentComponentFactory, AgentComponentFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IRecurringSchedulePlanner, RecurringSchedulePlanner>();
         clusterServiceRegistration.AddJobMasterComponent<IJobMasterLogger, JobMasterLogger>();
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
+        clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
         
-        JobMasterIocRegistrationAttribute.RegisterAllForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
+        JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
         var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
         agentRepoTypes.Add(finalClusterRepoType); // for standalone agents
@@ -157,7 +162,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             if (string.IsNullOrEmpty(agentRepoType))
                 continue;
             
-            JobMasterIocRegistrationAttribute.RegisterAllForAgent(clusterServiceRegistration, agentRepoType, finalClusterId!);
+            JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForAgent(clusterServiceRegistration, agentRepoType, finalClusterId!);
         }
         
         // Register runtime setup. get all impl and register for IJobMasterRuntimeSetup
@@ -204,6 +209,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterId(string clusterId)
     {
+        if (!JobMasterStringUtils.IsValidForSegment(clusterId, 25))
+        {
+            throw new ArgumentException($"ClusterId {clusterId} is not valid for segment. It must be between 1 and 25 characters long and contain only letters, numbers, hyphens, and underscores.");
+        }
+        
         this.clusterDefinition.ClusterId = clusterId;
         return this;
     }

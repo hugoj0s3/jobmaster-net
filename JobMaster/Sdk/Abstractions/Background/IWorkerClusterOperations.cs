@@ -10,8 +10,10 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket);
     void MarkAsHeldOnMaster(Guid jobId);
     void CancelJob(Guid jobId);
-    void Upsert(JobRawModel jobRawModel);
-    Task UpsertAsync(JobRawModel jobRawModel);
+    void Upsert(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    Task UpsertAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    
+    Task SaveJobExecutionAsync(JobExecution jobExecution);
     
     void Upsert(RecurringScheduleRawModel jobRawModel);
     Task MarkBucketAsLostAsync(BucketModel bucket);

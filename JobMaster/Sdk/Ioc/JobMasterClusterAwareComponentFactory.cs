@@ -42,6 +42,12 @@ internal class JobMasterClusterAwareComponentFactory : IJobMasterClusterAwareCom
             .GetRequiredKeyedService<IAgentJobsDispatcherRepository>(GetAgentJobsDispatcherKey(agentRepoTypeId));
     }
 
+    public IAgentFootprintResolver GetFootprintResolver(string agentRepoTypeId)
+    {
+        return ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentFootprintResolver>(GetFootprintResolverKey(agentRepoTypeId));
+    }
+
     public TBucketAwareRunner GetBucketAwareRunner<TBucketAwareRunner>(
         string agentRepoTypeId, 
         IJobMasterBackgroundAgentWorker backgroundWorker) 

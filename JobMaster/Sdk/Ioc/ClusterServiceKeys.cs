@@ -10,6 +10,7 @@ internal static class ClusterServiceKeys
     private const string AgentJobsDispatcherPrefix = nameof(IAgentJobsDispatcherRepository) + ":";
     private const string AgentRawJobsDispatcherSavingPrefix = nameof(IAgentRawMessagesDispatcherRepository) + ":SavingPending:";
     private const string AgentRawJobsDispatcherProcessingPrefix = nameof(IAgentRawMessagesDispatcherRepository) + ":Processing:";
+    private const string AgentFootprintPrefix = nameof(IAgentFootprintResolver);
 
     // Key generation methods
     public static string GetClusterServiceProviderKey(string clusterId) 
@@ -23,4 +24,7 @@ internal static class ClusterServiceKeys
 
     public static string GetAgentRawJobsDispatcherProcessingKey(string repositoryTypeId) 
         => $"{AgentRawJobsDispatcherProcessingPrefix}{repositoryTypeId}";
+
+    public static string GetFootprintResolverKey(string repositoryTypeId) 
+        => $"{AgentFootprintPrefix}:{repositoryTypeId}";
 }

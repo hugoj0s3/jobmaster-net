@@ -2,7 +2,9 @@ using System.Text.Json.Serialization;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -71,16 +73,19 @@ internal class JobRawModel : JobMasterBaseModel
     public DateTime? ProcessDeadline { get; internal set; }
 
     [JsonInclude]
-    public DateTime? ProcessingStartedAt { get; internal set; }
+    public DateTime? ProcessStartedAt { get; internal set; }
 
     [JsonInclude]
-    public DateTime? SucceedExecutedAt { get; internal set; }
+    public DateTime? CompletedAt { get; internal set; }
     
     [JsonInclude]
     public string? WorkerLane { get; internal set; }
     
     [JsonInclude]
     public string? Version { get; internal set; }
+    
+    [JsonInclude]
+    public HostId? HostId { get; internal set; }
     
     public void SetVersion(string version)
     {
@@ -92,34 +97,43 @@ internal class JobRawModel : JobMasterBaseModel
         return Job.FromModel(this);
     }
     
-    public void AssignToBucket(AgentConnectionId agentConnectionId, string agentWorkerId, string bucketId)
+    public void AssignToBucket(BucketModel bucketModel)
     {
-        if (string.IsNullOrEmpty(bucketId) || !agentConnectionId.IsNotNullAndActive() || string.IsNullOrEmpty(agentWorkerId))
+        if (!bucketModel.CanAssign())
         {
             throw new InvalidOperationException("invalid bucketId or agentConnectionId or agentWorkerId");
         }
+        
+        var agentConnectionId = bucketModel.AgentConnectionId;
+        var agentWorkerId = bucketModel.AgentWorkerId;
+        var bucketId = bucketModel.Id;
+        var hostId = bucketModel.HostId;
 
         AgentConnectionId = agentConnectionId;
         AgentWorkerId = agentWorkerId;
         BucketId = bucketId;
-        Status = JobMasterJobStatus.AssignedToBucket;
+        HostId = hostId;
+        Status = JobMasterJobStatus.InBucket;
         RefreshDeadline();
     }
 
-    public void AssignSavePendingJobToBucket(AgentConnectionId agentConnectionId, string agentWorkerId, string bucketId) {
-        if (string.IsNullOrEmpty(bucketId) || !agentConnectionId.IsNotNullAndActive() || !agentConnectionId.IsActive())
-        {   
+    public void AssignSavePendingJobToBucket(BucketModel bucketModel) {
+        
+        if (!bucketModel.CanAssign())
+        {
             throw new InvalidOperationException("invalid bucketId or agentConnectionId or agentWorkerId");
         }
         
-        if (Status != JobMasterJobStatus.SavePending)
-        {
-            throw new ArgumentException("Job is not pending.");
-        }
+        var agentConnectionId = bucketModel.AgentConnectionId;
+        var agentWorkerId = bucketModel.AgentWorkerId;
+        var bucketId = bucketModel.Id;
+        var hostId = bucketModel.HostId;
         
         AgentConnectionId = agentConnectionId;
         AgentWorkerId = agentWorkerId;
         BucketId = bucketId;
+        HostId = hostId;
+        Status = JobMasterJobStatus.InBucket;
     }
     
     public bool Enqueued()
@@ -157,7 +171,7 @@ internal class JobRawModel : JobMasterBaseModel
         ProcessDeadline = null;
         PartitionLockId = null;
         PartitionLockExpiresAt = null;
-        Status = JobMasterJobStatus.HeldOnMaster;
+        Status = JobMasterJobStatus.OnMaster;
     } 
 
     public bool IsOnBoarding(TimeSpan? extraWindow = null)
@@ -212,11 +226,12 @@ internal class JobRawModel : JobMasterBaseModel
         
         ScheduledAt = DateTime.UtcNow.Add(timeToWait);
         ProcessDeadline = null;
-        Status = JobMasterJobStatus.HeldOnMaster;
+        Status = JobMasterJobStatus.OnMaster;
         AgentConnectionId = null;
         AgentWorkerId = null;
         BucketId = null;
         NumberOfFailures++;
+        CompletedAt = DateTime.UtcNow;
         return true;
     }
     
@@ -228,12 +243,13 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         ProcessDeadline = null;
         NumberOfFailures++;
+        CompletedAt = DateTime.UtcNow;
     }
     
     public void MarkAsSucceeded()
     {
         Status = JobMasterJobStatus.Succeeded;
-        SucceedExecutedAt = DateTime.UtcNow;
+        CompletedAt = DateTime.UtcNow;
         AgentConnectionId = null;
         AgentWorkerId = null;
         BucketId = null;
@@ -252,7 +268,7 @@ internal class JobRawModel : JobMasterBaseModel
             throw new ArgumentException("Job is already running.");
         }
         
-        this.Status = JobMasterJobStatus.HeldOnMaster;
+        this.Status = JobMasterJobStatus.OnMaster;
         this.ScheduledAt = scheduledAt;
         this.AgentConnectionId = null;
         this.BucketId = null;
@@ -280,11 +296,22 @@ internal class JobRawModel : JobMasterBaseModel
         return true;
     }
 
-    public void ProcessingStarted()
+    public JobExecution ProcessingStarted()
     {
         Status = JobMasterJobStatus.Processing;
-        ProcessingStartedAt = DateTime.UtcNow;
+        ProcessStartedAt = DateTime.UtcNow;
         RefreshDeadline(Timeout + JobMasterConstants.JobProcessDeadlineDuration);
+
+        return new JobExecution(this.ClusterId)
+        {
+            JobId = this.Id,
+            StartedAt = DateTime.UtcNow,
+            AgentConnectionId = this.AgentConnectionId!,
+            AgentWorkerId = this.AgentWorkerId!,
+            BucketId = this.BucketId!,
+            HostId = this.HostId!,
+            Outcome = JobExecutionOutcomeStatus.Processing,
+        };
     }
     
     public bool ExceedProcessDeadline()
@@ -294,7 +321,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public bool CanHeldOnMasterExceedDeadline()
     {
-        if (this.Status == JobMasterJobStatus.HeldOnMaster)
+        if (this.Status == JobMasterJobStatus.OnMaster)
         {
             return false;
         }

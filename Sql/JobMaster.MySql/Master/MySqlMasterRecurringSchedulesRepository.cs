@@ -71,8 +71,8 @@ WHERE s.{cClusterId} = @ClusterId
 
 SELECT {selectCols}
 FROM {t} s
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 WHERE s.{cClusterId} = @ClusterId
   AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
   AND s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt

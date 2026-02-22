@@ -191,7 +191,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
 
                     var countHeldOnMaster = masterJobsService.Count(new JobQueryCriteria()
                     {
-                        Status = JobMasterJobStatus.HeldOnMaster, 
+                        Status = JobMasterJobStatus.OnMaster, 
                         MetadataFilters = sessionMetadataFilters,
                         ReadIsolationLevel = ReadIsolationLevel.FastSync,
                     });
@@ -244,8 +244,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
-                var heldOnMaster = allJobs.Count(j => j.Status == JobMasterJobStatus.HeldOnMaster);
-                var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded && j.Status != JobMasterJobStatus.HeldOnMaster);
+                var heldOnMaster = allJobs.Count(j => j.Status == JobMasterJobStatus.OnMaster);
+                var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded && j.Status != JobMasterJobStatus.OnMaster);
 
                 validationResults[clusterId] = (succeeded, heldOnMaster, other);
             }
@@ -371,8 +371,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
-                var heldOnMaster = allJobs.Count(j => j.Status == JobMasterJobStatus.HeldOnMaster);
-                var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded && j.Status != JobMasterJobStatus.HeldOnMaster);
+                var heldOnMaster = allJobs.Count(j => j.Status == JobMasterJobStatus.OnMaster);
+                var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded && j.Status != JobMasterJobStatus.OnMaster);
 
                 revalidationResults[clusterId] = (succeeded, heldOnMaster, other);
                 

@@ -102,7 +102,7 @@ public class JobMasterSchedulerClusterAwareTests
             .Returns(() => null);
 
         jobs
-            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.HeldOnMaster)))
+            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Verifiable();
 
         var sut = new JobMasterSchedulerClusterAware(
@@ -189,7 +189,7 @@ public class JobMasterSchedulerClusterAwareTests
             });
 
         jobs
-            .Setup(x => x.UpsertAsync(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.HeldOnMaster)))
+            .Setup(x => x.UpsertAsync(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Returns(Task.CompletedTask)
             .Verifiable();
 
@@ -360,7 +360,7 @@ public class JobMasterSchedulerClusterAwareTests
             });
 
         jobs
-            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.HeldOnMaster)))
+            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Verifiable();
 
         var sut = new JobMasterSchedulerClusterAware(

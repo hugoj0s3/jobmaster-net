@@ -1,4 +1,5 @@
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Agents;
@@ -15,6 +16,7 @@ internal class AgentWorkerModel : JobMasterBaseModel
 
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public HostId HostId { get; set; } = null!;
     public AgentConnectionId AgentConnectionId { get; set; } = null!;
     public DateTime CreatedAt { get; set; }
     public bool IsAlive { get; set; }

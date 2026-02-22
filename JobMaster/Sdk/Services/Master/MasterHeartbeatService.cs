@@ -16,38 +16,62 @@ internal class MasterHeartbeatService : JobMasterClusterAwareComponent, IMasterH
         this.repository = repository;
     }
 
-    public void Heartbeat(string agentWorkerId)
+    public void Heartbeat(ResourceHeartbeatType type, string resourceId)
     {
         var agentWorkerHeartbeatRecord = new AgentWorkerHeartbeatRecord(ClusterConnConfig.ClusterId)
         {
-            AgentWorkerId = agentWorkerId,
+            AgentWorkerId = resourceId,
             HeartbeatAt = DateTime.UtcNow,
+        };
+        
+        var groupId = type switch
+        {
+            ResourceHeartbeatType.AgentWorker => MasterGenericRecordGroupIds.AgentWorkerHeartbeat,
+            ResourceHeartbeatType.Host => MasterGenericRecordGroupIds.HostHeartbeat,
+            ResourceHeartbeatType.AgentConnection => MasterGenericRecordGroupIds.AgentConnectionHeartbeat,
+            _ => throw new ArgumentOutOfRangeException(nameof(type), $"Not expected type: {type}")
         };
         
         var record = GenericRecordEntry.Create(
             ClusterConnConfig.ClusterId, 
-            MasterGenericRecordGroupIds.AgentWorkerHeartbeat, 
-            agentWorkerId,
+            groupId, 
+            resourceId,
             agentWorkerHeartbeatRecord, 
-            expiresAt: DateTime.UtcNow.AddDays(15));
+            expiresAt: DateTime.UtcNow.AddDays(2));
 
         repository.Upsert(record);
     }
 
-    public DateTime? GetLastHeartbeat(string agentWorkerId)
+    public DateTime? GetLastHeartbeat(ResourceHeartbeatType type, string resourceId)
     {
-        var record = repository.Get(MasterGenericRecordGroupIds.AgentWorkerHeartbeat, agentWorkerId);
+        var groupId = type switch
+        {
+            ResourceHeartbeatType.AgentWorker => MasterGenericRecordGroupIds.AgentWorkerHeartbeat,
+            ResourceHeartbeatType.Host => MasterGenericRecordGroupIds.HostHeartbeat,
+            ResourceHeartbeatType.AgentConnection => MasterGenericRecordGroupIds.AgentConnectionHeartbeat,
+            _ => throw new ArgumentOutOfRangeException(nameof(type), $"Not expected type: {type}")
+        };
+        
+        var record = repository.Get(groupId, resourceId);
         return record?.ToObject<AgentWorkerHeartbeatRecord>()?.HeartbeatAt;
     }
 
-    public IDictionary<string, DateTime?> GetLastHeartbeats(IList<string> agentWorkerIds)
+    public IDictionary<string, DateTime?> GetLastHeartbeats(ResourceHeartbeatType type, IList<string> resourceIds)
     {
         var criteria = new GenericRecordQueryCriteria()
         {
-            EntryIds = agentWorkerIds,
+            EntryIds = resourceIds,
         };
         
-        var records = repository.Query(MasterGenericRecordGroupIds.AgentWorkerHeartbeat, criteria);
+        var groupId = type switch
+        {
+            ResourceHeartbeatType.AgentWorker => MasterGenericRecordGroupIds.AgentWorkerHeartbeat,
+            ResourceHeartbeatType.Host => MasterGenericRecordGroupIds.HostHeartbeat,
+            ResourceHeartbeatType.AgentConnection => MasterGenericRecordGroupIds.AgentConnectionHeartbeat,
+            _ => throw new ArgumentOutOfRangeException(nameof(type), $"Not expected type: {type}")
+        };
+        
+        var records = repository.Query(groupId, criteria);
         return records.ToDictionary(x => x.EntryId, x => x.ToObject<AgentWorkerHeartbeatRecord>()?.HeartbeatAt);
     }
     

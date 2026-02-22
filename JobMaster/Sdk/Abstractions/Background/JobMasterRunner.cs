@@ -18,6 +18,13 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     private readonly bool bucketAwareLifeCycle;
     protected readonly IJobMasterLogger logger;
     
+    private static readonly HashSet<Type> KeepAliveRunnerTypes = new()
+    {
+        typeof(KeepAliveWorkerRunner),
+        typeof(KeepAliveHostRunner),
+        typeof(KeepAliveAgentConnectionRunner),
+    };
+    
     protected JobMasterRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, bool bucketAwareLifeCycle, bool useSemaphore = true)
     {
         this.BackgroundAgentWorker = backgroundAgentWorker;
@@ -103,7 +110,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 
         while (true)
         {
-            if (ConsecutiveFailedCount >= MaxOfConsecutiveFails && this.GetType() != typeof(KeepAliveRunner))
+            if (ConsecutiveFailedCount >= MaxOfConsecutiveFails && !KeepAliveRunnerTypes.Contains(this.GetType()))
             {
                 break;
             }
@@ -118,9 +125,9 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
-            // Skip execution during worker initialization (except KeepAliveRunner)
+            // Skip execution during worker initialization (except KeepAliveRunners)
             // This prevents deadlocks during bucket creation
-            if (!BackgroundAgentWorker.IsInitialized && this.GetType() != typeof(KeepAliveRunner))
+            if (!BackgroundAgentWorker.IsInitialized && !KeepAliveRunnerTypes.Contains(this.GetType()))
             {
                 await RunnerDelayUtil.DelayAsync(TimeSpan.FromSeconds(5), ct);
                 continue;

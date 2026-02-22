@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -21,7 +22,7 @@ public class AgentJobsDispatcherServiceTests
         clusterConfig.AddAgentConnectionString("agent", "conn", "repo");
         clusterConfig.MarkAsReady();
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
 
         var job = new JobRawModel(clusterId)
@@ -31,7 +32,7 @@ public class AgentJobsDispatcherServiceTests
             ScheduledAt = DateTime.UtcNow,
             OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
             AgentConnectionId = null,
@@ -63,7 +64,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.PushSavePendingJob(It.IsAny<JobRawModel>()))
             .Returns("job-id-1");
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -90,7 +91,7 @@ public class AgentJobsDispatcherServiceTests
     }
 
     [Fact]
-    public void AddToProcessing_ShouldAssignToBucket_AndPushToRepository()
+    public async Task AddToProcessing_ShouldAssignToBucket_AndPushToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -108,7 +109,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.PushToProcessing(It.IsAny<JobRawModel>()))
             .Returns("job-id-2");
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -120,14 +121,16 @@ public class AgentJobsDispatcherServiceTests
             ScheduledAt = DateTime.UtcNow,
             OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
         };
 
-        sut.AddToProcessing(workerId, agentConnId, bucketId, job);
+        job.AssignToBucket(new BucketModel(clusterId) { Id = bucketId, AgentConnectionId = agentConnId, AgentWorkerId = workerId });
 
-        job.Status.Should().Be(JobMasterJobStatus.AssignedToBucket);
+        await sut.AddToProcessingAsync(job);
+
+        job.Status.Should().Be(JobMasterJobStatus.InBucket);
         job.BucketId.Should().Be(bucketId);
         job.AgentWorkerId.Should().Be(workerId);
         job.AgentConnectionId.Should().NotBeNull();
@@ -156,7 +159,7 @@ public class AgentJobsDispatcherServiceTests
         repo.Setup(x => x.BulkPushSavePendingJobAsync(bucketId, It.IsAny<IList<JobRawModel>>()))
             .ReturnsAsync(() => new List<string>(new[] { "job-id-1", "job-id-2" }));
 
-        var factory = new Mock<IAgentJobsDispatcherRepositoryFactory>(MockBehavior.Strict);
+        var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
@@ -169,7 +172,7 @@ public class AgentJobsDispatcherServiceTests
                 ScheduledAt = DateTime.UtcNow,
                 OriginalScheduledAt = DateTime.UtcNow,
                 Priority = JobMasterPriority.High,
-                Status = JobMasterJobStatus.HeldOnMaster,
+                Status = JobMasterJobStatus.OnMaster,
                 Timeout = TimeSpan.FromSeconds(1),
                 MaxNumberOfRetries = 0,
                 AgentConnectionId = agentConnId,

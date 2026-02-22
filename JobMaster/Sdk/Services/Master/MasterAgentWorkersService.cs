@@ -6,7 +6,9 @@ using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
@@ -20,10 +22,13 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
     private IMasterChangesSentinelService masterChangesSentinelService = null!;
     private IMasterHeartbeatService masterHeartbeatService = null!;
     private IMasterGenericRecordRepository masterGenericRecordRepository = null!;
-    
+    private readonly IMasterHostService masterHostService;
+    private readonly IRandomFriendlyNameService randomFriendlyNameService;
+
     private IJobMasterInMemoryCache jobMasterInMemoryCache = null!;
     private JobMasterInMemoryKeys cacheKeys = null!;
     private JobMasterSentinelKeys sentinelKeys = null!;
+    private HostId? hostId;
 
     public MasterAgentWorkersService(
         JobMasterClusterConnectionConfig clusterConnectionConfig, 
@@ -31,13 +36,17 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         IMasterClusterConfigurationService masterClusterConfigurationService,
         IMasterChangesSentinelService masterChangesSentinelService,
         IMasterHeartbeatService masterHeartbeatService,
-        IMasterGenericRecordRepository masterGenericRecordRepository) : base(clusterConnectionConfig)
+        IMasterGenericRecordRepository masterGenericRecordRepository,
+        IMasterHostService masterHostService,
+        IRandomFriendlyNameService randomFriendlyNameService) : base(clusterConnectionConfig)
     {
         this.jobMasterInMemoryCache = jobMasterInMemoryCache;
         this.masterClusterConfigurationService = masterClusterConfigurationService;
         this.masterChangesSentinelService = masterChangesSentinelService;
         this.masterHeartbeatService = masterHeartbeatService;
         this.masterGenericRecordRepository = masterGenericRecordRepository;
+        this.masterHostService = masterHostService;
+        this.randomFriendlyNameService = randomFriendlyNameService;
 
         cacheKeys = new JobMasterInMemoryKeys(clusterConnectionConfig.ClusterId);
         sentinelKeys = new JobMasterSentinelKeys(clusterConnectionConfig.ClusterId);
@@ -46,20 +55,21 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
     public IList<AgentWorkerModel> QueryWorkers(string? agentConnectionId = null, bool useCache = true)
     {
         var all = GetAllAgentWorkers(useCache);
-        return ToModel(all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList());
+        var agentWorkerRecords = all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList();
+        return ToModel(agentWorkerRecords);
     }
 
     public async Task<IList<AgentWorkerModel>> QueryWorkersAsync(string? agentConnectionId = null, bool useCache = true)
     {
         var all = await GetAllAgentWorkersAsync(useCache);
-        return ToModel(all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList());
+        var agentWorkerRecords = all.Where(x => agentConnectionId == null || x.AgentConnectionId == agentConnectionId).ToList();
+        return ToModel(agentWorkerRecords);
     }
 
     public AgentWorkerModel? GetWorker(string workerId)
     {
         var all = GetAllAgentWorkers(useCache: false);
         var worker = all.FirstOrDefault(x => x.Id == workerId);
-
         return ToModel(worker);
     }
 
@@ -71,22 +81,15 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         return ToModel(worker);
     }
 
-    public async Task<string> RegisterWorkerAsync(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
+    public async Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string agentConnectionId, string? workerName, string? workerLane,
+        AgentWorkerMode mode, double parallelismFactor)
     {
-        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
-        await masterGenericRecordRepository.InsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker));
+        var worker = await CreateValidatedWorkerAsync(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
+        var workerRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker);
+        await masterGenericRecordRepository.InsertAsync(workerRecord);
         NotifyChanges();
         
-        return worker.Id;
-    }
-
-    public string RegisterWorker(string agentConnectionId, string workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
-    {
-        var worker = CreateValidatedWorker(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
-        masterGenericRecordRepository.Insert(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker));
-        NotifyChanges();
-        
-        return worker.Id;
+        return (worker.Id, HostId.Recover(worker.HostDisplayName, worker.HostId));
     }
 
     public void DeleteWorker(string workerId)
@@ -159,7 +162,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             !useCache)
         {
             var allWorkerRecords = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.AgentWorker);
-            var allAgentWorkers = Enumerable.Select(allWorkerRecords, x => x.ToObject<AgentWorkerRecord>()).ToList<AgentWorkerRecord>();
+            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList();
 
             jobMasterInMemoryCache.Set(cacheKey, allAgentWorkers);
             return allAgentWorkers;
@@ -180,7 +183,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             !useCache)
         {
             var allWorkerRecords = await this.masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.AgentWorker);
-            var allAgentWorkers = Enumerable.Select(allWorkerRecords, x => x.ToObject<AgentWorkerRecord>()).ToList<AgentWorkerRecord>();
+            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList<AgentWorkerRecord>();
 
             jobMasterInMemoryCache.Set(cacheKey, allAgentWorkers);
             return allAgentWorkers;
@@ -201,8 +204,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
 
     private IList<AgentWorkerModel> ToModel(IList<AgentWorkerRecord> workers)
     {
-        var heartbeats = masterHeartbeatService.GetLastHeartbeats(workers.Select(x => x.Id).ToList());
-        var heartbeatThreshold = JobMasterConstants.HeartbeatThreshold;
+        var heartbeats = masterHeartbeatService.GetLastHeartbeats(ResourceHeartbeatType.AgentWorker, workers.Select(x => x.Id).ToList());
+        var heartbeatThreshold = JobMasterConstants.AgentHeartbeatThreshold;
 
         return workers.Select(x =>
         {
@@ -212,27 +215,34 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         }).ToList();
     }
     
-    private AgentWorkerRecord CreateValidatedWorker(
+    private async Task<AgentWorkerRecord> CreateValidatedWorkerAsync(
         string agentConnectionId, 
-        string workerName, 
+        string? workerName, 
         string? workerLane, 
         AgentWorkerMode mode,
         double parallelismFactor)
     {
-        if (workerLane != null && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
-            throw new ArgumentException($"Invalid worker lane format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. Received: '{workerLane}'", nameof(workerLane));
+        if (!string.IsNullOrEmpty(workerLane) && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
+            throw new ArgumentException($"Invalid worker lane format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerLane}'", nameof(workerLane));
 
-        if (!JobMasterStringUtils.IsValidForId(workerName))
-            throw new ArgumentException($"Invalid worker name format. Only letters, numbers, underscore (_), hyphen (-), dot(.), and colon (:) are allowed. Received: '{workerName}'", nameof(workerName));
+        if (!string.IsNullOrEmpty(workerName) && !JobMasterStringUtils.IsValidForSegment(workerName, 25))
+            throw new ArgumentException($"Invalid worker name format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerName}'", nameof(workerName));
         
-        var workerId = $"{workerName}";
-        if (!string.IsNullOrEmpty(workerLane))
+        hostId ??= await masterHostService.RegisterNewHostAsync();
+
+        if (string.IsNullOrEmpty(workerName))
         {
-            workerId += $".{workerLane}";
+            var randomFriendlyName = randomFriendlyNameService.GetRandomFriendlyName(includeAdjective: true);
+            workerName = hostId.HostNameSanitized + "-" + randomFriendlyName;
+        } 
+        else
+        {
+            var randomFriendlyName = randomFriendlyNameService.GetRandomFriendlyName(includeAdjective: false);
+            workerName += "-" + hostId.HostNameSanitized + "-" + randomFriendlyName;
         }
-
-        workerId += $".{JobMasterIdUtil.NewShortId()}";
         
+        workerName += $"-{JobMasterIdGenUtil.TimestampId()}";
+        var workerId = $"{hostId.IdValue}:{JobMasterIdGenUtil.NewShortId()}";
         
         if (!JobMasterStringUtils.IsValidForId(workerId))
             throw new ArgumentException($"Invalid worker ID format. Only letters, numbers, underscore (_), hyphen (-), dot(.), and colon (:) are allowed. Received: '{workerName}'", nameof(workerName));
@@ -245,6 +255,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             Mode = mode,
             WorkerLane = workerLane,
             CreatedAt = DateTime.UtcNow,
+            HostId = hostId.IdValue,
+            HostDisplayName = hostId.HostDisplayName,
             ParallelismFactor = parallelismFactor
         };
         
@@ -281,6 +293,10 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         
         public DateTime? StopRequestedAt { get; set; }
         public TimeSpan? StopGracePeriod { get; set; }
+        
+        public string HostId { get; set; } = null!;
+        
+        public string HostDisplayName { get; set; } = null!;
 
         public AgentWorkerModel ToModel(DateTime lastHeartbeat, bool isAlive)
         {
@@ -295,6 +311,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
                 WorkerLane = WorkerLane,
                 Mode = Mode,
                 ParallelismFactor = ParallelismFactor,
+                HostId = Abstractions.Models.Hosts.HostId.Recover(HostDisplayName, HostId),
             };
         }
     }

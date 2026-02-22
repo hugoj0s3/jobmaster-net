@@ -13,7 +13,7 @@ public class ApiJobModel : ApiClusterBaseModel
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
     public string? HostId { get; set; }
-    public string HostDisplayName { get; set; } = string.Empty;
+    public string? HostDisplayName { get; set; } = string.Empty;
     public JobMasterPriority Priority { get; set; }
     public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
@@ -26,8 +26,8 @@ public class ApiJobModel : ApiClusterBaseModel
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public string? SourceId { get; set; }
     public DateTime? ProcessDeadline { get; set; }
-    public DateTime? ProcessingStartedAt { get; set; }
-    public DateTime? SucceedExecutedAt { get; set; }
+    public DateTime? ProcessStartedAt { get; set; }
+    public DateTime? CompletedAt { get; set; }
     public string? WorkerLane { get; set; }
 
     internal static ApiJobModel FromDomain(JobRawModel jobRawModel)
@@ -58,9 +58,11 @@ public class ApiJobModel : ApiClusterBaseModel
             CreatedAt = job.CreatedAt,
             SourceId = job.SourceId?.ToBase64(),
             ProcessDeadline = job.ProcessDeadline,
-            ProcessingStartedAt = job.ProcessingStartedAt,
-            SucceedExecutedAt = job.SucceedExecutedAt,
+            ProcessStartedAt = job.ProcessStartedAt,
+            CompletedAt = job.CompletedAt,
             WorkerLane = job.WorkerLane,
+            HostId = job.HostId?.IdValue,
+            HostDisplayName = job.HostId?.HostDisplayName,
         };
     }
 }

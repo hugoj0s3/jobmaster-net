@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Serialization;
 
@@ -36,9 +37,10 @@ internal static class JobConvertUtil
             PartitionLockId = raw.PartitionLockId,
             PartitionLockExpiresAt = raw.PartitionLockExpiresAt,
             ProcessDeadline = raw.ProcessDeadline,
-            ProcessingStartedAt = raw.ProcessingStartedAt,
-            SucceedExecutedAt = raw.SucceedExecutedAt,
-            Version = raw.Version
+            ProcessStartedAt = raw.ProcessStartedAt,
+            CompletedAt = raw.CompletedAt,
+            Version = raw.Version,
+            HostId = raw.HostId,
         };
 
         if (!string.IsNullOrEmpty(raw.MsgData))
@@ -92,9 +94,10 @@ internal static class JobConvertUtil
             PartitionLockId = job.PartitionLockId,
             PartitionLockExpiresAt = job.PartitionLockExpiresAt,
             ProcessDeadline = job.ProcessDeadline,
-            ProcessingStartedAt = job.ProcessingStartedAt,
-            SucceedExecutedAt = job.SucceedExecutedAt,
+            ProcessStartedAt = job.ProcessStartedAt,
+            CompletedAt = job.CompletedAt,
             Version = job.Version,
+            HostId = job.HostId,
         };
     }
 
@@ -155,10 +158,13 @@ internal static class JobConvertUtil
             PartitionLockId = d.PartitionLockId,
             PartitionLockExpiresAt = UtcN(d.PartitionLockExpiresAt),
             ProcessDeadline = UtcN(d.ProcessDeadline),
-            ProcessingStartedAt = UtcN(d.ProcessingStartedAt),
-            SucceedExecutedAt = UtcN(d.SucceedExecutedAt),
+            ProcessStartedAt = UtcN(d.ProcessStartedAt),
+            CompletedAt = UtcN(d.CompletedAt),
             WorkerLane = d.WorkerLane,
             Version = d.Version,
+            HostId = !string.IsNullOrEmpty(d.HostId) && !string.IsNullOrEmpty(d.HostDisplayName)
+                ? HostId.Recover(d.HostDisplayName, d.HostId)
+                : null,
         };
 
         return m;
@@ -193,10 +199,12 @@ internal static class JobConvertUtil
             PartitionLockId = m.PartitionLockId,
             PartitionLockExpiresAt = m.PartitionLockExpiresAt,
             ProcessDeadline = m.ProcessDeadline,
-            ProcessingStartedAt = m.ProcessingStartedAt,
-            SucceedExecutedAt = m.SucceedExecutedAt,
+            ProcessStartedAt = m.ProcessStartedAt,
+            CompletedAt = m.CompletedAt,
             WorkerLane = m.WorkerLane,
-            Version = m.Version
+            Version = m.Version,
+            HostId = m.HostId?.IdValue,
+            HostDisplayName = m.HostId?.HostDisplayName,
         };
     }
 }
