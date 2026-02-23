@@ -267,7 +267,7 @@
 
 			<div class="flex items-center gap-3">
 				<div class="text-sm opacity-70">
-					<span class="hidden sm:inline">Last execution:</span>
+					<span class="hidden sm:inline">Last Refresh:</span>
 					<span class="font-semibold">{safeFormatDateTime(bucketLastExecutionAt)}</span>
 				</div>
 				<button

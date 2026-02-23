@@ -2,6 +2,9 @@
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	type Health = "OK" | "Warning" | "Error";
@@ -18,6 +21,7 @@
 		bucketsTotal: number;
 		draining?: number; // ex: "1 draining"
 		selected?: boolean;
+		createdAt?: string;
 	};
 
 	export let data: { agentConnections: any[]; error: string | null };
@@ -48,7 +52,12 @@
 		});
 	}
 
-	$: sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
+	let selectedHealths: string[] = [];
+
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = {};
+
+	$: filterValues, sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
 
 	function toggleSort(col: SortCol) {
 		if (sortBy === col) {
@@ -95,7 +104,8 @@
 			bucketsUsed,
 			bucketsTotal: bucketsTotal || Math.max(bucketsUsed, 1),
 			draining,
-			selected: false
+			selected: false,
+			createdAt: c?.createdAt ?? c?.connectedAt ?? c?.registeredAt ?? undefined
 		};
 	}
 
@@ -115,7 +125,17 @@
 
 	const healthOrder: Record<Health, number> = { "OK": 0, "Warning": 1, "Error": 2 };
 
-	$: sorted = rows.slice().sort((a, b) => {
+	$: filteredRows = rows.filter((r) => {
+		if (selectedHealths.length > 0 && !selectedHealths.includes(r.health)) return false;
+
+		const dt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
+		if (dt.from && r.createdAt && new Date(r.createdAt) < new Date(dt.from)) return false;
+		if (dt.to && r.createdAt && new Date(r.createdAt) > new Date(dt.to)) return false;
+
+		return true;
+	});
+
+	$: sorted = filteredRows.slice().sort((a, b) => {
 		const dir = sortAsc ? 1 : -1;
 		switch (sortBy) {
 			case "name":
@@ -152,7 +172,40 @@
 			</div>
 		{/if}
 
-		<div class="flex items-center justify-end gap-3 mt-6">
+		<div class="flex items-center justify-between gap-4 mt-6">
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Health"
+					options={[
+						{ value: "OK", label: "OK" },
+						{ value: "Warning", label: "Warning" },
+						{ value: "Error", label: "Error" }
+					]}
+					bind:values={selectedHealths}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
+				<FilterContainer
+					title="Date"
+					initialValues={filterValues}
+					on:change={(e) => {
+						filterValues = e.detail;
+						pageIndex = 0;
+					}}
+				>
+					<FilterItem
+						id="createdAt"
+						label="Created at"
+						type="datetime"
+						presets={[
+							{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
+							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+						]}
+					/>
+				</FilterContainer>
+			</div>
+
 			<Pager
 				bind:pageIndex
 				bind:pageSize

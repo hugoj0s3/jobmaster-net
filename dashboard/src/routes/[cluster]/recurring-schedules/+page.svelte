@@ -6,6 +6,9 @@
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { RecurringSchedulesStatusUtil, type RecurringScheduleStatusLabel } from "$lib/helper/recurring-schedules-status-util";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { RecurrenceExpressionTypeId } from "$lib/api/enums";
 	import { RecurrenceExpressionUtil } from '$lib/helper/recurrence-expression-util';
 	import { goto } from '$app/navigation';
@@ -23,6 +26,7 @@
 		frequency: string;
 		tz?: string;
 		nextRun: string;
+		nextScheduledAtRaw?: string;
 		scheduleStatus: RecurringScheduleStatusLabel;
 		scheduleStatusAgo: string;
 		status: RecurringScheduleStatus;
@@ -33,15 +37,11 @@
 	let rows: RecurringScheduleRow[] = [];
 
 	const urlParamDefs = {
-		status: { defaultValue: "All Statuses" as "All Statuses" | RecurringScheduleStatusLabel },
-		type: { defaultValue: "All Job Types" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 12, ...Serializers.number }
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	let statusFilter: "All Statuses" | RecurringScheduleStatusLabel = _initParams.status;
-	let typeFilter = _initParams.type;
 
 	let refreshIntervalSec = 20;
 	let lastUpdatedAt = new Date();
@@ -50,38 +50,37 @@
 
 	const clusterId = () => $page.params.cluster;
 
-	$: filtered = rows.filter((r) => {
-		const matchesStatus = statusFilter === "All Statuses" ? true : r.scheduleStatus === statusFilter;
+	let selectedStatuses: string[] = [];
+	let selectedJobTypes: string[] = [];
 
-		const matchesType = typeFilter === "All Job Types" ? true : r.jobType === typeFilter;
-
-		return matchesStatus && matchesType;
-	});
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = {};
 
 	$: jobTypes = Array.from(new Set(rows.map((r) => r.jobType)));
+
+	$: filtered = rows.filter((r) => {
+		if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.scheduleStatus)) return false;
+
+		if (selectedJobTypes.length > 0 && !selectedJobTypes.includes(r.jobType)) return false;
+
+		const nextRun = (filterValues.nextScheduledAt ?? {}) as { from?: string; to?: string };
+		if (nextRun.from && r.nextScheduledAtRaw && new Date(r.nextScheduledAtRaw) < new Date(nextRun.from)) return false;
+		if (nextRun.to && r.nextScheduledAtRaw && new Date(r.nextScheduledAtRaw) > new Date(nextRun.to)) return false;
+
+		return true;
+	});
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			status: statusFilter,
-			type: typeFilter,
 			page: pageIndex,
 			size: pageSize
 		});
 	}
 
-	$: statusFilter, typeFilter, pageIndex, pageSize, syncToUrl();
-
-	let lastFilterKey = "";
-	$: {
-		const nextKey = `${statusFilter}|${typeFilter}`;
-		if (nextKey !== lastFilterKey) {
-			lastFilterKey = nextKey;
-			pageIndex = 0;
-		}
-	}
+	$: filterValues, pageIndex, pageSize, syncToUrl();
 
 	$: totalCount = filtered.length;
 
@@ -92,11 +91,6 @@
 	}
 
 	$: paged = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
-
-	function clearFilters() {
-		statusFilter = "All Statuses";
-		typeFilter = "All Job Types";
-	}
 
 	function scheduleBadge(r: RecurringScheduleRow): string {
 		return `badge ${RecurringSchedulesStatusUtil.getBadgeClassByStatus(r.status)}`;
@@ -210,6 +204,7 @@
 					frequency: RecurrenceExpressionUtil.formatExpression(expressionTypeId, expression) ?? formatCronExpression(schedule.cronExpression),
 					tz: schedule.timeZoneId,
 					nextRun: formatNextRun(schedule.nextScheduledAt),
+					nextScheduledAtRaw: schedule.nextScheduledAt ?? undefined,
 					scheduleStatus: mapScheduleStatus(schedule.status),
 					scheduleStatusAgo: formatTimeAgo(schedule.lastJobExecutedAt),
 					status: schedule.status ?? 3,
@@ -258,7 +253,7 @@
 			</div>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
+				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -282,34 +277,55 @@
 			</div>
 		</div>
 
-		<div class="mt-6 flex flex-col gap-3">
-			<div class="flex flex-wrap items-center gap-3">
-				<select class="select select-sm select-bordered" bind:value={statusFilter}>
-					<option>All Statuses</option>
-					<option>Active</option>
-					<option>Inactive</option>
-					<option>Completed</option>
-					<option>Failed</option>
-				</select>
-
-				<select class="select select-sm select-bordered" bind:value={typeFilter}>
-					<option>All Job Types</option>
-					{#each jobTypes as jt}
-						<option value={jt}>{jt}</option>
-					{/each}
-				</select>
-			</div>
-
-			<div class="flex flex-wrap items-center justify-end gap-3">
-				<Pager
-					bind:pageIndex
-					bind:pageSize
-					totalCount={filtered.length}
-					currentCount={paged.length}
-					disabled={isRefreshing}
-					showPageSize={true}
+		<div class="mt-6 flex items-center justify-between gap-4">
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Status"
+					options={[
+						{ value: "Active", label: "Active" },
+						{ value: "Inactive", label: "Inactive" },
+						{ value: "Completed", label: "Completed" },
+						{ value: "Failed", label: "Failed" }
+					]}
+					bind:values={selectedStatuses}
+					on:change={() => { pageIndex = 0; }}
 				/>
+
+				<FilterDropdownMulti
+					label="Job Type"
+					options={jobTypes.map((jt) => ({ value: jt, label: jt }))}
+					bind:values={selectedJobTypes}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
+				<FilterContainer
+					title="Date"
+					initialValues={filterValues}
+					on:change={(e) => {
+						filterValues = e.detail;
+						pageIndex = 0;
+					}}
+				>
+					<FilterItem
+						id="nextScheduledAt"
+						label="Next Run"
+						type="datetime"
+						presets={[
+							{ type: "NEXT_HOURS", hours: 1, label: "Next 1 hour" },
+							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+						]}
+					/>
+				</FilterContainer>
 			</div>
+
+			<Pager
+				bind:pageIndex
+				bind:pageSize
+				totalCount={filtered.length}
+				currentCount={paged.length}
+				disabled={isRefreshing}
+				showPageSize={true}
+			/>
 		</div>
 
 		<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">

@@ -4,6 +4,7 @@
     import { ApiClientUtil } from "$lib/api/api-client-util";
     import type { components } from "$lib/api/schema";
     import { JobStatus as ApiJobStatus } from "$lib/api/enums";
+    import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
     import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
     import FilterItem from "$lib/components/filters/FilterItem.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -123,10 +124,11 @@
         refreshNow();
     }
 
+    let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+
     type FilterValues = Record<string, unknown>;
     let filterValues: FilterValues = (() => {
         const f: FilterValues = {};
-        if (_initParams.statuses.length > 0) f.statuses = _initParams.statuses;
         if (_initParams.scheduledFrom || _initParams.scheduledTo) {
             f.scheduledAt = {
                 ...(_initParams.scheduledFrom ? { from: _initParams.scheduledFrom } : {}),
@@ -137,10 +139,9 @@
     })();
 
     function syncToUrl() {
-        const statuses = (filterValues.statuses ?? []) as number[];
         const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
         writeUrlParams(urlParamDefs, {
-            statuses,
+            statuses: selectedStatuses,
             scheduledFrom: scheduledAt.from ?? "",
             scheduledTo: scheduledAt.to ?? "",
             page: pageIndex,
@@ -148,14 +149,13 @@
         });
     }
 
-    $: filterValues, pageIndex, pageSize, syncToUrl();
+    $: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
-        const statuses = (filterValues.statuses ?? []) as components["schemas"]["JobMasterJobStatus"][];
         const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
 
         return {
-            Statuses: statuses.length > 0 ? statuses : undefined,
+            Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: scheduledAt.from,
             ScheduledTo: scheduledAt.to
         } as const;
@@ -328,7 +328,7 @@
             <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-								<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
+								<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
 
                 <button
                     class="btn btn-ghost btn-sm btn-square"
@@ -352,42 +352,48 @@
         </div>
 
         <div class="flex items-center justify-between gap-4 mt-4">
-            <FilterContainer
-                title="Filters"
-                initialValues={filterValues}
-                on:change={(e) => {
-                    filterValues = e.detail;
-                    pageIndex = 0;
-                    refreshNow();
-                }}
-            >
-                <FilterItem
-                    id="scheduledAt"
-                    label="Scheduled at"
-                    type="datetime"
-                    presets={[
-                        { type: "LAST_MINUTES", minutes: 15, label: "Last 15 minutes" },
-                        { type: "LAST_MINUTES", minutes: 60, label: "Last 60 minutes" },
-                        { type: "NEXT_HOURS", hours: 10, label: "Next 10 hours" }
+            <div class="flex flex-wrap items-center gap-2">
+                <FilterDropdownMulti
+                    label="Statuses"
+                    options={[
+                        { value: String(ApiJobStatus.SavePending), label: JobStatusUtil.Label.SavePending },
+                        { value: String(ApiJobStatus.HeldOnMaster), label: JobStatusUtil.Label.HeldOnMaster },
+                        { value: String(ApiJobStatus.AssignedToBucket), label: JobStatusUtil.Label.AssignedToBucket },
+                        { value: String(ApiJobStatus.Processing), label: JobStatusUtil.Label.Processing },
+                        { value: String(ApiJobStatus.Succeeded), label: JobStatusUtil.Label.Succeeded },
+                        { value: String(ApiJobStatus.Queued), label: JobStatusUtil.Label.Queued },
+                        { value: String(ApiJobStatus.Failed), label: JobStatusUtil.Label.Failed },
+                        { value: String(ApiJobStatus.Cancelled), label: JobStatusUtil.Label.Cancelled }
                     ]}
+                    values={selectedStatuses.map(String)}
+                    on:change={(e) => {
+                        selectedStatuses = e.detail.map(Number);
+                        pageIndex = 0;
+                        refreshNow();
+                    }}
                 />
 
-                <FilterItem
-                    id="statuses"
-                    label="Statuses"
-                    type="multiselect"
-                    options={[
-                        { value: ApiJobStatus.SavePending, label: JobStatusUtil.Label.SavePending },
-                        { value: ApiJobStatus.HeldOnMaster, label: JobStatusUtil.Label.HeldOnMaster },
-                        { value: ApiJobStatus.AssignedToBucket, label: JobStatusUtil.Label.AssignedToBucket },
-                        { value: ApiJobStatus.Processing, label: JobStatusUtil.Label.Processing },
-                        { value: ApiJobStatus.Succeeded, label: JobStatusUtil.Label.Succeeded },
-                        { value: ApiJobStatus.Queued, label: JobStatusUtil.Label.Queued },
-                        { value: ApiJobStatus.Failed, label: JobStatusUtil.Label.Failed },
-                        { value: ApiJobStatus.Cancelled, label: JobStatusUtil.Label.Cancelled }
-                    ]}
-                />
-            </FilterContainer>
+                <FilterContainer
+                    title="Date"
+                    initialValues={filterValues}
+                    on:change={(e) => {
+                        filterValues = e.detail;
+                        pageIndex = 0;
+                        refreshNow();
+                    }}
+                >
+                    <FilterItem
+                        id="scheduledAt"
+                        label="Scheduled at"
+                        type="datetime"
+                        presets={[
+                            { type: "LAST_MINUTES", minutes: 15, label: "Last 15 minutes" },
+                            { type: "LAST_MINUTES", minutes: 60, label: "Last 60 minutes" },
+                            { type: "NEXT_HOURS", hours: 10, label: "Next 10 hours" }
+                        ]}
+                    />
+                </FilterContainer>
+            </div>
 
             <Pager
                 bind:pageIndex

@@ -177,7 +177,7 @@
 
 			<div class="flex flex-col items-end gap-2">
 				<div class="flex items-center gap-2 text-sm text-base-content/60">
-					<span>Last execution: {lastUpdated}</span>
+					<span>Last Refresh: {lastUpdated}</span>
 					<button class="btn btn-ghost btn-sm" on:click={refreshNow} disabled={isRefreshing}>
 						{#if isRefreshing}Refreshing…{:else}Refresh{/if}
 					</button>

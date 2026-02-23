@@ -5,6 +5,9 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
@@ -42,7 +45,6 @@
 		hour12: true
 	});
 
-	$: allCount = rows.length;
 	$: onlineCount = rows.filter((r) => r.status === "Online").length;
 	$: offlineCount = rows.filter((r) => r.status === "Offline").length;
 
@@ -57,7 +59,6 @@
 	);
 
 	const urlParamDefs = {
-		tab: { defaultValue: "All" as "All" | "Online" | "Offline" },
 		sortBy: { defaultValue: "Host" as "Host" | "CPU" | "Memory" },
 		asc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -65,17 +66,19 @@
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	type Tab = "All" | "Online" | "Offline";
-	let tab: Tab = _initParams.tab;
 	let sortBy: "Host" | "CPU" | "Memory" = _initParams.sortBy;
 	let asc = _initParams.asc;
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 
+	let selectedStatuses: string[] = [];
+
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = {};
+
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			tab: tab,
 			sortBy,
 			asc,
 			page: pageIndex,
@@ -83,7 +86,7 @@
 		});
 	}
 
-	$: tab, sortBy, asc, pageIndex, pageSize, syncToUrl();
+	$: filterValues, sortBy, asc, pageIndex, pageSize, syncToUrl();
 
 	function mapWorkerToRow(w: any, hostsMap: Map<string, ApiHostModel>): WorkerRow {
 		const isAlive = w.isAlive === true;
@@ -178,7 +181,12 @@
 
 	$: filteredAll = rows
 		.filter((r) => {
-			if (tab !== "All" && r.status !== tab) return false;
+			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
+
+			const hb = (filterValues.lastHeartbeat ?? {}) as { from?: string; to?: string };
+			if (hb.from && r.lastHeartbeat && new Date(r.lastHeartbeat) < new Date(hb.from)) return false;
+			if (hb.to && r.lastHeartbeat && new Date(r.lastHeartbeat) > new Date(hb.to)) return false;
+
 			return true;
 		})
 		.sort((a, b) => {
@@ -195,7 +203,6 @@
 	$: filtered = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = filtered.length;
 
-	$: if (tab || sortBy || asc) pageIndex = 0;
 
 	function refresh() {
 		refreshNow();
@@ -217,7 +224,7 @@
 			<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last execution: {lastUpdated}</span>
+				<span>Last Refresh: {lastUpdated}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -306,7 +313,39 @@
 			</div>
 		</section>
 
-		<div class="flex justify-end mt-6">
+		<div class="flex items-center justify-between gap-4 mt-6">
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Status"
+					options={[
+						{ value: "Online", label: "Online" },
+						{ value: "Offline", label: "Offline" }
+					]}
+					bind:values={selectedStatuses}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
+				<FilterContainer
+					title="Date"
+					initialValues={filterValues}
+					on:change={(e) => {
+						filterValues = e.detail;
+						pageIndex = 0;
+					}}
+				>
+					<FilterItem
+						id="lastHeartbeat"
+						label="Last Heartbeat"
+						type="datetime"
+						presets={[
+							{ type: "LAST_MINUTES", minutes: 5, label: "Last 5 min" },
+							{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
+						]}
+					/>
+				</FilterContainer>
+			</div>
+
 			<Pager
 				bind:pageIndex
 				bind:pageSize
@@ -319,35 +358,20 @@
 
 		<section class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body gap-4">
-				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<div class="tabs tabs-bordered">
-						<button class:tab-active={tab === "All"} class="tab" on:click={() => (tab = "All")}>
-							All <span class="ml-2 badge badge-ghost">{allCount}</span>
+				<div class="flex items-center justify-end gap-4">
+					<div class="join">
+						<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
+							<option value="Host">Sort: Host</option>
+							<option value="CPU">Sort: CPU</option>
+							<option value="Memory">Sort: Memory</option>
+						</select>
+						<button
+							class="btn btn-bordered join-item"
+							on:click={() => (asc = !asc)}
+							title="Toggle sort direction"
+						>
+							{asc ? "A→Z" : "Z→A"}
 						</button>
-						<button class:tab-active={tab === "Online"} class="tab" on:click={() => (tab = "Online")}>
-							Online <span class="ml-2 badge badge-success">{onlineCount}</span>
-						</button>
-						<button class:tab-active={tab === "Offline"} class="tab" on:click={() => (tab = "Offline")}>
-							Offline <span class="ml-2 badge badge-error">{offlineCount}</span>
-						</button>
-					</div>
-
-					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
-						<div class="join">
-							<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
-								<option value="Host">Sort: Host</option>
-								<option value="CPU">Sort: CPU</option>
-								<option value="Memory">Sort: Memory</option>
-							</select>
-							<button
-								class="btn btn-bordered join-item"
-								on:click={() => (asc = !asc)}
-								title="Toggle sort direction"
-							>
-								{asc ? "A→Z" : "Z→A"}
-							</button>
-						</div>
-
 					</div>
 				</div>
 

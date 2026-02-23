@@ -6,6 +6,9 @@
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus } from "$lib/api/enums";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { createCopyFeedback } from "$lib/helper/clipboard-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
@@ -41,13 +44,11 @@
 	let isRefreshing = false;
 
 	const urlParamDefs = {
-		status: { defaultValue: "all" as "all" | BucketStatusLabel },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 12, ...Serializers.number }
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	let statusFilter: "all" | BucketStatusLabel = _initParams.status;
 
 	let allBuckets: BucketRow[] = [];
 
@@ -62,22 +63,34 @@
 	let pageSize = _initParams.size;
 	let pageIndex = _initParams.page;
 
+	let selectedStatuses: string[] = [];
+
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = {};
+
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			status: statusFilter,
 			page: pageIndex,
 			size: pageSize
 		});
 	}
 
-	$: statusFilter, pageIndex, pageSize, syncToUrl();
+	$: filterValues, pageIndex, pageSize, syncToUrl();
 	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
 	const copiedId = copyFeedback.copiedId;
 
 	$: filtered = allBuckets
-		.filter((r) => (statusFilter === "all" ? true : r.status === statusFilter));
+		.filter((r) => {
+			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
+
+			const createdAt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
+			if (createdAt.from && r.createdAt && new Date(r.createdAt) < new Date(createdAt.from)) return false;
+			if (createdAt.to && r.createdAt && new Date(r.createdAt) > new Date(createdAt.to)) return false;
+
+			return true;
+		});
 
 	$: bucketsTotalCount = filtered.length;
 	$: paginatedBuckets = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
@@ -225,7 +238,7 @@
 			<h1 class="text-3xl font-semibold tracking-tight">Buckets</h1>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last execution: {lastUpdatedAt.toLocaleString()}</span>
+				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -325,27 +338,51 @@
 
 		<!-- Table -->
 		<section class="mt-10">
-			<div class="flex flex-col gap-3">
-				<select class="select select-sm select-bordered w-fit" bind:value={statusFilter}>
-					<option value="all">Status: All</option>
-					<option value="Active">Active</option>
-					<option value="Completing">Completing</option>
-					<option value="ReadyToDrain">Ready to Drain</option>
-					<option value="Draining">Draining</option>
-					<option value="Lost">Lost</option>
-					<option value="ReadyToDelete">Ready to Delete</option>
-				</select>
-
-				<div class="flex items-center justify-end gap-3">
-					<Pager
-						bind:pageIndex
-						bind:pageSize
-						totalCount={bucketsTotalCount}
-						currentCount={paginatedBuckets.length}
-						disabled={isRefreshing}
-						showPageSize={true}
+			<div class="flex items-center justify-between gap-4">
+				<div class="flex flex-wrap items-center gap-2">
+					<FilterDropdownMulti
+						label="Status"
+						options={[
+							{ value: "Active", label: "Active" },
+							{ value: "Completing", label: "Completing" },
+							{ value: "ReadyToDrain", label: "Ready to Drain" },
+							{ value: "Draining", label: "Draining" },
+							{ value: "Lost", label: "Lost" },
+							{ value: "ReadyToDelete", label: "Ready to Delete" }
+						]}
+						bind:values={selectedStatuses}
+						on:change={() => { pageIndex = 0; }}
 					/>
+
+					<FilterContainer
+						title="Date"
+						initialValues={filterValues}
+						on:change={(e) => {
+							filterValues = e.detail;
+							pageIndex = 0;
+						}}
+					>
+						<FilterItem
+							id="createdAt"
+							label="Created at"
+							type="datetime"
+							presets={[
+								{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+								{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
+								{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+							]}
+						/>
+					</FilterContainer>
 				</div>
+
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					totalCount={bucketsTotalCount}
+					currentCount={paginatedBuckets.length}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
 			</div>
 
 				<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">

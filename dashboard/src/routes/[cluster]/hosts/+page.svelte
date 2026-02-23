@@ -5,6 +5,9 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
@@ -23,6 +26,7 @@
 		memGb?: number;
 		workers?: number;
 		uptime?: string;
+		createdAt?: string;
 	};
 
 	let rows: HostRow[] = [];
@@ -32,7 +36,6 @@
 	const refreshIntervalSec = 10;
 
 	const urlParamDefs = {
-		tab: { defaultValue: "All" as "All" | "Online" | "Offline" },
 		sortBy: { defaultValue: "host" as "host" | "cpu" | "mem" },
 		sortDir: { defaultValue: "asc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -40,16 +43,19 @@
 	};
 
 	const _initParams = readUrlParams(urlParamDefs);
-	let activeTab: "All" | "Online" | "Offline" = _initParams.tab;
 	let sortBy: "host" | "cpu" | "mem" = _initParams.sortBy;
 	let sortDir: "asc" | "desc" = _initParams.sortDir;
+
+	let selectedStatuses: string[] = [];
+
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = {};
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			tab: activeTab,
 			sortBy,
 			sortDir,
 			page: pageIndex,
@@ -57,7 +63,7 @@
 		});
 	}
 
-	$: activeTab, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
+	$: filterValues, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
 
 	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
@@ -87,7 +93,7 @@
 		hour12: true
 	});
 
-	function mapHostToRow(host: ApiHostModel): HostRow {
+	function mapHostToRow(host: any): HostRow {
 		const memTotal = host.memoryTotalBytes ?? 0;
 		const memUsed = host.memoryUsedBytes ?? 0;
 		const memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : undefined;
@@ -113,7 +119,8 @@
 			memPercent,
 			memGb,
 			workers: undefined,
-			uptime: undefined
+			uptime: undefined,
+			createdAt: host?.createdAt ?? host?.registeredAt ?? undefined
 		};
 	}
 
@@ -152,27 +159,14 @@
 		}, refreshIntervalSec * 1000);
 	}
 
-	function tabFilter(r: HostRow) {
-		if (activeTab === "All") return true;
-		if (activeTab === "Online") return r.status === "Online" || r.status === "Warning";
-		return r.status === activeTab;
-	}
-
-	function handleTabChange(tab: "All" | "Online" | "Offline") {
-		activeTab = tab;
-		pageIndex = 0;
-	}
-
-	function sortValue(r: HostRow) {
-		if (sortBy === "host") return r.host.toLowerCase();
-		if (sortBy === "cpu") return r.cpu ?? 0;
-		return r.memPercent ?? -1;
-	}
-
 	$: filteredAll = rows
 		.filter(r => {
-			if (activeTab === "Online") return r.status === "Online" || r.status === "Warning";
-			if (activeTab === "Offline") return r.status === "Offline";
+			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
+
+			const dt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
+			if (dt.from && r.createdAt && new Date(r.createdAt) < new Date(dt.from)) return false;
+			if (dt.to && r.createdAt && new Date(r.createdAt) > new Date(dt.to)) return false;
+
 			return true;
 		})
 		.sort((a, b) => {
@@ -218,7 +212,7 @@
 			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last execution: {lastUpdated}</span>
+				<span>Last Refresh: {lastUpdated}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -307,7 +301,40 @@
 			</div>
 		</div>
 
-		<div class="flex justify-end mt-6">
+		<div class="flex items-center justify-between gap-4 mt-6">
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Status"
+					options={[
+						{ value: "Online", label: "Online" },
+						{ value: "Warning", label: "Warning" },
+						{ value: "Offline", label: "Offline" }
+					]}
+					bind:values={selectedStatuses}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
+				<FilterContainer
+					title="Date"
+					initialValues={filterValues}
+					on:change={(e) => {
+						filterValues = e.detail;
+						pageIndex = 0;
+					}}
+				>
+					<FilterItem
+						id="createdAt"
+						label="Created at"
+						type="datetime"
+						presets={[
+							{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
+							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+						]}
+					/>
+				</FilterContainer>
+			</div>
+
 			<Pager
 				bind:pageIndex
 				bind:pageSize
@@ -318,39 +345,22 @@
 			/>
 		</div>
 
-		<!-- Filters row -->
 		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-4">
 			<div class="card-body gap-4">
-				<div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-					<!-- Tabs -->
-					<div class="tabs tabs-bordered">
-						<button class:tab-active={activeTab === "All"} class="tab" on:click={() => handleTabChange("All")}>
-							All <span class="ml-2 badge badge-ghost">{rows.length}</span>
+				<div class="flex items-center justify-end gap-4">
+					<div class="join">
+						<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
+							<option value="host">Sort: Host</option>
+							<option value="cpu">Sort: CPU</option>
+							<option value="mem">Sort: Memory</option>
+						</select>
+						<button
+							class="btn btn-bordered join-item"
+							on:click={() => (sortDir = sortDir === "asc" ? "desc" : "asc")}
+							title="Toggle sort direction"
+						>
+							{sortDir === "asc" ? "A→Z" : "Z→A"}
 						</button>
-						<button class:tab-active={activeTab === "Online"} class="tab" on:click={() => handleTabChange("Online")}>
-							Online <span class="ml-2 badge badge-success">{onlineCount}</span>
-						</button>
-						<button class:tab-active={activeTab === "Offline"} class="tab" on:click={() => handleTabChange("Offline")}>
-							Offline <span class="ml-2 badge badge-error">{offlineCount}</span>
-						</button>
-					</div>
-
-					<div class="flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-end w-full lg:w-auto">
-						<div class="join">
-							<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
-								<option value="host">Sort: Host</option>
-								<option value="cpu">Sort: CPU</option>
-								<option value="mem">Sort: Memory</option>
-							</select>
-							<button
-								class="btn btn-bordered join-item"
-								on:click={() => (sortDir = sortDir === "asc" ? "desc" : "asc")}
-								title="Toggle sort direction"
-							>
-								{sortDir === "asc" ? "A→Z" : "Z→A"}
-							</button>
-						</div>
-
 					</div>
 				</div>
 

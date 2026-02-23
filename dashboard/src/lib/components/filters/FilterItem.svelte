@@ -11,6 +11,12 @@
 
     export let options: Option<any>[] = [];
 
+    export type DatePreset =
+        | { type: "LAST_MINUTES"; minutes: number; label: string }
+        | { type: "NEXT_HOURS"; hours: number; label: string };
+
+    export let presets: DatePreset[] = [];
+
     const ctx = getContext<FiltersContext>(FILTERS_CTX_KEY);
 
     let fromLocal = "";
@@ -44,6 +50,27 @@
         if (Number.isNaN(d.getTime())) return "";
         const pad = (n: number) => String(n).padStart(2, "0");
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function formatIsoShort(iso: string): string {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return "";
+        const pad = (n: number) => String(n).padStart(2, "0");
+        return `${pad(d.getMonth() + 1)}/${pad(d.getDate())}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function applyPreset(preset: DatePreset) {
+        const now = Date.now();
+        if (preset.type === "LAST_MINUTES") {
+            dateMode = "specific";
+            fromLocal = isoToLocal(new Date(now - preset.minutes * 60_000).toISOString());
+            toLocal = isoToLocal(new Date(now).toISOString());
+        } else if (preset.type === "NEXT_HOURS") {
+            dateMode = "specific";
+            fromLocal = isoToLocal(new Date(now).toISOString());
+            toLocal = isoToLocal(new Date(now + preset.hours * 60 * 60_000).toISOString());
+        }
+        syncDateTimeValue();
     }
 
     function syncDateTimeValue() {
@@ -277,6 +304,19 @@
                         <span class="text-sm">Relative time</span>
                     </label>
                 </div>
+
+                {#if presets.length > 0}
+                    <div class="mt-3 flex flex-wrap gap-2">
+                        {#each presets as preset (preset.label)}
+                            <button
+                                class="btn btn-ghost btn-xs"
+                                on:click={() => applyPreset(preset)}
+                            >
+                                {preset.label}
+                            </button>
+                        {/each}
+                    </div>
+                {/if}
 
                 {#if dateMode === "specific"}
                     <div class="mt-3 grid grid-cols-2 gap-3">
