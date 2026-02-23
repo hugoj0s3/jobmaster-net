@@ -41,7 +41,21 @@
 		size: { defaultValue: 12, ...Serializers.number }
 	};
 
-	const _initParams = readUrlParams(urlParamDefs);
+	let _initParams = readUrlParams(urlParamDefs);
+
+	let filterKey = $page.url.search;
+	let lastSearch = $page.url.search;
+	$: if ($page.url.search !== lastSearch) {
+		lastSearch = $page.url.search;
+		filterKey = $page.url.search;
+		_initParams = readUrlParams(urlParamDefs);
+		pageSize = _initParams.size;
+		pageIndex = _initParams.page;
+		selectedStatuses = [];
+		selectedJobTypes = [];
+		filterValues = {};
+		refreshNow();
+	}
 
 	let refreshIntervalSec = 20;
 	let lastUpdatedAt = new Date();
@@ -278,6 +292,7 @@
 		</div>
 
 		<div class="mt-6 flex items-center justify-between gap-4">
+			{#key filterKey}
 			<div class="flex flex-wrap items-center gap-2">
 				<FilterDropdownMulti
 					label="Status"
@@ -317,6 +332,7 @@
 					/>
 				</FilterContainer>
 			</div>
+			{/key}
 
 			<Pager
 				bind:pageIndex

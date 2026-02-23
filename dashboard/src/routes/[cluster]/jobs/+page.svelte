@@ -33,10 +33,29 @@
         size: { defaultValue: 12, ...Serializers.number }
     };
 
-    const _initParams = readUrlParams(urlParamDefs);
+    let _initParams = readUrlParams(urlParamDefs);
     let pageSize = _initParams.size;
     let pageIndex = _initParams.page;
     let lastClusterId: string | null = null;
+
+    let filterKey = $page.url.search;
+    let lastSearch = $page.url.search;
+    $: if ($page.url.search !== lastSearch) {
+        lastSearch = $page.url.search;
+        filterKey = $page.url.search;
+        _initParams = readUrlParams(urlParamDefs);
+        pageSize = _initParams.size;
+        pageIndex = _initParams.page;
+        selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+        const sFrom = _initParams.scheduledFrom;
+        const sTo = _initParams.scheduledTo;
+        if (sFrom || sTo) {
+            filterValues = { scheduledAt: { ...(sFrom ? { from: sFrom } : {}), ...(sTo ? { to: sTo } : {}) } };
+        } else {
+            filterValues = {};
+        }
+        refreshNow();
+    }
 
     let uiNow = new Date();
     let nowTicker: number | undefined;
@@ -352,6 +371,7 @@
         </div>
 
         <div class="flex items-center justify-between gap-4 mt-4">
+            {#key filterKey}
             <div class="flex flex-wrap items-center gap-2">
                 <FilterDropdownMulti
                     label="Statuses"
@@ -394,6 +414,7 @@
                     />
                 </FilterContainer>
             </div>
+            {/key}
 
             <Pager
                 bind:pageIndex

@@ -42,7 +42,7 @@
 		size: { defaultValue: 10, ...Serializers.number }
 	};
 
-	const _initParams = readUrlParams(urlParamDefs);
+	let _initParams = readUrlParams(urlParamDefs);
 	let sortBy: "host" | "cpu" | "mem" = _initParams.sortBy;
 	let sortDir: "asc" | "desc" = _initParams.sortDir;
 
@@ -53,6 +53,21 @@
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
+
+	let filterKey = $page.url.search;
+	let lastSearch = $page.url.search;
+	$: if ($page.url.search !== lastSearch) {
+		lastSearch = $page.url.search;
+		filterKey = $page.url.search;
+		_initParams = readUrlParams(urlParamDefs);
+		pageSize = _initParams.size;
+		pageIndex = _initParams.page;
+		sortBy = _initParams.sortBy;
+		sortDir = _initParams.sortDir;
+		selectedStatuses = [];
+		filterValues = {};
+		refreshNow();
+	}
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
@@ -302,6 +317,7 @@
 		</div>
 
 		<div class="flex items-center justify-between gap-4 mt-6">
+			{#key filterKey}
 			<div class="flex flex-wrap items-center gap-2">
 				<FilterDropdownMulti
 					label="Status"
@@ -334,6 +350,7 @@
 					/>
 				</FilterContainer>
 			</div>
+			{/key}
 
 			<Pager
 				bind:pageIndex

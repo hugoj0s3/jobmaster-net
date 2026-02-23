@@ -37,11 +37,25 @@
 		size: { defaultValue: 10, ...Serializers.number }
 	};
 
-	const _initParams = readUrlParams(urlParamDefs);
+	let _initParams = readUrlParams(urlParamDefs);
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 	let sortBy: SortCol = _initParams.sortBy;
 	let sortAsc = _initParams.sortAsc;
+
+	let filterKey = $page.url.search;
+	let lastSearch = $page.url.search;
+	$: if ($page.url.search !== lastSearch) {
+		lastSearch = $page.url.search;
+		filterKey = $page.url.search;
+		_initParams = readUrlParams(urlParamDefs);
+		pageSize = _initParams.size;
+		pageIndex = _initParams.page;
+		sortBy = _initParams.sortBy;
+		sortAsc = _initParams.sortAsc;
+		selectedHealths = [];
+		filterValues = {};
+	}
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
@@ -173,6 +187,7 @@
 		{/if}
 
 		<div class="flex items-center justify-between gap-4 mt-6">
+			{#key filterKey}
 			<div class="flex flex-wrap items-center gap-2">
 				<FilterDropdownMulti
 					label="Health"
@@ -205,6 +220,7 @@
 					/>
 				</FilterContainer>
 			</div>
+			{/key}
 
 			<Pager
 				bind:pageIndex
