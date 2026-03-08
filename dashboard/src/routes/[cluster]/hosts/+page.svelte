@@ -14,7 +14,7 @@
 
 	const clusterId = () => $page.params.cluster;
 
-	type HostStatus = "Online" | "Offline" | "Warning";
+	type HostStatus = "Online" | "Offline";
 
 	type HostRow = {
 		id: string;
@@ -73,9 +73,8 @@
 
 	$: filterValues, pageIndex, pageSize, syncToUrl();
 
-	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
+	$: onlineCount = rows.filter(r => r.status === "Online").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
-	$: warningCount = rows.filter(r => r.status === "Warning").length;
 
 	$: avgCpu =
 		Math.round(
@@ -110,10 +109,8 @@
 		const cpu = host.cpuUsagePercent ?? 0;
 		
 		let status: HostStatus;
-		if (host.cpuUsagePercent == null && host.memoryTotalBytes == null) {
+		if (host.isAlive === false) {
 			status = "Offline";
-		} else if (cpu > 90 || (memPercent != null && memPercent > 90)) {
-			status = "Warning";
 		} else {
 			status = "Online";
 		}
@@ -189,13 +186,11 @@
 
 	function badgeColor(status: HostStatus) {
 		if (status === "Online") return "badge-success";
-		if (status === "Warning") return "badge-warning";
 		return "badge-error";
 	}
 
 	function dotClass(status: HostStatus) {
 		if (status === "Online") return "bg-success";
-		if (status === "Warning") return "bg-warning";
 		return "bg-error";
 	}
 
@@ -311,7 +306,6 @@
 					label="Status"
 					options={[
 						{ value: "Online", label: "Online" },
-						{ value: "Warning", label: "Warning" },
 						{ value: "Offline", label: "Offline" }
 					]}
 					bind:values={selectedStatuses}
@@ -427,7 +421,6 @@
 
 				<div class="flex items-center gap-6 text-sm opacity-80">
 					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
-					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-warning"></span> Warning</div>
 					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-error"></span> Offline</div>
 				</div>
 			</div>
