@@ -28,17 +28,35 @@
 
     :root[data-theme="jobmaster-dark"] {
         color-scheme: dark;
-        /* ✅ Modern DaisyUI 5 variable names */
-        --color-base-100: oklch(0.12 0.02 260);
-        --color-base-200: oklch(0.09 0.02 260);
-        --color-base-300: oklch(0.14 0.03 260);
+
+        --color-base-100: oklch(0.17 0.02 260);
+        --color-base-200: oklch(0.13 0.02 260);
+        --color-base-300: oklch(0.21 0.03 260);
         --color-base-content: oklch(0.93 0.01 260);
 
-        --color-primary: oklch(0.73 0.12 255);
-        --color-primary-content: oklch(0.12 0.02 260);
+        --color-primary: oklch(0.72 0.14 255);
+        --color-primary-content: oklch(0.98 0 0);
 
-        --color-accent: oklch(0.54 0.24 275);
-        --color-accent-content: oklch(0.99 0 0);
+        --color-secondary: oklch(0.65 0.15 300);
+        --color-secondary-content: oklch(0.98 0 0);
+
+        --color-accent: oklch(0.70 0.18 195);
+        --color-accent-content: oklch(0.15 0.02 260);
+
+        --color-neutral: oklch(0.25 0.02 260);
+        --color-neutral-content: oklch(0.88 0.01 260);
+
+        --color-info: oklch(0.72 0.14 230);
+        --color-info-content: oklch(0.15 0.02 230);
+
+        --color-success: oklch(0.72 0.17 155);
+        --color-success-content: oklch(0.15 0.02 155);
+
+        --color-warning: oklch(0.80 0.16 80);
+        --color-warning-content: oklch(0.15 0.04 80);
+
+        --color-error: oklch(0.68 0.19 25);
+        --color-error-content: oklch(0.98 0 0);
     }
 }
 
