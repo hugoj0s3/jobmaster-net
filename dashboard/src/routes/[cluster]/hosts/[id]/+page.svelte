@@ -59,19 +59,19 @@
 	$: kpis = [
 		{
 			title: "CPU Load",
-			value: cpuPercent != null ? `${cpuPercent}%` : "—",
+			value: cpuPercent != null ? `${cpuPercent}%` : "N/A",
 			sub: host?.threadCount != null ? `${host.threadCount} threads` : "",
 			class: "bg-base-200/60 border-base-300"
 		},
 		{
 			title: "Memory Usage",
-			value: memPercent != null ? `${memPercent}%` : "—",
+			value: memPercent != null ? `${memPercent}%` : "N/A",
 			sub: memGbUsed != null ? `${memGbUsed} GB / ${memGbTotal} GB` : "",
 			class: "bg-base-200/60 border-base-300"
 		},
 		{
 			title: "Threads / Handles",
-			value: host?.threadCount != null ? `${host.threadCount}` : "—",
+			value: host?.threadCount != null ? `${host.threadCount}` : "N/A",
 			sub: host?.handleCount != null ? `${host.handleCount} handles` : "",
 			class: "bg-base-200/60 border-base-300"
 		}

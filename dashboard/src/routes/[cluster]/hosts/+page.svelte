@@ -22,7 +22,7 @@
 		host: string;
 		hostDisplayName?: string;
 		ip: string;
-		cpu: number;
+		cpu: number | null;
 		memPercent?: number;
 		memGb?: number;
 		workers?: number;
@@ -108,7 +108,7 @@
 		const memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : undefined;
 		const memGb = memTotal > 0 ? Number((memUsed / (1024 ** 3)).toFixed(1)) : undefined;
 
-		const cpu = host.cpuUsagePercent ?? 0;
+		const cpu = host.cpuUsagePercent != null ? Math.round(host.cpuUsagePercent) : null;
 		
 		let status: HostStatus;
 		if (host.isAlive === false) {
@@ -123,7 +123,7 @@
 			host: host.id ?? "Unknown",
 			hostDisplayName: host.hostDisplayName,
 			ip: "—",
-			cpu: Math.round(cpu),
+			cpu,
 			memPercent,
 			memGb,
 			workers: undefined,
@@ -381,6 +381,8 @@
 								<td>
 									{#if r.status === "Offline"}
 										<span class="opacity-60">—</span>
+									{:else if r.cpu == null}
+										<span class="opacity-60">N/A</span>
 									{:else}
 										<div class="flex items-center gap-3">
 											<progress class="progress progress-success w-28" value={r.cpu} max="100" />
@@ -390,8 +392,10 @@
 								</td>
 
 								<td>
-									{#if r.status === "Offline" || r.memPercent == null}
+									{#if r.status === "Offline"}
 										<span class="opacity-60">—</span>
+									{:else if r.memPercent == null}
+										<span class="opacity-60">N/A</span>
 									{:else}
 										<div class="flex items-center gap-3">
 											<progress class="progress progress-info w-28" value={r.memPercent} max="100" />
