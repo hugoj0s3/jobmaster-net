@@ -29,6 +29,7 @@
         statuses: { defaultValue: [] as number[], ...Serializers.numberArray },
         scheduledFrom: { defaultValue: "" },
         scheduledTo: { defaultValue: "" },
+        bucketId: { defaultValue: "" },
         page: { defaultValue: 0, ...Serializers.number },
         size: { defaultValue: 12, ...Serializers.number }
     };
@@ -47,6 +48,7 @@
         pageSize = _initParams.size;
         pageIndex = _initParams.page;
         selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+        selectedBucketId = _initParams.bucketId;
         const sFrom = _initParams.scheduledFrom;
         const sTo = _initParams.scheduledTo;
         if (sFrom || sTo) {
@@ -78,6 +80,8 @@
 
         workerLane?: string;
         worker?: string;
+        bucketId?: string;
+        bucketName?: string;
     };
 
     type ApiJobModel = components["schemas"]["ApiJobModel"];
@@ -144,6 +148,11 @@
     }
 
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+    let selectedBucketId: string = _initParams.bucketId;
+
+    type ApiBucketModel = components["schemas"]["ApiBucketModel"];
+    let bucketOptions: { value: string; label: string }[] = [];
+    let bucketNameMap: Record<string, string> = {};
 
     type FilterValues = Record<string, unknown>;
     let filterValues: FilterValues = (() => {
@@ -163,12 +172,13 @@
             statuses: selectedStatuses,
             scheduledFrom: scheduledAt.from ?? "",
             scheduledTo: scheduledAt.to ?? "",
+            bucketId: selectedBucketId,
             page: pageIndex,
             size: pageSize
         });
     }
 
-    $: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
+    $: filterValues, selectedStatuses, selectedBucketId, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
         const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
@@ -176,7 +186,8 @@
         return {
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: scheduledAt.from,
-            ScheduledTo: scheduledAt.to
+            ScheduledTo: scheduledAt.to,
+            BucketId: selectedBucketId || undefined
         } as const;
     }
 
@@ -251,7 +262,7 @@
                 const safeOffset = Math.max(0, pageIndex) * pageSize;
 
                 const filters = buildJobsQuery();
-                const [jobsCount, apiJobs] = await Promise.all([
+                const [jobsCount, apiJobs, apiBuckets] = await Promise.all([
                     jm.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: filters }
                     }).then((r) => {
@@ -266,8 +277,23 @@
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
+                    }),
+                    jm.GET("/{clusterId}/buckets", {
+                        params: { path: { clusterId: cid } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as ApiBucketModel[];
                     })
                 ]);
+
+                const newBucketMap: Record<string, string> = {};
+                bucketOptions = (apiBuckets ?? []).map((b) => {
+                    const id = b.id ?? "";
+                    const name = b.name ?? b.id ?? "—";
+                    newBucketMap[id] = name;
+                    return { value: id, label: name };
+                });
+                bucketNameMap = newBucketMap;
 
                 jobsTotalCount = jobsCount;
 
@@ -294,7 +320,9 @@
                         executedAt: bestExecutedAtIso(j),
                         scheduledAt: scheduledIso(j),
                         workerLane: j.workerLane,
-                        worker: j.agentWorkerId
+                        worker: j.agentWorkerId,
+                        bucketId: j.bucketId,
+                        bucketName: j.bucketId ? (bucketNameMap[j.bucketId] ?? j.bucketId) : undefined
                     };
                 });
 
@@ -393,6 +421,17 @@
                     }}
                 />
 
+                <FilterDropdownMulti
+                    label="Bucket"
+                    options={bucketOptions}
+                    values={selectedBucketId ? [selectedBucketId] : []}
+                    on:change={(e) => {
+                        selectedBucketId = e.detail.length > 0 ? e.detail[e.detail.length - 1] : "";
+                        pageIndex = 0;
+                        refreshNow();
+                    }}
+                />
+
                 <FilterContainer
                     initialValues={filterValues}
                     on:change={(e) => {
@@ -438,6 +477,7 @@
                         <th>Priority</th>
                         <th>Time</th>
                         <th>Worker Lane</th>
+                        <th>Bucket</th>
                     </tr>
                     </thead>
 
@@ -522,6 +562,18 @@
                             <td>
                                 {#if j.workerLane}
                                     <span class="tooltip tooltip-bottom" data-tip={j.workerLane}>{j.workerLane}</span>
+                                {:else}
+                                    <span class="opacity-60">—</span>
+                                {/if}
+                            </td>
+
+                            <td>
+                                {#if j.bucketId}
+                                    <a
+                                        class="link link-hover link-primary"
+                                        href={resolve(`/${clusterId()}/buckets/${j.bucketId}`)}
+                                        title={j.bucketId}
+                                    >{j.bucketName ?? j.bucketId}</a>
                                 {:else}
                                     <span class="opacity-60">—</span>
                                 {/if}
