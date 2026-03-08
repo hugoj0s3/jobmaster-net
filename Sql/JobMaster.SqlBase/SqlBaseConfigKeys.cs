@@ -10,5 +10,4 @@ internal class SqlBaseConfigKeys
     public static string TablePrefixKey => "TablePrefix";
     
     public static string DisableAutoProvisionSchemaKey => "DisableAutoProvisionSchema";
-        
 }

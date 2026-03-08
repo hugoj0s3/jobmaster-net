@@ -210,7 +210,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                 cfg.EnableMirrorLog((lItem) => OnLog(lItem));
 
                 var defaultAgentTablePrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
-                    ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
+                    ? ToSafeSqlIdentifier(c.MasterTablePrefix)
                     : null;
 
                 foreach (var a in c.AgentConnections)
@@ -262,7 +262,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .WorkerBatchSize(1000)
+                            .TransferBatchSize(1000)
                             .SkipWarmUpTime();
                     }
 
@@ -271,13 +271,13 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                         var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
                         drainModeSelector
                             .SetWorkerMode(AgentWorkerMode.Drain)
-                            .WorkerBatchSize(1000)
+                            .TransferBatchSize(1000)
                             .SkipWarmUpTime();
                         
                         var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
                         coordinatorModeSelector
                             .SetWorkerMode(AgentWorkerMode.Coordinator)
-                            .WorkerBatchSize(1000);
+                            .TransferBatchSize(1000);
                     }
                 }
 
@@ -294,7 +294,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         {
             var masterPrefix = ToSafeSqlIdentifier(c.MasterTablePrefix ?? string.Empty);
             var defaultAgentPrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
-                ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
+                ? ToSafeSqlIdentifier(c.MasterTablePrefix)
                 : null;
 
             var masterCnn = IntegrationTestSecrets.ApplySecrets(

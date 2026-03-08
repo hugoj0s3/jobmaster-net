@@ -21,8 +21,22 @@ public static class MySqlTestDbUtil
         await using var cnn = new MySqlConnection(connectionString);
         await cnn.OpenAsync();
 
+        // Drop all generic record family tables
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value_topology");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_topology");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value_runtime");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_runtime");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value_log");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_log");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value_job_metadata");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_job_metadata");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value_rs_metadata");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_rs_metadata");
+        
+        // Drop base generic record tables (for ClusterConfiguration and other default groups)
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry_value");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}generic_record_entry");
+        
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}distributed_lock");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}job");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}recurring_schedule");
@@ -37,6 +51,7 @@ public static class MySqlTestDbUtil
 
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}message_dispatcher");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}bucket_dispatcher");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}agent_conn_footprint");
     }
 
     private static async Task DropTableIfExistsAsync(MySqlConnection cnn, string tableName)

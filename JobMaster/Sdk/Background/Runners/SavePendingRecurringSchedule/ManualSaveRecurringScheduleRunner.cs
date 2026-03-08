@@ -39,7 +39,7 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
         var recurringSchedules = await agentJobsDispatcherService.DequeueSavePendingRecurAsync(
             BackgroundAgentWorker.AgentConnectionId, 
             BucketId!, 
-            BackgroundAgentWorker.BatchSize);
+            BackgroundAgentWorker.BucketBufferSize);
 
         if (recurringSchedules.Count <= 0)
         {

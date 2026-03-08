@@ -19,7 +19,7 @@ internal sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
         masterGenericRecordRepository = backgroundAgentWorker.GetClusterAwareRepository<IMasterGenericRecordRepository>();
         masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
-        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.BatchSize);
+        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -43,7 +43,7 @@ internal sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
         try
         {
             // Delete up to BatchSize expired records each tick
-            var deleted = await masterGenericRecordRepository.DeleteExpiredAsync(DateTime.UtcNow, BackgroundAgentWorker.BatchSize);
+            var deleted = await masterGenericRecordRepository.DeleteExpiredAsync(DateTime.UtcNow, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

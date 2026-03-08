@@ -35,6 +35,8 @@ internal class RecurringSchedulePersistenceRecord
     public string? AgentWorkerId { get; set; }
 
     public int? PartitionLockId { get; set; }
+    public string? HostId { get; set; }
+    public string? HostDisplayName { get; set; }
     public DateTime? PartitionLockExpiresAt { get; set; }
 
     public DateTime CreatedAt { get; set; }

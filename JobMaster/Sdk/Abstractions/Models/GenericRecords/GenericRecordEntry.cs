@@ -24,7 +24,6 @@ internal static class MasterGenericRecordGroupIds
     public const string AgentWorkerHeartbeat = "AgentWorkerHeartbeat";
     public const string AgentConnectionHeartbeat = "AgentConnectionHeartbeat";
     public const string HostHeartbeat = "HostHeartbeat";
-    public const string HostStats = "HostStats";
     
     public const string Log = "Log";
     

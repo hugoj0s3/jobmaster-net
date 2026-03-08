@@ -10,6 +10,7 @@ using JobMaster.Sdk.Utils.Extensions;
 using System.Runtime;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
+using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
@@ -20,6 +21,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;
     private readonly IMasterHeartbeatService masterHeartbeatService;
     private readonly IMasterChangesSentinelService masterChangesSentinelService;
+    private readonly IHostStatsProvider hostStatsProvider;
     private readonly JobMasterInMemoryKeys cacheKeys;
     private readonly JobMasterSentinelKeys sentinelKeys;
     private readonly IJobMasterInMemoryCache jobMasterInMemoryCache;
@@ -29,13 +31,15 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         IMasterGenericRecordRepository masterGenericRecordRepository,
         IMasterHeartbeatService masterHeartbeatService,
         IJobMasterInMemoryCache jobMasterInMemoryCache,
-        IMasterChangesSentinelService masterChangesSentinelService) : base(clusterConnConfig)
+        IMasterChangesSentinelService masterChangesSentinelService,
+        IHostStatsProvider hostStatsProvider) : base(clusterConnConfig)
     {
         this.masterGenericRecordRepository = masterGenericRecordRepository;
         this.masterHeartbeatService = masterHeartbeatService;
         this.jobMasterInMemoryCache = jobMasterInMemoryCache;
         this.masterChangesSentinelService = masterChangesSentinelService;
-        
+        this.hostStatsProvider = hostStatsProvider;
+
         cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
         sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
     }
@@ -69,15 +73,11 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
             CreatedAt = DateTime.UtcNow,
             StatisticsAt = DateTime.UtcNow,
             OsDescription = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
-            ProcessorCount =  Environment.ProcessorCount,
             CpuUsagePercent = hostStats.CpuUsagePercent,
             DiskAvailableBytes = hostStats.DiskAvailableBytes,
-            GcTotalMemory = hostStats.GcTotalMemory,
-            HandleCount = hostStats.HandleCount,
             MemoryTotalBytes = hostStats.MemoryTotalBytes,
             MemoryUsedBytes = hostStats.MemoryUsedBytes,
-            ThreadCount = hostStats.ThreadCount,
-            LastStatsId = hostStats.Id,
+            ProcessorCount = hostStats.ProcessorCount,
         };
         
         var genericRecord = 
@@ -85,35 +85,12 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         
         await masterGenericRecordRepository.InsertAsync(genericRecord);
         
-        await InsertStatsAsync(hostStats);
-        
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
 
         return hostId;
     }
 
-    public async Task<IList<HostStatsModel>> QueryAllStatsAsync(string hostId)
-    {
-        var queryCriteria = new GenericRecordQueryCriteria()
-        {
-            Filters = new List<GenericRecordValueFilter>()
-            {
-                new()
-                {
-                    Key = nameof(HostStatsModel.HostId),
-                    Operation = GenericFilterOperation.Eq,
-                    Value = hostId,
-                }
-            },
-            ReadIsolationLevel = ReadIsolationLevel.FastSync,
-            OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtDesc,
-        };
-        
-        var hostStatsRecords = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.HostStats, queryCriteria);
-        return hostStatsRecords.Select(x => x.ToObject<HostStatsModel>()).ToList();
-    }
-
-    public async Task AddStatsAsync(string hostId)
+    public async Task UpdateStatsAsync(string hostId)
     {
         var hosts = await QueryAllRecordsAsync();
         var host = hosts.FirstOrDefault(x => x.Id == hostId);
@@ -123,16 +100,10 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         }
             
         var hostStats = await CaptureStatsAsync(HostId.Recover(host.HostDisplayName, hostId));
-        await InsertStatsAsync(hostStats);
-
         host.CpuUsagePercent = hostStats.CpuUsagePercent;
         host.DiskAvailableBytes = hostStats.DiskAvailableBytes;
-        host.GcTotalMemory = hostStats.GcTotalMemory;
-        host.HandleCount = hostStats.HandleCount;
         host.MemoryTotalBytes = hostStats.MemoryTotalBytes;
         host.MemoryUsedBytes = hostStats.MemoryUsedBytes;
-        host.ThreadCount = hostStats.ThreadCount;
-        host.LastStatsId = hostStats.Id;
         host.StatisticsAt = hostStats.StatisticsAt;
         
         var genericRecord = 
@@ -171,44 +142,9 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         return inCacheValue.Value;
     }
     
-
-    private async Task InsertStatsAsync(HostStatsModel hostStats)
+    private async Task<HostStatsInfo> CaptureStatsAsync(HostId hostId, Process? process = null)
     {
-        var statsGenericRecord = 
-            GenericRecordEntry.Create(
-                ClusterConnConfig.ClusterId, 
-                MasterGenericRecordGroupIds.HostStats, 
-                hostStats.Id, 
-                hostStats,
-                expiresAt: DateTime.UtcNow.AddHours(1));
-
-        await masterGenericRecordRepository.InsertAsync(statsGenericRecord);
-    }
-    
-    private async Task<HostStatsModel> CaptureStatsAsync(HostId hostId, Process? process = null)
-    {
-        process ??= Process.GetCurrentProcess();
-        var cpuUsage = await CpuUsageUtil.GetProcessCpuPercentTotalAsync(process);
-        
-        var hostStats = new HostStatsModel(ClusterConnConfig.ClusterId)
-        {
-            Id = Guid.NewGuid(),
-            HostId = hostId,
-            StatisticsAt = DateTime.UtcNow,
-            CpuUsagePercent = cpuUsage,
-#if NET8_0_OR_GREATER
-            MemoryTotalBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes,
-#else
-            MemoryTotalBytes = -1,
-#endif
-            MemoryUsedBytes = process.WorkingSet64,
-            ThreadCount = process.Threads.Count,
-            HandleCount = process.HandleCount,
-            GcTotalMemory = GC.GetTotalMemory(false),
-            DiskAvailableBytes = new DriveInfo(Environment.CurrentDirectory).AvailableFreeSpace,
-        };
-
-        return hostStats;
+        return await hostStatsProvider.GetStatsAsync();
     }
     
     private static HostModel ToHostModel(HostRecord record, DateTime? lastHeartbeatAt)
@@ -218,22 +154,14 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         {
             Id = hostId,
             ProcessId = record.ProcessId,
-            ProcessorCount = record.ProcessorCount,
             OsDescription = record.OsDescription,
             CreatedAt = record.CreatedAt,
-            LastStats = new HostStatsModel(record.ClusterId)
-            {
-                CpuUsagePercent =  record.CpuUsagePercent,
-                StatisticsAt =  record.StatisticsAt,
-                DiskAvailableBytes =  record.DiskAvailableBytes,
-                GcTotalMemory =  record.GcTotalMemory,
-                HandleCount =  record.HandleCount,
-                MemoryTotalBytes =  record.MemoryTotalBytes,
-                MemoryUsedBytes =  record.MemoryUsedBytes,
-                ThreadCount =  record.ThreadCount,
-                HostId = hostId,
-                Id = record.LastStatsId,
-            },
+            CpuUsagePercent =  record.CpuUsagePercent,
+            StatisticsAt =  record.StatisticsAt,
+            DiskAvailableBytes =  record.DiskAvailableBytes,
+            MemoryTotalBytes =  record.MemoryTotalBytes,
+            MemoryUsedBytes =  record.MemoryUsedBytes,
+            ProcessorCount = record.ProcessorCount,
             LastHeartbeat = lastHeartbeatAt,
         };
     }
@@ -248,7 +176,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         
         public string Id { get; internal set; } = null!;
         public string ProcessId { get; set; } = null!;
-        public int ProcessorCount { get; set; }
+        public int? ProcessorCount { get; set; }
         public string? OsDescription { get; set; }
         public string HostDisplayName { get; internal set; } = null!;
     
@@ -258,11 +186,6 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         public double? CpuUsagePercent { get; set; }
         public long? MemoryTotalBytes { get; set; }
         public long? MemoryUsedBytes { get; set; }
-    
-        public int ThreadCount { get; set; }
-        public int HandleCount { get; set; }
-   
-        public long GcTotalMemory { get; set; }
     
         public long? DiskAvailableBytes { get; set; }
         

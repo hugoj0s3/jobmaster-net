@@ -21,8 +21,8 @@ public class JobTests
         job.JobDefinitionId.Should().Be("JobHandlerForTest");
         job.Status.Should().Be(JobMasterJobStatus.SavePending);
         job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.Once);
+        job.NextPlanExecutionAt.Should().Be(scheduledAt);
         job.ScheduledAt.Should().Be(scheduledAt);
-        job.OriginalScheduledAt.Should().Be(scheduledAt);
         job.Priority.Should().Be(JobMasterPriority.Low);
         job.Timeout.Should().Be(TimeSpan.FromSeconds(10));
         job.MaxNumberOfRetries.Should().Be(10);
@@ -97,8 +97,8 @@ public class JobTests
         generic.Timeout.Should().Be(nonGeneric.Timeout);
         generic.MaxNumberOfRetries.Should().Be(nonGeneric.MaxNumberOfRetries);
         generic.WorkerLane.Should().Be(nonGeneric.WorkerLane);
+        generic.NextPlanExecutionAt.Should().Be(nonGeneric.NextPlanExecutionAt);
         generic.ScheduledAt.Should().Be(nonGeneric.ScheduledAt);
-        generic.OriginalScheduledAt.Should().Be(nonGeneric.OriginalScheduledAt);
     }
 
     [Fact]
@@ -130,8 +130,8 @@ public class JobTests
 
         job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.StaticRecurring);
         job.SourceId.Should().Be(recurring.Id);
+        job.NextPlanExecutionAt.Should().Be(scheduleAt);
         job.ScheduledAt.Should().Be(scheduleAt);
-        job.OriginalScheduledAt.Should().Be(scheduleAt);
         job.Priority.Should().Be(JobMasterPriority.High);
         job.Timeout.Should().Be(TimeSpan.FromSeconds(9));
         job.MaxNumberOfRetries.Should().Be(1);
@@ -169,8 +169,8 @@ public class JobTests
         job2.JobDefinitionId.Should().Be(job.JobDefinitionId);
         job2.TriggerSourceType.Should().Be(job.TriggerSourceType);
         job2.Status.Should().Be(job.Status);
-        job2.OriginalScheduledAt.Should().Be(job.OriginalScheduledAt);
         job2.ScheduledAt.Should().Be(job.ScheduledAt);
+        job2.NextPlanExecutionAt.Should().Be(job.NextPlanExecutionAt);
         job2.Priority.Should().Be(job.Priority);
         job2.Timeout.Should().Be(job.Timeout);
         job2.MaxNumberOfRetries.Should().Be(job.MaxNumberOfRetries);

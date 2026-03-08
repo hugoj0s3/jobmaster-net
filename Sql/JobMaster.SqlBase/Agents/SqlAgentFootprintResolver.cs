@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading.Tasks;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
@@ -51,7 +51,7 @@ WHERE NOT EXISTS (
 
 UPDATE {FootprintTableName()}
 SET footprint = @footprint,
-    last_update_at = @lastUpdatedAt
+    last_updated_at = @lastUpdatedAt
 WHERE cluster_id = @clusterId
   AND agent_connection_id = @agentConnectionId;
 ",
@@ -71,6 +71,6 @@ WHERE cluster_id = @clusterId
 
     private string FootprintTableName()
     {
-        return $"{sql.GetTablePrefix(additionalConnConfig)}agent_connection_footprint";
+        return $"{sql.GetTablePrefix(additionalConnConfig)}agent_conn_footprint";
     }
 }

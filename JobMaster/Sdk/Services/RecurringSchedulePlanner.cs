@@ -226,13 +226,13 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
                     JobMasterTriggerSourceType.StaticRecurring,
                     JobMasterTriggerSourceType.DynamicRecurring
                 },
-                ScheduledFrom = baseDateTime,
-                ScheduledTo = stopAt,
+                NextPlanExecutionAtFrom = baseDateTime,
+                NextPlanExecutionAtTo = stopAt,
             });
 
             // Normalize scheduled times to seconds
-            scheduledSecs = new HashSet<long>(jobs.Select(j => ToSec(j.OriginalScheduledAt)));
-            lastJobScheduledAt = jobs.Max(x => x.OriginalScheduledAt);
+            scheduledSecs = new HashSet<long>(jobs.Select(j => ToSec(j.ScheduledAt)));
+            lastJobScheduledAt = jobs.Max(x => x.ScheduledAt);
         }
 
         var results = new List<DateTime>();

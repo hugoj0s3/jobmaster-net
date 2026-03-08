@@ -135,7 +135,7 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 
         foreach (var agentConfig in agentConfigs)
         {
-            var clusterConfig = JobMasterClusterConnectionConfig.Get(agentConfig.ClusterId, includeInactive: true);
+            var clusterConfig = JobMasterClusterConnectionConfig.Get(agentConfig.ClusterId, includeNotReady: true);
             if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
             {
                 return;
@@ -166,8 +166,8 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
             }
 
-            // agent_connection_footprint
-            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_connection_footprint");
+            // agent_conn_footprint
+            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_footprint");
             var footprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(footprintTableExistsSql, transaction: agentTransaction);
             if (!footprintTableExists)
             {

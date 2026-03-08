@@ -19,5 +19,7 @@ internal class AgentConnectionModel : JobMasterBaseModel
     
     public string RepositoryTypeId { get; set; } = string.Empty;
     
-    public bool IsAlive() => (LastHeartbeatAt ?? FootprintCreatedAt) > DateTime.UtcNow.AddMinutes(-5);
+    public bool ProtectConnectionChanges { get; set; }
+    
+    public bool IsAlive() => (LastHeartbeatAt ?? FootprintCreatedAt) > DateTime.UtcNow.AddMinutes(-1).AddSeconds(-30);
 }

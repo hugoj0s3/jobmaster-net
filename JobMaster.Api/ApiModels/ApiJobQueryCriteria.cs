@@ -1,4 +1,5 @@
 using JobMaster.Abstractions.Models;
+using JobMaster.Api.Endpoints;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Microsoft.AspNetCore.Mvc;
@@ -13,8 +14,12 @@ public class ApiJobQueryCriteria
 
     public JobMasterPriority? Priority { get; set; }
     
-    public DateTime? ScheduledTo { get; set; }
+    public DateTime? NextPlanExecutionAtTo { get; set; }
+    public DateTime? NextPlanExecutionAtFrom { get; set; }
+    
     public DateTime? ScheduledFrom { get; set; }
+    public DateTime? ScheduledTo { get; set; }
+    
     public DateTime? ProcessDeadlineTo { get; set; }
     public JobMasterTriggerSourceType[]? TriggerSourceTypes { get; set; }
     public string? SourceId { get; set; }
@@ -29,9 +34,10 @@ public class ApiJobQueryCriteria
 
     public string? WorkerLane { get; set; }
     
-    public int? CountLimit { get; set; } = 100;
+    public int? CountLimit { get; set; }
     public int? Offset { get; set; }
     public string? MetadataFiltersJson { get; set; } 
+    public ApiSortByCriteria? SortBy { get; set; } 
    
     internal JobQueryCriteria ToDomainCriteria()
     {
@@ -43,11 +49,19 @@ public class ApiJobQueryCriteria
 
         var triggerSourceTypes = (TriggerSourceTypes ?? Array.Empty<JobMasterTriggerSourceType>()).ToList();
 
+        // Validate sort property if provided
+        if (SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property))
+        {
+            EndpointSortingUtil.ValidateSortingProperty<ApiJobModel>(SortBy.Property);
+        }
+
         return new JobQueryCriteria
         {
             Status = Status,
-            ScheduledTo = ScheduledTo,
+            NextPlanExecutionAtTo = NextPlanExecutionAtTo,
+            NextPlanExecutionAtFrom = NextPlanExecutionAtFrom,
             ScheduledFrom = ScheduledFrom,
+            ScheduledTo = ScheduledTo,
             ProcessDeadlineTo = ProcessDeadlineTo,
             TriggerSourceTypes = triggerSourceTypes,
             SourceId = sourceId,
@@ -61,6 +75,9 @@ public class ApiJobQueryCriteria
             BucketId = BucketId,
             WorkerId = WorkerId,
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
+            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property) 
+                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending } 
+                : null,
         };
     }
 }

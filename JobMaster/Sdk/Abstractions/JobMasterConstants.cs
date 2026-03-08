@@ -35,6 +35,7 @@ internal static class JobMasterConstants
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(30);
 
     public const int MaxBatchSizeForBulkOperation = 50;
+    public const int MaxAllowedRetries = 10;
     public static readonly TimeSpan DefaultGracefulStopPeriod = TimeSpan.FromMinutes(15);
     
     /// <summary>
@@ -43,6 +44,12 @@ internal static class JobMasterConstants
     /// </summary>
     public static readonly TimeSpan JobProcessDeadlineDuration = TimeSpan.FromMinutes(10);
     public static readonly TimeSpan OnBoardingWindow = TimeSpan.FromSeconds(30);
+    
+    /// <summary>
+    /// The minimum delay before retrying job execution when the onboarding list is busy/saturated.
+    /// This ensures jobs are not retried too aggressively when workers cannot accept new jobs.
+    /// </summary>
+    public static readonly TimeSpan MinDelayWhenOnboardingBusy = TimeSpan.FromSeconds(15);
 
     public static DateTime NowUtcWithSkewTolerance()
     {

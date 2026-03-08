@@ -32,13 +32,21 @@ internal class MySqlDbConnectionManager : DbConnectionManager, IDbConnectionMana
         ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent)
     {
         var conn = new MySqlConnection(connectionString);
-        await conn.OpenAsync();
+        try
+        {
+            await conn.OpenAsync();
         
-        await using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL {IsolationLevelToSql(isolationLevel)};";
-        await cmd.ExecuteNonQueryAsync();
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL {IsolationLevelToSql(isolationLevel)};";
+            await cmd.ExecuteNonQueryAsync();
         
-        return conn;
+            return conn;
+        }
+        catch
+        {
+            await conn.DisposeAsync();
+            throw;
+        }
     }
     
     private static string IsolationLevelToSql(ReadIsolationLevel isolationLevel)

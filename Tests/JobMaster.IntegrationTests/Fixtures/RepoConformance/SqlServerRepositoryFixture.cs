@@ -20,7 +20,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
 public class SqlServerRepositoryFixture : RepositoryFixtureBase
 {
-    internal override string ClusterId { get; set; } = "ClusterForRepoTests-SqlServer-1";
+    internal override string ClusterId { get; set; } = "RT-SqlServer-1";
 
     internal override AgentConnectionId AgentConnectionId { get; set; } = null!;
 
@@ -36,7 +36,7 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
     private const string MasterTablePrefix = "JMSqlServerTests_";
     private const string AgentTablePrefix = "JMSqlServerTests_";
 
-    private const string AgentConnectionName = "AgentForConformanceRepoTests-SqlServer-1";
+    private const string AgentConnectionName = "Agent-SqlServer-1";
 
     public override async Task InitializeAsync()
     {
@@ -55,8 +55,8 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
 
         var agentCnn = agentCnnList.FirstOrDefault();
 
-        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "SqlServer", config);
-        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "SqlServer", config);
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn!, "SqlServer", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn!, "SqlServer", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {
@@ -100,7 +100,7 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
 
         var agentConfig = JobMasterClusterConnectionConfig
-            .Get(ClusterId, includeInactive: true)
+            .Get(ClusterId, includeNotReady: true)
             .TryGetAgentConnectionConfig(AgentConnectionName);
 
         if (agentConfig == null)
@@ -138,10 +138,5 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
             // Note: database name is parameterized only for existence check; CREATE DATABASE cannot parameterize identifiers.
             await conn.ExecuteAsync($"CREATE DATABASE [{databaseName}];");
         }
-    }
-
-    public override Task DisposeAsync()
-    {
-        return Task.CompletedTask;
     }
 }

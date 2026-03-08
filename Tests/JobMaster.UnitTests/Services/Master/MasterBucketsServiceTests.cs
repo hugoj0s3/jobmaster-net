@@ -233,7 +233,7 @@ public class MasterBucketsServiceTests
         };
 
         var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
-        repo.Setup(x => x.Get(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).Returns(entry);
+        repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
 
         var sut = new MasterBucketsService(
             clusterConfig,

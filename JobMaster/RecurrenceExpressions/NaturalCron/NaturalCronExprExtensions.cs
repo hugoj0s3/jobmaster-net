@@ -50,11 +50,12 @@ public static class NaturalCronExprExtensions
         string? defId = null,
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
+        int? maxNumberOfRetries = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null) where Th : class, IJobHandler
     {
-        collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, startAfter, endBefore, metadata);
+        collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
         return collection;
     }
 }

@@ -7,7 +7,8 @@ public interface IAgentWorkerSelector
     IAgentWorkerSelector AgentConnName(string agentConnName);
     IAgentWorkerSelector WorkerName(string workerName);
     IAgentWorkerSelector WorkerLane(string workerLane);
-    IAgentWorkerSelector WorkerBatchSize(int batchSize = 250);
+    IAgentWorkerSelector TransferBatchSize(int batchSize);
+    IAgentWorkerSelector BucketBufferSize(int bufferSize);
     IAgentWorkerSelector BucketQtyConfig(JobMasterPriority priority, int qty);
     IAgentWorkerSelector SetWorkerMode(AgentWorkerMode mode);
     IAgentWorkerSelector SkipWarmUpTime();

@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -38,11 +39,16 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
 
         var recurringScheduleQueryCriteria = new RecurringScheduleQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             CanceledOrInactive = true,
             IsJobCancellationPending = true, 
             IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(RecurringScheduleRawModel.LastPlanCoverageUntil),
+                Ascending = false,
+            }
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -57,7 +63,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
                 count,
                 workerCount,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 transientThreshold,
                 lockerLane:3);
         }
@@ -104,7 +110,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
     {
         var jobQueryCriteria = new JobQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             SourceId = recurringScheduleRawModel.Id,
             TriggerSourceTypes = new List<JobMasterTriggerSourceType>
             {
@@ -113,9 +119,14 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
                     : JobMasterTriggerSourceType.DynamicRecurring
             },
             // Only cancel jobs scheduled 5 minutes later. the job on fly will be cancelled by the JobExecutionEngine.
-            ScheduledFrom = DateTime.UtcNow.AddMinutes(5),
+            NextPlanExecutionAtFrom = DateTime.UtcNow.AddMinutes(5),
             IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(JobRawModel.NextPlanExecutionAt),
+                Ascending = true,
+            },
         };
 
         if (ct.IsCancellationRequested)

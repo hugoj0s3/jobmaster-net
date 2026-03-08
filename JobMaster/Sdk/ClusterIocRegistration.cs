@@ -25,7 +25,7 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         ClusterServices = new ServiceCollection();
         this.mainServices = mainServices;
         
-        ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeInactive: true));
+        ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true));
         ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         ClusterServices.AddSingleton<IJobMasterRuntime>(BootstrapBlueprintDefinitions.JobMasterRuntime!);
     }

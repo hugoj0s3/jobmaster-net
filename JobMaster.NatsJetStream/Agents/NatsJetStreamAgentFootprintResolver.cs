@@ -33,7 +33,7 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
             var entry = await kvStore!.GetEntryAsync<string>(key);
             if (!string.IsNullOrWhiteSpace(entry.Value))
             {
-                return entry.Value;
+                return entry.Value!;
             }
         }
         catch (NatsKVKeyNotFoundException)
@@ -65,7 +65,7 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
             var entry = await kvStore!.GetEntryAsync<string>(key);
             if (!string.IsNullOrWhiteSpace(entry.Value))
             {
-                return entry.Value;
+                return entry.Value!;
             }
         }
         catch (NatsKVKeyNotFoundException)

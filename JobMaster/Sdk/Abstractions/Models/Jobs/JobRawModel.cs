@@ -38,9 +38,9 @@ internal class JobRawModel : JobMasterBaseModel
     [JsonInclude]
     public JobMasterPriority Priority { get; internal set; }
     [JsonInclude]
-    public DateTime OriginalScheduledAt { get; internal set; }
-    [JsonInclude]
     public DateTime ScheduledAt { get; internal set; }
+    [JsonInclude]
+    public DateTime NextPlanExecutionAt { get; internal set; }
     
     [JsonInclude]
     public string MsgData { get; internal set; } = "{}";
@@ -154,8 +154,8 @@ internal class JobRawModel : JobMasterBaseModel
             processDeadlineDuration = JobMasterConstants.JobProcessDeadlineDuration;
         }
         
-        var jobProcessDeadline = this.ScheduledAt.Add(processDeadlineDuration.Value);
-        if (this.ScheduledAt < DateTime.UtcNow)
+        var jobProcessDeadline = this.NextPlanExecutionAt.Add(processDeadlineDuration.Value);
+        if (this.NextPlanExecutionAt < DateTime.UtcNow)
         {
             jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration.Value);
         }
@@ -184,7 +184,7 @@ internal class JobRawModel : JobMasterBaseModel
             window = window + extraWindow.Value;
         }
 
-        return ScheduledAt <= now.Add(window);
+        return NextPlanExecutionAt <= now.Add(window);
     }
 
     public bool TryToCancel(bool ignoreOnBoarding = false)
@@ -211,6 +211,11 @@ internal class JobRawModel : JobMasterBaseModel
         return false;
     }
     
+    public void DelayNextExecutionPlan(TimeSpan delay)
+    {
+        NextPlanExecutionAt = DateTime.UtcNow.Add(delay);
+    }
+    
     public bool TryRetry()
     {
         var maxNumberOfRetries = this.MaxNumberOfRetries;
@@ -224,7 +229,7 @@ internal class JobRawModel : JobMasterBaseModel
         var timeToWait = TimeSpan.FromSeconds(secondsToWait);
         timeToWait += JobMasterConstants.JobProcessDeadlineDuration;
         
-        ScheduledAt = DateTime.UtcNow.Add(timeToWait);
+        NextPlanExecutionAt = DateTime.UtcNow.Add(timeToWait);
         ProcessDeadline = null;
         Status = JobMasterJobStatus.OnMaster;
         AgentConnectionId = null;
@@ -258,7 +263,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public void ReSchedule(DateTime scheduledAt)
     {
-        if (this.Status != JobMasterJobStatus.Succeeded && this.Status != JobMasterJobStatus.Failed && this.Status != JobMasterJobStatus.Cancelled)
+        if (!this.Status.IsFinalStatus())
         {
             throw new ArgumentException("Job must be succeeded, failed or cancelled.");
         }
@@ -270,10 +275,12 @@ internal class JobRawModel : JobMasterBaseModel
         
         this.Status = JobMasterJobStatus.OnMaster;
         this.ScheduledAt = scheduledAt;
+        this.NextPlanExecutionAt = scheduledAt;
         this.AgentConnectionId = null;
         this.BucketId = null;
         this.AgentWorkerId = null;
         this.ProcessDeadline = null;
+        this.NumberOfFailures = 0;
     }
     
     public bool CanReSchedule()

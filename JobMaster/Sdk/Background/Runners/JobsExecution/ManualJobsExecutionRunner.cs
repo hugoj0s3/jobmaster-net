@@ -74,9 +74,9 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             return;
         }
 
-        if (countAvailability > this.BackgroundAgentWorker.BatchSize)
+        if (countAvailability > this.BackgroundAgentWorker.BucketBufferSize)
         {
-            countAvailability = this.BackgroundAgentWorker.BatchSize;
+            countAvailability = this.BackgroundAgentWorker.BucketBufferSize;
         }
         
         var jobs = 
@@ -84,7 +84,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
                 BackgroundAgentWorker.AgentConnectionId, 
                 BucketId!, 
                 countAvailability, 
-                DateTime.UtcNow.Add(JobMasterConstants.OnBoardingWindow));
+                DateTime.UtcNow.Add(BackgroundAgentWorker.BucketBufferLeadTime));
         
         // Perform queue maintenance (abort timeouts, start queued) and decide if we should skip
         foreach (var job in jobs)
@@ -100,7 +100,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             {
                 job.MarkAsHeldOnMaster();
                 await ClusterOperations.ExecWithRetryAsync(async (o) => await o.UpsertAsync(job));
-                logger.Warn($"JobId {job.Id} TooEarly {job.ScheduledAt:O} now {DateTime.UtcNow:O}", JobMasterLogSubjectType.Job, job.Id);
+                logger.Warn($"JobId {job.Id} TooEarly {job.NextPlanExecutionAt:O} now {DateTime.UtcNow:O}", JobMasterLogSubjectType.Job, job.Id);
                 continue;
             }
             

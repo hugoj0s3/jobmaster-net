@@ -10,10 +10,16 @@ internal class JobQueryCriteria
 
     public JobMasterPriority? Priority { get; set; }
     
-    public DateTime? ScheduledTo { get; set; }
+    public DateTime? NextPlanExecutionAtTo { get; set; }
+    public DateTime? NextPlanExecutionAtFrom { get; set; }
+    
+    
     public DateTime? ScheduledFrom { get; set; }
+    public DateTime? ScheduledTo { get; set; }
+    
     public DateTime? ProcessDeadlineTo { get; set; }
     public IList<JobMasterTriggerSourceType> TriggerSourceTypes { get; set; } = new List<JobMasterTriggerSourceType>();
+    public IList<Guid> SourceIds { get; set; } = new List<Guid>();
     public Guid? SourceId { get; set; }
     
     public IList<GenericRecordValueFilter> MetadataFilters { get; set; } = new List<GenericRecordValueFilter>();
@@ -33,10 +39,4 @@ internal class JobQueryCriteria
     public SortByCriteria? SortBy { get; set; }
     
     public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
-}
-
-internal class SortByCriteria
-{
-    public string? Property { get; set; }
-    public bool Ascending { get; set; }
 }

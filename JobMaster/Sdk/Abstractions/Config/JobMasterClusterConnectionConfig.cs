@@ -233,9 +233,9 @@ internal class JobMasterClusterConnectionConfig
             .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeInactive = false)
+    public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeNotReady = false)
     {
-        var config = TryGet(clusterId, includeInactive);
+        var config = TryGet(clusterId, includeNotReady);
         if (config == null)
         {
             throw new KeyNotFoundException($"Cluster config '{clusterId}' not found.");

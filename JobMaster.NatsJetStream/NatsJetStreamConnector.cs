@@ -149,7 +149,7 @@ internal sealed class NatsJetStreamConnector
     private async ValueTask<INatsJSConsumer> CreateOrUpdateConsumerInternalAsync(
         JobMasterAgentConnectionConfig config, 
         string fullBucketAddressId,
-        int? actualBatchSize = null,
+        int? bufferSize = null,
         CancellationToken ct = default)
     {
         // Ensure connection and stream are available
@@ -187,7 +187,7 @@ internal sealed class NatsJetStreamConnector
                 var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
                 var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
 
-                actualBatchSize ??= new WorkerDefinition().BatchSize; // Get default batch size if not specified.
+                bufferSize ??= new WorkerDefinition().BucketBufferSize; // Get default buffer size if not specified.
 
                 var consumerConfig = new ConsumerConfig(consumerName)
                 {
@@ -195,7 +195,7 @@ internal sealed class NatsJetStreamConnector
                     DurableName = consumerName,
                     AckPolicy = ConsumerConfigAckPolicy.Explicit,
                     DeliverPolicy = ConsumerConfigDeliverPolicy.All,
-                    MaxAckPending = actualBatchSize.Value, 
+                    MaxAckPending = bufferSize.Value * 10, 
                     AckWait = NatsJetStreamConstants.ConsumerAckWait,
                     MaxDeliver = NatsJetStreamConstants.MaxDeliver,
                 };

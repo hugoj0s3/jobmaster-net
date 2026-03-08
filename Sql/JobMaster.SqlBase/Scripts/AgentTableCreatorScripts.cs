@@ -70,7 +70,7 @@ internal class AgentTableCreatorScripts
     public static string CreateAgentConnectionFootprint(ISqlGenerator sqlGenerator, string tablePrefix)
     {
         var prefix = tablePrefix == string.Empty ? string.Empty : tablePrefix;
-        var tableName = $"{prefix}agent_connection_footprint";
+        var tableName = $"{prefix}agent_conn_footprint";
 
         // Reuse cluster_id type from GenericRecordEntry for consistency
         var clusterIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.ClusterId);
@@ -93,7 +93,7 @@ internal class AgentTableCreatorScripts
             $"{lastUpdatedAtCol} {lastUpdatedAtType}"
         };
 
-        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_connection_footprint");
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_conn_footprint");
         var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {agentConnectionIdCol})";
 
         var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";

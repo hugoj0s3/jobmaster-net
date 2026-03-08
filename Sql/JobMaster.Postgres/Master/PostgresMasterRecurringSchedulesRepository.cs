@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.Postgres.Master;
 
@@ -40,10 +41,10 @@ internal class PostgresMasterRecurringSchedulesRepository : SqlMasterRecurringSc
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
             var cLastPlanCoverageUntil = Col(x => x.LastPlanCoverageUntil);
-            var cCreatedAt = Col(x => x.CreatedAt);
 
             var unlockedGuard = $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var orderBy = $"s.{cLastPlanCoverageUntil} DESC, s.{cCreatedAt} ASC";
+            var defaultOrderByClause = $" ORDER BY s.{cLastPlanCoverageUntil} DESC";
+            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "s", defaultOrderByClause);
 
             var offsetClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
@@ -58,7 +59,7 @@ WITH candidates AS (
     SELECT s.{cId} AS id
     FROM {t} s
     {whereSql} AND {unlockedGuard}
-    ORDER BY {orderBy}
+    {orderBy}
     {offsetClause}
 ), locked AS (
     UPDATE {t} s
@@ -75,7 +76,7 @@ SELECT {selectCols}
 FROM locked s
 LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
 LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-ORDER BY {orderBy};";
+{orderBy};";
 
             var args = new Dictionary<string, object?>();
             foreach (var kv in whereArgs) args[kv.Key] = kv.Value;

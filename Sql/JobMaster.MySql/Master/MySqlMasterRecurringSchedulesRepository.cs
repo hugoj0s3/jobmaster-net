@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.MySql.Master;
 
@@ -41,10 +42,10 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
             var cLastPlanCoverageUntil = Col(x => x.LastPlanCoverageUntil);
-            var cCreatedAt = Col(x => x.CreatedAt);
 
             var unlockedGuard = $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var orderBy = $"s.{cLastPlanCoverageUntil} DESC, s.{cCreatedAt} ASC";
+            var defaultOrderByClause = $" ORDER BY s.{cLastPlanCoverageUntil} DESC";
+            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "s", defaultOrderByClause);
 
             var offsetClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
@@ -60,7 +61,7 @@ JOIN (
     SELECT s.{cId} AS id
     FROM {t} s
     {whereSql} AND {unlockedGuard}
-    ORDER BY {orderBy}
+    {orderBy}
     {offsetClause}
 ) c ON c.id = s.{cId}
 SET s.{Col(x => x.PartitionLockId)} = @PartitionLockId,
@@ -76,7 +77,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
 WHERE s.{cClusterId} = @ClusterId
   AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
   AND s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
-ORDER BY {orderBy}
+{orderBy}
 {offsetClause};";
 
             var args = new Dictionary<string, object?>();

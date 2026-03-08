@@ -89,7 +89,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
                 this.BackgroundAgentWorker.JobMasterAgentConnectionConfig,
                 fullBucketAddressId,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 ct);
             hasInitialized = true;
             ackThrottler =
@@ -197,7 +197,8 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
                     if (isHeartbeat)
                     {
-                        var signatureIsTaken = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
+                        var signatureIsTaken = 
+                            msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
                         
                         if ((signatureIsTaken == true && signatureValue != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
                         {
@@ -223,7 +224,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 {
                     Interlocked.Increment(ref processCycleCount);
                     Interlocked.Increment(ref totalMessagesProcessed);
-                    if (processCycleCount >= BackgroundAgentWorker.BatchSize)
+                    if (processCycleCount >= BackgroundAgentWorker.TransferBatchSize)
                     {
                         Interlocked.Exchange(ref processCycleCount, 0);
                         await Task.Delay(LongDelayAfterBatchSize(), ct).ConfigureAwait(false);

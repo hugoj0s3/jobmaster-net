@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -45,11 +46,16 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
         
         var recurringScheduleQueryCriteria = new RecurringScheduleQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             Status = RecurringScheduleStatus.Active,
             CoverageUntil = utcNow.Add(transientThreshold),
             IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(RecurringScheduleRawModel.LastPlanCoverageUntil),
+                Ascending = false,
+            }
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -64,7 +70,7 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
             lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
                 count,
                 workerCount,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 transientThreshold,
                 lockerLane:2);
         }

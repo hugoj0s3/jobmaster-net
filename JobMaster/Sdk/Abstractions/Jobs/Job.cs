@@ -52,8 +52,8 @@ internal class Job : JobMasterBaseModel
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
             TriggerSourceType = triggerSourceType,
-            OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
+            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
             Timeout = JobUtil.GetTimeout(jobHandlerType, timeout, masterConfig),
             MaxNumberOfRetries = JobUtil.GetMaxNumberOfRetries(jobHandlerType, maxNumberOfRetries, masterConfig),
@@ -125,8 +125,8 @@ internal class Job : JobMasterBaseModel
     
     public Guid Id { get; internal set; }
     public DateTime CreatedAt { get; internal set; }
-    public DateTime OriginalScheduledAt { get; internal set; }
-    public  DateTime ScheduledAt { get; internal set; }
+    public DateTime ScheduledAt { get; internal set; }
+    public  DateTime NextPlanExecutionAt { get; internal set; }
     public  JobMasterJobStatus Status { get; internal set;}
     public  string? BucketId { get; internal set; }
     public  AgentConnectionId? AgentConnectionId { get; internal set; }

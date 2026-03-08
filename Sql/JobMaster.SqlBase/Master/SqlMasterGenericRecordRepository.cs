@@ -17,10 +17,10 @@ namespace JobMaster.SqlBase.Master;
 internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAwareRepository, IMasterGenericRecordRepository
 {
     private ISqlGenerator sql = null!;
-    private string connString = null!;
-    private JobMasterConfigDictionary additionalConnConfig = null!;
-    private IDbConnectionManager connManager = null!;
-    private GenericRecordSqlUtil genericUtil = null!;
+    protected string connString = null!;
+    protected JobMasterConfigDictionary additionalConnConfig = null!;
+    protected IDbConnectionManager connManager = null!;
+    protected GenericRecordSqlUtil genericUtil = null!;
     
     protected SqlMasterGenericRecordRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
@@ -92,7 +92,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         return LinearListToDomain(result);
     }
 
-    public void Upsert(GenericRecordEntry recordEntry)
+    public virtual void Upsert(GenericRecordEntry recordEntry)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -120,7 +120,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
     }
 
-    public async Task UpsertAsync(GenericRecordEntry recordEntry)
+    public virtual async Task UpsertAsync(GenericRecordEntry recordEntry)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -480,7 +480,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         return genericUtil.LinearListToDomain(result);
     }
     
-    private SqlGenericRecordEntry MapToSqlEntry(GenericRecordEntry src)
+    protected SqlGenericRecordEntry MapToSqlEntry(GenericRecordEntry src)
     {
         return genericUtil.MapToSqlEntry(src);
     }
@@ -494,17 +494,17 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
     {
         return genericUtil.BuildQuerySql(groupId, criteria);
     }
-    private (string, IDictionary<string, object?>) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
+    protected (string, IDictionary<string, object?>) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
     {
         return genericUtil.BuildUpdateEntrySql(entry);
     }
 
-    private (string, IDictionary<string, object?>) BuildInsertEntrySql(SqlGenericRecordEntry entry)
+    protected (string, IDictionary<string, object?>) BuildInsertEntrySql(SqlGenericRecordEntry entry)
     {
         return genericUtil.BuildInsertEntrySql(entry);
     }
 
-    private void InsertEntryValues(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
+    protected void InsertEntryValues(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
     {
         if (entry.Values.Count == 0) return;
         
@@ -513,7 +513,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         conn.Execute(insertSql, rows, tx);
     }
 
-    private async Task InsertEntryValuesAsync(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
+    protected async Task InsertEntryValuesAsync(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
     {
         if (entry.Values.Count == 0) return;
         
@@ -522,7 +522,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         await conn.ExecuteAsync(insertSql, rows, tx);
     }
 
-    private string BuildDeleteValuesSql(string groupId)
+    protected string BuildDeleteValuesSql(string groupId)
     {
         return genericUtil.BuildDeleteValuesSql(groupId);
     }

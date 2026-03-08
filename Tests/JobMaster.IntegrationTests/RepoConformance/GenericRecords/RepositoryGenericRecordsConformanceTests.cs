@@ -216,11 +216,11 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.Single(q4);
         Assert.Equal(e1.EntryId, q4[0].EntryId);
 
-        // CreatedAt range
+        // CreatedAt range (add small buffer for SQL Server datetime rounding)
         var q5 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
-            CreatedAtFrom = baseTime.AddMinutes(2),
-            CreatedAtTo = baseTime.AddMinutes(3).AddSeconds(1),
+            CreatedAtFrom = baseTime.AddMinutes(2).AddMilliseconds(-10),
+            CreatedAtTo = baseTime.AddMinutes(3).AddSeconds(1).AddMilliseconds(10),
             IncludeExpired = true
         });
         Assert.Contains(q5, x => x.EntryId == e2.EntryId);
@@ -464,6 +464,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             e.CreatedAt = baseTime.AddMinutes(i);
             e.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["i"] = (long)i };
             await Fixture.MasterGenericRecords.InsertAsync(e);
+            await Task.Delay(250);
         }
 
         var deleted = await Fixture.MasterGenericRecords.DeleteByCreatedAtAsync(groupId, cutoff, limit: 4);
