@@ -14,16 +14,35 @@
 @layer base {
     :root[data-theme="jobmaster-light"] {
         color-scheme: light;
-        --color-base-100: oklch(0.99 0 0);
-        --color-base-200: oklch(0.975 0.01 275);
-        --color-base-300: oklch(0.94 0.02 275);
-        --color-base-content: oklch(0.20 0.02 270);
 
-        --color-primary: oklch(0.62 0.18 255);
-        --color-primary-content: oklch(0.99 0 0);
+        --color-base-100: oklch(0.98 0.005 270);
+        --color-base-200: oklch(0.94 0.01 270);
+        --color-base-300: oklch(0.88 0.02 270);
+        --color-base-content: oklch(0.22 0.03 270);
 
-        --color-accent: oklch(0.54 0.24 275);
-        --color-accent-content: oklch(0.99 0 0);
+        --color-primary: oklch(0.55 0.20 255);
+        --color-primary-content: oklch(0.98 0 0);
+
+        --color-secondary: oklch(0.50 0.18 300);
+        --color-secondary-content: oklch(0.98 0 0);
+
+        --color-accent: oklch(0.52 0.16 195);
+        --color-accent-content: oklch(0.98 0 0);
+
+        --color-neutral: oklch(0.35 0.02 260);
+        --color-neutral-content: oklch(0.96 0 0);
+
+        --color-info: oklch(0.55 0.16 230);
+        --color-info-content: oklch(0.98 0 0);
+
+        --color-success: oklch(0.52 0.17 155);
+        --color-success-content: oklch(0.98 0 0);
+
+        --color-warning: oklch(0.75 0.16 65);
+        --color-warning-content: oklch(0.22 0.04 65);
+
+        --color-error: oklch(0.55 0.22 25);
+        --color-error-content: oklch(0.98 0 0);
     }
 
     :root[data-theme="jobmaster-dark"] {
