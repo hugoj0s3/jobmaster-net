@@ -5,6 +5,7 @@
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus as BucketStatusEnum } from "$lib/api/enums";
 	import { PriorityUtil } from "$lib/helper/priority-util";
+	import { WorkerModeUtil } from "$lib/helper/worker-mode-util";
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 
@@ -24,14 +25,8 @@
 	$: isAlive = worker?.isAlive === true;
 	$: workerStatus = isAlive ? "Online" : "Offline";
 
-	$: workerMode = (() => {
-		const m = worker?.mode;
-		if (m === 1) return "Full";
-		if (m === 2) return "Fetch only";
-		if (m === 3) return "Process only";
-		if (m === 4) return "Idle";
-		return "—";
-	})();
+	$: workerMode = WorkerModeUtil.getLabel(worker?.mode);
+	$: workerModeBadge = WorkerModeUtil.getBadgeClass(workerMode);
 
 	$: lastUpdated = lastUpdatedAt.toLocaleString("en-US", {
 		month: "numeric",
@@ -152,7 +147,7 @@
 						<span class="inline-block h-2 w-2 rounded-full {isAlive ? 'bg-success' : 'bg-error'}"></span>
 						{workerStatus}
 					</span>
-					<span class="badge badge-ghost">{workerMode}</span>
+					<span class={`badge ${workerModeBadge}`}>{workerMode}</span>
 				</div>
 
 				<div class="flex flex-wrap items-center gap-3 text-sm opacity-80">

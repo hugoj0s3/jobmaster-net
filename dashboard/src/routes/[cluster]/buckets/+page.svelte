@@ -44,6 +44,7 @@
 	let isRefreshing = false;
 
 	const urlParamDefs = {
+		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 12, ...Serializers.number }
 	};
@@ -58,7 +59,7 @@
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
-		selectedStatuses = [];
+		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 		filterValues = {};
 		refreshNow();
 	}
@@ -76,19 +77,20 @@
 	let pageSize = _initParams.size;
 	let pageIndex = _initParams.page;
 
-	let selectedStatuses: string[] = [];
+	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
 	type FilterValues = Record<string, unknown>;
 	let filterValues: FilterValues = {};
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
+			statuses: selectedStatuses,
 			page: pageIndex,
 			size: pageSize
 		});
 	}
 
-	$: filterValues, pageIndex, pageSize, syncToUrl();
+	$: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
 	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });

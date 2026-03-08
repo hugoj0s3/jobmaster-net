@@ -519,38 +519,38 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between gap-2">
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.HeldOnMaster}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>On Master</span>
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.OnMaster, "badge-primary")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.OnMaster}
                             </span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.AssignedToBucket}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>In Bucket</span>
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.InBucket, "badge-secondary")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.InBucket}
                             </span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.Queued}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Queued</span>
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Queued, "badge-warning")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.Queued}
                             </span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.Processing}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Processing</span>
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Processing, "badge-accent")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.Processing}
                             </span>
-                        </div>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -577,18 +577,18 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.workers.onlineTotal}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between gap-2">
+                        <a href="/{clusterId()}/workers?modes=Execution" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Execution Mode</span>
                             <span class="font-mono text-base font-semibold">{metrics.workers.executionMode}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/workers?modes=Draining" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Draining Mode</span>
                             <span class="font-mono text-base font-semibold">{metrics.workers.drainingMode}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/workers?modes=Full" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Full Mode</span>
                             <span class="font-mono text-base font-semibold">{metrics.workers.fullMode}</span>
-                        </div>
+                        </a>
 
                     </div>
                 </div>
@@ -600,10 +600,10 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.hosts.total}</div>
 
                     <div class="mt-3 text-xs opacity-70">
-                        <div class="flex items-center justify-between">
+                        <a href="/{clusterId()}/hosts?statuses=Offline" class="flex items-center justify-between rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Offline</span>
                             <span class="font-mono text-base font-semibold text-error">{metrics.hosts.offline}</span>
-                        </div>
+                        </a>
                     </div>
                 </div>
             </div>
@@ -614,30 +614,30 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.buckets.total}</div>
 
                     <div class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs opacity-70">
-                        <div class="flex items-center justify-between gap-2">
+                        <a href="/{clusterId()}/buckets?statuses=Active" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Active</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.active}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/buckets?statuses=Completing" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Completing</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.completing}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/buckets?statuses=ReadyToDrain" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Draining Soon</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.readyToDrain}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/buckets?statuses=Draining" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Draining</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.draining}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/buckets?statuses=Lost" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Lost</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.lost}</span>
-                        </div>
-                        <div class="flex items-center justify-between gap-2">
+                        </a>
+                        <a href="/{clusterId()}/buckets?statuses=ReadyToDelete" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Deleting Soon</span>
                             <span class="font-mono text-base font-semibold">{metrics.buckets.readyToDelete}</span>
-                        </div>
+                        </a>
                     </div>
                 </div>
             </div>

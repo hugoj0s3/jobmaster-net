@@ -9,6 +9,7 @@
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
+	import { WorkerModeUtil, type WorkerMode } from "$lib/helper/worker-mode-util";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -18,6 +19,7 @@
 		id: string;
 		name: string;
 		status: WorkerStatus;
+		mode: WorkerMode;
 		lane: string;
 		hostName?: string;
 		cpu: number; // %
@@ -59,6 +61,8 @@
 	);
 
 	const urlParamDefs = {
+		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
+		modes: { defaultValue: [] as string[], ...Serializers.stringArray },
 		sortBy: { defaultValue: "Host" as "Host" | "CPU" | "Memory" },
 		asc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
@@ -82,18 +86,22 @@
 		pageIndex = _initParams.page;
 		sortBy = _initParams.sortBy;
 		asc = _initParams.asc;
-		selectedStatuses = [];
+		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+		selectedModes = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
 		filterValues = {};
 		refreshNow();
 	}
 
-	let selectedStatuses: string[] = [];
+	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+	let selectedModes: string[] = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
 
 	type FilterValues = Record<string, unknown>;
 	let filterValues: FilterValues = {};
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
+			statuses: selectedStatuses,
+			modes: selectedModes,
 			sortBy,
 			asc,
 			page: pageIndex,
@@ -101,7 +109,7 @@
 		});
 	}
 
-	$: filterValues, sortBy, asc, pageIndex, pageSize, syncToUrl();
+	$: filterValues, selectedStatuses, selectedModes, sortBy, asc, pageIndex, pageSize, syncToUrl();
 
 	function mapWorkerToRow(w: any, hostsMap: Map<string, ApiHostModel>): WorkerRow {
 		const isAlive = w.isAlive === true;
@@ -119,6 +127,7 @@
 			id: w.id ?? "",
 			name: w.displayName ?? w.id ?? "Unknown",
 			status,
+			mode: WorkerModeUtil.getLabel(w.mode),
 			lane: w.workerLane ?? "—",
 			hostName: w.hostDisplayName ?? host?.displayName ?? "—",
 			cpu: isAlive ? cpu : 0,
@@ -197,6 +206,7 @@
 	$: filteredAll = rows
 		.filter((r) => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
+			if (selectedModes.length > 0 && !selectedModes.includes(r.mode)) return false;
 
 			const hb = (filterValues.lastHeartbeat ?? {}) as { from?: string; to?: string };
 			if (hb.from && r.lastHeartbeat && new Date(r.lastHeartbeat) < new Date(hb.from)) return false;
@@ -341,6 +351,17 @@
 					on:change={() => { pageIndex = 0; }}
 				/>
 
+				<FilterDropdownMulti
+					label="Mode"
+					options={[
+						{ value: "Execution", label: "Execution" },
+						{ value: "Full", label: "Full" },
+						{ value: "Draining", label: "Draining" }
+					]}
+					bind:values={selectedModes}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
 				<FilterContainer
 					initialValues={filterValues}
 					on:change={(e) => {
@@ -396,6 +417,7 @@
 						<thead>
 						<tr class="text-base-content/70">
 							<th>Status</th>
+							<th>Mode</th>
 							<th>Worker</th>
 							<th>Host</th>
 							<th>Lane</th>
@@ -413,6 +435,10 @@
 										<span class={"h-2.5 w-2.5 rounded-full " + statusDot(r.status)} />
 										<span class={statusPill(r.status)}>{r.status}</span>
 									</div>
+								</td>
+
+								<td>
+									<span class={`badge badge-sm ${WorkerModeUtil.getBadgeClass(r.mode)}`}>{r.mode}</span>
 								</td>
 
 								<td class="text-base-content font-medium">{r.name}</td>
@@ -449,7 +475,7 @@
 
 						{#if filtered.length === 0}
 							<tr>
-								<td colspan="8" class="py-10 text-base-content/60">No workers found.</td>
+								<td colspan="9" class="py-10 text-base-content/60">No workers found.</td>
 							</tr>
 						{/if}
 						</tbody>
