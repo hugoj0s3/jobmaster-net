@@ -238,11 +238,7 @@
 							</div>
 							<div class="flex items-center justify-between gap-4">
 								<span class="opacity-70">Scheduled At</span>
-								<span class="font-medium">{formatDateTime(job.scheduledAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Original Scheduled At</span>
-								<span class="font-medium">{formatDateTime(job.originalScheduledAt)}</span>
+								<span class="font-medium">{formatDateTime(job.originalScheduledAt ?? job.scheduledAt)}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
 								<span class="opacity-70">Created At</span>
@@ -374,6 +370,12 @@
 									value={job.numberOfFailures}
 									max={job.maxNumberOfRetries}
 								></progress>
+							{/if}
+							{#if job.scheduledAt && typeof job.numberOfFailures === "number" && job.numberOfFailures > 0 && typeof job.maxNumberOfRetries === "number" && job.numberOfFailures < job.maxNumberOfRetries}
+								<div class="flex items-center justify-between gap-4">
+									<span class="opacity-70">Retrying at</span>
+									<span class="font-medium text-warning">{formatDateTime(job.scheduledAt)}</span>
+								</div>
 							{/if}
 						</div>
 					</div>
