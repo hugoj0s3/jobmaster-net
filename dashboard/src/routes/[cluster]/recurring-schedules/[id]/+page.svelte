@@ -214,11 +214,6 @@
 								</div>
 
 								<div class="space-y-3">
-									<div class="flex items-center justify-between gap-4">
-										<div class="text-sm opacity-70">Next Run</div>
-										<div class="font-medium text-warning">{nextRunFormatted}</div>
-									</div>
-
 									{#if lastJobStatusLabel}
 										<div class="flex items-center justify-between gap-4">
 											<div class="text-sm opacity-70">Last Job Status</div>

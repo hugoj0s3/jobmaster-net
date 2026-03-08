@@ -377,7 +377,6 @@
 						<th class="w-[24%]">Job Definition Id</th>
 						<th class="w-[20%]">Type</th>
 						<th>Metadata</th>
-						<th class="w-[16%]">Next Run</th>
 						<th class="w-[13%]">Status</th>
 					</tr>
 					</thead>
@@ -415,12 +414,6 @@
 										{/each}
 									</div>
 								{/if}
-							</td>
-
-							<td>
-								<div class="leading-tight">
-									<div class="font-medium opacity-90">{r.nextRun}</div>
-								</div>
 							</td>
 
 							<td>
