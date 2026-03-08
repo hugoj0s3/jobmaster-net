@@ -36,15 +36,11 @@
 	const refreshIntervalSec = 10;
 
 	const urlParamDefs = {
-		sortBy: { defaultValue: "host" as "host" | "cpu" | "mem" },
-		sortDir: { defaultValue: "asc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
-	let sortBy: "host" | "cpu" | "mem" = _initParams.sortBy;
-	let sortDir: "asc" | "desc" = _initParams.sortDir;
 
 	let selectedStatuses: string[] = [];
 
@@ -62,8 +58,6 @@
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
-		sortBy = _initParams.sortBy;
-		sortDir = _initParams.sortDir;
 		selectedStatuses = [];
 		filterValues = {};
 		refreshNow();
@@ -71,14 +65,12 @@
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			sortBy,
-			sortDir,
 			page: pageIndex,
 			size: pageSize
 		});
 	}
 
-	$: filterValues, sortBy, sortDir, pageIndex, pageSize, syncToUrl();
+	$: filterValues, pageIndex, pageSize, syncToUrl();
 
 	$: onlineCount = rows.filter(r => r.status === "Online" || r.status === "Warning").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
@@ -183,12 +175,6 @@
 			if (dt.to && r.createdAt && new Date(r.createdAt) > new Date(dt.to)) return false;
 
 			return true;
-		})
-		.sort((a, b) => {
-			const av = sortBy === "host" ? a.host.toLowerCase() : sortBy === "cpu" ? (a.cpu ?? 0) : (a.memPercent ?? -1);
-			const bv = sortBy === "host" ? b.host.toLowerCase() : sortBy === "cpu" ? (b.cpu ?? 0) : (b.memPercent ?? -1);
-			const cmp = av < bv ? -1 : av > bv ? 1 : 0;
-			return sortDir === "asc" ? cmp : -cmp;
 		});
 
 	$: totalCount = filteredAll.length;
@@ -343,8 +329,8 @@
 						type="datetime"
 						presets={[
 							{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
-							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
-							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+							{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
 						]}
 					/>
 				</FilterContainer>
@@ -363,23 +349,6 @@
 
 		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-4">
 			<div class="card-body gap-4">
-				<div class="flex items-center justify-end gap-4">
-					<div class="join">
-						<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
-							<option value="host">Sort: Host</option>
-							<option value="cpu">Sort: CPU</option>
-							<option value="mem">Sort: Memory</option>
-						</select>
-						<button
-							class="btn btn-bordered join-item"
-							on:click={() => (sortDir = sortDir === "asc" ? "desc" : "asc")}
-							title="Toggle sort direction"
-						>
-							{sortDir === "asc" ? "A→Z" : "Z→A"}
-						</button>
-					</div>
-				</div>
-
 				<div class="overflow-x-auto">
 					<table class="table">
 						<thead>
