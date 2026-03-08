@@ -43,7 +43,7 @@
     function handleClusterChange(id: string) {
         const after = getPathAfterCluster();
         const next = after === "/" ? "/dashboard" : after;
-        return goto(`/${id}${next}`, { keepFocus: true, noScroll: true });
+        window.location.href = `/${id}${next}`;
     }
 
     $effect(() => {
