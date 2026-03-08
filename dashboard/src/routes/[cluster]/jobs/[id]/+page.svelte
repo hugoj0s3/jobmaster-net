@@ -252,58 +252,53 @@
 					</div>
 				</div>
 
-				<!-- Execution -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<!-- Message Data (full width) -->
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
-						<h2 class="card-title text-base">Execution</h2>
+						<h2 class="card-title text-base">Message Data</h2>
 						<div class="divider my-2"></div>
-						<div class="space-y-3 text-sm">
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Processing Started</span>
-								<span class="font-medium">{formatDateTime(job.processingStartedAt)}</span>
+						{#if msgDataEntries(job.msgData).length === 0}
+							<div class="text-sm opacity-60">No message data.</div>
+						{:else}
+							<div class="overflow-x-auto">
+								<table class="table table-sm table-zebra">
+									<thead>
+									<tr class="text-base-content/70">
+										<th>Key</th>
+										<th>Value</th>
+									</tr>
+									</thead>
+									<tbody>
+									{#each msgDataEntries(job.msgData) as [k, v] (k)}
+										<tr>
+											<td class="font-medium opacity-80">{k}</td>
+											<td class="font-mono break-all">{v}</td>
+										</tr>
+									{/each}
+									</tbody>
+								</table>
 							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Succeeded / Executed At</span>
-								<span class="font-medium">{formatDateTime(job.succeedExecutedAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Process Deadline</span>
-								<span class="font-medium">{formatDateTime(job.processDeadline)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Run Duration</span>
-								<span class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Timeout</span>
-								<span class="font-mono font-medium">{job.timeout ?? "—"}</span>
-							</div>
-						</div>
+						{/if}
 					</div>
 				</div>
 
-				<!-- Failure & Retries -->
+				<!-- Metadata -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Failure & Retries</h2>
+						<h2 class="card-title text-base">Metadata</h2>
 						<div class="divider my-2"></div>
-						<div class="space-y-3 text-sm">
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Number of Failures</span>
-								<span class="font-semibold">{job.numberOfFailures ?? 0}</span>
+						{#if metadataEntries(job.metadata).length === 0}
+							<div class="text-sm opacity-60">No metadata.</div>
+						{:else}
+							<div class="space-y-2 text-sm">
+								{#each metadataEntries(job.metadata) as [k, v] (k)}
+									<div class="flex items-start justify-between gap-4">
+										<span class="opacity-70 shrink-0">{k}</span>
+										<span class="font-mono text-right break-all">{v}</span>
+									</div>
+								{/each}
 							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Max Retries</span>
-								<span class="font-semibold">{job.maxNumberOfRetries ?? 0}</span>
-							</div>
-							{#if typeof job.numberOfFailures === "number" && typeof job.maxNumberOfRetries === "number" && job.maxNumberOfRetries > 0}
-								<progress
-									class="progress progress-error w-full"
-									value={job.numberOfFailures}
-									max={job.maxNumberOfRetries}
-								></progress>
-							{/if}
-						</div>
+						{/if}
 					</div>
 				</div>
 
@@ -359,53 +354,58 @@
 					</div>
 				</div>
 
-				<!-- Metadata -->
+				<!-- Failure & Retries -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Metadata</h2>
+						<h2 class="card-title text-base">Failure & Retries</h2>
 						<div class="divider my-2"></div>
-						{#if metadataEntries(job.metadata).length === 0}
-							<div class="text-sm opacity-60">No metadata.</div>
-						{:else}
-							<div class="space-y-2 text-sm">
-								{#each metadataEntries(job.metadata) as [k, v] (k)}
-									<div class="flex items-start justify-between gap-4">
-										<span class="opacity-70 shrink-0">{k}</span>
-										<span class="font-mono text-right break-all">{v}</span>
-									</div>
-								{/each}
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Number of Failures</span>
+								<span class="font-semibold">{job.numberOfFailures ?? 0}</span>
 							</div>
-						{/if}
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Max Retries</span>
+								<span class="font-semibold">{job.maxNumberOfRetries ?? 0}</span>
+							</div>
+							{#if typeof job.numberOfFailures === "number" && typeof job.maxNumberOfRetries === "number" && job.maxNumberOfRetries > 0}
+								<progress
+									class="progress progress-error w-full"
+									value={job.numberOfFailures}
+									max={job.maxNumberOfRetries}
+								></progress>
+							{/if}
+						</div>
 					</div>
 				</div>
 
-				<!-- Message Data (full width) -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
+				<!-- Execution -->
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Message Data</h2>
+						<h2 class="card-title text-base">Execution</h2>
 						<div class="divider my-2"></div>
-						{#if msgDataEntries(job.msgData).length === 0}
-							<div class="text-sm opacity-60">No message data.</div>
-						{:else}
-							<div class="overflow-x-auto">
-								<table class="table table-sm table-zebra">
-									<thead>
-										<tr class="text-base-content/70">
-											<th>Key</th>
-											<th>Value</th>
-										</tr>
-									</thead>
-									<tbody>
-										{#each msgDataEntries(job.msgData) as [k, v] (k)}
-											<tr>
-												<td class="font-medium opacity-80">{k}</td>
-												<td class="font-mono break-all">{v}</td>
-											</tr>
-										{/each}
-									</tbody>
-								</table>
+						<div class="space-y-3 text-sm">
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Processing Started</span>
+								<span class="font-medium">{formatDateTime(job.processingStartedAt)}</span>
 							</div>
-						{/if}
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Succeeded / Executed At</span>
+								<span class="font-medium">{formatDateTime(job.succeedExecutedAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Process Deadline</span>
+								<span class="font-medium">{formatDateTime(job.processDeadline)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Run Duration</span>
+								<span class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Timeout</span>
+								<span class="font-mono font-medium">{job.timeout ?? "—"}</span>
+							</div>
+						</div>
 					</div>
 				</div>
 			</div>
