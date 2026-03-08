@@ -27,6 +27,7 @@
 		tz?: string;
 		nextRun: string;
 		nextScheduledAtRaw?: string;
+		metadata: Record<string, string>;
 		scheduleStatus: RecurringScheduleStatusLabel;
 		scheduleStatusAgo: string;
 		status: RecurringScheduleStatus;
@@ -105,6 +106,28 @@
 	}
 
 	$: paged = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
+
+	function stringifyMetadata(meta: Record<string, unknown> | null | undefined): Record<string, string> {
+		if (!meta) return {};
+		const out: Record<string, string> = {};
+		for (const [k, v] of Object.entries(meta)) {
+			if (v === null || v === undefined) continue;
+			if (typeof v === "string") out[k] = v;
+			else if (typeof v === "number" || typeof v === "boolean") out[k] = String(v);
+			else {
+				try {
+					out[k] = JSON.stringify(v);
+				} catch {
+					out[k] = String(v);
+				}
+			}
+		}
+		return out;
+	}
+
+	function metadataPairs(r: RecurringScheduleRow): Array<[string, string]> {
+		return Object.entries(r.metadata).filter(([k]) => k.startsWith("!"));
+	}
 
 	function scheduleBadge(r: RecurringScheduleRow): string {
 		return `badge ${RecurringSchedulesStatusUtil.getBadgeClassByStatus(r.status)}`;
@@ -209,11 +232,14 @@
 					schedule.scheduleExpression ??
 					undefined;
 
+				const meta = stringifyMetadata(schedule.metadata);
+
 				return {
 					id: schedule.id ?? "",
 					jobType: schedule.jobDefinitionId ?? "Unknown",
 					handler: schedule.profileId ?? "Handler",
-					description: schedule.metadata?.description ?? schedule.description ?? "",
+					description: meta["description"] ?? schedule.description ?? "",
+					metadata: meta,
 					expressionTypeId: expressionTypeId,
 					frequency: RecurrenceExpressionUtil.formatExpression(expressionTypeId, expression) ?? formatCronExpression(schedule.cronExpression),
 					tz: schedule.timeZoneId,
@@ -348,16 +374,16 @@
 				<table class="table table-zebra">
 					<thead>
 					<tr class="text-base-content/70">
-						<th class="w-[28%]">Job Definition Id</th>
-						<th class="w-[28%]">Type</th>
-						<th class="w-[18%]">Next Run</th>
+						<th class="w-[24%]">Job Definition Id</th>
+						<th class="w-[20%]">Type</th>
+						<th>Metadata</th>
+						<th class="w-[16%]">Next Run</th>
 						<th class="w-[13%]">Status</th>
-						<th class="w-[1%]"></th>
 					</tr>
 					</thead>
 
 					<tbody>
-					{#each paged as r}
+					{#each paged as r (r.id)}
 						<tr class="hover cursor-pointer" on:click={() => navigateToDetail(r.id)}>
 							<td>
 								<div class="flex items-center gap-3">
@@ -377,6 +403,18 @@
 
 							<td>
 								<div class="font-medium opacity-90">{r.expressionTypeId ?? "Unknown"}</div>
+							</td>
+
+							<td>
+								{#if metadataPairs(r).length === 0}
+									<span class="opacity-60">—</span>
+								{:else}
+									<div class="flex flex-wrap gap-2">
+										{#each metadataPairs(r) as [k, v] (k)}
+											<span class="badge badge-ghost badge-sm">{k}={v}</span>
+										{/each}
+									</div>
+								{/if}
 							</td>
 
 							<td>
