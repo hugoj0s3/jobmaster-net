@@ -114,8 +114,8 @@
 		return `badge ${JobStatusUtil.getBadgeClass(status)}`;
 	}
 
-	function mapScheduleStatus(status?: number): RecurringScheduleStatusLabel {
-		if (!status) return RecurringSchedulesStatusUtil.Label.Inactive;
+	function mapScheduleStatus(status?: number | string): RecurringScheduleStatusLabel {
+		if (status == null) return RecurringSchedulesStatusUtil.Label.Inactive;
 		try {
 			return RecurringSchedulesStatusUtil.getLabel(status);
 		} catch {

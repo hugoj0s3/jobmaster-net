@@ -53,7 +53,7 @@
 	}
 
 	function getScheduleStatus(): RecurringScheduleStatusLabel {
-		if (!schedule?.status) return RecurringSchedulesStatusUtil.Label.Inactive;
+		if (schedule?.status == null) return RecurringSchedulesStatusUtil.Label.Inactive;
 		try {
 			return RecurringSchedulesStatusUtil.getLabel(schedule.status);
 		} catch {
