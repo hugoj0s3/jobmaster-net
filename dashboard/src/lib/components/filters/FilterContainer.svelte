@@ -3,8 +3,6 @@
     import { writable, derived, get } from "svelte/store";
     import { FILTERS_CTX_KEY, type FilterValue, type FilterValues, type FiltersContext } from "$lib/components/filters/context";
 
-    export let title: string = "Filters";
-    export let showWhenEmpty: boolean = false;
     export let initialValues: FilterValues = {};
 
     const dispatch = createEventDispatcher<{ change: FilterValues }>();
@@ -51,14 +49,10 @@
         return Object.values($values).reduce((acc, v) => (isActiveValue(v) ? acc + 1 : acc), 0);
     });
 
-    const hasActive = derived(appliedActiveCount, ($c) => $c > 0);
-
     const isDirty = derived([draftValues, appliedValues], ([$draft, $applied]) => {
         // Basic (fast) deep compare good enough for small filter objects.
         return JSON.stringify($draft) !== JSON.stringify($applied);
     });
-
-    let open = false;
 
     setContext<FiltersContext>(FILTERS_CTX_KEY, {
         values: draftValues,
@@ -69,33 +63,16 @@
     });
 </script>
 
-{#if showWhenEmpty || open || $hasActive}
-    <div>
-        <div class="flex flex-wrap items-center gap-2">
-            <button class="btn btn-ghost btn-sm" on:click={() => (open = !open)} aria-expanded={open}>
-                {title}
-                {#if $appliedActiveCount > 0}
-                    <span class="badge badge-sm badge-primary ml-2">{$appliedActiveCount}</span>
-                {/if}
-            </button>
+<div class="flex flex-wrap items-center gap-2">
+    <slot />
 
-            <div class="flex flex-wrap items-center gap-2">
-                <slot />
-            </div>
+    {#if $isDirty}
+        <button class="btn btn-primary btn-sm" on:click={apply}>Apply</button>
+    {:else}
+        <button class="btn btn-primary btn-sm" on:click={apply} disabled>Apply</button>
+    {/if}
 
-            {#if $isDirty}
-                <button class="btn btn-primary btn-sm" on:click={apply}>Apply</button>
-            {:else}
-                <button class="btn btn-primary btn-sm" on:click={apply} disabled>Apply</button>
-            {/if}
-
-            {#if $appliedActiveCount > 0}
-                <button class="btn btn-ghost btn-sm" on:click={clearAll}>Clear</button>
-            {/if}
-        </div>
-    </div>
-{:else}
-    <div>
-        <button class="btn btn-ghost btn-sm" on:click={() => (open = true)}>{title}</button>
-    </div>
-{/if}
+    {#if $appliedActiveCount > 0}
+        <button class="btn btn-ghost btn-sm" on:click={clearAll}>Clear</button>
+    {/if}
+</div>

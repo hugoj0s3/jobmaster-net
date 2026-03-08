@@ -331,7 +331,6 @@
 				/>
 
 				<FilterContainer
-					title="Date"
 					initialValues={filterValues}
 					on:change={(e) => {
 						filterValues = e.detail;
