@@ -445,9 +445,9 @@
                         label="Scheduled at"
                         type="datetime"
                         presets={[
-                            { type: "LAST_MINUTES", minutes: 15, label: "Last 15 minutes" },
-                            { type: "LAST_MINUTES", minutes: 60, label: "Last 60 minutes" },
-                            { type: "NEXT_HOURS", hours: 10, label: "Next 10 hours" }
+                            { type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+                            { type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+                            { type: "LAST_MINUTES", minutes: 60, label: "Last 1 hour" }
                         ]}
                     />
                 </FilterContainer>

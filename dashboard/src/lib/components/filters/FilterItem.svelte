@@ -21,7 +21,28 @@
 
     let fromLocal = "";
     let toLocal = "";
+    let fromDate = "";
+    let fromTime = "00:00";
+    let toDate = "";
+    let toTime = "23:59";
     let dateMode: "specific" | "relative" = "specific";
+
+    function combineDateTime(date: string, time: string): string {
+        if (!date) return "";
+        return `${date}T${time || "00:00"}`;
+    }
+
+    function splitDateTime(local: string): { date: string; time: string } {
+        if (!local) return { date: "", time: "" };
+        const [d, t] = local.split("T");
+        return { date: d ?? "", time: t ?? "00:00" };
+    }
+
+    function syncFromParts() {
+        fromLocal = combineDateTime(fromDate, fromTime);
+        toLocal = combineDateTime(toDate, toTime);
+        syncDateTimeValue();
+    }
 
     let relativeUnit: "sec" | "min" | "hour" | "day" = "min";
     let relativeFromText: string | number | null = "";
@@ -52,6 +73,15 @@
         return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
     }
 
+    function syncPartsFromLocal() {
+        const f = splitDateTime(fromLocal);
+        fromDate = f.date;
+        fromTime = f.time;
+        const t = splitDateTime(toLocal);
+        toDate = t.date;
+        toTime = t.time;
+    }
+
     function formatIsoShort(iso: string): string {
         const d = new Date(iso);
         if (Number.isNaN(d.getTime())) return "";
@@ -70,6 +100,7 @@
             fromLocal = isoToLocal(new Date(now).toISOString());
             toLocal = isoToLocal(new Date(now + preset.hours * 60 * 60_000).toISOString());
         }
+        syncPartsFromLocal();
         syncDateTimeValue();
     }
 
@@ -232,6 +263,7 @@
 
             fromLocal = o.from ? isoToLocal(o.from) : "";
             toLocal = o.to ? isoToLocal(o.to) : "";
+            syncPartsFromLocal();
         }
 
         if (type === "multiselect") {
@@ -319,25 +351,41 @@
                 {/if}
 
                 {#if dateMode === "specific"}
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">From</span></label>
-                            <input
-                                type="datetime-local"
-                                class="input input-bordered input-sm"
-                                bind:value={fromLocal}
-                                on:change={() => syncDateTimeValue()}
-                            />
+                    <div class="mt-3 space-y-3">
+                        <div>
+                            <span class="label-text font-medium">From</span>
+                            <div class="mt-1 flex items-center gap-2">
+                                <input
+                                    type="date"
+                                    class="input input-bordered input-sm flex-1"
+                                    bind:value={fromDate}
+                                    on:change={syncFromParts}
+                                />
+                                <input
+                                    type="time"
+                                    class="input input-bordered input-sm w-[7rem]"
+                                    bind:value={fromTime}
+                                    on:change={syncFromParts}
+                                />
+                            </div>
                         </div>
 
-                        <div class="form-control">
-                            <label class="label"><span class="label-text">To</span></label>
-                            <input
-                                type="datetime-local"
-                                class="input input-bordered input-sm"
-                                bind:value={toLocal}
-                                on:change={() => syncDateTimeValue()}
-                            />
+                        <div>
+                            <span class="label-text font-medium">To</span>
+                            <div class="mt-1 flex items-center gap-2">
+                                <input
+                                    type="date"
+                                    class="input input-bordered input-sm flex-1"
+                                    bind:value={toDate}
+                                    on:change={syncFromParts}
+                                />
+                                <input
+                                    type="time"
+                                    class="input input-bordered input-sm w-[7rem]"
+                                    bind:value={toTime}
+                                    on:change={syncFromParts}
+                                />
+                            </div>
                         </div>
                     </div>
                 {:else}
