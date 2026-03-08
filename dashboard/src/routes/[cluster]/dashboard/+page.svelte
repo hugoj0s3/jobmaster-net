@@ -327,6 +327,10 @@
                             Processing: processingCount
                         }
                     },
+                    failures: {
+                        jobsFailedExceededRetries: failedJobs.length,
+                        failedExecutions: failedJobs.length
+                    },
                     workers: {
                         onlineTotal: onlineWorkers.length,
                         executionMode: workerModes.filter((m) => m === 1).length,
