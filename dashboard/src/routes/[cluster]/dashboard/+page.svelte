@@ -14,12 +14,6 @@
 
     const clusterId = () => $page.params.cluster;
 
-    type JobmasterConfig = {
-        apiBaseUrl: string;
-    };
-
-    let apiBaseUrl: string | null = null;
-
     type UpcomingJobsBreakdown = {
         OnMaster: number;
         InBucket: number;
@@ -66,8 +60,12 @@
         durationText?: string;
     };
 
-    type ApiClusterModel = components["schemas"]["ApiClusterModel"];
     type ApiJobModel = components["schemas"]["ApiJobModel"];
+
+    interface ApiWorkerModel {
+        isAlive?: boolean;
+        mode?: number;
+    }
 
     function bestJobTimestampIso(j: ApiJobModel): string {
         return (
@@ -192,7 +190,8 @@
                     bucketsReadyToDeleteCount,
                     succeededJobs,
                     failedJobs,
-                    cancelledJobs
+                    cancelledJobs,
+                    apiWorkers
                 ] = await Promise.all([
                     jmApi.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.HeldOnMaster } }
@@ -297,10 +296,25 @@
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
+                    }),
+
+                    jmApi.GET("/{clusterId}/workers", {
+                        params: { path: { clusterId: cid } },
+                        parseAs: "json"
+                    }).then((r) => {
+                        return ((r.data ?? []) as ApiWorkerModel[]);
                     })
                 ]);
 
                 const upcomingTotal = onMasterCount + inBucketCount + queuedCount + processingCount;
+
+                const onlineWorkers = apiWorkers.filter((w: ApiWorkerModel) => w.isAlive === true);
+                const workerModes = onlineWorkers.map((w: ApiWorkerModel) => w.mode);
+                const lastHb = onlineWorkers
+                    .map((w: ApiWorkerModel) => w.lastHeartbeatAt)
+                    .filter(Boolean)
+                    .sort()
+                    .pop();
 
                 metrics = {
                     ...metrics,
@@ -312,6 +326,15 @@
                             Queued: queuedCount,
                             Processing: processingCount
                         }
+                    },
+                    workers: {
+                        onlineTotal: onlineWorkers.length,
+                        executionMode: workerModes.filter((m) => m === 1).length,
+                        drainingMode: workerModes.filter((m) => m === 3).length,
+                        fullMode: workerModes.filter((m) => m === 2).length,
+                        lastHeartbeatText: lastHb
+                            ? new Date(lastHb).toLocaleString()
+                            : "—"
                     },
                     hosts: {
                         total: hostsCount,
@@ -563,9 +586,6 @@
                             <span class="font-mono text-base font-semibold">{metrics.workers.fullMode}</span>
                         </div>
 
-                        <div class="pt-2 text-[11px] opacity-60">
-                            Last heartbeat: {metrics.workers.lastHeartbeatText}
-                        </div>
                     </div>
                 </div>
             </div>
