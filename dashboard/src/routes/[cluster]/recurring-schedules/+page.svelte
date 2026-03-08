@@ -27,6 +27,7 @@
 		tz?: string;
 		nextRun: string;
 		nextScheduledAtRaw?: string;
+		createdAtRaw?: string;
 		metadata: Record<string, string>;
 		scheduleStatus: RecurringScheduleStatusLabel;
 		scheduleStatusAgo: string;
@@ -53,7 +54,6 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = [];
-		selectedJobTypes = [];
 		filterValues = {};
 		refreshNow();
 	}
@@ -66,21 +66,20 @@
 	const clusterId = () => $page.params.cluster;
 
 	let selectedStatuses: string[] = [];
-	let selectedJobTypes: string[] = [];
 
 	type FilterValues = Record<string, unknown>;
 	let filterValues: FilterValues = {};
 
-	$: jobTypes = Array.from(new Set(rows.map((r) => r.jobType)));
-
 	$: filtered = rows.filter((r) => {
 		if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.scheduleStatus)) return false;
 
-		if (selectedJobTypes.length > 0 && !selectedJobTypes.includes(r.jobType)) return false;
-
-		const nextRun = (filterValues.nextScheduledAt ?? {}) as { from?: string; to?: string };
-		if (nextRun.from && r.nextScheduledAtRaw && new Date(r.nextScheduledAtRaw) < new Date(nextRun.from)) return false;
-		if (nextRun.to && r.nextScheduledAtRaw && new Date(r.nextScheduledAtRaw) > new Date(nextRun.to)) return false;
+		const created = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
+		if (created.from || created.to) {
+			if (!r.createdAtRaw) return false;
+			const t = new Date(r.createdAtRaw).getTime();
+			if (created.from && t < new Date(created.from).getTime()) return false;
+			if (created.to && t > new Date(created.to).getTime()) return false;
+		}
 
 		return true;
 	});
@@ -245,6 +244,7 @@
 					tz: schedule.timeZoneId,
 					nextRun: formatNextRun(schedule.nextScheduledAt),
 					nextScheduledAtRaw: schedule.nextScheduledAt ?? undefined,
+					createdAtRaw: schedule.createdAt ?? undefined,
 					scheduleStatus: mapScheduleStatus(schedule.status),
 					scheduleStatusAgo: formatTimeAgo(schedule.lastJobExecutedAt),
 					status: schedule.status ?? 3,
@@ -332,12 +332,6 @@
 					on:change={() => { pageIndex = 0; }}
 				/>
 
-				<FilterDropdownMulti
-					label="Job Type"
-					options={jobTypes.map((jt) => ({ value: jt, label: jt }))}
-					bind:values={selectedJobTypes}
-					on:change={() => { pageIndex = 0; }}
-				/>
 
 				<FilterContainer
 					initialValues={filterValues}
@@ -347,12 +341,12 @@
 					}}
 				>
 					<FilterItem
-						id="nextScheduledAt"
-						label="Next Run"
+						id="createdAt"
+						label="Created At"
 						type="datetime"
 						presets={[
-							{ type: "NEXT_HOURS", hours: 1, label: "Next 1 hour" },
-							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 1 hour" },
+							{ type: "LAST_MINUTES", minutes: 1440, label: "Last 24 hours" }
 						]}
 					/>
 				</FilterContainer>
