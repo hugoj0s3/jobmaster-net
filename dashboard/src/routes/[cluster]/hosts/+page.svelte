@@ -20,6 +20,7 @@
 		id: string;
 		status: HostStatus;
 		host: string;
+		hostDisplayName?: string;
 		ip: string;
 		cpu: number;
 		memPercent?: number;
@@ -120,7 +121,8 @@
 		return {
 			id: host.id ?? "",
 			status,
-			host: host.displayName ?? host.id ?? "Unknown",
+			host: host.id ?? "Unknown",
+			hostDisplayName: host.hostDisplayName,
 			ip: "—",
 			cpu: Math.round(cpu),
 			memPercent,
@@ -372,7 +374,12 @@
 									</div>
 								</td>
 
-								<td class="font-medium">{r.host}</td>
+								<td>
+									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
+									{#if r.hostDisplayName}
+										<div class="text-xs opacity-50">{r.host}</div>
+									{/if}
+								</td>
 								<td class="opacity-80">{r.ip}</td>
 
 								<td>
