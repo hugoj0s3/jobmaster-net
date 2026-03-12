@@ -27,8 +27,6 @@ internal class MySqlMasterDistributedLockerRepository : SqlMasterDistributedLock
             throw new Exception("Failed to acquire connection.");
         }
     
-        // 1. Forçamos o uso do tempo do banco (UTC_TIMESTAMP(6))
-        // 2. Usamos o tempo de expiração como um parâmetro calculado
         var sql = $@"
         INSERT INTO {TableName()} ({ColClusterId()}, {ColKey()}, {ColLockToken()}, {ColExpiresAt()})
         VALUES (@ClusterId, @Key, @Token, DATE_ADD(UTC_TIMESTAMP(6), INTERVAL @Seconds SECOND))
@@ -37,6 +35,7 @@ internal class MySqlMasterDistributedLockerRepository : SqlMasterDistributedLock
             {ColExpiresAt()} = IF({ColExpiresAt()} < UTC_TIMESTAMP(6), VALUES({ColExpiresAt()}), {ColExpiresAt()});
     ";
 
+        // Execute the SQL query to acquire the lock
         var rowsAffected = cnn.Execute(sql, new
         {
             ClusterId = ClusterConnConfig.ClusterId,
@@ -44,11 +43,8 @@ internal class MySqlMasterDistributedLockerRepository : SqlMasterDistributedLock
             Token = token,
             Seconds = duration.TotalSeconds
         });
-
-        // Se UseAffectedRows=true estiver na connection string:
-        // 1 = Novo lock (Sucesso)
-        // 2 = Lock antigo expirou e foi substituído (Sucesso)
-        // 0 = Lock ainda é válido (Falha - retorna null)
+        
+        // If the lock was acquired, return the token
         if (rowsAffected > 0) return token;
 
         return null;

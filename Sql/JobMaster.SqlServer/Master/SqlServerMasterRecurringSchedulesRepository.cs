@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
@@ -95,7 +96,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeDispose();
             throw;
         }
     }

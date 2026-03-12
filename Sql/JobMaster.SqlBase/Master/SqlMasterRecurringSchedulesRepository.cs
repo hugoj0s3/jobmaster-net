@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Utils;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
@@ -73,7 +74,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -111,7 +112,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -137,8 +138,9 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Recurring Schedule not found");
@@ -167,7 +169,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -193,8 +195,9 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Recurring Schedule not found");
@@ -223,7 +226,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -293,7 +296,7 @@ WHERE {this.sql.InClauseFor(Col(x => x.Id), "@RecurringScheduleIds")}
             // lock all or nothing.
             if (rowsAffected != recurringScheduleIds.Count)
             {
-                trans.Rollback();
+                trans.SafeRollback();
                 return false;
             }
             
@@ -303,7 +306,7 @@ WHERE {this.sql.InClauseFor(Col(x => x.Id), "@RecurringScheduleIds")}
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -348,7 +351,7 @@ WHERE {cClusterId} = @ClusterId
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -383,7 +386,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -455,7 +458,7 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }

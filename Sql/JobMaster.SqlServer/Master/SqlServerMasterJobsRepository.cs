@@ -5,6 +5,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
 using Microsoft.Data.SqlClient;
@@ -95,7 +96,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }

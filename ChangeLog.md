@@ -1,41 +1,69 @@
 # ChangeLog
 ## 0.0.6-alpha
 ### Added
-- TriggerSourceTypes on JobQueryCriteria
+- **TriggerSourceTypes filter on JobQueryCriteria**
+
+- **Host and Agent Connection Tracking**: Enhanced visibility and monitoring
+  of infrastructure components
+  - **Agent Connection Footprint**: Capture and persist agent connection
+    metadata to detect configuration changes and prevent unexpected behavior
+  - **Host Information**: Track which physical/virtual hosts are running
+    workers, enabling better resource allocation and troubleshooting
+  - **System Metrics Collection**: Abstract infrastructure (`IHostStatsProvider`)
+    for collecting host statistics (CPU, RAM, disk I/O, network, etc.) to
+    support future monitoring and auto-scaling capabilities
+  - **New API endpoints**: `/hosts` and `/agent-connections` exposed via the
+    REST API with pagination and filtering support
+
+- **Generic Record Tables Reorganization**: Split generic record storage into
+  specialized table families for better performance and maintainability
+  - `generic_record_entry` / `generic_record_entry_value` — cluster config
+    and general records
+  - `generic_record_entry_topology` / `..._topology` — topology entities
+    (Buckets, Workers, Hosts, Agent Connections)
+  - `generic_record_entry_runtime` / `..._runtime` — runtime/heartbeat data
+  - `generic_record_entry_log` / `..._log` — system logs
+  - `generic_record_entry_job_metadata` / `..._job_metadata` — job metadata
+  - `generic_record_entry_recurring_schedule_metadata` / `..._recurring_schedule_metadata`
+    — recurring schedule metadata
+  - **Benefits**: Better query performance, easier maintenance, and isolation
+    of high-volume transient data (logs, heartbeats) from stable config data
+
+- **Separate TransferBatchSize, BucketBufferSize and introduce BucketBufferLeadTime**
+
+- **Pagination and sorting for all API endpoints**
+
 ### Changes
-- Job Properties Renames
-  - Rename from RecurringScheduleId to SourceId { get; set; }
-  - Rename from ScheduledAt to NextPlanExecutionAt
-  - Rename from OriginalScheduledAt to ScheduledAt
-  - **Migration Scripts**: See migration scripts in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
-    - ⚠️ **Alpha Version Notice**: These migration scripts are not fully tested. **Recommended approach**: Let JobMaster create a fresh database with the new schema. **Only use migration scripts** if you cannot afford to lose existing data, and always test thoroughly in a lower environment first.
-    - [PostgreSQL migration script](migrations/0.0.6-alpha/job-properties-rename-migration-postgres.sql)
-    - [SQL Server migration script](migrations/0.0.6-alpha/job-properties-rename-migration-sqlserver.sql)
-    - [MySQL migration script](migrations/0.0.6-alpha/job-properties-rename-migration-mysql.sql)
-- **Generic Record Tables Reorganization**: Split generic record storage into specialized table families for better performance and maintainability
-  - **Table Families**:
-    - `generic_record_entry` / `generic_record_entry_value` (default) - For cluster configuration and other general records
-    - `generic_record_entry_topology` / `generic_record_entry_value_topology` - For topology entities (Buckets, Workers, Hosts, Agent Connections)
-    - `generic_record_entry_runtime` / `generic_record_entry_value_runtime` - For runtime/heartbeat data (Sentinel, Worker/Agent/Host heartbeats)
-    - `generic_record_entry_log` / `generic_record_entry_value_log` - For system logs
-    - `generic_record_entry_job_metadata` / `generic_record_entry_value_job_metadata` - For job metadata
-    - `generic_record_entry_recurring_schedule_metadata` / `generic_record_entry_value_recurring_schedule_metadata` - For recurring schedule metadata
-  - **Benefits**: Improved query performance, easier maintenance, and better data isolation by separating high-volume transient data (logs, heartbeats) from stable configuration data
-  - **Migration Scripts**: See migration scripts in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
-    - ⚠️ **Alpha Version Notice**: These migration scripts are not fully tested. **Recommended approach**: Let JobMaster create a fresh database with the new schema. **Only use migration scripts** if you cannot afford to lose existing data, and always test thoroughly in a lower environment first.
-    - [PostgreSQL migration script](migrations/0.0.6-alpha/generic-tables-family-migration-postgres.sql)
-    - [SQL Server migration script](migrations/0.0.6-alpha/generic-tables-family-migration-sqlserver.sql)
-    - [MySQL migration script](migrations/0.0.6-alpha/generic-tables-family-migration-mysql.sql)
-- **Host and Agent Connection Tracking**: Enhanced visibility and monitoring of infrastructure components
-  - **Agent Connection Footprint**: Capture and persist agent connection metadata to detect configuration changes and prevent unexpected behavior
-  - **Host Information**: Track which physical/virtual hosts are running workers, enabling better resource allocation and troubleshooting
-  - **System Metrics Collection**: Abstract infrastructure for collecting host statistics (CPU usage, RAM, disk I/O, network, etc.) to support future monitoring and auto-scaling capabilities
-- Separate TransferBatchSize, BucketBufferSize and introduce BucketBufferLeadTime
-- Fix Pagination bug for SQL
-- Fix miss rollbacks, remove keep alive connection from dequeuemessageasync, provide retry mecanism for dequeuemessage async.
-- Introduce pagination and sort for all api endpoints. (keep the standard for dashboard)
-- Improve the dequeue to improve the performance make the code very specific for each SQL dbs
-- Improve the upinsert of the generic repo (code very specific for each sql dbs.)
+
+- **Job Property Renames** *(migration required)*
+  - `RecurringScheduleId` → `SourceId`
+  - `ScheduledAt` → `NextPlanExecutionAt`
+  - `OriginalScheduledAt` → `ScheduledAt`
+  - **Migration Scripts** in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
+    - ⚠️ **Alpha Notice**: Not fully tested. Recommended approach: let
+      JobMaster create a fresh database. Only use migration scripts if you
+      cannot afford to lose existing data, and always test in a lower
+      environment first.
+    - [PostgreSQL](migrations/0.0.6-alpha/job-properties-rename-migration-postgres.sql)
+    - [SQL Server](migrations/0.0.6-alpha/job-properties-rename-migration-sqlserver.sql)
+    - [MySQL](migrations/0.0.6-alpha/job-properties-rename-migration-mysql.sql)
+
+- **Generic Record Table Migration Scripts** in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
+  - ⚠️ Same alpha notice as above applies.
+  - [PostgreSQL](migrations/0.0.6-alpha/generic-tables-family-migration-postgres.sql)
+  - [SQL Server](migrations/0.0.6-alpha/generic-tables-family-migration-sqlserver.sql)
+  - [MySQL](migrations/0.0.6-alpha/generic-tables-family-migration-mysql.sql)
+
+### Fixes
+- Fix pagination bug for SQL providers
+- Fix missing rollbacks on failed SQL transactions
+- Remove keep-alive connection from `DequeueMessageAsync` to prevent
+  connection contention during message dequeue
+- Add retry mechanism for `DequeueMessageAsync`
+- Improve dequeue performance with SQL provider-specific implementations
+  (Postgres, SQL Server, MySQL each have optimized paths)
+- Improve upsert performance on generic record repository with
+  provider-specific implementations
 
 ## 0.0.5-alpha
 ### Added

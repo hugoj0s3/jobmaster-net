@@ -3,6 +3,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 
 namespace JobMaster.MySql.Master;
@@ -98,7 +99,7 @@ ON DUPLICATE KEY UPDATE
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -184,7 +185,7 @@ ON DUPLICATE KEY UPDATE
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }

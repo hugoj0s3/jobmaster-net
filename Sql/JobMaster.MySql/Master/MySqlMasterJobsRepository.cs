@@ -5,6 +5,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
 using MySqlConnector;
@@ -93,7 +94,7 @@ WHERE j.{cClusterId} = @ClusterId
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }

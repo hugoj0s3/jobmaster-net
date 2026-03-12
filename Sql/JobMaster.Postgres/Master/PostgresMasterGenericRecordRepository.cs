@@ -3,6 +3,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 
 namespace JobMaster.Postgres.Master;
@@ -97,7 +98,7 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -183,7 +184,7 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }

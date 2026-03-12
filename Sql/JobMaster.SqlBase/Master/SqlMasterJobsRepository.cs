@@ -19,6 +19,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
@@ -76,12 +77,12 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw new JobDuplicationException(jobRaw.Id, ex);
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -119,12 +120,12 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw new JobDuplicationException(jobRaw.Id, ex);
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -154,8 +155,10 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                // Do not rollback here; let the outer catch rollback once to avoid double-rollback on providers like Npgsql
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Job not found");
@@ -184,7 +187,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -214,8 +217,9 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Job not found");
@@ -244,7 +248,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -382,7 +386,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -450,7 +454,7 @@ ORDER BY {cNextPlanExecutionAt} ASC, {cId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
