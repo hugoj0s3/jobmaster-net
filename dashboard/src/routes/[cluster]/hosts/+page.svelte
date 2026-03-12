@@ -9,6 +9,7 @@
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
+	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -21,7 +22,6 @@
 		status: HostStatus;
 		host: string;
 		hostDisplayName?: string;
-		ip: string;
 		cpu: number | null;
 		memPercent?: number;
 		memGb?: number;
@@ -39,7 +39,8 @@
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 10, ...Serializers.number }
+		size: { defaultValue: 10, ...Serializers.number },
+		createdAt: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
@@ -47,7 +48,7 @@
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = {};
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
@@ -61,7 +62,7 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-		filterValues = {};
+		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
 
@@ -69,7 +70,8 @@
 		writeUrlParams(urlParamDefs, {
 			statuses: selectedStatuses,
 			page: pageIndex,
-			size: pageSize
+			size: pageSize,
+			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
@@ -78,19 +80,17 @@
 	$: onlineCount = rows.filter(r => r.status === "Online").length;
 	$: offlineCount = rows.filter(r => r.status === "Offline").length;
 
-	$: avgCpu =
-		Math.round(
-			rows.filter(r => r.status !== "Offline").reduce((acc, r) => acc + (r.cpu ?? 0), 0) /
-			Math.max(1, rows.filter(r => r.status !== "Offline").length)
-		);
+	$: avgCpu = (() => {
+		const online = rows.filter(r => r.status !== "Offline" && r.cpu != null);
+		if (online.length === 0) return "N/A";
+		return Math.round(online.reduce((acc, r) => acc + (r.cpu ?? 0), 0) / online.length) + "%";
+	})();
 
-	$: avgMem =
-		Math.round(
-			rows
-				.filter(r => r.status !== "Offline" && typeof r.memPercent === "number")
-				.reduce((acc, r) => acc + (r.memPercent ?? 0), 0) /
-			Math.max(1, rows.filter(r => r.status !== "Offline" && typeof r.memPercent === "number").length)
-		);
+	$: avgMem = (() => {
+		const online = rows.filter(r => r.status !== "Offline" && r.memPercent != null);
+		if (online.length === 0) return "N/A";
+		return Math.round(online.reduce((acc, r) => acc + (r.memPercent ?? 0), 0) / online.length) + "%";
+	})();
 
 	$: lastUpdated = lastUpdatedAt.toLocaleString('en-US', {
 		month: 'numeric',
@@ -122,7 +122,6 @@
 			status,
 			host: host.id ?? "Unknown",
 			hostDisplayName: host.hostDisplayName,
-			ip: "—",
 			cpu,
 			memPercent,
 			memGb,
@@ -167,14 +166,12 @@
 		}, refreshIntervalSec * 1000);
 	}
 
+	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
+
 	$: filteredAll = rows
 		.filter(r => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
-
-			const dt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
-			if (dt.from && r.createdAt && new Date(r.createdAt) < new Date(dt.from)) return false;
-			if (dt.to && r.createdAt && new Date(r.createdAt) > new Date(dt.to)) return false;
-
+			if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
 			return true;
 		});
 
@@ -207,7 +204,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
 
@@ -273,7 +270,7 @@
 					<div class="flex items-center justify-between">
 						<div>
 							<div class="text-sm text-base-content/70">Avg. CPU Usage</div>
-							<div class="mt-1 text-4xl font-semibold">{avgCpu}%</div>
+							<div class="mt-1 text-4xl font-semibold">{avgCpu}</div>
 						</div>
 						<div class="rounded-2xl bg-secondary/15 p-3 text-secondary">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -289,7 +286,7 @@
 					<div class="flex items-center justify-between">
 						<div>
 							<div class="text-sm text-base-content/70">Avg. Memory Usage</div>
-							<div class="mt-1 text-4xl font-semibold">{avgMem}%</div>
+							<div class="mt-1 text-4xl font-semibold">{avgMem}</div>
 						</div>
 						<div class="rounded-2xl bg-info/15 p-3 text-info">
 							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -316,8 +313,8 @@
 
 				<FilterContainer
 					initialValues={filterValues}
-					on:change={(e) => {
-						filterValues = e.detail;
+					onChange={(v) => {
+						filterValues = v;
 						pageIndex = 0;
 					}}
 				>
@@ -353,7 +350,6 @@
 						<tr class="text-base-content/70">
 							<th>Status</th>
 							<th>Host</th>
-							<th>IP Address</th>
 							<th>CPU Load</th>
 							<th>Memory Usage</th>
 							<th>Workers</th>
@@ -372,11 +368,7 @@
 
 								<td>
 									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
-									{#if r.hostDisplayName}
-										<div class="text-xs opacity-50">{r.host}</div>
-									{/if}
 								</td>
-								<td class="opacity-80">{r.ip}</td>
 
 								<td>
 									{#if r.status === "Offline"}

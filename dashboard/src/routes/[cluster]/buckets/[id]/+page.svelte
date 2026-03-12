@@ -18,8 +18,6 @@
 		runDuration: string;
 	};
 
-	type HistoryJob = { id: string; completedAt: string };
-	type LogItem = { key: string; time: string; message: string; jobId: string };
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
@@ -33,10 +31,8 @@
 	let refreshError: string | null = null;
 
 	let activeJobs: ActiveJob[] = [];
-	let jobHistory: HistoryJob[] = [];
 	let activeApiJobs: ApiJobModel[] = [];
 	let historyApiJobs: ApiJobModel[] = [];
-	let bucketLog: LogItem[] = [];
 
 	function safeMsBetween(startIso: string | null | undefined, endIso: string | null | undefined): number | null {
 		if (!startIso || !endIso) return null;
@@ -151,15 +147,9 @@
 
 			if (historyJobsResp.error) {
 				console.error("API error (bucket history jobs):", historyJobsResp.error);
-				jobHistory = [];
 				historyApiJobs = [];
 			} else {
-				const jobs = ((historyJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
-				historyApiJobs = jobs;
-				jobHistory = jobs.map((j) => ({
-					id: j.id ?? "—",
-					completedAt: safeFormatDateTime(j.succeedExecutedAt ?? null)
-				}));
+				historyApiJobs = ((historyJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
 			}
 
 			lastUpdatedAt = new Date();
@@ -176,7 +166,7 @@
 	});
 
 	$: bucketName = bucket?.name ?? bucket?.id ?? "Bucket";
-	$: bucketHost = bucket?.hostDisplayName ?? bucket?.hostId ?? "—";
+	$: bucketHost = bucket?.hostDisplayName ?? "—";
 	$: bucketAgent = bucket?.agentConnectionName ?? bucket?.agentConnectionId ?? "—";
 	$: bucketWorker = bucket?.workerLane ?? bucket?.agentWorkerId ?? "—";
 	$: bucketCreatedAt = bucket?.createdAt;
@@ -216,40 +206,6 @@
 	$: avgQueueLabel = formatDuration(avgQueueMs);
 	$: avgRunLabel = formatDuration(avgRunMs);
 
-	$: bucketLog = (() => {
-		const items: { time: number; message: string; jobId: string }[] = [];
-		const now = Date.now();
-
-		const push = (iso: string | null | undefined, message: string, jobId: string) => {
-			if (!iso) return;
-			const t = Date.parse(iso);
-			if (!Number.isFinite(t)) return;
-			items.push({ time: t, message, jobId });
-		};
-
-		for (const j of activeApiJobs) {
-			const id = j.id ?? "";
-			push(j.createdAt ?? null, "Job queued", id);
-			push(j.processingStartedAt ?? null, "Job moved to Processing", id);
-		}
-		for (const j of historyApiJobs) {
-			const id = j.id ?? "";
-			push(j.processingStartedAt ?? null, "Job moved to Processing", id);
-			if (j.status === JobStatus.Succeeded) push(j.succeedExecutedAt ?? null, "Job succeeded", id);
-			if (j.status === JobStatus.Failed) push(j.succeedExecutedAt ?? null, "Job failed", id);
-			if (j.status === JobStatus.Cancelled) push(j.succeedExecutedAt ?? null, "Job cancelled", id);
-		}
-
-		return items
-			.sort((a, b) => b.time - a.time)
-			.slice(0, 50)
-			.map((x) => ({
-				key: `${x.time}|${x.message}|${x.jobId}`,
-				time: `${DateTimeUtil.formatAgeShort(now - x.time)} ago`,
-				message: x.message,
-				jobId: x.jobId
-			}));
-	})();
 
 	const stateBadge: Record<ActiveJob["state"], string> = {
 		Queued: "badge-ghost",
@@ -416,77 +372,5 @@
 			</div>
 		</div>
 
-		<!-- Bottom panels -->
-		<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-			<!-- Job History -->
-			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-				<div class="card-body">
-					<div class="flex items-center gap-2">
-						<h3 class="text-lg font-semibold">Job History</h3>
-						<span class="badge badge-ghost">412</span>
-					</div>
-
-					<div class="overflow-x-auto">
-						<table class="table table-sm table-zebra">
-							<thead>
-							<tr class="text-base-content/70">
-								<th>Job ID</th>
-								<th class="text-right">Completed</th>
-							</tr>
-							</thead>
-							<tbody>
-							{#each jobHistory as h (h.id)}
-								<tr>
-									<td>
-										<div class="flex items-center gap-2">
-											<span class="text-success">♥</span>
-											<span class="font-medium">{h.id}</span>
-										</div>
-									</td>
-									<td class="text-right opacity-80">{h.completedAt}</td>
-								</tr>
-							{/each}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-
-			<!-- Bucket Log -->
-			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-				<div class="card-body">
-					<div class="flex items-center justify-between gap-3">
-						<div class="flex items-center gap-2">
-							<h3 class="text-lg font-semibold">Bucket Log</h3>
-						</div>
-					</div>
-
-					<div class="overflow-x-auto">
-						<table class="table table-sm table-zebra">
-							<thead>
-							<tr class="text-base-content/70">
-								<th>Time</th>
-								<th>Message</th>
-								<th class="text-right">Job ID</th>
-							</tr>
-							</thead>
-							<tbody>
-							{#each bucketLog as l (l.key)}
-								<tr>
-									<td class="opacity-80">{l.time}</td>
-									<td class="opacity-90">{l.message}</td>
-									<td class="text-right opacity-70">{l.jobId || "--"}</td>
-								</tr>
-							{/each}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-		</div>
-
-		<div class="mt-8 text-xs opacity-50">
-			Tip: replace mock data with API calls and bind to route param <code>[id]</code>.
-		</div>
 	</div>
 </div>

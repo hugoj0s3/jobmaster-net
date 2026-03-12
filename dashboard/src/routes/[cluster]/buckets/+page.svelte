@@ -11,6 +11,7 @@
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { createCopyFeedback } from "$lib/helper/clipboard-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
+	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 
 	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
@@ -46,7 +47,8 @@
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 12, ...Serializers.number }
+		size: { defaultValue: 12, ...Serializers.number },
+		createdAt: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
@@ -60,7 +62,7 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-		filterValues = {};
+		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
 
@@ -80,13 +82,14 @@
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = {};
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			statuses: selectedStatuses,
 			page: pageIndex,
-			size: pageSize
+			size: pageSize,
+			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
@@ -96,14 +99,12 @@
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
 	const copiedId = copyFeedback.copiedId;
 
+	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
+
 	$: filtered = allBuckets
 		.filter((r) => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
-
-			const createdAt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
-			if (createdAt.from && r.createdAt && new Date(r.createdAt) < new Date(createdAt.from)) return false;
-			if (createdAt.to && r.createdAt && new Date(r.createdAt) > new Date(createdAt.to)) return false;
-
+			if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
 			return true;
 		});
 
@@ -248,7 +249,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex flex-wrap items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Buckets</h1>
 
@@ -372,8 +373,8 @@
 
 					<FilterContainer
 						initialValues={filterValues}
-						on:change={(e) => {
-							filterValues = e.detail;
+						onChange={(v) => {
+							filterValues = v;
 							pageIndex = 0;
 						}}
 					>
@@ -383,8 +384,8 @@
 							type="datetime"
 							presets={[
 								{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
-								{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
-								{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+								{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+								{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
 							]}
 						/>
 					</FilterContainer>

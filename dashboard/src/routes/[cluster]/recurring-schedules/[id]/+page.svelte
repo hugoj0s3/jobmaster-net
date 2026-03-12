@@ -149,7 +149,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		{#if isLoading && !schedule}
 			<div class="flex items-center justify-center py-20">
 				<span class="loading loading-spinner loading-lg"></span>

@@ -90,18 +90,18 @@
     }
 
     function applyPreset(preset: DatePreset) {
-        const now = Date.now();
         if (preset.type === "LAST_MINUTES") {
-            dateMode = "specific";
-            fromLocal = isoToLocal(new Date(now - preset.minutes * 60_000).toISOString());
-            toLocal = isoToLocal(new Date(now).toISOString());
+            dateMode = "relative";
+            relativeUnit = "min";
+            relativeFromText = -preset.minutes;
+            relativeToText = 0;
         } else if (preset.type === "NEXT_HOURS") {
-            dateMode = "specific";
-            fromLocal = isoToLocal(new Date(now).toISOString());
-            toLocal = isoToLocal(new Date(now + preset.hours * 60 * 60_000).toISOString());
+            dateMode = "relative";
+            relativeUnit = "min";
+            relativeFromText = 0;
+            relativeToText = preset.hours * 60;
         }
-        syncPartsFromLocal();
-        syncDateTimeValue();
+        syncRelativeValue();
     }
 
     function syncDateTimeValue() {
@@ -200,11 +200,17 @@
             };
             if (o.mode === "relative") {
                 const u = o.unit ?? "min";
-                const from = typeof o.fromOffset === "number" ? o.fromOffset : undefined;
-                const to = typeof o.toOffset === "number" ? o.toOffset : undefined;
-                if (typeof from === "number" && typeof to === "number") return `${from} to ${to} ${u}`;
-                if (typeof from === "number") return `from ${from} ${u}`;
-                if (typeof to === "number") return `to ${to} ${u}`;
+                const fromVal = o.fromOffset;
+                const toVal = o.toOffset;
+                const f = fromVal != null && Number.isFinite(Number(fromVal)) ? Number(fromVal) : null;
+                const t = toVal != null && Number.isFinite(Number(toVal)) ? Number(toVal) : null;
+                if (f !== null && t !== null) {
+                    if (t === 0 && f < 0) return `Last ${-f} ${u}`;
+                    if (f === 0 && t > 0) return `Next ${t} ${u}`;
+                    return `${f} to ${t} ${u}`;
+                }
+                if (f !== null) return `from ${f} ${u}`;
+                if (t !== null) return `to ${t} ${u}`;
                 return "";
             }
 
@@ -359,13 +365,13 @@
                                     type="date"
                                     class="input input-bordered input-sm flex-1"
                                     bind:value={fromDate}
-                                    on:change={syncFromParts}
+                                    on:input={syncFromParts}
                                 />
                                 <input
                                     type="time"
                                     class="input input-bordered input-sm w-[7rem]"
                                     bind:value={fromTime}
-                                    on:change={syncFromParts}
+                                    on:input={syncFromParts}
                                 />
                             </div>
                         </div>
@@ -377,13 +383,13 @@
                                     type="date"
                                     class="input input-bordered input-sm flex-1"
                                     bind:value={toDate}
-                                    on:change={syncFromParts}
+                                    on:input={syncFromParts}
                                 />
                                 <input
                                     type="time"
                                     class="input input-bordered input-sm w-[7rem]"
                                     bind:value={toTime}
-                                    on:change={syncFromParts}
+                                    on:input={syncFromParts}
                                 />
                             </div>
                         </div>
@@ -410,7 +416,7 @@
                                 type="number"
                                 class="input input-bordered input-sm"
                                 bind:value={relativeFromText}
-                                on:change={() => syncRelativeValue()}
+                                on:input={() => syncRelativeValue()}
                             />
                         </div>
 
@@ -420,7 +426,7 @@
                                 type="number"
                                 class="input input-bordered input-sm"
                                 bind:value={relativeToText}
-                                on:change={() => syncRelativeValue()}
+                                on:input={() => syncRelativeValue()}
                             />
                         </div>
                     </div>

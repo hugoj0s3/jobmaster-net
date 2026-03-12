@@ -65,7 +65,10 @@ export function writeUrlParams<D extends ParamDefs>(defs: D, values: Values<D>):
 	}
 
 	if (changed) {
-		goto(url.pathname + url.search, { replaceState: true, keepFocus: true, noScroll: true });
+		const target = url.pathname + url.search;
+		queueMicrotask(() => {
+			goto(target, { replaceState: true, keepFocus: true, noScroll: true });
+		});
 	}
 }
 

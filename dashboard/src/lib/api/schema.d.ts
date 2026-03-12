@@ -13,7 +13,12 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
+                };
                 header?: never;
                 path: {
                     clusterId: string;
@@ -48,7 +53,12 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
+                };
                 header?: never;
                 path: {
                     clusterId: string;
@@ -125,6 +135,10 @@ export interface paths {
                     Status?: components["schemas"]["BucketStatus"];
                     AgentWorkerId?: string;
                     WorkerLane?: string;
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -136,15 +150,6 @@ export interface paths {
             responses: {
                 /** @description OK */
                 200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ApiBucketModel"][];
-                    };
-                };
-                /** @description Not Found */
-                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -175,6 +180,10 @@ export interface paths {
                     Status?: components["schemas"]["BucketStatus"];
                     AgentWorkerId?: string;
                     WorkerLane?: string;
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -186,15 +195,6 @@ export interface paths {
             responses: {
                 /** @description OK */
                 200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": number;
-                    };
-                };
-                /** @description Not Found */
-                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -234,15 +234,6 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiBucketModel"];
-                    };
-                };
-                /** @description Not Found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
                     content?: never;
                 };
             };
@@ -276,9 +267,7 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": number;
-                    };
+                    content?: never;
                 };
             };
         };
@@ -311,9 +300,7 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": string[];
-                    };
+                    content?: never;
                 };
             };
         };
@@ -348,15 +335,6 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiClusterModel"];
-                    };
-                };
-                /** @description Not Found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
                     content?: never;
                 };
             };
@@ -378,7 +356,12 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
+                };
                 header?: never;
                 path: {
                     clusterId: string;
@@ -392,9 +375,7 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiHostModel"][];
-                    };
+                    content?: never;
                 };
             };
         };
@@ -415,7 +396,12 @@ export interface paths {
         };
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
+                };
                 header?: never;
                 path: {
                     clusterId: string;
@@ -429,9 +415,7 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": number;
-                    };
+                    content?: never;
                 };
             };
         };
@@ -467,15 +451,6 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiHostModel"];
-                    };
-                };
-                /** @description Not Found */
-                404: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
                     content?: never;
                 };
             };
@@ -501,8 +476,10 @@ export interface paths {
                     Status?: components["schemas"]["JobMasterJobStatus"];
                     Statuses?: components["schemas"]["JobMasterJobStatus"][];
                     Priority?: components["schemas"]["JobMasterPriority"];
-                    ScheduledTo?: string;
+                    NextPlanExecutionAtTo?: string;
+                    NextPlanExecutionAtFrom?: string;
                     ScheduledFrom?: string;
+                    ScheduledTo?: string;
                     ProcessDeadlineTo?: string;
                     TriggerSourceTypes?: components["schemas"]["JobMasterTriggerSourceType"][];
                     SourceId?: string;
@@ -515,8 +492,8 @@ export interface paths {
                     CountLimit?: number;
                     Offset?: number;
                     MetadataFiltersJson?: string;
-                    OrderByProperty?: string;
-                    OrderByAsc?: boolean;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -528,24 +505,6 @@ export interface paths {
             responses: {
                 /** @description OK */
                 200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["ApiJobModel"][];
-                    };
-                };
-                /** @description Bad Request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": string;
-                    };
-                };
-                /** @description Not Found */
-                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -574,8 +533,10 @@ export interface paths {
                     Status?: components["schemas"]["JobMasterJobStatus"];
                     Statuses?: components["schemas"]["JobMasterJobStatus"][];
                     Priority?: components["schemas"]["JobMasterPriority"];
-                    ScheduledTo?: string;
+                    NextPlanExecutionAtTo?: string;
+                    NextPlanExecutionAtFrom?: string;
                     ScheduledFrom?: string;
+                    ScheduledTo?: string;
                     ProcessDeadlineTo?: string;
                     TriggerSourceTypes?: components["schemas"]["JobMasterTriggerSourceType"][];
                     SourceId?: string;
@@ -588,8 +549,8 @@ export interface paths {
                     CountLimit?: number;
                     Offset?: number;
                     MetadataFiltersJson?: string;
-                    OrderByProperty?: string;
-                    OrderByAsc?: boolean;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -601,24 +562,6 @@ export interface paths {
             responses: {
                 /** @description OK */
                 200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": number;
-                    };
-                };
-                /** @description Bad Request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": string;
-                    };
-                };
-                /** @description Not Found */
-                404: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -658,21 +601,39 @@ export interface paths {
                     headers: {
                         [name: string]: unknown;
                     };
-                    content: {
-                        "application/json": components["schemas"]["ApiJobModel"];
-                    };
+                    content?: never;
                 };
-                /** @description Bad Request */
-                400: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": string;
-                    };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/{clusterId}/jobs/{id}/executions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    clusterId: string;
+                    id: string;
                 };
-                /** @description Not Found */
-                404: {
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
                     headers: {
                         [name: string]: unknown;
                     };
@@ -837,6 +798,8 @@ export interface paths {
                     MetadataFiltersJson?: string;
                     CountLimit?: number;
                     Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -888,6 +851,8 @@ export interface paths {
                     MetadataFiltersJson?: string;
                     CountLimit?: number;
                     Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -965,6 +930,10 @@ export interface paths {
                     Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
                     IsAlive?: boolean;
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -1006,6 +975,10 @@ export interface paths {
                     Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
                     IsAlive?: boolean;
+                    CountLimit?: number;
+                    Offset?: number;
+                    SortByProperty?: string;
+                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -1082,58 +1055,6 @@ export interface components {
          * @enum {integer}
          */
         AgentWorkerStatus: 0 | 1 | 2;
-        ApiBucketModel: {
-            clusterId?: string | null;
-            id?: string | null;
-            name?: string | null;
-            agentConnectionId?: string | null;
-            agentConnectionName?: string | null;
-            agentWorkerId?: string | null;
-            hostId?: string | null;
-            hostDisplayName?: string | null;
-            repositoryTypeId?: string | null;
-            priority?: components["schemas"]["JobMasterPriority"];
-            status?: components["schemas"]["BucketStatus"];
-            /** Format: date-time */
-            createdAt?: string;
-            color?: string | null;
-            workerLane?: string | null;
-            /** Format: date-time */
-            lastStatusChangeAt?: string;
-        };
-        ApiClusterModel: {
-            clusterId?: string | null;
-            repositoryTypeId?: string | null;
-            /** Format: date-span */
-            defaultJobTimeout?: string;
-            /** Format: date-span */
-            transientThreshold?: string;
-            /** Format: int32 */
-            defaultMaxOfRetryCount?: number;
-            clusterMode?: components["schemas"]["ClusterMode"];
-            /** Format: int32 */
-            maxMessageByteSize?: number;
-            ianaTimeZoneId?: string | null;
-            /** Format: date-span */
-            dataRetentionTtl?: string | null;
-            additionalConfig?: {
-                [key: string]: unknown;
-            } | null;
-        };
-        ApiHostModel: {
-            id?: string | null;
-            displayName?: string | null;
-            /** Format: double */
-            cpuUsagePercent?: number | null;
-            /** Format: int64 */
-            memoryTotalBytes?: number | null;
-            /** Format: int64 */
-            memoryUsedBytes?: number | null;
-            /** Format: int32 */
-            threadCount?: number;
-            /** Format: int32 */
-            handleCount?: number;
-        };
         /**
          * Format: int32
          * @enum {integer}
@@ -1144,45 +1065,6 @@ export interface components {
          * @enum {integer}
          */
         ApiJobMasterLogSubjectType: 1 | 2 | 3 | 4 | 5 | 6 | 7;
-        ApiJobModel: {
-            clusterId?: string | null;
-            id?: string | null;
-            jobDefinitionId?: string | null;
-            triggerSourceType?: components["schemas"]["JobMasterTriggerSourceType"];
-            bucketId?: string | null;
-            agentConnectionId?: string | null;
-            agentWorkerId?: string | null;
-            hostId?: string | null;
-            hostDisplayName?: string | null;
-            priority?: components["schemas"]["JobMasterPriority"];
-            /** Format: date-time */
-            originalScheduledAt?: string;
-            /** Format: date-time */
-            scheduledAt?: string;
-            msgData?: {
-                [key: string]: unknown;
-            } | null;
-            metadata?: {
-                [key: string]: unknown;
-            } | null;
-            status?: components["schemas"]["JobMasterJobStatus"];
-            /** Format: int32 */
-            numberOfFailures?: number;
-            /** Format: date-span */
-            timeout?: string;
-            /** Format: int32 */
-            maxNumberOfRetries?: number;
-            /** Format: date-time */
-            createdAt?: string;
-            sourceId?: string | null;
-            /** Format: date-time */
-            processDeadline?: string | null;
-            /** Format: date-time */
-            processingStartedAt?: string | null;
-            /** Format: date-time */
-            succeedExecutedAt?: string | null;
-            workerLane?: string | null;
-        };
         /**
          * Format: int32
          * @enum {integer}
@@ -1192,12 +1074,7 @@ export interface components {
          * Format: int32
          * @enum {integer}
          */
-        ClusterMode: 1 | 2 | 3;
-        /**
-         * Format: int32
-         * @enum {integer}
-         */
-        JobMasterJobStatus: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+        JobMasterJobStatus: 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
         /**
          * Format: int32
          * @enum {integer}

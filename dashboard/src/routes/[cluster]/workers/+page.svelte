@@ -10,6 +10,7 @@
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { WorkerModeUtil, type WorkerMode } from "$lib/helper/worker-mode-util";
+	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -22,9 +23,6 @@
 		mode: WorkerMode;
 		lane: string;
 		hostName?: string;
-		cpu: number; // %
-		ram: number; // %
-		ramText: string; // e.g. "64% (3.2 GB)"
 		parallelism?: number;
 		lastHeartbeat?: string;
 	};
@@ -50,27 +48,19 @@
 	$: onlineCount = rows.filter((r) => r.status === "Online").length;
 	$: offlineCount = rows.filter((r) => r.status === "Offline").length;
 
-	$: avgCpu = Math.round(
-		rows.filter((r) => r.status === "Online").reduce((acc, r) => acc + r.cpu, 0) /
-		Math.max(1, rows.filter((r) => r.status === "Online").length)
-	);
-
-	$: avgMem = Math.round(
-		rows.filter((r) => r.status === "Online").reduce((acc, r) => acc + r.ram, 0) /
-		Math.max(1, rows.filter((r) => r.status === "Online").length)
-	);
 
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		modes: { defaultValue: [] as string[], ...Serializers.stringArray },
-		sortBy: { defaultValue: "Host" as "Host" | "CPU" | "Memory" },
+		sortBy: { defaultValue: "Host" as "Host" },
 		asc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 10, ...Serializers.number }
+		size: { defaultValue: 10, ...Serializers.number },
+		lastHeartbeat: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
-	let sortBy: "Host" | "CPU" | "Memory" = _initParams.sortBy;
+	let sortBy: "Host" = _initParams.sortBy;
 	let asc = _initParams.asc;
 
 	let pageIndex = _initParams.page;
@@ -88,7 +78,7 @@
 		asc = _initParams.asc;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 		selectedModes = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
-		filterValues = {};
+		filterValues = parseDatetimeParam(_initParams.lastHeartbeat, "lastHeartbeat");
 		refreshNow();
 	}
 
@@ -96,7 +86,7 @@
 	let selectedModes: string[] = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = {};
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.lastHeartbeat, "lastHeartbeat");
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
@@ -105,7 +95,8 @@
 			sortBy,
 			asc,
 			page: pageIndex,
-			size: pageSize
+			size: pageSize,
+			lastHeartbeat: datetimeToParam(filterValues, "lastHeartbeat")
 		});
 	}
 
@@ -115,26 +106,17 @@
 		const isAlive = w.isAlive === true;
 		const host = w.hostId ? hostsMap.get(w.hostId) : undefined;
 
-		const cpu = host?.cpuUsagePercent != null ? Math.round(host.cpuUsagePercent) : 0;
-		const memTotal = host?.memoryTotalBytes ?? 0;
-		const memUsed = host?.memoryUsedBytes ?? 0;
-		const memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : 0;
-		const memGb = memTotal > 0 ? (memUsed / 1024 ** 3).toFixed(1) : null;
-
 		const status: WorkerStatus = isAlive ? "Online" : "Offline";
 
 		return {
 			id: w.id ?? "",
-			name: w.displayName ?? w.id ?? "Unknown",
+			name: w.displayName ?? w.name ?? w.id ?? "Unknown",
 			status,
 			mode: WorkerModeUtil.getLabel(w.mode),
 			lane: w.workerLane ?? "—",
-			hostName: w.hostDisplayName ?? host?.displayName ?? "—",
-			cpu: isAlive ? cpu : 0,
-			ram: isAlive ? memPercent : 0,
-			ramText: isAlive && memGb != null ? `${memPercent}% (${memGb} GB)` : "—",
+			hostName: w.hostDisplayName ?? host?.displayName ?? "N/A",
 			parallelism: w.parallelismFactor ?? undefined,
-			lastHeartbeat: w.lastHeartbeatAt ?? undefined
+			lastHeartbeat: w.lastHeartbeat ?? w.lastHeartbeatAt ?? undefined
 		};
 	}
 
@@ -193,35 +175,20 @@
 		return "badge badge-outline badge-error rounded-full px-4 py-3";
 	};
 
-	const cpuBarClass = (s: WorkerStatus) => {
-		if (s === "Online") return "progress progress-success";
-		return "progress";
-	};
 
-	const memBarClass = (s: WorkerStatus) => {
-		if (s === "Online") return "progress progress-info";
-		return "progress";
-	};
+	$: heartbeatFilter = (filterValues.lastHeartbeat ?? {}) as DatetimeFilterValue;
 
 	$: filteredAll = rows
 		.filter((r) => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
 			if (selectedModes.length > 0 && !selectedModes.includes(r.mode)) return false;
-
-			const hb = (filterValues.lastHeartbeat ?? {}) as { from?: string; to?: string };
-			if (hb.from && r.lastHeartbeat && new Date(r.lastHeartbeat) < new Date(hb.from)) return false;
-			if (hb.to && r.lastHeartbeat && new Date(r.lastHeartbeat) > new Date(hb.to)) return false;
-
+			if (!passesDatetimeFilter(heartbeatFilter, r.lastHeartbeat)) return false;
 			return true;
 		})
 		.sort((a, b) => {
 			const dir = asc ? 1 : -1;
 			const cmpStr = (x: string, y: string) => x.localeCompare(y) * dir;
-			const cmpNum = (x: number, y: number) => (x - y) * dir;
-
-			if (sortBy === "Host") return cmpStr(a.name, b.name);
-			if (sortBy === "CPU") return cmpNum(a.cpu, b.cpu);
-			return cmpNum(a.ram, b.ram);
+			return cmpStr(a.name, b.name);
 		});
 
 	$: totalCount = filteredAll.length;
@@ -244,7 +211,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
 
@@ -271,7 +238,7 @@
 			</div>
 		</div>
 
-		<section class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-4">
+		<section class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 				<div class="card-body p-5">
 					<div class="flex items-center justify-between">
@@ -305,37 +272,6 @@
 				</div>
 			</div>
 
-			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-				<div class="card-body p-5">
-					<div class="flex items-center justify-between">
-						<div>
-							<div class="text-sm text-base-content/70">Avg. CPU Usage</div>
-							<div class="mt-1 text-4xl font-semibold">{avgCpu}%</div>
-						</div>
-						<div class="rounded-2xl bg-secondary/15 p-3 text-secondary">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M8 2h8v4H8z"/><path d="M6 6h12v16H6z"/><path d="M9 10h6M9 14h6M9 18h6"/>
-							</svg>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-				<div class="card-body p-5">
-					<div class="flex items-center justify-between">
-						<div>
-							<div class="text-sm text-base-content/70">Avg. Memory Usage</div>
-							<div class="mt-1 text-4xl font-semibold">{avgMem}%</div>
-						</div>
-						<div class="rounded-2xl bg-info/15 p-3 text-info">
-							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-								<path d="M7 7h10v10H7z"/><path d="M4 10h3M17 10h3M4 14h3M17 14h3M10 4v3M14 4v3M10 17v3M14 17v3"/>
-							</svg>
-						</div>
-					</div>
-				</div>
-			</div>
 		</section>
 
 		<div class="flex items-center justify-between gap-4 mt-6">
@@ -364,8 +300,8 @@
 
 				<FilterContainer
 					initialValues={filterValues}
-					on:change={(e) => {
-						filterValues = e.detail;
+					onChange={(v) => {
+						filterValues = v;
 						pageIndex = 0;
 					}}
 				>
@@ -397,17 +333,12 @@
 			<div class="card-body gap-4">
 				<div class="flex items-center justify-end gap-4">
 					<div class="join">
-						<select class="select select-bordered join-item" bind:value={sortBy} aria-label="Sort field">
-							<option value="Host">Sort: Host</option>
-							<option value="CPU">Sort: CPU</option>
-							<option value="Memory">Sort: Memory</option>
-						</select>
 						<button
 							class="btn btn-bordered join-item"
 							on:click={() => (asc = !asc)}
 							title="Toggle sort direction"
 						>
-							{asc ? "A→Z" : "Z→A"}
+							Sort: Host {asc ? "A→Z" : "Z→A"}
 						</button>
 					</div>
 				</div>
@@ -421,8 +352,6 @@
 							<th>Worker</th>
 							<th>Host</th>
 							<th>Lane</th>
-							<th>CPU Load</th>
-							<th>Memory Usage</th>
 							<th>Last Heartbeat</th>
 						</tr>
 						</thead>
@@ -443,31 +372,9 @@
 
 								<td class="text-base-content font-medium">{r.name}</td>
 
-								<td class="text-base-content/70">{r.hostName ?? "—"}</td>
+								<td class="text-base-content/70">{r.hostName ?? "N/A"}</td>
 
 								<td class="text-base-content/70">{r.lane}</td>
-
-								<td>
-									{#if r.status === "Online"}
-										<div class="flex items-center gap-4">
-											<progress class={cpuBarClass(r.status)} value={r.cpu} max="100" />
-											<span class="w-12 text-base-content/80">{r.cpu}%</span>
-										</div>
-									{:else}
-										<span class="text-base-content/40">—</span>
-									{/if}
-								</td>
-
-								<td>
-									{#if r.status === "Online"}
-										<div class="flex items-center gap-4">
-											<progress class={memBarClass(r.status)} value={r.ram} max="100" />
-											<span class="text-base-content/80">{r.ramText}</span>
-										</div>
-									{:else}
-										<span class="text-base-content/40">—</span>
-									{/if}
-								</td>
 
 								<td class="text-base-content/70">{r.lastHeartbeat ?? "—"}</td>
 							</tr>
@@ -475,7 +382,7 @@
 
 						{#if filtered.length === 0}
 							<tr>
-								<td colspan="9" class="py-10 text-base-content/60">No workers found.</td>
+								<td colspan="6" class="py-10 text-base-content/60">No workers found.</td>
 							</tr>
 						{/if}
 						</tbody>

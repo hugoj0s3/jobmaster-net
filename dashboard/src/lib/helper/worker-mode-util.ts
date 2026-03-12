@@ -20,7 +20,7 @@ export const WorkerModeUtil = {
 	getBadgeClass(mode: WorkerMode): string {
 		switch (mode) {
 			case "Execution": return "badge-success";
-			case "Full": return "badge-error";
+			case "Full": return "bg-base-300";
 			case "Draining": return "badge-warning";
 			default: return "badge-ghost";
 		}

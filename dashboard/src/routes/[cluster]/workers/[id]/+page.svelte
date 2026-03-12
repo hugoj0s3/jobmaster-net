@@ -21,7 +21,7 @@
 	const refreshIntervalSec = 10;
 
 	// --- derived ---
-	$: workerName = worker?.displayName ?? worker?.id ?? "Unknown";
+	$: workerName = worker?.displayName ?? worker?.name ?? worker?.id ?? "Unknown";
 	$: isAlive = worker?.isAlive === true;
 	$: workerStatus = isAlive ? "Online" : "Offline";
 
@@ -131,7 +131,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<!-- Top row (title + refresh meta) -->
 		<div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
 			<div class="space-y-2">
@@ -161,11 +161,11 @@
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="opacity-70">Host:</span>
-						<span class="font-medium">{worker?.hostDisplayName ?? '—'}</span>
+						<span class="font-medium">{worker?.hostDisplayName ?? 'N/A'}</span>
 					</div>
 					<div class="flex items-center gap-2">
 						<span class="opacity-70">Last heartbeat:</span>
-						<span class="font-medium">{safeToLocaleString(worker?.lastHeartbeatAt)}</span>
+						<span class="font-medium">{safeToLocaleString((worker?.lastHeartbeat ?? worker?.lastHeartbeatAt))}</span>
 					</div>
 				</div>
 			</div>
@@ -195,13 +195,13 @@
 									<span class="text-info">⏱</span>
 									<span>Heartbeat Time</span>
 								</div>
-								<span class="font-medium">{safeToLocaleString(worker?.lastHeartbeatAt)}</span>
+								<span class="font-medium">{safeToLocaleString((worker?.lastHeartbeat ?? worker?.lastHeartbeatAt))}</span>
 							</div>
 
 							<div class="flex items-center justify-between">
 								<div class="flex items-center gap-2 opacity-80">
 									<span class="text-info">↗</span>
-									<span>In-flight Jobs</span>
+									<span>Pendent Jobs</span>
 								</div>
 								<span class="font-medium">{worker?.inflightJobs ?? '—'}</span>
 							</div>
@@ -271,11 +271,7 @@
 							</div>
 							<div class="flex items-center justify-between">
 								<div class="opacity-80">Host</div>
-								<div class="font-medium">{worker?.hostDisplayName ?? '—'}</div>
-							</div>
-							<div class="flex items-center justify-between">
-								<div class="opacity-80">Host ID</div>
-								<div class="font-medium font-mono text-xs">{worker?.hostId ?? '—'}</div>
+								<div class="font-medium">{worker?.hostDisplayName ?? 'N/A'}</div>
 							</div>
 						</div>
 					</div>
@@ -307,7 +303,7 @@
 									<td class="font-mono text-xs">{b.id ?? '—'}</td>
 									<td>{priorityLabel(b.priority)}</td>
 									<td><span class={badgeForStatus(sLabel)}>{sLabel}</span></td>
-									<td>{b.hostDisplayName ?? '—'}</td>
+									<td>{b.hostDisplayName ?? 'N/A'}</td>
 								</tr>
 							{:else}
 								<tr><td colspan="4" class="text-center opacity-60">No buckets</td></tr>

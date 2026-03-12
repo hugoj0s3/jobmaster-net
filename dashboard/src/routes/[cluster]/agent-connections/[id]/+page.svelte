@@ -15,9 +15,7 @@
 		laneBadge: "healthy" | "warning" | "useful";
 		statusText: string;
 		statusBadge: "warning" | "neutral";
-		cpu: number;
-		mem: number;
-		heartbeat: string;
+		lastHeartbeat: string;
 		mode: string;
 	};
 
@@ -43,15 +41,11 @@
 	$: agentName = agentConn?.displayName ?? agentConn?.name ?? agentConn?.id ?? "Unknown";
 	$: clusterName = agentConn?.cluster ?? clusterId();
 
-	$: health = deriveHealth(agentConn);
+	$: liveliness = deriveIsAlive(agentConn);
 
-	function deriveHealth(conn: any): { label: string; tone: "success" | "warning" | "error" } {
-		const raw = String(conn?.health ?? conn?.status ?? conn?.state ?? "").toLowerCase();
-		if (raw === "error" || raw === "failed" || raw === "err") return { label: "Error", tone: "error" };
-		if (raw === "warning" || raw === "warn" || raw === "degraded") return { label: "Warning", tone: "warning" };
-		if (raw === "healthy" || raw === "active" || raw === "connected") return { label: "OK", tone: "success" };
-		if (!conn) return { label: "—", tone: "warning" };
-		return { label: "OK", tone: "success" };
+	function deriveIsAlive(conn: any): { label: string; tone: "success" | "error" } {
+		if (conn?.isAlive === true) return { label: "Ok", tone: "success" };
+		return { label: "", tone: "error" };
 	}
 
 	$: totalBuckets = apiBuckets.length;
@@ -100,18 +94,20 @@
 			laneBadge: mapWorkerLaneBadge(w?.status),
 			statusText: mapWorkerStatusLabel(w?.status),
 			statusBadge: (w?.status === 2 ? "warning" : "neutral") as WorkerRow["statusBadge"],
-			cpu: Number(w?.cpuUsagePercent ?? 0),
-			mem: Number(w?.memoryUsagePercent ?? 0),
-			heartbeat: w?.lastHeartbeatAt
-				? DateTimeUtil.formatAgeShort(Date.now() - new Date(w.lastHeartbeatAt).getTime()) + " ago"
-				: "—",
+			lastHeartbeat: (() => {
+				const rawHeartbeat = w?.lastHeartbeatAt ?? w?.lastHeartbeat;
+				if (!rawHeartbeat) return "—";
+				const d = new Date(rawHeartbeat);
+				if (Number.isNaN(d.getTime())) return "—";
+				return DateTimeUtil.formatDateTime(d);
+			})(),
 			mode: mapWorkerMode(w?.mode)
 		}));
 	}
 
 	$: connectionInfo = {
 		agentId: agentConn?.id ?? "—",
-		host: agentConn?.host ?? agentConn?.hostDisplayName ?? "—",
+		host: agentConn?.host ?? agentConn?.hostDisplayName ?? "N/A",
 		boundCluster: clusterName,
 		state: agentConn?.state ?? agentConn?.status ?? "—",
 		agentName
@@ -120,7 +116,7 @@
 	$: version = {
 		engine: agentConn?.repositoryTypeId ?? "—",
 		ver: agentConn?.version ?? "—",
-		host: agentConn?.host ?? "—",
+		host: agentConn?.host ?? "N/A",
 		port: agentConn?.port ?? "—",
 		database: agentConn?.database ?? "—"
 	};
@@ -207,10 +203,6 @@
 		if (kind === "warning") return "badge badge-warning badge-outline";
 		return "badge badge-ghost";
 	}
-
-	function barValue(n: number) {
-		return Math.max(0, Math.min(100, n));
-	}
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -262,18 +254,17 @@
 			</div>
 		{/if}
 
-		<!-- Summary cards -->
 		<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-12">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
 						<div class="text-sm opacity-70">Health</div>
-						<div class="badge badge-{health.tone} badge-outline">
-							{#if health.tone === 'success'}✓{:else if health.tone === 'warning'}⚠{:else}⛔{/if}
+						<div class="badge badge-{liveliness.tone} badge-outline">
+							{#if liveliness.tone === "success"}✓{:else}⛔{/if}
 						</div>
 					</div>
-					<div class="text-2xl font-semibold">{health.label}</div>
-					<div class="text-xs opacity-60">Agent connection health</div>
+					<div class="text-2xl font-semibold">{liveliness.label}</div>
+					<div class="text-xs opacity-60">Agent connection liveliness</div>
 				</div>
 			</div>
 
@@ -300,7 +291,11 @@
 						{activeBuckets} / {totalBuckets}
 						<span class="ml-2 text-sm font-normal opacity-70">{drainingBuckets} draining</span>
 					</div>
-					<progress class="progress progress-warning w-full" value={activeBuckets} max={totalBuckets || 1}></progress>
+					<progress
+						class="progress progress-warning w-full"
+						value={activeBuckets}
+						max={totalBuckets || 1}
+					></progress>
 				</div>
 			</div>
 
@@ -329,8 +324,7 @@
 			</div>
 		</div>
 
-		<!-- Connection info (side-by-side) -->
-		<div class="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
+		<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg h-full">
 				<div class="card-body py-4">
 					<div class="card-title text-base opacity-80">Connection Info</div>
@@ -365,52 +359,28 @@
 			</div>
 		</div>
 
-		<!-- Workers attached (compact preview cards, side-by-side) -->
 		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body">
 				<div class="flex items-center justify-between">
 					<div class="card-title">Workers Attached</div>
-					<a class="link link-primary text-sm">View all</a>
 				</div>
 
-				<div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+				<div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-3">
 					{#each workers.slice(0, 3) as w}
-						<div class="rounded-xl border border-base-300 p-4 bg-base-200">
+						<div class="rounded-xl border border-base-300 bg-base-200 p-4">
 							<div class="flex items-center justify-between gap-3">
-								<div class="font-medium truncate">{w.name}</div>
+								<div class="truncate font-medium">{w.name}</div>
 								<span class={badgeClass(w.laneBadge)}>{w.lane}</span>
 							</div>
 
-							<div class="mt-2 text-sm opacity-80 flex justify-between">
+							<div class="mt-2 flex justify-between text-sm opacity-80">
 								<span>Mode</span>
 								<span>{w.mode}</span>
 							</div>
 
-							<div class="mt-3 space-y-2">
-								<div class="flex items-center gap-2">
-									<span class="text-xs w-12 opacity-60">CPU</span>
-									<progress
-										class="progress progress-warning w-full"
-										value={barValue(w.cpu)}
-										max="100"
-									></progress>
-									<span class="text-xs w-10 text-right opacity-70">{w.cpu}%</span>
-								</div>
-
-								<div class="flex items-center gap-2">
-									<span class="text-xs w-12 opacity-60">MEM</span>
-									<progress
-										class="progress progress-warning w-full"
-										value={barValue(w.mem)}
-										max="100"
-									></progress>
-									<span class="text-xs w-10 text-right opacity-70">{w.mem}%</span>
-								</div>
-							</div>
-
 							<div class="mt-3 flex items-center justify-between text-xs opacity-60">
-								<span>Heartbeat</span>
-								<span>{w.heartbeat}</span>
+								<span>LastHeartbeat</span>
+								<span>{w.lastHeartbeat}</span>
 							</div>
 
 							<div class="mt-2">
@@ -426,7 +396,6 @@
 			</div>
 		</div>
 
-		<!-- Buckets -->
 		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body">
 				<div class="flex items-center justify-between">
@@ -442,10 +411,10 @@
 						{#each apiBuckets.slice(0, 5) as b}
 							<a
 								href="/{clusterId()}/buckets/{b.id}"
-								class="flex items-center justify-between rounded-xl bg-base-200 px-4 py-3 hover:bg-base-300 transition cursor-pointer"
+								class="flex cursor-pointer items-center justify-between rounded-xl bg-base-200 px-4 py-3 transition hover:bg-base-300"
 							>
 								<div class="flex items-center gap-3">
-									<span class="font-medium">{b.name ?? b.id ?? '—'}</span>
+									<span class="font-medium">{b.name ?? b.id ?? "—"}</span>
 									{#if b.workerLane}
 										<span class="badge badge-ghost badge-sm">{b.workerLane}</span>
 									{/if}
@@ -468,6 +437,7 @@
 							</a>
 						{/each}
 					</div>
+
 					{#if apiBuckets.length > 5}
 						<div class="mt-3 text-sm opacity-60">+ {apiBuckets.length - 5} more buckets</div>
 					{/if}

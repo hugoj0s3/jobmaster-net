@@ -5,7 +5,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { HostStatusUtil, type HostStatusLabel } from "$lib/helper/host-status-utils";
-	import AreaChart from "$lib/components/AreaChart.svelte";
+
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -19,7 +19,7 @@
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
 
-	$: hostName = host?.displayName ?? host?.id ?? "Unknown";
+	$: hostName = host?.hostDisplayName ?? host?.displayName ?? host?.id ?? "Unknown";
 
 	$: hostStatus = deriveStatus(host);
 
@@ -48,34 +48,9 @@
 		};
 	}
 
-	$: cpuPercent = host?.cpuUsagePercent != null ? Math.round(host.cpuUsagePercent) : null;
-
 	$: memTotal = host?.memoryTotalBytes ?? 0;
-	$: memUsed = host?.memoryUsedBytes ?? 0;
-	$: memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : null;
-	$: memGbUsed = memTotal > 0 ? (memUsed / 1024 ** 3).toFixed(1) : null;
 	$: memGbTotal = memTotal > 0 ? (memTotal / 1024 ** 3).toFixed(1) : null;
 
-	$: kpis = [
-		{
-			title: "CPU Load",
-			value: cpuPercent != null ? `${cpuPercent}%` : "N/A",
-			sub: host?.threadCount != null ? `${host.threadCount} threads` : "",
-			class: "bg-base-200/60 border-base-300"
-		},
-		{
-			title: "Memory Usage",
-			value: memPercent != null ? `${memPercent}%` : "N/A",
-			sub: memGbUsed != null ? `${memGbUsed} GB / ${memGbTotal} GB` : "",
-			class: "bg-base-200/60 border-base-300"
-		},
-		{
-			title: "Threads / Handles",
-			value: host?.threadCount != null ? `${host.threadCount}` : "N/A",
-			sub: host?.handleCount != null ? `${host.handleCount} handles` : "",
-			class: "bg-base-200/60 border-base-300"
-		}
-	];
 
 	$: lastUpdated = lastUpdatedAt.toLocaleString("en-US", {
 		month: "numeric",
@@ -87,34 +62,6 @@
 		hour12: true
 	});
 
-	type MetricPoint = { time: number; value: number };
-
-	let cpuHistory: MetricPoint[] = [];
-	let memHistory: MetricPoint[] = [];
-
-	const MAX_HISTORY_POINTS = 8640;
-
-	const rangeSec: Record<string, number> = {
-		"1m": 60,
-		"15m": 15 * 60,
-		"1h": 60 * 60,
-		"8h": 8 * 60 * 60,
-		"24h": 24 * 60 * 60
-	};
-
-	function pushMetric(arr: MetricPoint[], value: number | null | undefined): MetricPoint[] {
-		if (value == null) return arr;
-		const next = [...arr, { time: Date.now(), value }];
-		return next.length > MAX_HISTORY_POINTS ? next.slice(next.length - MAX_HISTORY_POINTS) : next;
-	}
-
-	function filterByRange(arr: MetricPoint[], range: string): MetricPoint[] {
-		const cutoff = Date.now() - (rangeSec[range] ?? 3600) * 1000;
-		return arr.filter((p) => p.time >= cutoff);
-	}
-
-	$: cpuChartData = filterByRange(cpuHistory, selectedRange);
-	$: memChartData = filterByRange(memHistory, selectedRange);
 
 	async function refreshNow() {
 		isRefreshing = true;
@@ -136,14 +83,7 @@
 
 			host = (hostResponse.data ?? null) as ApiHostModel | null;
 
-			if (host) {
-				cpuHistory = pushMetric(cpuHistory, host.cpuUsagePercent);
-				const mt = host.memoryTotalBytes ?? 0;
-				const mu = host.memoryUsedBytes ?? 0;
-				const mp = mt > 0 ? (mu / mt) * 100 : undefined;
-				memHistory = pushMetric(memHistory, mp);
-			}
-
+	
 			try {
 				const workersResponse = await jmApi.GET("/{clusterId}/workers", {
 					params: { path: { clusterId: cid } }
@@ -169,9 +109,6 @@
 		}, refreshIntervalSec * 1000);
 	}
 
-	let tab: "metrics" | "workers" = "metrics";
-	const ranges = ["1m", "15m", "1h", "8h", "24h"];
-	let selectedRange = "1h";
 
 	onMount(() => {
 		refreshNow();
@@ -184,14 +121,14 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex flex-col gap-4">
 			<div class="flex items-start justify-between gap-4">
 				<div class="space-y-2">
 					<div class="text-sm breadcrumbs">
 						<ul>
 							<li><a href="/{clusterId()}/hosts" class="link link-hover">Hosts</a></li>
-							<li>{hostName}</li>
+							<li>{host?.id ?? ''}</li>
 						</ul>
 					</div>
 
@@ -222,7 +159,7 @@
 			</div>
 
 			<!-- KPI cards row -->
-			<div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+			<div class="grid grid-cols-1 gap-4">
 				<!-- Status card -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body gap-3">
@@ -245,135 +182,18 @@
 						<div class="text-sm text-base-content/60">Host ID: {host?.id ?? '—'}</div>
 					</div>
 				</div>
-
-				{#each kpis as k}
-					<div class={"card border border-base-300/60 shadow-lg " + k.class}>
-						<div class="card-body gap-3">
-							<div class="flex items-center justify-between">
-								<div class="text-sm font-semibold text-base-content/80">{k.title}</div>
-								<div class="opacity-70">
-									<!-- simple icon -->
-									<svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-										<path
-											d="M4 7h16M4 12h16M4 17h16"
-											stroke="currentColor"
-											stroke-width="1.5"
-											stroke-linecap="round"
-										/>
-									</svg>
-								</div>
-							</div>
-
-							<div class="text-3xl font-semibold">{k.value}</div>
-							<div class="text-sm text-base-content/60">{k.sub}</div>
-						</div>
-					</div>
-				{/each}
 			</div>
 
-			<!-- Tabs -->
-			<div class="pt-2">
-				<div role="tablist" class="tabs tabs-bordered">
-					<button
-						role="tab"
-						class={"tab " + (tab === "metrics" ? "tab-active" : "")}
-						on:click={() => (tab = "metrics")}
-					>
-						Metrics
-					</button>
-					<button
-						role="tab"
-						class={"tab " + (tab === "workers" ? "tab-active" : "")}
-						on:click={() => (tab = "workers")}
-					>
-						Workers Assigned
-					</button>
-				</div>
-			</div>
 		</div>
 
 		<!-- Content -->
-		{#if tab === "metrics"}
 			<div class="mt-6 space-y-6">
-				<!-- Charts row -->
-				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-						<div class="card-body">
-							<div class="flex items-center justify-between">
-								<h2 class="card-title text-base">CPU Usage</h2>
-
-								<div class="join">
-									{#each ranges as r}
-										<button
-											class={"btn btn-xs join-item " + (selectedRange === r ? "btn-active" : "btn-ghost")}
-											on:click={() => (selectedRange = r)}
-										>
-											{r}
-										</button>
-									{/each}
-								</div>
-							</div>
-
-							<div class="mt-4 rounded-xl border border-base-300 bg-base-100/40 p-2">
-								<AreaChart
-									data={cpuChartData}
-									maxValue={100}
-									color="#36d399"
-									label="CPU"
-									unit="%"
-								/>
-							</div>
-
-							<div class="mt-2 flex flex-wrap gap-4 text-sm text-base-content/60">
-								<span class="inline-flex items-center gap-2">
-									<span class="h-2 w-2 rounded-full bg-success"></span> CPU %
-								</span>
-							</div>
-						</div>
-					</div>
-
-					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-						<div class="card-body">
-							<div class="flex items-center justify-between">
-								<h2 class="card-title text-base">Memory Usage</h2>
-
-								<div class="join">
-									{#each ranges as r}
-										<button
-											class={"btn btn-xs join-item " + (selectedRange === r ? "btn-active" : "btn-ghost")}
-											on:click={() => (selectedRange = r)}
-										>
-											{r}
-										</button>
-									{/each}
-								</div>
-							</div>
-
-							<div class="mt-4 rounded-xl border border-base-300 bg-base-100/40 p-2">
-								<AreaChart
-									data={memChartData}
-									maxValue={100}
-									color="#3abff8"
-									label="Memory"
-									unit="%"
-								/>
-							</div>
-
-							<div class="mt-2 flex flex-wrap gap-4 text-sm text-base-content/60">
-								<span class="inline-flex items-center gap-2">
-									<span class="h-2 w-2 rounded-full bg-info"></span> Memory %
-								</span>
-							</div>
-						</div>
-					</div>
-				</div>
 
 				<!-- Workers table -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
 						<div class="flex items-center justify-between gap-3">
 							<h2 class="card-title text-base">Workers Assigned</h2>
-							<button class="btn btn-link btn-sm">View all Workers →</button>
 						</div>
 
 						<div class="overflow-x-auto">
@@ -422,65 +242,6 @@
 					</div>
 				</div>
 			</div>
-		{:else}
-			<!-- Workers tab (simple view) -->
-			<div class="mt-6">
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-					<div class="card-body">
-						<div class="flex items-center justify-between gap-3">
-							<h2 class="card-title text-base">Workers Assigned</h2>
-							<div class="join">
-								{#each ranges as r}
-									<button
-										class={"btn btn-xs join-item " + (selectedRange === r ? "btn-active" : "btn-ghost")}
-										on:click={() => (selectedRange = r)}
-									>
-										{r}
-									</button>
-								{/each}
-							</div>
-						</div>
-
-						<div class="overflow-x-auto">
-							<table class="table">
-								<thead>
-								<tr class="text-base-content/70">
-									<th>Worker</th>
-									<th>ID</th>
-									<th>Last Heartbeat</th>
-									<th>Parallelism Factor</th>
-									<th>Lane</th>
-									<th class="text-right">Status</th>
-								</tr>
-								</thead>
-								<tbody>
-								{#each workers as w}
-									<tr class="hover">
-										<td class="font-medium">{w.displayName ?? w.id ?? '—'}</td>
-										<td class="font-mono text-sm opacity-80">{w.id ?? '—'}</td>
-										<td class="opacity-80">{w.lastHeartbeatAt ?? '—'}</td>
-										<td class="opacity-80">{w.parallelismFactor ?? '—'}</td>
-										<td class="opacity-80">{w.workerLane ?? '—'}</td>
-										<td class="text-right">
-											<span class="badge {w.isAlive ? 'badge-success' : 'badge-error'} badge-outline">{w.isAlive ? 'Online' : 'Offline'}</span>
-										</td>
-									</tr>
-								{:else}
-									<tr>
-										<td colspan="6" class="text-center opacity-60 py-6">No workers assigned to this host.</td>
-									</tr>
-								{/each}
-								</tbody>
-							</table>
-						</div>
-
-						<div class="mt-2 flex justify-end text-sm text-base-content/60">
-							{workers.length} worker{workers.length !== 1 ? 's' : ''} assigned
-						</div>
-					</div>
-				</div>
-			</div>
-		{/if}
 	</div>
 </div>
 

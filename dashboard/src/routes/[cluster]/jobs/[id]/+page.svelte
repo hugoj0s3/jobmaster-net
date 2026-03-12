@@ -12,7 +12,19 @@
 	const clusterId = () => $page.params.cluster;
 	const jobId = () => $page.params.id;
 
+	type LogEntry = {
+		id?: string;
+		timestamp?: string;
+		level?: number;
+		message?: string;
+		subjectType?: number;
+		subjectId?: string;
+		exceptionMessage?: string;
+		exceptionStackTrace?: string;
+	};
+
 	let job: ApiJobModel | null = null;
+	let recentLogs: LogEntry[] = [];
 	let isLoading = true;
 	let refreshError: string | null = null;
 	let lastUpdatedAt = new Date();
@@ -107,6 +119,24 @@
 			}
 
 			job = (response.data ?? null) as ApiJobModel | null;
+
+			try {
+				const logsResp = await jm.GET("/{clusterId}/logs", {
+					params: {
+						path: { clusterId: cid },
+						query: { SubjectId: jid, CountLimit: 20 }
+					}
+				});
+				if (!logsResp.error) {
+					const allLogs = (logsResp.data ?? []) as LogEntry[];
+					recentLogs = allLogs.filter((l) => l.level != null && l.level >= 3);
+				} else {
+					recentLogs = [];
+				}
+			} catch {
+				recentLogs = [];
+			}
+
 			lastUpdatedAt = new Date();
 		} catch (e) {
 			console.error("Failed to fetch job:", e);
@@ -134,7 +164,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		{#if isLoading && !job}
 			<div class="flex items-center justify-center py-20">
 				<span class="loading loading-spinner loading-lg"></span>
@@ -257,7 +287,7 @@
 							<div class="text-sm opacity-60">No message data.</div>
 						{:else}
 							<div class="overflow-x-auto">
-								<table class="table table-sm table-zebra">
+								<table class="table table-zebra">
 									<thead>
 									<tr class="text-base-content/70">
 										<th>Key</th>
@@ -332,7 +362,7 @@
 								<span class="opacity-70">Host</span>
 								<span class="font-medium">
 									{#if job.hostId}
-										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? job.hostId}</a>
+										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? "—"}</a>
 									{:else}
 										{job.hostDisplayName ?? "—"}
 									{/if}
@@ -381,35 +411,76 @@
 					</div>
 				</div>
 
+				<!-- Recent Failure Logs -->
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
+					<div class="card-body">
+						<h2 class="card-title text-base">Recent Failure Logs</h2>
+						<div class="divider my-2"></div>
+						{#if recentLogs.length === 0}
+							<div class="text-sm opacity-60">No recent failure or error logs.</div>
+						{:else}
+							<div class="overflow-x-auto max-h-80 overflow-y-auto">
+								<table class="table table-zebra">
+									<thead class="sticky top-0 bg-base-200 z-10">
+									<tr class="text-base-content/70">
+										<th>Level</th>
+										<th>Timestamp</th>
+										<th>Message</th>
+									</tr>
+									</thead>
+									<tbody>
+									{#each recentLogs as log (log.id ?? log.timestamp ?? Math.random())}
+										<tr>
+											<td>
+												<span class={"badge badge-sm " + (log.level === 4 ? "badge-error" : log.level === 3 ? "badge-warning" : "badge-ghost")}>
+													{log.level === 4 ? "Error" : log.level === 3 ? "Warning" : "Level " + (log.level ?? "?")}
+												</span>
+											</td>
+											<td class="font-medium whitespace-nowrap">{formatDateTime(log.timestamp)}</td>
+											<td class="font-mono text-xs break-all">
+												{log.message ?? "—"}
+												{#if log.exceptionMessage}
+													<div class="mt-1 text-error/80">{log.exceptionMessage}</div>
+												{/if}
+											</td>
+										</tr>
+									{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
+					</div>
+				</div>
 				<!-- Execution -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
 						<h2 class="card-title text-base">Execution</h2>
 						<div class="divider my-2"></div>
-						<div class="space-y-3 text-sm">
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Processing Started</span>
-								<span class="font-medium">{formatDateTime(job.processingStartedAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Succeeded / Executed At</span>
-								<span class="font-medium">{formatDateTime(job.succeedExecutedAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Process Deadline</span>
-								<span class="font-medium">{formatDateTime(job.processDeadline)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Run Duration</span>
-								<span class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Timeout</span>
-								<span class="font-mono font-medium">{job.timeout ?? "—"}</span>
-							</div>
+						<div class="overflow-x-auto">
+							<table class="table table-zebra">
+								<thead>
+								<tr class="text-base-content/70">
+									<th>Processing Started</th>
+									<th>Succeeded / Executed At</th>
+									<th>Process Deadline</th>
+									<th>Run Duration</th>
+									<th>Timeout</th>
+								</tr>
+								</thead>
+								<tbody>
+								<tr>
+									<td class="font-medium">{formatDateTime(job.processingStartedAt)}</td>
+									<td class="font-medium">{formatDateTime(job.succeedExecutedAt)}</td>
+									<td class="font-medium">{formatDateTime(job.processDeadline)}</td>
+									<td class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</td>
+									<td class="font-mono font-medium">{job.timeout ?? "—"}</td>
+								</tr>
+								</tbody>
+							</table>
 						</div>
 					</div>
 				</div>
+
 			</div>
 		{/if}
 	</div>

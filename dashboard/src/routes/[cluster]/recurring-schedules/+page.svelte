@@ -13,6 +13,7 @@
 	import { RecurrenceExpressionUtil } from '$lib/helper/recurrence-expression-util';
 	import { goto } from '$app/navigation';
 	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
+	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
 
 	type RecurringScheduleStatus = components["schemas"]["RecurringScheduleStatus"];
 	type RecurringScheduleType = components["schemas"]["RecurringScheduleType"];
@@ -40,7 +41,8 @@
 
 	const urlParamDefs = {
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 12, ...Serializers.number }
+		size: { defaultValue: 12, ...Serializers.number },
+		createdAt: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
@@ -54,7 +56,7 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = [];
-		filterValues = {};
+		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
 
@@ -68,19 +70,13 @@
 	let selectedStatuses: string[] = [];
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = {};
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
+
+	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
 
 	$: filtered = rows.filter((r) => {
 		if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.scheduleStatus)) return false;
-
-		const created = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
-		if (created.from || created.to) {
-			if (!r.createdAtRaw) return false;
-			const t = new Date(r.createdAtRaw).getTime();
-			if (created.from && t < new Date(created.from).getTime()) return false;
-			if (created.to && t > new Date(created.to).getTime()) return false;
-		}
-
+		if (!passesDatetimeFilter(createdAtFilter, r.createdAtRaw)) return false;
 		return true;
 	});
 
@@ -90,7 +86,8 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			page: pageIndex,
-			size: pageSize
+			size: pageSize,
+			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
@@ -286,7 +283,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 			<div>
 				<h1 class="text-3xl font-semibold tracking-tight">Recurring Schedules</h1>
@@ -335,8 +332,8 @@
 
 				<FilterContainer
 					initialValues={filterValues}
-					on:change={(e) => {
-						filterValues = e.detail;
+					onChange={(v) => {
+						filterValues = v;
 						pageIndex = 0;
 					}}
 				>

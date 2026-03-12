@@ -4,6 +4,7 @@
     import { FILTERS_CTX_KEY, type FilterValue, type FilterValues, type FiltersContext } from "$lib/components/filters/context";
 
     export let initialValues: FilterValues = {};
+    export let onChange: ((values: FilterValues) => void) | undefined = undefined;
 
     const dispatch = createEventDispatcher<{ change: FilterValues }>();
 
@@ -37,12 +38,14 @@
         draftValues.set({});
         appliedValues.set({});
         dispatch("change", {});
+        onChange?.({});
     }
 
     function apply() {
         const next = get(draftValues);
         appliedValues.set(next);
         dispatch("change", next);
+        onChange?.(next);
     }
 
     const appliedActiveCount = derived(appliedValues, ($values) => {
@@ -66,11 +69,7 @@
 <div class="flex flex-wrap items-center gap-2">
     <slot />
 
-    {#if $isDirty}
-        <button class="btn btn-primary btn-sm" on:click={apply}>Apply</button>
-    {:else}
-        <button class="btn btn-primary btn-sm" on:click={apply} disabled>Apply</button>
-    {/if}
+    <button class="btn btn-primary btn-sm" on:click={apply} disabled={!$isDirty}>Apply</button>
 
     {#if $appliedActiveCount > 0}
         <button class="btn btn-ghost btn-sm" on:click={clearAll}>Clear</button>

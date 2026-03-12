@@ -6,8 +6,14 @@
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
+	import {
+		parseDatetimeParam,
+		datetimeToParam,
+		passesDatetimeFilter,
+		type DatetimeFilterValue
+	} from "$lib/helper/datetime-filter-url";
 
-	type Health = "OK" | "Warning" | "Error";
+	type Health = "OK" | "Offline";
 
 	type AgentConnRow = {
 		id: string;
@@ -19,7 +25,7 @@
 		workers: number;
 		bucketsUsed: number;
 		bucketsTotal: number;
-		draining?: number; // ex: "1 draining"
+		draining?: number;
 		selected?: boolean;
 		createdAt?: string;
 	};
@@ -34,7 +40,8 @@
 		sortBy: { defaultValue: "name" as SortCol },
 		sortAsc: { defaultValue: true, ...Serializers.boolean },
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 10, ...Serializers.number }
+		size: { defaultValue: 10, ...Serializers.number },
+		createdAt: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
@@ -54,7 +61,7 @@
 		sortBy = _initParams.sortBy;
 		sortAsc = _initParams.sortAsc;
 		selectedHealths = [];
-		filterValues = {};
+		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 	}
 
 	function syncToUrl() {
@@ -62,14 +69,15 @@
 			sortBy,
 			sortAsc,
 			page: pageIndex,
-			size: pageSize
+			size: pageSize,
+			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
 	let selectedHealths: string[] = [];
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = {};
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 
 	$: filterValues, sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
 
@@ -90,18 +98,14 @@
 
 	let rows: AgentConnRow[] = [];
 
-	function mapHealth(x: any): Health {
-		const v = String(x ?? "").toLowerCase();
-		if (v === "ok" || v === "healthy") return "OK";
-		if (v === "warning" || v === "warn") return "Warning";
-		if (v === "error" || v === "err" || v === "failed") return "Error";
-		return "OK";
+	function mapHealth(isAlive: any): Health {
+		return isAlive === true ? "OK" : "Offline";
 	}
 
 	function mapConnToRow(c: any): AgentConnRow {
 		const id = String(c?.id ?? c?.agentConnectionId ?? c?.name ?? "");
 		const name = String(c?.displayName ?? c?.name ?? id ?? "Unknown");
-		const health = mapHealth(c?.health ?? c?.status ?? c?.state);
+		const health = mapHealth(c?.isAlive);
 
 		const bucketsUsed = Number(c?.bucketsUsed ?? c?.bucketUsed ?? c?.bucketCountUsed ?? 0);
 		const bucketsTotal = Number(c?.bucketsTotal ?? c?.bucketTotal ?? c?.bucketCountTotal ?? 0);
@@ -127,25 +131,24 @@
 
 	const healthBadge = (h: Health) => {
 		if (h === "OK") return "badge badge-success gap-2";
-		if (h === "Warning") return "badge badge-warning gap-2";
 		return "badge badge-error gap-2";
 	};
 
 	const healthIcon = (h: Health) => {
 		if (h === "OK") return "✅";
-		if (h === "Warning") return "⚠️";
 		return "⛔";
 	};
 
-	const healthOrder: Record<Health, number> = { "OK": 0, "Warning": 1, "Error": 2 };
+	const healthOrder: Record<Health, number> = {
+		OK: 0,
+		Offline: 1
+	};
+
+	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
 
 	$: filteredRows = rows.filter((r) => {
 		if (selectedHealths.length > 0 && !selectedHealths.includes(r.health)) return false;
-
-		const dt = (filterValues.createdAt ?? {}) as { from?: string; to?: string };
-		if (dt.from && r.createdAt && new Date(r.createdAt) < new Date(dt.from)) return false;
-		if (dt.to && r.createdAt && new Date(r.createdAt) > new Date(dt.to)) return false;
-
+		if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
 		return true;
 	});
 
@@ -171,11 +174,10 @@
 	$: totalCount = list.length;
 	$: view = list.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = view.length;
-
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="mx-auto max-w-6xl px-6 py-6">
+	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
 		</div>
@@ -188,37 +190,38 @@
 
 		<div class="flex items-center justify-between gap-4 mt-6">
 			{#key filterKey}
-			<div class="flex flex-wrap items-center gap-2">
-				<FilterDropdownMulti
-					label="Health"
-					options={[
-						{ value: "OK", label: "OK" },
-						{ value: "Warning", label: "Warning" },
-						{ value: "Error", label: "Error" }
-					]}
-					bind:values={selectedHealths}
-					on:change={() => { pageIndex = 0; }}
-				/>
-
-				<FilterContainer
-					initialValues={filterValues}
-					on:change={(e) => {
-						filterValues = e.detail;
-						pageIndex = 0;
-					}}
-				>
-					<FilterItem
-						id="createdAt"
-						label="Created at"
-						type="datetime"
-						presets={[
-							{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
-							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" },
-							{ type: "NEXT_HOURS", hours: 24, label: "Next 24 hours" }
+				<div class="flex flex-wrap items-center gap-2">
+					<FilterDropdownMulti
+						label="Health"
+						options={[
+							{ value: "Ok", label: "Ok" },
+							{ value: "Offline", label: "Offline" }
 						]}
+						bind:values={selectedHealths}
+						on:change={() => {
+							pageIndex = 0;
+						}}
 					/>
-				</FilterContainer>
-			</div>
+
+					<FilterContainer
+						initialValues={filterValues}
+						onChange={(v) => {
+							filterValues = v;
+							pageIndex = 0;
+						}}
+					>
+						<FilterItem
+							id="createdAt"
+							label="Created at"
+							type="datetime"
+							presets={[
+								{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+								{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+								{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
+							]}
+						/>
+					</FilterContainer>
+				</div>
 			{/key}
 
 			<Pager
@@ -274,7 +277,6 @@
 							class="hover cursor-pointer transition"
 							on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}
 						>
-
 							<td>
 								<div class="flex flex-col">
 									<div class="font-semibold text-lg leading-tight">{r.name}</div>
@@ -290,10 +292,10 @@
 							</td>
 
 							<td>
-                  <span class={healthBadge(r.health)}>
-                    <span aria-hidden="true">{healthIcon(r.health)}</span>
+									<span class={healthBadge(r.health)}>
+										<span aria-hidden="true">{healthIcon(r.health)}</span>
 										{r.health}
-                  </span>
+									</span>
 							</td>
 
 							<td class="text-right font-semibold">{r.workers}</td>
@@ -327,7 +329,6 @@
 					</tbody>
 				</table>
 			</div>
-
 		</div>
 	</div>
 </div>

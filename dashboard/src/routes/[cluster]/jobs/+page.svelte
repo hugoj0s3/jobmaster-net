@@ -14,6 +14,7 @@
 		import { resolve } from '$app/paths';
 		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
+		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
 
     const refreshIntervalSec = 20;
 
@@ -27,8 +28,7 @@
 
     const urlParamDefs = {
         statuses: { defaultValue: [] as number[], ...Serializers.numberArray },
-        scheduledFrom: { defaultValue: "" },
-        scheduledTo: { defaultValue: "" },
+        scheduledAt: { defaultValue: "" as string },
         bucketId: { defaultValue: "" },
         page: { defaultValue: 0, ...Serializers.number },
         size: { defaultValue: 12, ...Serializers.number }
@@ -49,13 +49,7 @@
         pageIndex = _initParams.page;
         selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
         selectedBucketId = _initParams.bucketId;
-        const sFrom = _initParams.scheduledFrom;
-        const sTo = _initParams.scheduledTo;
-        if (sFrom || sTo) {
-            filterValues = { scheduledAt: { ...(sFrom ? { from: sFrom } : {}), ...(sTo ? { to: sTo } : {}) } };
-        } else {
-            filterValues = {};
-        }
+        filterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
         refreshNow();
     }
 
@@ -155,23 +149,12 @@
     let bucketNameMap: Record<string, string> = {};
 
     type FilterValues = Record<string, unknown>;
-    let filterValues: FilterValues = (() => {
-        const f: FilterValues = {};
-        if (_initParams.scheduledFrom || _initParams.scheduledTo) {
-            f.scheduledAt = {
-                ...(_initParams.scheduledFrom ? { from: _initParams.scheduledFrom } : {}),
-                ...(_initParams.scheduledTo ? { to: _initParams.scheduledTo } : {})
-            };
-        }
-        return f;
-    })();
+    let filterValues: FilterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
 
     function syncToUrl() {
-        const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
         writeUrlParams(urlParamDefs, {
             statuses: selectedStatuses,
-            scheduledFrom: scheduledAt.from ?? "",
-            scheduledTo: scheduledAt.to ?? "",
+            scheduledAt: datetimeToParam(filterValues, "scheduledAt"),
             bucketId: selectedBucketId,
             page: pageIndex,
             size: pageSize
@@ -181,12 +164,13 @@
     $: filterValues, selectedStatuses, selectedBucketId, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
-        const scheduledAt = (filterValues.scheduledAt ?? {}) as { from?: string; to?: string };
+        const hb = (filterValues.scheduledAt ?? {}) as DatetimeFilterValue;
+        const range = computeDateRange(hb);
 
         return {
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
-            ScheduledFrom: scheduledAt.from,
-            ScheduledTo: scheduledAt.to,
+            ScheduledFrom: range.from?.toISOString(),
+            ScheduledTo: range.to?.toISOString(),
             BucketId: selectedBucketId || undefined
         } as const;
     }
@@ -370,7 +354,7 @@
 </script>
 
 <div class="min-h-screen bg-base-100">
-    <div class="mx-auto max-w-6xl px-6 py-6">
+    <div class="mx-auto max-w-full px-6 py-6">
         <div class="flex items-center justify-between gap-4">
             <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
 
@@ -434,8 +418,8 @@
 
                 <FilterContainer
                     initialValues={filterValues}
-                    on:change={(e) => {
-                        filterValues = e.detail;
+                    onChange={(v) => {
+                        filterValues = v;
                         pageIndex = 0;
                         refreshNow();
                     }}
