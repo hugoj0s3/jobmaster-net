@@ -226,7 +226,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         return count;
     }
 
-    public const string AnyWorkerLaneKeyword = "[Any]";
     private BucketModel? SelectBucketForJob(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
         var availableBuckets = GetBucketsAvailableFromCache(allowedDiscrepancy);
@@ -265,8 +264,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     {
         return availableBuckets
             .Where(b => !jobPriority.HasValue || b.Priority == jobPriority)
-            .Where(b => string.Equals(workerLane, AnyWorkerLaneKeyword, StringComparison.InvariantCultureIgnoreCase) || 
-                        string.Equals(b.WorkerLane ?? string.Empty, workerLane ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+            .Where(b => string.Equals(b.WorkerLane ?? string.Empty, workerLane ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             .Where(b => ClusterConnConfig.TryGetAgentConnectionConfig(b.AgentConnectionId.IdValue) != null)
             .OrderByDescending(x => x.CreatedAt)
             .ToList();

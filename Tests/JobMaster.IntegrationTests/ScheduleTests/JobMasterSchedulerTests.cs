@@ -907,8 +907,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             if (nonFinalStatusJobs.Any())
             {
                 var now = DateTime.UtcNow;
-                var futureJobs = nonFinalStatusJobs.Where(j => j.ScheduledAt > now).ToList();
-                var pastJobs = nonFinalStatusJobs.Where(j => j.ScheduledAt <= now).ToList();
+                var futureJobs = nonFinalStatusJobs.Where(j => j.NextPlanExecutionAt > now).ToList();
+                var pastJobs = nonFinalStatusJobs.Where(j => j.NextPlanExecutionAt <= now).ToList();
                 
                 output.WriteLine($"  Non-final jobs scheduled in future: {futureJobs.Count}");
                 output.WriteLine($"  Non-final jobs scheduled in past: {pastJobs.Count}");
@@ -930,8 +930,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     output.WriteLine($"  Sample of non-Queued past jobs (first 5):");
                     foreach (var job in nonQueuedPastJobs.Take(5))
                     {
-                        var timeDiff = now - job.ScheduledAt;
-                        output.WriteLine($"    Job {job.Id}: Status={job.Status}, ScheduledAt={job.ScheduledAt:HH:mm:ss}, Age={timeDiff.TotalMinutes:F1}min");
+                        var timeDiff = now - job.NextPlanExecutionAt;
+                        output.WriteLine($"    Job {job.Id}: Status={job.Status}, NextPlanExecutionAt={job.NextPlanExecutionAt:HH:mm:ss}, Age={timeDiff.TotalMinutes:F1}min");
                     }
                 }
                 
@@ -959,15 +959,15 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             Assert.Equal(0, executionCount.TotalDuplicates);
             output.WriteLine($"✓ No duplicate executions");
             
-            // ASSERTION 6: Validate job frequency (ScheduledAt intervals)
+            // ASSERTION 6: Validate job frequency (NextPlanExecutionAt intervals)
             if (succeededJobs.Count >= 2)
             {
-                var sortedJobs = succeededJobs.OrderBy(j => j.ScheduledAt).ToList();
+                var sortedJobs = succeededJobs.OrderBy(j => j.NextPlanExecutionAt).ToList();
                 var intervals = new List<TimeSpan>();
                 
                 for (int i = 1; i < sortedJobs.Count; i++)
                 {
-                    var interval = sortedJobs[i].ScheduledAt - sortedJobs[i - 1].ScheduledAt;
+                    var interval = sortedJobs[i].NextPlanExecutionAt - sortedJobs[i - 1].NextPlanExecutionAt;
                     intervals.Add(interval);
                 }
                 
@@ -992,7 +992,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 output.WriteLine("First 10 intervals:");
                 for (int i = 0; i < Math.Min(10, intervals.Count); i++)
                 {
-                    output.WriteLine($"  Interval {i + 1}: {intervals[i].TotalSeconds:F2}s (ScheduledAt: {sortedJobs[i + 1].ScheduledAt:HH:mm:ss.fff})");
+                    output.WriteLine($"  Interval {i + 1}: {intervals[i].TotalSeconds:F2}s (NextPlanExecutionAt: {sortedJobs[i + 1].NextPlanExecutionAt:HH:mm:ss.fff})");
                 }
             }
             else

@@ -26,11 +26,9 @@ internal class GenericRecordSqlUtil
             { MasterGenericRecordGroupIds.AgentConnectionHeartbeat, "_runtime" },
             { MasterGenericRecordGroupIds.HostHeartbeat, "_runtime" },
             
-            { MasterGenericRecordGroupIds.HostStats, "_host_stats" },
-            
             { MasterGenericRecordGroupIds.Log, "_log" },
             { MasterGenericRecordGroupIds.JobMetadata, "_job_metadata" },
-            { MasterGenericRecordGroupIds.RecurringScheduleMetadata, "_recurring_schedule_metadata" },
+            { MasterGenericRecordGroupIds.RecurringScheduleMetadata, "_rs_metadata" },
             // ClusterConfiguration → no suffix (default table)
         };
 

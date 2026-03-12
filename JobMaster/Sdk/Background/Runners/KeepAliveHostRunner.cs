@@ -21,7 +21,7 @@ internal class KeepAliveHostRunner : JobMasterRunner
         try
         {
             masterHeartbeatService.Heartbeat(ResourceHeartbeatType.Host, this.BackgroundAgentWorker.HostId.IdValue);
-            masterHostService.AddStatsAsync(this.BackgroundAgentWorker.HostId.IdValue);
+            masterHostService.UpdateStatsAsync(this.BackgroundAgentWorker.HostId.IdValue);
             
             return Task.FromResult(OnTickResult.Success(this));
         }

@@ -280,6 +280,11 @@ public class JobMasterScheduler : IJobMasterScheduler
 
     private void EnsureCanSave(string? clusterId, RecurringScheduleRawModel recurringSchMd)
     {
+        if (recurringSchMd.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        {
+            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+        }
+        
         EnsureCanSave(clusterId);
         var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         if (config == null)
@@ -288,6 +293,11 @@ public class JobMasterScheduler : IJobMasterScheduler
 
     private void EnsureCanSave(string? clusterId, JobRawModel job)
     {
+        if (job.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        {
+            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+        }
+        
         EnsureCanSave(clusterId);
         var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         if (config == null)

@@ -33,5 +33,7 @@ internal class RecurringScheduleQueryCriteria
     
     public IList<GenericRecordValueFilter> MetadataFilters { get; set; } = new List<GenericRecordValueFilter>();
     
+    public SortByCriteria? SortBy { get; set; }
+    
     public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

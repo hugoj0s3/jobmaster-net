@@ -15,8 +15,8 @@ public class ApiJobModel : ApiClusterBaseModel
     public string? HostId { get; set; }
     public string? HostDisplayName { get; set; } = string.Empty;
     public JobMasterPriority Priority { get; set; }
-    public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
+    public DateTime NextPlanExecutionAt { get; set; }
     public IDictionary<string, object?> MsgData { get; set; } = new Dictionary<string, object?>();
     public IDictionary<string, object?> Metadata { get; set; } = new Dictionary<string, object?>();
     public JobMasterJobStatus Status { get; set; }
@@ -47,8 +47,8 @@ public class ApiJobModel : ApiClusterBaseModel
             AgentConnectionId = job.AgentConnectionId?.IdValue,
             AgentWorkerId = job.AgentWorkerId,
             Priority = job.Priority,
-            OriginalScheduledAt = job.OriginalScheduledAt,
             ScheduledAt = job.ScheduledAt,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
             MsgData = job.MsgData.ToDictionary(),
             Metadata = job.Metadata?.ToDictionary() ?? new Dictionary<string, object?>(),
             Status = job.Status,

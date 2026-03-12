@@ -2,7 +2,9 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -59,11 +61,16 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         var cutOffTime = utcNow.Add(durationToLock).AddSeconds(-30);
         var jobQueryCriteria = new JobQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             Status = JobMasterJobStatus.OnMaster,
-            ScheduledTo = utcNow.Add(transientThreshold),
+            NextPlanExecutionAtTo = utcNow.Add(transientThreshold),
             IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(JobRawModel.NextPlanExecutionAt),
+                Ascending = true,
+            },
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -78,19 +85,11 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
                 countJobs,
                 workerCount,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 transientThreshold,
                 lockerLane:0);
         }
         jobQueryCriteria.CountLimit = lastScanPlanResult.BatchSize;
-        
-        // Pre-warm bucket cache with fresh data before processing batch and ensure there is at least one available bucket
-        var bucketAvailable = await masterBucketsService.SelectBucketAsync(TimeSpan.Zero, null, MasterBucketsService.AnyWorkerLaneKeyword);
-        if (bucketAvailable == null)
-        {
-            logger.Warn("No available bucket found. This is not allowed.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-            return OnTickResult.Skipped(TimeSpan.FromSeconds(15));
-        }
         
         var lockId = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
         
@@ -127,32 +126,35 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             var bucket = await GetBucketAvailableForJobAsync(job);
             if (bucket is null)
             {
-                logger.Warn($"No available bucket found for job {job.Id}. This is not allowed.", JobMasterLogSubjectType.Job, job.Id);
-            }
-            
-            if (bucket is null && job.ScheduledAt <= utcNow.AddMinutes(-30))
-            {
-                logger.Error($"Job {job.Id} is overdue. Trying any available bucket respecting priority. workerLane: {job.WorkerLane}", JobMasterLogSubjectType.Job, job.Id);
-                bucket = await GetBucketAvailableForJobAnyLaneAsync(job);
-
-                if (bucket is null)
+                if (job.ScheduledAt <= DateTime.UtcNow.AddMinutes(-10))
                 {
-                    logger.Error($"Job {job.Id} is overdue. Trying any available bucket. workerLane: {job.WorkerLane} priority: {job.Priority}", JobMasterLogSubjectType.Job, job.Id);
-                        
-                    bucket = await GetBucketAvailableForJobAnyAsync();
+                    var isRetrying = job.TryRetry();
+                    await masterJobsService.UpsertAsync(job);
+                    if (isRetrying)
+                    {
+                        logger.Error($"No available bucket found for job {job.Id}. " +
+                                        $"Retrying {job.NumberOfFailures}/{job.MaxNumberOfRetries}", JobMasterLogSubjectType.Job, job.Id);
+                    }
+                    else
+                    {
+                        logger.Critical($"No available bucket found for job {job.Id}. Marked as failed",
+                            JobMasterLogSubjectType.Job, job.Id);
+                    }
                 }
-            }
-            
-            if (bucket is null)
-            {
-                logger.Warn($"No bucket available for job {job.Id}. WorkerLane={job.WorkerLane} Priority={job.Priority} ScheduledAt={job.ScheduledAt:O}. Clearing partition lock.", JobMasterLogSubjectType.Job, job.Id);
+                else
+                {
+                    job.DelayNextExecutionPlan(TimeSpan.FromMinutes(2.5));
+                    await masterJobsService.UpsertAsync(job);
+                    logger.Warn($"No available bucket found for job {job.Id}. Retrying in 2.5 mins", JobMasterLogSubjectType.Job, job.Id);
+                }
+                
                 masterJobsService.ReleasePartitionLock(job.Id);
                 continue;
             }
             
             if (!jobIdByBucketModel.TryGetValue(job.Id, out _)) 
             {
-                jobIdByBucketModel.Add(job.Id, bucket);
+                jobIdByBucketModel.Add(job.Id, bucket!);
             }
         }
         
@@ -203,21 +205,5 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             JobMasterConstants.BucketFastAllowDiscrepancy,
             job.Priority,
             job.WorkerLane);
-    }
-
-    private async Task<BucketModel?> GetBucketAvailableForJobAnyLaneAsync(JobRawModel job)
-    {
-        return await masterBucketsService.SelectBucketAsync(
-            JobMasterConstants.BucketFastAllowDiscrepancy,
-            job.Priority,
-            MasterBucketsService.AnyWorkerLaneKeyword);
-    }
-
-    private async Task<BucketModel?> GetBucketAvailableForJobAnyAsync()
-    {
-        return await masterBucketsService.SelectBucketAsync(
-            JobMasterConstants.BucketFastAllowDiscrepancy,
-            jobPriority: null,
-            workerLane: MasterBucketsService.AnyWorkerLaneKeyword);
     }
 }

@@ -49,6 +49,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.PartitionLockId = 123;
         schedule.PartitionLockExpiresAt = now.AddMinutes(30);
 
+        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
+
         schedule.CreatedAt = now;
         schedule.StartAfter = now.AddMinutes(-10);
         schedule.EndBefore = now.AddDays(1);
@@ -89,6 +91,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.AgentWorkerId = "worker-upd";
         updated.PartitionLockId = 55;
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(10);
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
         updated.StartAfter = DateTime.UtcNow.AddHours(-1);
         updated.EndBefore = DateTime.UtcNow.AddHours(5);
         updated.LastPlanCoverageUntil = DateTime.UtcNow.AddHours(3);
@@ -529,6 +532,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expected.HasFailedOnLastPlanExecution, actual.HasFailedOnLastPlanExecution);
         Assert.Equal(expected.IsJobCancellationPending, actual.IsJobCancellationPending);
         Assert.Equal(expected.WorkerLane, actual.WorkerLane);
+        Assert.Equal(expected.HostId?.IdValue, actual.HostId?.IdValue);
+        Assert.Equal(expected.HostId?.HostDisplayName, actual.HostId?.HostDisplayName);
     }
 
     private static RecurringScheduleRawModel Clone(RecurringScheduleRawModel s)
@@ -563,6 +568,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             IsJobCancellationPending = s.IsJobCancellationPending,
             StaticDefinitionLastEnsured = s.StaticDefinitionLastEnsured,
             WorkerLane = s.WorkerLane,
+            HostId = s.HostId,
             Version = s.Version
         };
     }

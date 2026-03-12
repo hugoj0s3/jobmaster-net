@@ -147,15 +147,4 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     {
         return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.GetAsync(recurringScheduleId));
     }
-
-    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
-    public bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt)
-    {
-        if (recurringScheduleIds.IsNullOrEmpty())
-        {
-            return false;
-        }
-        
-        return operationThrottler.Exec(() => masterRecurringSchedulesRepository.BulkUpdatePartitionLockId(recurringScheduleIds, lockId, expiresAt));
-    }
 }

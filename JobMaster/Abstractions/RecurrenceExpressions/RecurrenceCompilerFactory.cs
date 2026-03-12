@@ -1,18 +1,18 @@
+using System.Collections.Concurrent;
+
 namespace JobMaster.Abstractions.RecurrenceExpressions;
 
 public static class RecurrenceCompilerFactory
 {
-    private static IDictionary<string, IRecurrenceExprCompiler> Compilers =
-        new Dictionary<string, IRecurrenceExprCompiler>();
+    private static ConcurrentDictionary<string, IRecurrenceExprCompiler> Compilers =
+        new ConcurrentDictionary<string, IRecurrenceExprCompiler>();
     
     private static bool hasRegistred = false;
+    private static object locker = new object();
 
     public static IRecurrenceExprCompiler GetCompiler(string recurrenceTypeId)
     {
-        if (!hasRegistred)
-        {
-            AutoRegister();   
-        }
+        EnsureIsRegistred();
 
         if (!Compilers.TryGetValue(recurrenceTypeId, out var compiler))
             throw new ArgumentException($"Unknown recurrence type: {recurrenceTypeId}");
@@ -22,17 +22,14 @@ public static class RecurrenceCompilerFactory
     
     public static IRecurrenceExprCompiler? TryGetCompiler(string recurrenceTypeId)
     {
-        if (!hasRegistred)
-        {
-            AutoRegister();   
-        }
+        EnsureIsRegistred();
 
         if (!Compilers.TryGetValue(recurrenceTypeId, out var compiler))
             return null;
 
         return compiler;
     }
-    
+
     public static void RegisterCompiler(IRecurrenceExprCompiler compiler, bool replaceIfExists = true)
     {
         if (Compilers.ContainsKey(compiler.ExpressionTypeId) && !replaceIfExists)
@@ -41,6 +38,17 @@ public static class RecurrenceCompilerFactory
         }
         
         Compilers[compiler.ExpressionTypeId] = compiler;
+    }
+    
+    private static void EnsureIsRegistred()
+    {
+        lock (locker)
+        {
+            if (!hasRegistred)
+            {
+                AutoRegister();   
+            }
+        }
     }
 
     private static void AutoRegister()

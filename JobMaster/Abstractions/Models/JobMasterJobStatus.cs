@@ -20,7 +20,13 @@ public static class JobMasterJobStatusUtil
     public static bool IsBucketStatus(this JobMasterJobStatus jobStatus) => GetBucketStatuses().Contains(jobStatus);
     
     public static IList<JobMasterJobStatus> GetFinalStatuses() => 
-        new List<JobMasterJobStatus> { JobMasterJobStatus.Succeeded, JobMasterJobStatus.Failed, JobMasterJobStatus.Cancelled };
+        new List<JobMasterJobStatus>
+        {
+            JobMasterJobStatus.Succeeded, 
+            JobMasterJobStatus.Failed, 
+            JobMasterJobStatus.Cancelled, 
+            JobMasterJobStatus.Aborted
+        };
     
     public static IList<JobMasterJobStatus> GetBucketStatuses() => 
         new List<JobMasterJobStatus> { JobMasterJobStatus.InBucket, JobMasterJobStatus.Queued };

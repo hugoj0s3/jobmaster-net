@@ -43,6 +43,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.CompletedAt = now.AddMinutes(-1);
         job.MsgData = "{\"a\":1,\"b\":\"x\"}";
         job.Metadata = "{\"meta_k\":\"meta_v\",\"n\":5}";
+        job.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
 
         await Fixture.MasterJobs.AddAsync(job);
 
@@ -64,7 +65,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var originalVersion = job.Version;
         updated.JobDefinitionId = job.JobDefinitionId + "-updated";
         updated.Status = JobMasterJobStatus.Succeeded;
-        updated.ScheduledAt = job.ScheduledAt.AddMinutes(5);
+        updated.NextPlanExecutionAt = job.NextPlanExecutionAt.AddMinutes(5);
         updated.WorkerLane = "LANE_UPDATE";
         updated.BucketId = "bucket-updated";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
@@ -80,6 +81,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.CompletedAt = DateTime.UtcNow.AddMinutes(-1);
         updated.MsgData = "{\"x\":\"y\"}";
         updated.Metadata = "{\"k\":\"v\"}";
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
 
         await Fixture.MasterJobs.UpdateAsync(updated);
 
@@ -158,8 +160,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         {
             Status = JobMasterJobStatus.OnMaster,
             JobDefinitionId = defA,
-            ScheduledFrom = baseTime.AddSeconds(30),
-            ScheduledTo = baseTime.AddMinutes(2).AddSeconds(30),
+            NextPlanExecutionAtFrom = baseTime.AddSeconds(30),
+            NextPlanExecutionAtTo = baseTime.AddMinutes(2).AddSeconds(30),
             WorkerLane = null,
             CountLimit = 100,
             Offset = 0
@@ -203,7 +205,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(early);
         await Fixture.MasterJobs.AddAsync(late);
 
-        var c = new JobQueryCriteria { JobDefinitionId = def, ScheduledFrom = baseTime.AddMinutes(5), CountLimit = 100 };
+        var c = new JobQueryCriteria { JobDefinitionId = def, NextPlanExecutionAtFrom = baseTime.AddMinutes(5), CountLimit = 100 };
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == late.Id);
@@ -221,7 +223,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(early);
         await Fixture.MasterJobs.AddAsync(late);
 
-        var c = new JobQueryCriteria { JobDefinitionId = def, ScheduledTo = baseTime.AddMinutes(5), CountLimit = 100 };
+        var c = new JobQueryCriteria { JobDefinitionId = def, NextPlanExecutionAtTo = baseTime.AddMinutes(5), CountLimit = 100 };
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == early.Id);
@@ -392,7 +394,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var queried = await Fixture.MasterJobs.QueryAsync(c);
         Assert.Equal(2, queried.Count);
 
-        var ordered = jobs.OrderBy(x => x.ScheduledAt).ThenBy(x => x.CreatedAt).Select(x => x.Id).ToList();
+        var ordered = jobs.OrderBy(x => x.NextPlanExecutionAt).ThenBy(x => x.CreatedAt).Select(x => x.Id).ToList();
         var expected = ordered.Skip(1).Take(2).ToList();
         Assert.Equal(expected, queried.Select(x => x.Id).ToList());
     }
@@ -474,8 +476,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             JobDefinitionId = jobDefinitionId ?? ("job-def-" + Guid.NewGuid()),
             TriggerSourceType = JobMasterTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
-            OriginalScheduledAt = sched,
             ScheduledAt = sched,
+            NextPlanExecutionAt = sched,
             Status = status,
             Timeout = TimeSpan.FromSeconds(10),
             MaxNumberOfRetries = 0,
@@ -498,8 +500,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.Equal(expected.AgentWorkerId, actual.AgentWorkerId);
 
         Assert.Equal(expected.Priority, actual.Priority);
-        AssertDateTimeEquivalent(ToUtc(expected.OriginalScheduledAt), ToUtc(actual.OriginalScheduledAt));
         AssertDateTimeEquivalent(ToUtc(expected.ScheduledAt), ToUtc(actual.ScheduledAt));
+        AssertDateTimeEquivalent(ToUtc(expected.NextPlanExecutionAt), ToUtc(actual.NextPlanExecutionAt));
 
         AssertJsonEquivalent(expected.MsgData, actual.MsgData);
         AssertJsonEquivalent(expected.Metadata, actual.Metadata);
@@ -519,6 +521,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         AssertDateTimeEquivalent(ToUtcN(expected.ProcessStartedAt), ToUtcN(actual.ProcessStartedAt));
         AssertDateTimeEquivalent(ToUtcN(expected.CompletedAt), ToUtcN(actual.CompletedAt));
         Assert.Equal(expected.WorkerLane, actual.WorkerLane);
+        Assert.Equal(expected.HostId?.IdValue, actual.HostId?.IdValue);
+        Assert.Equal(expected.HostId?.HostDisplayName, actual.HostId?.HostDisplayName);
     }
 
     private static DateTime ToUtc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
@@ -582,7 +586,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(recentSucceeded);
         await Fixture.MasterJobs.AddAsync(heldOnMaster);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
         Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
@@ -611,7 +615,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             await Fixture.MasterJobs.AddAsync(j);
         }
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 3);
+        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 3);
         Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
         Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
 
@@ -640,7 +644,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(processing);
         await Fixture.MasterJobs.AddAsync(pendingRetry);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
@@ -669,7 +673,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(failed);
         await Fixture.MasterJobs.AddAsync(canceled);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByScheduledAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
         Assert.True(deleted >= 3, $"Expected at least 3 deleted, got {deleted}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
@@ -694,8 +698,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             AgentConnectionId = job.AgentConnectionId,
             AgentWorkerId = job.AgentWorkerId,
             Priority = job.Priority,
-            OriginalScheduledAt = job.OriginalScheduledAt,
             ScheduledAt = job.ScheduledAt,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
             MsgData = job.MsgData,
             Metadata = job.Metadata,
             Status = job.Status,
@@ -710,7 +714,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             ProcessStartedAt = job.ProcessStartedAt,
             CompletedAt = job.CompletedAt,
             WorkerLane = job.WorkerLane,
-            Version = job.Version
+            Version = job.Version,
+            HostId = job.HostId
         };
     }
 }

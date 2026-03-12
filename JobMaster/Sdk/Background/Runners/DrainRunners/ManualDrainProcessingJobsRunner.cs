@@ -47,7 +47,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
         }
 
         var processingJobs = await agentJobsDispatcherService
-            .DequeueToProcessingAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BatchSize, null);
+            .DequeueToProcessingAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize, null);
 
         if (!processingJobs.Any())
         {

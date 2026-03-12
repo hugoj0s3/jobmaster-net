@@ -23,6 +23,7 @@ internal static class HostsEndpoints
 
     private static async Task<IResult> CountHostsAsync(
         [FromRoute] string clusterId,
+        [AsParameters] ApiHostCriteria criteria,
         CancellationToken ct)
     {
         var service = EndpointUtils.GetClusterAwareComponent<IMasterHostService>(clusterId);
@@ -37,6 +38,7 @@ internal static class HostsEndpoints
 
     private static async Task<IResult> ListHostsAsync(
         [FromRoute] string clusterId,
+        [AsParameters] ApiHostCriteria criteria,
         CancellationToken ct)
     {
         var service = EndpointUtils.GetClusterAwareComponent<IMasterHostService>(clusterId);
@@ -46,7 +48,24 @@ internal static class HostsEndpoints
         }
 
         var hosts = await service.QueryAllAsync();
-        var result = hosts.Select(ApiHostModel.FromDomain).ToList();
+        var apiHosts = hosts.Select(ApiHostModel.FromDomain).ToList();
+        
+        // Apply in-memory sorting
+        if (criteria.SortBy != null && !string.IsNullOrWhiteSpace(criteria.SortBy.Property))
+        {
+            apiHosts = EndpointSortingUtil.ApplySorting(apiHosts, criteria.SortBy.Property, criteria.SortBy.Ascending);
+        }
+        else
+        {
+            // Default sorting by HostDisplayName
+            apiHosts = apiHosts.OrderBy(x => x.HostDisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+        
+        // Apply in-memory paging
+        var offset = criteria.Offset ?? 0;
+        var limit = criteria.CountLimit ?? 25;
+        var result = apiHosts.Skip(offset).Take(limit).ToList();
+        
         return Results.Ok(result);
     }
 

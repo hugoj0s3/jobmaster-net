@@ -20,14 +20,11 @@ namespace JobMaster.SqlBase.Agents;
 
 internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
 {
-    private static readonly TimeSpan ConnectionIdleTimeout = TimeSpan.FromMinutes(10);
-    
     protected IDbConnectionManager connManager;
     protected readonly IJobMasterLogger logger;
     protected JobMasterConfigDictionary additionalConnConfig = null!;
     protected string connString = null!;
     protected ISqlGenerator sql = null!;
-    private string connectionIdPrefix = null!;
 
 
     protected SqlRawMessagesDispatcherRepositoryBase(
@@ -44,7 +41,6 @@ internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterCluste
         this.connString = config.ConnectionString;    
         this.additionalConnConfig = config.AdditionalConnConfig;
         this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
-        this.connectionIdPrefix = nameof(SqlRawMessagesDispatcherRepositoryBase) + ":" + config.Id;
     }
 
     protected string MessageTableName()
@@ -63,34 +59,10 @@ internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterCluste
 
     public virtual bool IsAutoDequeue => false;
     public abstract string AgentRepoTypeId { get; }
-
-    protected virtual void PushMessageCore(IDbConnection cnn, IDbTransaction transaction, string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)
-    {
-        var sqlText = GetInsertSql();
-        var messageId = GenerateMessageId();
-        cnn.Execute(sqlText, new
-        {
-            BucketId = fullBucketAddressId,
-            MessageId = messageId,
-            Payload = payload,
-            RefTime = referenceTime.ToUniversalTime(),
-            CorrelationId = correlationId,
-            EnqueuedAt = DateTime.UtcNow,
-        }, transaction);
-    }
     
     public virtual string PushMessage(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)
     {
-        // using var cnnKeepAlive = AcquireConnectionKeepAlive();
-        // var cnn = cnnKeepAlive.Connection;
-        // if (cnn == null)
-        // {
-        //     throw new Exception("Failed to acquire connection.");
-        // }
-        
         using var cnn = connManager.Open(connString, additionalConnConfig);
-        
-        
         using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
 
         try
@@ -209,12 +181,6 @@ WHERE {colBucket} = @Bucket";
     
     public virtual async Task<string> PushMessageAsync(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)
     {
-        // using var cnnKeepAlive = AcquireConnectionKeepAlive();
-        // var cnn = cnnKeepAlive.Connection;
-        // if (cnn == null)
-        // {
-        //     throw new Exception("Failed to acquire connection.");
-        // }
         using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
         
         using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -241,20 +207,31 @@ WHERE {colBucket} = @Bucket";
             throw;
         }
     }
-
-   
     
     public virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {
-        using var cnnKeepAlive = AcquireConnectionKeepAlive();
-        var cnn = cnnKeepAlive.Connection;
-        if (cnn == null)
-        { 
-           logger.Error($"Failed to acquire keep-alive connection for DequeueMessagesAsync.");
-           return new List<JobMasterRawMessage>();
+        const int maxAttempts = 3;
+        const int retryDelayMs = 100;
+        
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await AttemptDequeueMessagesAsync(fullBucketAddressId, numberOfJobs, referenceTimeTo);
+            }
+            catch when (attempt < maxAttempts)
+            {
+                await Task.Delay(retryDelayMs);
+            }
         }
         
-        // using var cnn = await this.connManager.OpenAsync(this.connString, additionalConnConfig);
+        // This line is unreachable but satisfies compiler
+        throw new InvalidOperationException("Dequeue retry logic failed unexpectedly");
+    }
+    
+    protected virtual async Task<IList<JobMasterRawMessage>> AttemptDequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    {
+        using var cnn = await this.connManager.OpenAsync(this.connString, additionalConnConfig);
         using var tx = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
@@ -267,28 +244,6 @@ WHERE {colBucket} = @Bucket";
             tx.Rollback();
             throw;
         }
-    }
-    
-    protected virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsyncCore(IDbConnection cnn, IDbTransaction tx, string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
-    {
-        var q = GetDequeueSelectSql(numberOfJobs, referenceTimeTo.HasValue);
-
-        var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(q.SelectSql, new
-        {
-            Bucket = fullBucketAddressId,
-            RefTo = (referenceTimeTo ?? DateTime.UtcNow).ToUniversalTime()
-        }, tx);
-
-        var picked = rows.Take(numberOfJobs).ToList();
-        var ids = picked.Select(r => r.MessageId).ToList();
-
-        if (ids.Count > 0)
-        {
-            var deleteSql = $"DELETE FROM {q.Table} WHERE {q.ColBucket} = @Bucket AND {this.sql.InClauseFor(q.ColMsgId, "@Ids")}";
-            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = ids }, tx);
-        }
-
-        return picked.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
     }
 
     protected virtual bool HasJobsCore(IDbConnection cnn, string fullBucketAddressId)
@@ -377,27 +332,6 @@ WHERE {colBucket} = @Bucket";
         }
     }
 
-    private const int MaxOfSlots = 7;
-    private const int MaxOfGatesPerSlot = 3;
-    private int currentSlotIndex = -1;
-    private IAcquirableKeepAliveConnection<IDbConnection> AcquireConnectionKeepAlive()
-    {
-        var nextVal = Interlocked.Increment(ref currentSlotIndex);
-        
-        // Math.Abs prevent overflow.
-        var slotIndex = Math.Abs(nextVal % MaxOfSlots);
-        
-        var slotName = $"{connectionIdPrefix}{slotIndex}";
-        
-        var cnnKeepAlive = 
-            this.connManager.AcquireConnection($"{slotName}", 
-                ConnectionIdleTimeout, 
-                this.connString, 
-                additionalConnConfig, 
-                maxGates: MaxOfGatesPerSlot);
-
-        return cnnKeepAlive;
-    }
 
     // Helpers
     protected virtual string GetInsertSql(string? payloadParameter = null, string? refTimeParameter = null, string? corrIdParameter = null, string? enqAtParameter = null)
@@ -431,6 +365,28 @@ WHERE {colBucket} = @Bucket";
     }
 
     protected virtual string GenerateMessageId() => Guid.NewGuid().ToString("D");
+    
+    protected virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsyncCore(IDbConnection cnn, IDbTransaction tx, string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    {
+        var q = GetDequeueSelectSql(numberOfJobs, referenceTimeTo.HasValue);
+
+        var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(q.SelectSql, new
+        {
+            Bucket = fullBucketAddressId,
+            RefTo = (referenceTimeTo ?? DateTime.UtcNow).ToUniversalTime()
+        }, tx);
+
+        var picked = rows.Take(numberOfJobs).ToList();
+        var ids = picked.Select(r => r.MessageId).ToList();
+
+        if (ids.Count > 0)
+        {
+            var deleteSql = $"DELETE FROM {q.Table} WHERE {q.ColBucket} = @Bucket AND {this.sql.InClauseFor(q.ColMsgId, "@Ids")}";
+            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = ids }, tx);
+        }
+
+        return picked.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
+    }
 
     // New helpers to compose INSERTs and reuse in bulk
     protected virtual string GetInsertHeaderSql()

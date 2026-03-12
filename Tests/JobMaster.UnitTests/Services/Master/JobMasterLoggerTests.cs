@@ -106,7 +106,7 @@ public class JobMasterLoggerTests
 
         captured.Filters.Should().Contain(f => f.Key == "TimestampUtc" && f.Operation == GenericFilterOperation.Gte && Equals(f.Value, from));
         captured.Filters.Should().Contain(f => f.Key == "TimestampUtc" && f.Operation == GenericFilterOperation.Lte && Equals(f.Value, to));
-        captured.Filters.Should().Contain(f => f.Key == "Level" && f.Operation == GenericFilterOperation.Eq && Equals(f.Value, JobMasterLogLevel.Error));
+        captured.Filters.Should().Contain(f => f.Key == "Level" && f.Operation == GenericFilterOperation.Eq && Equals(f.Value, (int)JobMasterLogLevel.Error));
         captured.Filters.Should().Contain(f => f.Key == "Message" && f.Operation == GenericFilterOperation.Contains && Equals(f.Value, "hello"));
 
         result.Should().HaveCount(1);

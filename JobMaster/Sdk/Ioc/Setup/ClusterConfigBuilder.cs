@@ -149,6 +149,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
         clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
+        clusterServiceRegistration.AddJobMasterComponent<IHostStatsProvider, NullHostStatsProvider>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
         
@@ -356,7 +357,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         {
             AgentConnectionName = agentConnectionName ?? string.Empty,
             WorkerName = workerName ?? string.Empty,
-            BatchSize = batchSize,
+            TransferBatchSize = batchSize,
         };
         clusterDefinition.Workers.Add(def);
         return new AgentWorkerSelector(this, def);
@@ -422,7 +423,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         var def = new WorkerDefinition
         {
             WorkerName = workerName ?? string.Empty,
-            BatchSize = batchSize,
+            TransferBatchSize = batchSize,
             AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
         };
         clusterDefinition.Workers.Add(def);

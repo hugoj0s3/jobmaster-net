@@ -13,6 +13,10 @@ public class ApiMasterBucketQueryCriteria
     public BucketStatus? Status { get; set; }
     public string? AgentWorkerId { get; set; }
     public string? WorkerLane { get; set; }
+    
+    public int? CountLimit { get; set; }
+    public int? Offset { get; set; }
+    public ApiSortByCriteria? SortBy { get; set; }
 
     internal MasterBucketQueryCriteria ToDomainCriteria()
     {

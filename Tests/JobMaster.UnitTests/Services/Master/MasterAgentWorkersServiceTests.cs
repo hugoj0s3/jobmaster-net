@@ -167,7 +167,9 @@ public class MasterAgentWorkersServiceTests
                 Name = "worker",
                 CreatedAt = createdAt,
                 Mode = AgentWorkerMode.Full,
-                WorkerLane = null
+                WorkerLane = null,
+                HostId = $"{clusterId}:testhost:instance123",
+                HostDisplayName = "testhost"
             });
 
         repo.Setup(x => x.Query(MasterGenericRecordGroupIds.AgentWorker, null))
@@ -202,6 +204,8 @@ public class MasterAgentWorkersServiceTests
         public DateTime CreatedAt { get; set; }
         public AgentWorkerMode Mode { get; set; }
         public string? WorkerLane { get; set; }
+        public string HostId { get; set; } = string.Empty;
+        public string HostDisplayName { get; set; } = string.Empty;
     }
 
     private static string NewClusterId() => $"c{Guid.NewGuid():N}";

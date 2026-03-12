@@ -82,7 +82,8 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
             return OnTickResult.Skipped(this);
         }
         
-        var jobs = await agentJobsDispatcherService.DequeueSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BatchSize);
+        var jobs = await agentJobsDispatcherService
+            .DequeueSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (jobs.Count <= 0)
         {

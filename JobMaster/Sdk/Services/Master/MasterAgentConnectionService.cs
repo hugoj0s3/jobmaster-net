@@ -35,7 +35,11 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         this.masterBucketsService = masterBucketsService;
     }
 
-    public async Task<AgentConnectionModel> SaveConnectionAsync(AgentConnectionId agentConnectionId, string repositoryTypeId, string footprint)
+    public async Task<AgentConnectionModel> SaveConnectionAsync(
+        AgentConnectionId agentConnectionId, 
+        string repositoryTypeId, 
+        string footprint,
+        bool protectChanges)
     {
         var agentConnectionRecord = await GetRecordAsync(agentConnectionId);
         if (agentConnectionRecord is null)
@@ -88,6 +92,17 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 
     public async Task<bool> SafeDeleteConnectionAsync(AgentConnectionId agentConnectionId)
     {
+        if (await HasBucketsAsync(agentConnectionId))
+        {
+            return false;
+        }
+
+        await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
+        return true;
+    }
+
+    public async Task<bool> HasBucketsAsync(AgentConnectionId agentConnectionId)
+    {
         var buckets = await this.masterBucketsService.QueryAsync(new MasterBucketQueryCriteria()
         {
             AgentConnectionId = agentConnectionId.IdValue
@@ -95,12 +110,10 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 
         if (buckets.Any())
         {
-            return false;
+            return true;
         }
 
-        await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection,
-            agentConnectionId.IdValue);
-        return true;
+        return false;
     }
 
     public async Task<AgentConnectionModel?> GetConnectionAsync(AgentConnectionId agentConnectionId,
@@ -145,6 +158,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
             FootprintCreatedAt = agentConnectionRecord.FootprintCreatedAt,
             LastHeartbeatAt = lastHeartbeatAt,
             RepositoryTypeId = agentConnectionRecord.RepositoryTypeId,
+            ProtectConnectionChanges = agentConnectionRecord.ProtectConnectionChanges,
         };
     }
 
@@ -178,5 +192,6 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         public DateTime CreatedAt { get; set; }
         public DateTime FootprintCreatedAt { get; set; }
         public string RepositoryTypeId { get; set; } = string.Empty;
+        public bool ProtectConnectionChanges { get; set; }
     }
 }

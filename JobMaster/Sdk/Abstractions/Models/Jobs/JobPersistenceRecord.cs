@@ -20,8 +20,8 @@ internal class JobPersistenceRecord
 
     public int Priority { get; set; }
 
-    public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
+    public DateTime NextPlanExecutionAt { get; set; }
 
     public string MsgData { get; set; } = "{}";
     

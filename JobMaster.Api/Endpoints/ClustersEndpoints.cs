@@ -16,15 +16,9 @@ internal static class ClustersEndpoints
     {
         var clusters = group.MapGroup("/clusters").WithTags("Clusters");
 
-        clusters.MapGet("/count", GetClustersCount)
-            .Produces<int>(StatusCodes.Status200OK);
-
-        clusters.MapGet("/ids", GetClusterIds)
-            .Produces<List<string>>(StatusCodes.Status200OK);
-
-        clusters.MapGet("/{clusterId}", GetClusterDetailAsync)
-            .Produces<ApiClusterModel>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
+        clusters.MapGet("/count", GetClustersCount);
+        clusters.MapGet("/ids", GetClusterIds);
+        clusters.MapGet("/{clusterId}", GetClusterDetail);
 
         return group;
     }
@@ -40,7 +34,7 @@ internal static class ClustersEndpoints
         return Results.Ok(result);
     }
 
-    private static async Task<IResult> GetClusterDetailAsync(
+    private static IResult GetClusterDetail(
         [FromRoute] string clusterId,
         CancellationToken ct)
     {

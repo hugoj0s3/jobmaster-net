@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Scripts;
 using Microsoft.Data.SqlClient;
 
 namespace JobMaster.SqlServer.Master;
@@ -36,11 +37,11 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
 
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
-            var cScheduledAt = Col(x => x.ScheduledAt);
-            var cCreatedAt = Col(x => x.CreatedAt);
+            var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
 
             var unlockedGuard = $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var orderBy = $"j.{cScheduledAt} ASC, j.{cCreatedAt} ASC";
+            var defaultOrderByClause = $" ORDER BY j.{cNextPlanExecutionAt} ASC";
+            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
 
             var offsetClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
@@ -57,7 +58,7 @@ DECLARE @lockedIds TABLE (id uniqueidentifier NOT NULL);
     SELECT j.{cId} AS id
     FROM {t} j
     {whereSql} AND {unlockedGuard}
-    ORDER BY {orderBy}
+    {orderBy}
     {offsetClause}
 )
 UPDATE j
@@ -75,7 +76,7 @@ FROM {t} j
 JOIN @lockedIds l ON l.id = j.{cId}
 LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} and e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-ORDER BY {orderBy};";
+{orderBy};";
 
             var args = new Dictionary<string, object?>();
             foreach (var kv in whereArgs) args[kv.Key] = kv.Value;

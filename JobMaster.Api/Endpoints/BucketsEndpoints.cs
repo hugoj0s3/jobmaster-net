@@ -15,17 +15,9 @@ internal static class BucketsEndpoints
     {
         var buckets = group.GetClusterEntityGroup("buckets");
 
-        buckets.MapGet("/", QueryBucketsAsync)
-            .Produces<List<ApiBucketModel>>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
-
-        buckets.MapGet("/count", CountBucketsAsync)
-            .Produces<int>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
-
-        buckets.MapGet("/{bucketId}", GetBucketAsync)
-            .Produces<ApiBucketModel>(StatusCodes.Status200OK)
-            .Produces(StatusCodes.Status404NotFound);
+	buckets.MapGet("/", QueryBucketsAsync);
+        buckets.MapGet("/count", CountBucketsAsync);
+        buckets.MapGet("/{bucketId}", GetBucket);
 
         return group;
     }
@@ -41,8 +33,21 @@ internal static class BucketsEndpoints
             return Results.NotFound();
         }
         
-        var result = await service.QueryAsync(criteria.ToDomainCriteria());
-        return Results.Ok(result.Select(ApiBucketModel.FromDomain).ToList());
+        var buckets = await service.QueryAsync(criteria.ToDomainCriteria());
+        var apiBuckets = buckets.Select(ApiBucketModel.FromDomain).ToList();
+        
+        // Apply in-memory sorting
+        if (criteria.SortBy != null && !string.IsNullOrWhiteSpace(criteria.SortBy.Property))
+        {
+            apiBuckets = EndpointSortingUtil.ApplySorting(apiBuckets, criteria.SortBy.Property, criteria.SortBy.Ascending);
+        }
+        
+        // Apply in-memory paging
+        var offset = criteria.Offset ?? 0;
+        var limit = criteria.CountLimit ?? 25;
+        var result = apiBuckets.Skip(offset).Take(limit).ToList();
+        
+        return Results.Ok(result);
     }
 
     private static async Task<IResult> CountBucketsAsync(
@@ -56,11 +61,11 @@ internal static class BucketsEndpoints
             return Results.NotFound();
         }
         
-        var result = await service.CountAsync(criteria.ToDomainCriteria());
-        return Results.Ok(result);
+        var buckets = await service.QueryAsync(criteria.ToDomainCriteria());
+        return Results.Ok(buckets.Count);
     }
 
-    private static async Task<IResult> GetBucketAsync(
+    private static IResult GetBucket(
         [FromRoute] string clusterId,
         string bucketId,
         CancellationToken ct)

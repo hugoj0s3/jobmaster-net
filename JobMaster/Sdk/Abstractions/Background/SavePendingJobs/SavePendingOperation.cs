@@ -97,7 +97,7 @@ internal class SavePendingOperation
     {
         // Insert-first flow to avoid extra read; duplicate key maps to AlreadyExists
 
-        if (jobRaw.ScheduledAt > cutOffDate)
+        if (jobRaw.NextPlanExecutionAt > cutOffDate)
         {
             jobRaw.MarkAsHeldOnMaster();
             try

@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Scripts;
 using MySqlConnector;
 
 namespace JobMaster.MySql.Master;
@@ -36,11 +37,11 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
-            var cScheduledAt = Col(x => x.ScheduledAt);
-            var cCreatedAt = Col(x => x.CreatedAt);
+            var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
 
             var unlockedGuard = $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var orderBy = $"j.{cScheduledAt} ASC, j.{cCreatedAt} ASC";
+            var defaultOrderByClause = $" ORDER BY j.{cNextPlanExecutionAt} ASC";
+            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
 
             var offsetClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
@@ -56,7 +57,7 @@ JOIN (
     SELECT j.{cId} AS id
     FROM {t} j
     {whereSql} AND {unlockedGuard}
-    ORDER BY {orderBy}
+    {orderBy}
     {offsetClause}
 ) c ON c.id = j.{cId}
 SET j.{Col(x => x.PartitionLockId)} = @PartitionLockId,
@@ -72,7 +73,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
 WHERE j.{cClusterId} = @ClusterId
   AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
   AND j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
-ORDER BY {orderBy}
+{orderBy}
 {offsetClause};";
 
             var args = new Dictionary<string, object?>();

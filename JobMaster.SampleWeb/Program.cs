@@ -137,13 +137,13 @@ builder.Services.AddJobMasterCluster(config =>
     config.AddWorker()
         .AgentConnName("Nats-1")
         .BucketQtyConfig(JobMasterPriority.Medium, 1)
-        .WorkerBatchSize(1000)
+        .TransferBatchSize(1000)
         .SetWorkerMode(AgentWorkerMode.Full);
 
     config.AddWorker()
         .AgentConnName("Nats-1")
         .BucketQtyConfig(JobMasterPriority.Medium, 1)
-        .WorkerBatchSize(1000)
+        .TransferBatchSize(1000)
         .SetWorkerMode(AgentWorkerMode.Drain);
 });
 

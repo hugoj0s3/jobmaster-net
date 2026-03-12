@@ -8,7 +8,8 @@ internal sealed class WorkerDefinition
     public string AgentConnectionName { get; set; } = string.Empty;
     public string? WorkerName { get; set; } = string.Empty;
     public string? WorkerLane { get; set; } = null;
-    public int BatchSize { get; set; } = 250;
+    public int TransferBatchSize { get; set; } = 1000;
+    public int BucketBufferSize { get; set; } = 250;
     public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
     public double ParallelismFactor { get; set; } = 1;
     public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>()
@@ -21,4 +22,5 @@ internal sealed class WorkerDefinition
     };
 
     public bool SkipWarmUpTime { get; set; }
+    public TimeSpan BucketBufferLeadTime { get; set; } = TimeSpan.FromSeconds(30);
 }

@@ -35,13 +35,14 @@ internal class SqlServerSqlGenerator : SqlGenerator
         }
 
         var nullableSuffix = nullable ? string.Empty : " NOT NULL";
+        var collation = $" COLLATE {this.GetCaseInsensitiveCollation()} ";
 
         if (isMaxLength)
         {
-            return $"nvarchar(max){nullableSuffix}";
+            return $"nvarchar(max){collation}{nullableSuffix}";
         }
 
-        return $"nvarchar({length}){nullableSuffix}";
+        return $"nvarchar({length}){collation}{nullableSuffix}";
     }
 
     public override string OffsetQueryFor(int limit, int offset = 0)
@@ -70,6 +71,11 @@ internal class SqlServerSqlGenerator : SqlGenerator
     public override string GenerateVersionSql()
     {
         return "CAST(NEWID() AS NVARCHAR(36))";
+    }
+
+    public override string GetCaseInsensitiveCollation()
+    {
+        return SqlServerRepositoryConstants.CaseInsensitiveCollation;
     }
 
     public override string CreateIndex(string tableName, string indexName, params (string ColumnName, bool IsMaxLength, int? Length)[] columns)

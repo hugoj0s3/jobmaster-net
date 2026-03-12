@@ -16,6 +16,7 @@ using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
@@ -54,7 +55,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.bucketId = bucketId;
         this.priority = priority;
         
-        this.OnBoardingControl = new OnBoardingControl<JobRawModel>(backgroundAgentWorker.BatchSize);
+        this.OnBoardingControl = new OnBoardingControl<JobRawModel>(backgroundAgentWorker.BucketBufferSize);
         this.TaskQueueControl = TaskQueueControl<JobRawModel>.Create(
             priority, 
             factor: backgroundAgentWorker.ParallelismFactor,
@@ -70,14 +71,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         
         if (payload.ExceedProcessDeadline())
         {
-            logger.Warn($"ExceedProcessDeadline. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
+            logger.Warn($"ExceedProcessDeadline. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
             
             if (payload.CanHeldOnMasterExceedDeadline())
             {
                 payload.MarkAsHeldOnMaster();
                 await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
                 logger.Warn(
-                    $"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
+                    $"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
             }
            
             return OnBoardingResult.MovedToMaster;
@@ -88,7 +89,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             var (validationResult, _) = await ValidateRecurringScheduleAsync(
                 payload.SourceId.Value, 
-                payload.ScheduledAt, 
+                payload.NextPlanExecutionAt, 
                 payload.Id);
             
             switch (validationResult)
@@ -124,12 +125,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         // Try to buffer into OnBoarding. If briefly full, retry quickly before falling back.
         if (forceIfNoCapacity)
         {
-            OnBoardingControl.ForcePush(payload, payload.Id.ToString(), payload.ScheduledAt, payload.ProcessDeadline!.Value);
+            OnBoardingControl.ForcePush(payload, payload.Id.ToString(), payload.NextPlanExecutionAt, payload.ProcessDeadline!.Value);
             logger.Debug($"OnBoarding (forced): JobId={payload.Id}");
             return OnBoardingResult.Accepted;
         }
 
-        var result = OnBoardingControl.Push(payload, payload.Id.ToString(), payload.ScheduledAt, payload.ProcessDeadline!.Value);
+        var result = OnBoardingControl.Push(payload, payload.Id.ToString(), payload.NextPlanExecutionAt, payload.ProcessDeadline!.Value);
         if (result)
         {
             logger.Debug($"OnBoarding: JobId={payload.Id}");
@@ -138,8 +139,16 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
         var onBoardingCount = OnBoardingControl.Count();
         var onBoardingCapacity = OnBoardingControl.CountAvailability() + onBoardingCount;
-        this.logger.Warn($"OnBoarding Push failed. Count={onBoardingCount}, Capacity={onBoardingCapacity}, ProcessDeadline={payload.ProcessDeadline:O}, Now={DateTime.UtcNow:O}", JobMasterLogSubjectType.Bucket, BucketId);
+        this.logger.Warn($"OnBoarding Push unaccepted. Count={onBoardingCount}, Capacity={onBoardingCapacity}, ProcessDeadline={payload.ProcessDeadline:O}, Now={DateTime.UtcNow:O}", JobMasterLogSubjectType.Bucket, BucketId);
+
+        var delayExecution = this.backgroundAgentWorker.BucketBufferLeadTime;
+        if (delayExecution < JobMasterConstants.MinDelayWhenOnboardingBusy)
+        {
+            delayExecution = JobMasterConstants.MinDelayWhenOnboardingBusy;
+        }
+        delayExecution += TimeSpan.FromSeconds(JobMasterRandomUtil.GetInt(1, 6));
         
+        payload.DelayNextExecutionPlan(delayExecution);
         payload.MarkAsHeldOnMaster();
         await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
         
@@ -180,7 +189,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         var bucket = this.masterBucketsService.Get(bucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
         if (bucket?.Status != BucketStatus.Active)
         {
-            var oldDepartureItems = OnBoardingControl.PruneOldDepartureItems(this.backgroundAgentWorker.BatchSize);
+            var oldDepartureItems = OnBoardingControl.PruneOldDepartureItems(this.backgroundAgentWorker.BucketBufferSize);
             foreach (var job in oldDepartureItems)
             {
                 if (job.ExceedProcessDeadline())
@@ -223,13 +232,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             if (job.ExceedProcessDeadline())
             {
-                logger.Warn($"ExceedProcessDeadline. JobId={job.Id} ScheduledAt={job.ScheduledAt:O}", JobMasterLogSubjectType.Job, job.Id);
+                logger.Warn($"ExceedProcessDeadline. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
                 
                 if (job.CanHeldOnMasterExceedDeadline())
                 {
                     job.MarkAsHeldOnMaster();
                     await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={job.Id} ScheduledAt={job.ScheduledAt:O}", JobMasterLogSubjectType.Job, job.Id);
+                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
                 }
                 
                 continue;
@@ -265,7 +274,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                 if (!await this.masterJobsService.CheckVersionAsync(job.Id, job.Version))
                 {
-                    logger.Warn($"Job Conflict found, Probably processed by another node or HeldOnMaster. Excluded from queue.  JobId={job.Id} ScheduledAt={job.ScheduledAt:O}", JobMasterLogSubjectType.Job, job.Id);
+                    logger.Warn($"Job Conflict found, Probably processed by another node or HeldOnMaster. Excluded from queue.  JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
                     continue;
                 }
                 
@@ -275,7 +284,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     continue;
                 }
                 
-                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.ScheduledAt, job.ProcessDeadline!.Value);
+                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.NextPlanExecutionAt, job.ProcessDeadline!.Value);
             }
         }
         
@@ -316,13 +325,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
             if (jobRawModel.ExceedProcessDeadline())
             {
-                logger.Warn($"ExceedProcessDeadline. JobId={jobRawModel.Id} ScheduledAt={jobRawModel.ScheduledAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
+                logger.Warn($"ExceedProcessDeadline. JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
                 
                 if (jobRawModel.CanHeldOnMasterExceedDeadline())
                 {
                     jobRawModel.MarkAsHeldOnMaster();
                     await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
-                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={jobRawModel.Id} ScheduledAt={jobRawModel.ScheduledAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
+                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
                 }
                 
                 return;
@@ -349,7 +358,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     // Check recurring schedule again at execution time (job may have been onboarded before cancellation)
                     var (validationResult, recurringSchedule) = await ValidateRecurringScheduleAsync(
                         jobRawModel.SourceId.Value, 
-                        jobRawModel.ScheduledAt, 
+                        jobRawModel.NextPlanExecutionAt, 
                         jobRawModel.Id);
                     
                     switch (validationResult)
@@ -502,7 +511,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             logger.Warn($"" +
                         $"Job Conflict found Probably held on master or assigned to another bucket. {Environment.NewLine}" +
                         $"On Db Info(status: {existingJob?.Status}, bucketId: {existingJob?.BucketId}) {Environment.NewLine} " +
-                        $"On this bucket Info: (status: {jobRawModel.Status}, bucketId: {jobRawModel.BucketId}).  JobId={jobRawModel.Id} ScheduledAt={jobRawModel.ScheduledAt:O}", 
+                        $"On this bucket Info: (status: {jobRawModel.Status}, bucketId: {jobRawModel.BucketId}).  JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", 
                 JobMasterLogSubjectType.Job, jobRawModel.Id);
             return false;
         }

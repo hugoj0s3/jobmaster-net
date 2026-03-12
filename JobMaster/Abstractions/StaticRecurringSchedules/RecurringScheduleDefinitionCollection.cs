@@ -3,6 +3,7 @@ using System.Text;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;
@@ -29,30 +30,32 @@ public sealed class RecurringScheduleDefinitionCollection
         this.profile = profile;
         this.defaultClusterId = defaultClusterId;
     }
-    
+
     public IReadOnlyList<StaticRecurringScheduleDefinition> ToReadOnly() => items;
-    
-    
+
+
     public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
         string? defId = null,
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
+        int? maxNumberOfRetries = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
         where Th : class, IJobHandler
     {
         var compiled = RecurrenceExprCompiler.Compile(expressionType, expression);
-        return Add<Th>(compiled, defId, priority, timeout, startAfter, endBefore, metadata);
+        return Add<Th>(compiled, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
     }
-    
+
     public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
+        int? maxNumberOfRetries = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
@@ -62,29 +65,34 @@ public sealed class RecurringScheduleDefinitionCollection
         {
             throw new ArgumentException("Invalid DefinitionId", nameof(defId));
         }
-        
-        var jobDefinitionId = typeof(Th).GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? typeof(Th).FullName!;
-        var id = GenerateUniqueId(typeof(Th), defId);
-        var definition = new StaticRecurringScheduleDefinition(
-            clusterId: string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId,
-            jobDefinitionId,
-            compiledExpr: compiledExpr,
-            id: id,
-            priority: priority,
-            timeout: timeout,
-            startAfter: startAfter,
-            endBefore: endBefore,
-            metadata: metadata,
-            workerLane: this.profile.WorkerLane);
 
-        this.Add(definition);
-        return this;
+        var jobDefinitionId = typeof(Th).GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ??
+                              typeof(Th).FullName!;
+        lock (unique)
+        {
+            var id = GenerateUniqueId(typeof(Th), defId);
+            var definition = new StaticRecurringScheduleDefinition(
+                clusterId: string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId,
+                jobDefinitionId,
+                compiledExpr: compiledExpr,
+                id: id,
+                priority: priority,
+                timeout: timeout,
+                maxNumberOfRetries: maxNumberOfRetries,
+                startAfter: startAfter,
+                endBefore: endBefore,
+                metadata: metadata,
+                workerLane: this.profile.WorkerLane);
+
+            this.Add(definition);
+            return this;
+        }
     }
-    
+
     private void Add(StaticRecurringScheduleDefinition definition)
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
-        
+
         var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
 
         ValidateDefinition(definition);
@@ -133,14 +141,14 @@ public sealed class RecurringScheduleDefinitionCollection
         {
             defId = handler.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? handler.Name;
         }
-        
+
         var defSubId = defId!;
         defSubId = SanitizeIdPart(defSubId);
 
         // Extremely unlikely, but guard in case of collision within this collection
         var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
         var candidate = $"{clusterId}:{profileId}:{defSubId}";
-        
+
         if (!unique.Contains((clusterId, candidate)))
             return candidate;
 
@@ -154,9 +162,15 @@ public sealed class RecurringScheduleDefinitionCollection
 
         return withCounter;
     }
-    
+
     private static void ValidateDefinition(StaticRecurringScheduleDefinition cfg)
     {
+        if (cfg.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        {
+            throw new ArgumentException(
+                $"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+        }
+
         if (cfg.CompiledExpr == null) throw new ArgumentException("CompiledExpr is required.");
 
         ValidateCompiled(cfg.CompiledExpr);

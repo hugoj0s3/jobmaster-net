@@ -222,10 +222,10 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         AgentWorkerMode mode,
         double parallelismFactor)
     {
-        if (!string.IsNullOrEmpty(workerLane) && !JobMasterStringUtils.IsValidForSegment(workerLane, 25))
+        if (!string.IsNullOrEmpty(workerLane) && !JobMasterStringUtils.IsValidForSegment(workerLane!, 25))
             throw new ArgumentException($"Invalid worker lane format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerLane}'", nameof(workerLane));
 
-        if (!string.IsNullOrEmpty(workerName) && !JobMasterStringUtils.IsValidForSegment(workerName, 25))
+        if (!string.IsNullOrEmpty(workerName) && !JobMasterStringUtils.IsValidForSegment(workerName!, 25))
             throw new ArgumentException($"Invalid worker name format. Only letters, numbers, underscore (_), hyphen (-) are allowed. Length must be between 1 and 25. Received: '{workerName}'", nameof(workerName));
         
         hostId ??= await masterHostService.RegisterNewHostAsync();

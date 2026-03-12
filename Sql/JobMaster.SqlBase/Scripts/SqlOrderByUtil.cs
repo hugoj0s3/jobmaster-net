@@ -1,3 +1,4 @@
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Utils;
 

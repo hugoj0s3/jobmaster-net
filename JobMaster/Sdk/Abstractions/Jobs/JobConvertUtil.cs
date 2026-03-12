@@ -24,8 +24,8 @@ internal static class JobConvertUtil
             TriggerSourceType = raw.TriggerSourceType,
             Status = raw.Status,
             Id = raw.Id,
-            OriginalScheduledAt = raw.OriginalScheduledAt,
             ScheduledAt = raw.ScheduledAt,
+            NextPlanExecutionAt = raw.NextPlanExecutionAt,
             Priority = raw.Priority,
             AgentWorkerId = raw.AgentWorkerId,
             MaxNumberOfRetries = raw.MaxNumberOfRetries,
@@ -79,8 +79,8 @@ internal static class JobConvertUtil
             TriggerSourceType = job.TriggerSourceType,
             Status = job.Status,
             Id = job.Id,
-            OriginalScheduledAt = job.OriginalScheduledAt,
             ScheduledAt = job.ScheduledAt,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
             Priority = job.Priority,
             AgentWorkerId = job.AgentWorkerId,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
@@ -120,7 +120,7 @@ internal static class JobConvertUtil
             Priority = job.Priority,
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
-            ScheduledAt = job.OriginalScheduledAt,
+            ScheduledAt = job.ScheduledAt,
             CreatedAt = job.CreatedAt,
             SourceId = job.SourceId,
             Metadata = job.Metadata?.ToReadable() ?? Metadata.Empty,
@@ -145,8 +145,8 @@ internal static class JobConvertUtil
             AgentConnectionId = d.AgentConnectionId != null ? new AgentConnectionId(d.AgentConnectionId) : null,
             AgentWorkerId = d.AgentWorkerId,
             Priority = (JobMasterPriority)d.Priority,
-            OriginalScheduledAt = Utc(d.OriginalScheduledAt),
             ScheduledAt = Utc(d.ScheduledAt),
+            NextPlanExecutionAt = Utc(d.NextPlanExecutionAt),
             MsgData = string.IsNullOrEmpty(d.MsgData) ? "{}" : d.MsgData,
             Metadata = d.Metadata is null ? null : InternalJobMasterSerializer.Serialize(d.Metadata?.ToReadable().ToDictionary()),
             Status = (JobMasterJobStatus)d.Status,
@@ -163,7 +163,7 @@ internal static class JobConvertUtil
             WorkerLane = d.WorkerLane,
             Version = d.Version,
             HostId = !string.IsNullOrEmpty(d.HostId) && !string.IsNullOrEmpty(d.HostDisplayName)
-                ? HostId.Recover(d.HostDisplayName, d.HostId)
+                ? HostId.Recover(d.HostDisplayName!, d.HostId!)
                 : null,
         };
 
@@ -186,8 +186,8 @@ internal static class JobConvertUtil
             AgentConnectionId = m.AgentConnectionId?.IdValue,
             AgentWorkerId = m.AgentWorkerId,
             Priority = (int)m.Priority,
-            OriginalScheduledAt = m.OriginalScheduledAt,
             ScheduledAt = m.ScheduledAt,
+            NextPlanExecutionAt = m.NextPlanExecutionAt,
             MsgData = string.IsNullOrEmpty(m.MsgData) ? "{}" : m.MsgData,
             Metadata = metadataEntry,
             Status = (int)m.Status,

@@ -25,8 +25,8 @@ public class MasterJobsServiceTests
         {
             Id = id,
             JobDefinitionId = "job-def",
+            NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
             Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
@@ -58,8 +58,8 @@ public class MasterJobsServiceTests
         {
             Id = id,
             JobDefinitionId = "job-def",
+            NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
             Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
@@ -91,8 +91,8 @@ public class MasterJobsServiceTests
         {
             Id = id,
             JobDefinitionId = "job-def",
+            NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
             Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),

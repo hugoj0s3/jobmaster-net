@@ -41,6 +41,10 @@ internal interface ISqlGenerator
     
     public string GenerateVersionSql();
     
+    public string GetCaseInsensitiveCollation();
+    
+    public string ParamFor<TModel>(Expression<Func<TModel, object?>> property);
+    
     public string RepositoryTypeId { get; }
 }
 
@@ -141,6 +145,15 @@ internal abstract class SqlGenerator : ISqlGenerator
     public abstract string IdentityColumn();
     
     public abstract string GenerateVersionSql();
+    public abstract string GetCaseInsensitiveCollation();
+    
+    public string ParamFor<TModel>(Expression<Func<TModel, object?>> property)
+    {
+        var memberExpr = GetMemberExpression(property.Body);
+        var memberName = memberExpr?.Member.Name ?? throw new ArgumentException("Property expression expected");
+
+        return $"@{memberName}";
+    }
 
     public abstract string RepositoryTypeId { get; }
     

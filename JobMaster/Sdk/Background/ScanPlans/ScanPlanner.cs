@@ -74,6 +74,8 @@ internal static class ScanPlanner
             int reduced = (int)Math.Ceiling(batchSize / 1.5);
             int sufficientWithHeadroom = finalBatch;
 
+            // Single worker: reduce batch less aggressively (only +20% headroom over exact need)
+            // to maintain throughput since there's no parallelism to compensate.
             if (workersNeeded == 1)
             {
                 long denom = Math.Max(1, (long)actualWorkers * scansAtIdeal);

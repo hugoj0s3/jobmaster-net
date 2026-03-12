@@ -17,7 +17,10 @@ internal interface IJobMasterBackgroundAgentWorker
     JobMasterAgentConnectionConfig JobMasterAgentConnectionConfig { get; }
     JobMasterClusterConnectionConfig ClusterConnConfig { get; }
     IJobMasterRuntime? Runtime { get; }
-    int BatchSize { get; }
+    int TransferBatchSize { get; }
+    
+    int BucketBufferSize { get; }
+    TimeSpan BucketBufferLeadTime { get; }
     AgentWorkerMode Mode { get; }
     Task StartAsync();
     Task StopImmediatelyAsync();

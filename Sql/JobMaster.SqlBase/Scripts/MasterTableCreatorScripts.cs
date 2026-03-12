@@ -128,6 +128,12 @@ internal static class MasterTableCreatorScripts
         var versionCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
 
+        var hostIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostId);
+        var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
         var columns = new List<string>
         {
             $"{clusterIdCol} {clusterIdType}",
@@ -148,6 +154,8 @@ internal static class MasterTableCreatorScripts
             $"{agentConnectionIdCol} {agentConnectionIdType}",
             $"{agentWorkerIdCol} {agentWorkerIdType}",
             $"{partitionLockIdCol} {partitionLockIdType}",
+            $"{hostIdCol} {hostIdType}",
+            $"{hostDisplayNameCol} {hostDisplayNameType}",
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{createdAtCol} {createdAtType}",
             $"{startAfterCol} {startAfterType}",
@@ -213,11 +221,11 @@ internal static class MasterTableCreatorScripts
         var priorityCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Priority);
         var priorityType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var originalScheduledAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.OriginalScheduledAt);
-        var originalScheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
-
         var scheduledAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ScheduledAt);
         var scheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var nextPlanExecutionAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.NextPlanExecutionAt);
+        var nextPlanExecutionAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
         var dataCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MsgData);
         var dataType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
@@ -277,8 +285,8 @@ internal static class MasterTableCreatorScripts
             $"{agentConnectionIdCol} {agentConnectionIdType}",
             $"{agentWorkerIdCol} {agentWorkerIdType}",
             $"{priorityCol} {priorityType}",
-            $"{originalScheduledAtCol} {originalScheduledAtType}",
             $"{scheduledAtCol} {scheduledAtType}",
+            $"{nextPlanExecutionAtCol} {nextPlanExecutionAtType}",
             $"{dataCol} {dataType}",
             $"{statusCol} {statusType}",
             $"{numberOfFailuresCol} {numberOfFailuresType}",
@@ -302,7 +310,7 @@ internal static class MasterTableCreatorScripts
         var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
 
         var indexes = new List<string>();
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_scheduled_at", (scheduledAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_scheduled_at", (nextPlanExecutionAtCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_status", (statusCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_process_deadline", (processDeadlineCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_partition_lock_id", (partitionLockIdCol, false, (int?)null)));

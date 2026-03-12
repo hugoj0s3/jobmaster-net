@@ -47,8 +47,11 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     
     public bool StopRequested { get; internal set; }
 
-    public int BatchSize { get; private set; } = 0;
+    public int TransferBatchSize { get; private set; } = 0;
 
+    public int BucketBufferSize { get; private set; }
+    public TimeSpan BucketBufferLeadTime { get; private set; }
+    
     public AgentWorkerMode Mode { get; private set; } = AgentWorkerMode.Full;
     
     public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
@@ -125,7 +128,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var workerName = workerDefinition.WorkerName;
         var workerLane = workerDefinition.WorkerLane;
         
-        var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeInactive: true);
+        var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
         if (clusterConfig == null)
         {
             throw new ArgumentException($"Cluster '{clusterId}' not found");
@@ -158,7 +161,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             ClusterConnConfig = clusterConfig,
             ServiceProvider = serviceProvider,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
-            BatchSize = workerDefinition.BatchSize,
+            TransferBatchSize = workerDefinition.TransferBatchSize,
+            BucketBufferSize = workerDefinition.BucketBufferSize,
+            BucketBufferLeadTime = workerDefinition.BucketBufferLeadTime,
             BucketAwareSemaphoreSlim = new SemaphoreSlim(qtyOfBuckets),
             Mode = workerDefinition.Mode,
             WorkerLane = workerLane,

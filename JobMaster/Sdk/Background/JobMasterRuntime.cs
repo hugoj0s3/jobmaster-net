@@ -103,7 +103,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, updating...");
                 }
                 
-                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, footprint);
+                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, footprint, agentDefinition.ProtectConnectionChanges);
             }
             
             
@@ -149,7 +149,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                             WorkerLane = lane,
                             Mode = AgentWorkerMode.Drain,
                             ClusterId = clusterDefinition.ClusterId!,
-                            BatchSize = 250,
+                            TransferBatchSize = 1000,
                         };
                         
                         var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
@@ -308,7 +308,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .Distinct()
                 .ToList();
             
-            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x)).Where(x => x.ToList().Count > 1).ToList();
+            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x!)).Where(x => x.ToList().Count > 1).ToList();
             if (workLanesDupes.Any())
             {
                 throw new InvalidOperationException($"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
@@ -334,7 +334,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         if (!OperationThrottlerPerCluster.TryGetValue(clusterId, out var throttler))
         {
             var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
-            var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeInactive: true);
+            var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
             throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationThrottleLimit, logger);
             OperationThrottlerPerCluster[clusterId] = throttler;
         }
@@ -363,7 +363,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
             var runtimeDbOperationThrottleLimit = JobMasterClusterConnectionConfig
-                .Get(clusterId, includeInactive: true)
+                .Get(clusterId, includeNotReady: true)
                 .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationThrottleLimit;
             throttler = new OperationThrottler(runtimeDbOperationThrottleLimit, logger);
             OperationThrottlerPerAgent[key] = throttler;

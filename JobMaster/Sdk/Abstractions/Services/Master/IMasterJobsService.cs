@@ -11,13 +11,7 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task UpsertAsync(JobRawModel jobRaw);
     void Upsert(JobRawModel jobRaw);
 
-    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
-    bool BulkUpdatePartitionLockId(IList<Guid> jobIds, int lockId, DateTime expiresAt);
-
     void ReleasePartitionLock(Guid jobId);
-
-    [Obsolete("Use ReleasePartitionLock(...) instead. This method will be removed in a future release.")]
-    void ClearPartitionLock(Guid jobId);
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
