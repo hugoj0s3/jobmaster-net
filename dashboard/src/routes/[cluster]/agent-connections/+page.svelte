@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { onDestroy, onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import Pager from "$lib/components/Pager.svelte";
@@ -33,6 +34,11 @@
 	export let data: { agentConnections: any[]; error: string | null };
 
 	const clusterId = () => $page.params.cluster;
+	const refreshIntervalSec = 15;
+
+	let isRefreshing = false;
+	let lastUpdatedAt = new Date();
+	let poller: number | undefined;
 
 	type SortCol = "name" | "cluster" | "health" | "workers" | "buckets";
 
@@ -62,6 +68,7 @@
 		sortAsc = _initParams.sortAsc;
 		selectedHealths = [];
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
+		refreshNow();
 	}
 
 	function syncToUrl() {
@@ -89,6 +96,7 @@
 			sortAsc = true;
 		}
 		pageIndex = 0;
+		refreshNow();
 	}
 
 	const sortIcon = (col: SortCol) => {
@@ -174,12 +182,65 @@
 	$: totalCount = list.length;
 	$: view = list.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = view.length;
+
+	async function refreshNow() {
+		isRefreshing = true;
+		try {
+			// The data is already loaded via the page data function
+			// We just update the timestamp and trigger reactivity
+			lastUpdatedAt = new Date();
+		} finally {
+			isRefreshing = false;
+		}
+	}
+
+	function restartPoller() {
+		if (poller) window.clearInterval(poller);
+		poller = window.setInterval(() => {
+			refreshNow();
+		}, refreshIntervalSec * 1000);
+	}
+
+	function refresh() {
+		refreshNow();
+	}
+
+	onMount(() => {
+		refreshNow();
+		restartPoller();
+	});
+
+	onDestroy(() => {
+		if (poller) window.clearInterval(poller);
+	});
 </script>
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
 		<div class="flex items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
+			
+			<div class="flex items-center gap-3 text-sm opacity-80">
+				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+				<button
+					class="btn btn-ghost btn-sm btn-square"
+					aria-label="Refresh now"
+					on:click={refresh}
+					disabled={isRefreshing}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M21 12a9 9 0 1 1-3-6.7" />
+						<path d="M21 3v6h-6" />
+					</svg>
+				</button>
+			</div>
 		</div>
 
 		{#if data?.error}
@@ -200,6 +261,7 @@
 						bind:values={selectedHealths}
 						on:change={() => {
 							pageIndex = 0;
+							refreshNow();
 						}}
 					/>
 
@@ -208,6 +270,7 @@
 						onChange={(v) => {
 							filterValues = v;
 							pageIndex = 0;
+							refreshNow();
 						}}
 					>
 						<FilterItem
@@ -229,6 +292,7 @@
 				bind:pageSize
 				{totalCount}
 				{currentCount}
+				disabled={isRefreshing}
 				showPageSize={true}
 			/>
 		</div>
