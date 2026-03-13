@@ -179,9 +179,9 @@
 			</div>
 
 			<!-- Content grid -->
-			<div class="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-3">
-				<!-- Left column -->
-				<div class="lg:col-span-2 space-y-6">
+			<div class="mt-6 grid grid-cols-1 gap-6">
+				<!-- Full width content -->
+				<div class="space-y-6">
 					<!-- Details card -->
 					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 						<div class="flex items-center justify-between px-6 pt-5 pb-2">
@@ -193,17 +193,12 @@
 							<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 								<div class="space-y-3">
 									<div class="flex items-center justify-between gap-4">
-										<div class="text-sm opacity-70">Handler</div>
-										<div class="font-medium">{schedule.profileId ?? "—"}</div>
-									</div>
-
-									<div class="flex items-center justify-between gap-4">
 										<div class="text-sm opacity-70">Description</div>
 										<div class="font-medium">{description}</div>
 									</div>
 
 									<div class="flex items-center justify-between gap-4">
-										<div class="text-sm opacity-70">Schedule</div>
+										<div class="text-sm opacity-70">Expression</div>
 										<div class="font-medium text-primary">{scheduleExpression}</div>
 									</div>
 
@@ -241,6 +236,57 @@
 						</div>
 					</div>
 
+					<!-- Message Data and Metadata cards in 2-column layout -->
+					<div class="grid grid-cols-1 gap-6 lg:grid-cols-2">
+						<!-- Message Data card -->
+						<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+							<div class="flex items-center justify-between px-6 pt-5 pb-2">
+								<h2 class="text-lg font-semibold">Message Data</h2>
+							</div>
+
+							<div class="px-6 pb-5">
+								{#if schedule?.messageData}
+									<div class="space-y-2">
+										{#each Object.entries(schedule.messageData) as [key, value]}
+											<div class="flex items-center justify-between gap-4">
+												<div class="text-sm opacity-70 font-mono">{key}</div>
+												<div class="font-medium text-right break-all">{String(value)}</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="text-center opacity-70">
+										<p>No message data available</p>
+									</div>
+								{/if}
+							</div>
+						</div>
+
+						<!-- Metadata card -->
+						<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+							<div class="flex items-center justify-between px-6 pt-5 pb-2">
+								<h2 class="text-lg font-semibold">Metadata</h2>
+							</div>
+
+							<div class="px-6 pb-5">
+								{#if schedule?.metadata}
+									<div class="space-y-2">
+										{#each Object.entries(schedule.metadata) as [key, value]}
+											<div class="flex items-center justify-between gap-4">
+												<div class="text-sm opacity-70 font-mono">{key}</div>
+												<div class="font-medium text-right break-all">{String(value)}</div>
+											</div>
+										{/each}
+									</div>
+								{:else}
+									<div class="text-center opacity-70">
+										<p>No metadata available</p>
+									</div>
+								{/if}
+							</div>
+						</div>
+					</div>
+
 					<!-- Upcoming runs placeholder -->
 					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 						<div class="flex items-center justify-between px-6 pt-5 pb-2">
@@ -249,19 +295,6 @@
 
 						<div class="px-6 pb-5 text-center opacity-70">
 							<p>Upcoming runs information not available in current API response</p>
-						</div>
-					</div>
-				</div>
-
-				<!-- Right column: Recent activity placeholder -->
-				<div class="space-y-6">
-					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-						<div class="flex items-center justify-between px-6 pt-5 pb-2">
-							<h2 class="text-lg font-semibold">Recent Activity</h2>
-						</div>
-
-						<div class="px-6 pb-5 text-center opacity-70">
-							<p>Recent activity information not available in current API response</p>
 						</div>
 					</div>
 				</div>
