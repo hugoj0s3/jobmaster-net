@@ -29,9 +29,8 @@
     const urlParamDefs = {
         statuses: { defaultValue: [] as number[], ...Serializers.numberArray },
         scheduledAt: { defaultValue: "" as string },
-        bucketId: { defaultValue: "" },
         page: { defaultValue: 0, ...Serializers.number },
-        size: { defaultValue: 12, ...Serializers.number }
+        size: { defaultValue: 10, ...Serializers.number }
     };
 
     let _initParams = readUrlParams(urlParamDefs);
@@ -48,7 +47,6 @@
         pageSize = _initParams.size;
         pageIndex = _initParams.page;
         selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-        selectedBucketId = _initParams.bucketId;
         filterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
         refreshNow();
     }
@@ -142,11 +140,7 @@
     }
 
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-    let selectedBucketId: string = _initParams.bucketId;
 
-    type ApiBucketModel = components["schemas"]["ApiBucketModel"];
-    let bucketOptions: { value: string; label: string }[] = [];
-    let bucketNameMap: Record<string, string> = {};
 
     type FilterValues = Record<string, unknown>;
     let filterValues: FilterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
@@ -155,13 +149,12 @@
         writeUrlParams(urlParamDefs, {
             statuses: selectedStatuses,
             scheduledAt: datetimeToParam(filterValues, "scheduledAt"),
-            bucketId: selectedBucketId,
             page: pageIndex,
             size: pageSize
         });
     }
 
-    $: filterValues, selectedStatuses, selectedBucketId, pageIndex, pageSize, syncToUrl();
+    $: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
         const hb = (filterValues.scheduledAt ?? {}) as DatetimeFilterValue;
@@ -170,8 +163,7 @@
         return {
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: range.from?.toISOString(),
-            ScheduledTo: range.to?.toISOString(),
-            BucketId: selectedBucketId || undefined
+            ScheduledTo: range.to?.toISOString()
         } as const;
     }
 
@@ -246,7 +238,7 @@
                 const safeOffset = Math.max(0, pageIndex) * pageSize;
 
                 const filters = buildJobsQuery();
-                const [jobsCount, apiJobs, apiBuckets] = await Promise.all([
+                const [jobsCount, apiJobs] = await Promise.all([
                     jm.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: filters }
                     }).then((r) => {
@@ -261,23 +253,8 @@
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
-                    }),
-                    jm.GET("/{clusterId}/buckets", {
-                        params: { path: { clusterId: cid } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiBucketModel[];
                     })
                 ]);
-
-                const newBucketMap: Record<string, string> = {};
-                bucketOptions = (apiBuckets ?? []).map((b) => {
-                    const id = b.id ?? "";
-                    const name = b.name ?? b.id ?? "—";
-                    newBucketMap[id] = name;
-                    return { value: id, label: name };
-                });
-                bucketNameMap = newBucketMap;
 
                 jobsTotalCount = jobsCount;
 
@@ -306,7 +283,7 @@
                         workerLane: j.workerLane,
                         worker: j.agentWorkerId,
                         bucketId: j.bucketId,
-                        bucketName: j.bucketId ? (bucketNameMap[j.bucketId] ?? j.bucketId) : undefined
+                        bucketName: j.bucketId
                     };
                 });
 
@@ -400,17 +377,6 @@
                     values={selectedStatuses.map(String)}
                     on:change={(e) => {
                         selectedStatuses = e.detail.map(Number);
-                        pageIndex = 0;
-                        refreshNow();
-                    }}
-                />
-
-                <FilterDropdownMulti
-                    label="Bucket"
-                    options={bucketOptions}
-                    values={selectedBucketId ? [selectedBucketId] : []}
-                    on:change={(e) => {
-                        selectedBucketId = e.detail.length > 0 ? e.detail[e.detail.length - 1] : "";
                         pageIndex = 0;
                         refreshNow();
                     }}

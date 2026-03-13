@@ -7,7 +7,7 @@
     export let disabled: boolean = false;
     export let showFirstLast: boolean = true;
 	export let showPageSize: boolean = false;
-	export let pageSizeOptions: number[] = [10, 12, 25, 50, 100];
+	export let pageSizeOptions: number[] = [10, 25, 50, 100];
 
     let maxPageIndex = 0;
 

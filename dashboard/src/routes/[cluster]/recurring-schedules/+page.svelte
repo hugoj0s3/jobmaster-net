@@ -41,7 +41,7 @@
 
 	const urlParamDefs = {
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 12, ...Serializers.number },
+		size: { defaultValue: 10, ...Serializers.number },
 		createdAt: { defaultValue: "" as string }
 	};
 
