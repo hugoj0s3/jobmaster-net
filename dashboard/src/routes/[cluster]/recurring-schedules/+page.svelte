@@ -377,6 +377,13 @@
 						<tr class="hover cursor-pointer" on:click={() => navigateToDetail(r.id)}>
 							<td>
 								<div class="flex items-center gap-3">
+									<div class="h-10 w-10 rounded-xl bg-base-300/60 grid place-items-center">
+										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+											<path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
+											<rect x="8" y="14" width="2" height="2" rx="1" />
+											<rect x="14" y="14" width="2" height="2" rx="1" />
+										</svg>
+									</div>
 									<div class="leading-tight">
 										<div class="font-medium">{r.jobType}</div>
 									</div>
