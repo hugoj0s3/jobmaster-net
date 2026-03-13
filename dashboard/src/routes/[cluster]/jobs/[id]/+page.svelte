@@ -6,6 +6,7 @@
 	import { DateTimeUtil } from "$lib/helper/datetime-util";
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
 
@@ -25,6 +26,8 @@
 
 	let job: ApiJobModel | null = null;
 	let recentLogs: LogEntry[] = [];
+	let filteredLogs: LogEntry[] = [];
+	let selectedLogLevel: string = "";
 	let isLoading = true;
 	let refreshError: string | null = null;
 	let lastUpdatedAt = new Date();
@@ -33,6 +36,10 @@
 
 	$: statusLabel = safeStatusLabel(job?.status);
 	$: priorityLabel = safePriorityLabel(job?.priority);
+
+	$: filteredLogs = selectedLogLevel 
+		? recentLogs.filter(log => log.level === parseInt(selectedLogLevel))
+		: recentLogs;
 
 	function safeStatusLabel(status: number | null | undefined): JobStatusLabel | "—" {
 		try {
@@ -411,46 +418,6 @@
 					</div>
 				</div>
 
-				<!-- Recent Failure Logs -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
-					<div class="card-body">
-						<h2 class="card-title text-base">Recent Failure Logs</h2>
-						<div class="divider my-2"></div>
-						{#if recentLogs.length === 0}
-							<div class="text-sm opacity-60">No recent failure or error logs.</div>
-						{:else}
-							<div class="overflow-x-auto max-h-80 overflow-y-auto">
-								<table class="table table-zebra">
-									<thead class="sticky top-0 bg-base-200 z-10">
-									<tr class="text-base-content/70">
-										<th>Level</th>
-										<th>Timestamp</th>
-										<th>Message</th>
-									</tr>
-									</thead>
-									<tbody>
-									{#each recentLogs as log (log.id ?? log.timestamp ?? Math.random())}
-										<tr>
-											<td>
-												<span class={"badge badge-sm " + (log.level === 4 ? "badge-error" : log.level === 3 ? "badge-warning" : "badge-ghost")}>
-													{log.level === 4 ? "Error" : log.level === 3 ? "Warning" : "Level " + (log.level ?? "?")}
-												</span>
-											</td>
-											<td class="font-medium whitespace-nowrap">{formatDateTime(log.timestamp)}</td>
-											<td class="font-mono text-xs break-all">
-												{log.message ?? "—"}
-												{#if log.exceptionMessage}
-													<div class="mt-1 text-error/80">{log.exceptionMessage}</div>
-												{/if}
-											</td>
-										</tr>
-									{/each}
-									</tbody>
-								</table>
-							</div>
-						{/if}
-					</div>
-				</div>
 				<!-- Execution -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
@@ -478,6 +445,65 @@
 								</tbody>
 							</table>
 						</div>
+					</div>
+				</div>
+
+				<!-- Recents Logs -->
+				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
+					<div class="card-body">
+						<div class="flex items-center justify-between gap-4">
+							<h2 class="card-title text-base">Recents Logs</h2>
+							<FilterDropdown
+								label="Log Level"
+								options={[
+									{ value: "4", label: "Error" },
+									{ value: "3", label: "Warning" },
+									{ value: "2", label: "Info" },
+									{ value: "1", label: "Debug" }
+								]}
+								bind:value={selectedLogLevel}
+							/>
+						</div>
+						<div class="divider my-2"></div>
+						{#if filteredLogs.length === 0}
+							<div class="text-sm opacity-60">
+								{#if selectedLogLevel}
+									No logs match the selected log level.
+								{:else}
+									No recent failure or error logs.
+								{/if}
+							</div>
+						{:else}
+							<div class="overflow-x-auto max-h-80 overflow-y-auto">
+								<table class="table table-zebra">
+									<thead class="sticky top-0 bg-base-200 z-10">
+									<tr class="text-base-content/70">
+										<th>Level</th>
+										<th>Timestamp</th>
+										<th>Message</th>
+									</tr>
+									</thead>
+									<tbody>
+									{#each filteredLogs as log (log.id ?? log.timestamp ?? Math.random())}
+										<tr>
+											<td>
+												<span class={"badge badge-sm " + (log.level === 4 ? "badge-error" : log.level === 3 ? "badge-warning" : "badge-ghost")}>
+													{log.level === 4 ? "Error" : log.level === 3 ? "Warning" : "Level " + (log.level ?? "?")}
+												</span>
+											</td>
+											<td class="font-medium whitespace-nowrap">{formatDateTime(log.timestamp)}</td>
+											<td class="font-mono text-xs break-all">
+												{log.message ?? "—"}
+												{#if log.exceptionMessage}
+													<div class="mt-1 text-error/80">{log.exceptionMessage}</div>
+												{/if}
+											</td>
+										</tr>
+									{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
 					</div>
 				</div>
 
