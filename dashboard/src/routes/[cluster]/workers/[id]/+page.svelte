@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus as BucketStatusEnum } from "$lib/api/enums";
@@ -71,6 +72,12 @@
 
 	function priorityLabel(p: number | null | undefined): string {
 		try { return PriorityUtil.getLabel(p); } catch { return "—"; }
+	}
+
+	function goToBucket(bucketId: string) {
+		const cid = clusterId();
+		if (!cid) return;
+		goto(`/${encodeURIComponent(cid)}/buckets/${encodeURIComponent(bucketId)}`);
 	}
 
 	// --- API ---
@@ -299,7 +306,7 @@
 							<tbody>
 							{#each buckets as b}
 								{@const sLabel = bucketStatusLabel(b.status)}
-								<tr class="hover">
+								<tr class="hover cursor-pointer" on:click={() => goToBucket(b.id)}>
 									<td class="font-mono text-xs">{b.id ?? '—'}</td>
 									<td>{priorityLabel(b.priority)}</td>
 									<td><span class={badgeForStatus(sLabel)}>{sLabel}</span></td>
