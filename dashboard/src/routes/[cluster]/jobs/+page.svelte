@@ -5,6 +5,7 @@
     import type { components } from "$lib/api/schema";
     import { JobStatus as ApiJobStatus } from "$lib/api/enums";
     import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+    import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
     import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
     import FilterItem from "$lib/components/filters/FilterItem.svelte";
     import Pager from "$lib/components/Pager.svelte";
@@ -30,6 +31,7 @@
         statuses: { defaultValue: [] as number[], ...Serializers.numberArray },
         scheduledAt: { defaultValue: "" as string },
         jobDefinitionId: { defaultValue: "" as string },
+        sortDirection: { defaultValue: "" as string },
         page: { defaultValue: 0, ...Serializers.number },
         size: { defaultValue: 10, ...Serializers.number }
     };
@@ -49,6 +51,7 @@
         pageIndex = _initParams.page;
         selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
         selectedJobDefinitionId = _initParams.jobDefinitionId;
+        selectedSortDirection = _initParams.sortDirection;
         filterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
         refreshNow();
     }
@@ -145,6 +148,7 @@
 
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
     let selectedJobDefinitionId: string = _initParams.jobDefinitionId;
+    let selectedSortDirection: string = _initParams.sortDirection;
     let searchTimeout: number | undefined;
 
 
@@ -165,12 +169,13 @@
             statuses: selectedStatuses,
             scheduledAt: datetimeToParam(filterValues, "scheduledAt"),
             jobDefinitionId: selectedJobDefinitionId,
+            sortDirection: selectedSortDirection,
             page: pageIndex,
             size: pageSize
         });
     }
 
-    $: filterValues, selectedStatuses, selectedJobDefinitionId, pageIndex, pageSize, syncToUrl();
+    $: filterValues, selectedStatuses, selectedJobDefinitionId, selectedSortDirection, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
         const hb = (filterValues.scheduledAt ?? {}) as DatetimeFilterValue;
@@ -180,7 +185,9 @@
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: range.from?.toISOString(),
             ScheduledTo: range.to?.toISOString(),
-            JobDefinitionId: selectedJobDefinitionId || undefined
+            JobDefinitionId: selectedJobDefinitionId || undefined,
+            SortByProperty: "ScheduledAt",
+            SortByAscending: selectedSortDirection === "asc"
         } as const;
     }
 
@@ -442,6 +449,19 @@
                         }}
                     />
                 </div>
+
+                <FilterDropdown
+                    label="Sort by Schedule"
+                    options={[
+                        { value: "desc", label: "Recents" },
+                        { value: "asc", label: "Olders" }
+                    ]}
+                    bind:value={selectedSortDirection}
+                    on:change={() => {
+                        pageIndex = 0;
+                        refreshNow();
+                    }}
+                />
 
                 <FilterDropdownMulti
                     label="Statuses"

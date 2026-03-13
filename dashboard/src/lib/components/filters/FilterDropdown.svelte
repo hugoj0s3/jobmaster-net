@@ -59,21 +59,21 @@
 
     {#if open}
         <div
-            class="absolute left-0 z-[1] mt-2 min-w-[14rem] rounded-box border border-base-300 bg-base-100 p-3 shadow-lg"
+            class="absolute left-0 z-[1] mt-1 min-w-[12rem] rounded-box border border-base-300 bg-base-100 p-2 shadow-lg"
             on:click|stopPropagation
         >
-            <div class="flex items-center justify-between gap-3 mb-2">
-                <div class="font-semibold text-sm">{label}</div>
+            <div class="flex items-center justify-between gap-2 mb-1">
+                <div class="font-semibold text-xs">{label}</div>
                 {#if isActive}
                     <button class="btn btn-ghost btn-xs" on:click={clear}>Clear</button>
                 {/if}
             </div>
 
-            <ul class="menu menu-sm p-0 gap-0.5">
+            <ul class="menu menu-xs p-0 gap-0">
                 {#each options as opt (opt.value)}
                     <li>
                         <button
-                            class={"rounded-lg " + (value === opt.value ? "active" : "")}
+                            class={"rounded " + (value === opt.value ? "active" : "")}
                             on:click={() => select(opt)}
                         >
                             {opt.label}
@@ -83,7 +83,7 @@
             </ul>
 
             {#if options.length === 0}
-                <div class="py-3 text-center text-sm opacity-60">No options</div>
+                <div class="py-2 text-center text-xs opacity-60">No options</div>
             {/if}
         </div>
     {/if}
