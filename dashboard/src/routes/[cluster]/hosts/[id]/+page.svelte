@@ -2,6 +2,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { HostStatusUtil, type HostStatusLabel } from "$lib/helper/host-status-utils";
@@ -19,27 +20,23 @@
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
 
-	$: hostName = host?.hostDisplayName ?? host?.displayName ?? host?.id ?? "Unknown";
+	$: hostName = host?.hostDisplayName ?? host?.id ?? "Unknown";
 
 	$: hostStatus = deriveStatus(host);
 
 	function deriveStatus(h: ApiHostModel | null): { label: HostStatusLabel; dotClass: string; badgeClass: string } {
-		if (!h || (h.cpuUsagePercent == null && h.memoryTotalBytes == null)) {
+		if (!h) {
 			return {
 				label: HostStatusUtil.Label.Offline,
 				dotClass: HostStatusUtil.getDotClass(HostStatusUtil.Label.Offline),
 				badgeClass: `badge badge-outline ${HostStatusUtil.getBadgeClass(HostStatusUtil.Label.Offline)}`
 			};
 		}
-		const cpu = h.cpuUsagePercent ?? 0;
-		const memTotal = h.memoryTotalBytes ?? 0;
-		const memUsed = h.memoryUsedBytes ?? 0;
-		const memPercent = memTotal > 0 ? (memUsed / memTotal) * 100 : 0;
-
-		const label: HostStatusLabel =
-			cpu > 90 || memPercent > 90
-				? HostStatusUtil.Label.Warning
-				: HostStatusUtil.Label.Online;
+		
+		// Use isAlive property from API (same logic as hosts list page)
+		const label: HostStatusLabel = h.isAlive === false 
+			? HostStatusUtil.Label.Offline 
+			: HostStatusUtil.Label.Online;
 
 		return {
 			label,
@@ -83,13 +80,28 @@
 
 			host = (hostResponse.data ?? null) as ApiHostModel | null;
 
-	
 			try {
 				const workersResponse = await jmApi.GET("/{clusterId}/workers", {
 					params: { path: { clusterId: cid } }
 				});
 				const allWorkers = ((workersResponse.data ?? []) as any[]);
-				workers = allWorkers.filter((w: any) => w.hostId === hid || w.hostDisplayName === host?.displayName);
+
+				workers = allWorkers.filter((w: any) => {
+					// Try multiple matching strategies with string conversion
+					const workerIdStr = String(w.id || '').toLowerCase();
+					const workerDisplayNameStr = String(w.displayName || '').toLowerCase();
+					const hostIdStr = String(hid || '').toLowerCase();
+					const hostNameStr = String(host?.name || '').toLowerCase();
+					const hostDisplayNameStr = String(host?.displayName || '').toLowerCase();
+					
+					const matchesById = workerIdStr === hostIdStr;
+					const matchesByName = workerDisplayNameStr === hostNameStr || workerDisplayNameStr === hostDisplayNameStr;
+					const matchesWorkerName = workerIdStr === hostNameStr || workerIdStr === hostDisplayNameStr;
+					
+					const matches = matchesById || matchesByName || matchesWorkerName;
+
+					return matches;
+				});
 			} catch (e) {
 				console.error("Failed to fetch workers:", e);
 			}
@@ -157,33 +169,6 @@
 					</div>
 				</div>
 			</div>
-
-			<!-- KPI cards row -->
-			<div class="grid grid-cols-1 gap-4">
-				<!-- Status card -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-					<div class="card-body gap-3">
-						<div class="flex items-center justify-between">
-							<div class="text-sm font-semibold text-base-content/80">{hostStatus.label}</div>
-							<div class="text-error">
-								<!-- lightning -->
-								<svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-									<path
-										d="M13 2 3 14h7l-1 8 12-14h-7l-1-6Z"
-										stroke="currentColor"
-										stroke-width="1.5"
-										stroke-linejoin="round"
-									/>
-								</svg>
-							</div>
-						</div>
-
-						<div class="text-3xl font-semibold">{hostStatus.label}</div>
-						<div class="text-sm text-base-content/60">Host ID: {host?.id ?? '—'}</div>
-					</div>
-				</div>
-			</div>
-
 		</div>
 
 		<!-- Content -->
@@ -209,8 +194,8 @@
 								</tr>
 								</thead>
 								<tbody>
-								{#each workers as w}
-									<tr class="hover">
+								{#each workers as w (w.id)}
+									<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${w.id}`)}>
 										<td class="font-medium">
 											<div class="flex items-center gap-3">
 												<span class="h-2 w-2 rounded-full {w.isAlive ? 'bg-success' : 'bg-error'} opacity-80"></span>
