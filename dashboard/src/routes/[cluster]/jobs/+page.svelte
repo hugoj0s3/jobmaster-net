@@ -69,6 +69,8 @@
 
         executedAt?: string;
         scheduledAt?: string;
+        nextPlanExecutionAt?: string;
+        completedAt?: string;
 
         workerLane?: string;
         worker?: string;
@@ -214,6 +216,46 @@
         return { label: "—", tooltip: undefined };
     }
 
+    function formatDateCell(dateIso: string | undefined, jobStatus?: JobStatus, showOnlyFuture: boolean = false): { label: string; tooltip?: string } {
+        // For completed jobs (success, failure, cancelled), don't show next planned execution
+        if (jobStatus && (
+            jobStatus === JobStatusUtil.Label.Succeeded ||
+            jobStatus === JobStatusUtil.Label.Failed ||
+            jobStatus === JobStatusUtil.Label.Cancelled
+        )) {
+            return { label: "—", tooltip: undefined };
+        }
+        
+        if (!dateIso) return { label: "—", tooltip: undefined };
+        
+        const date = new Date(dateIso);
+        const now = Date.now();
+        const dateMs = date.getTime();
+        
+        // For next planned execution, only show future dates
+        if (showOnlyFuture && dateMs <= now) {
+            return { label: "—", tooltip: undefined };
+        }
+        
+        if (dateMs > now) {
+            const mins = diffMinutes(now, dateMs);
+            if (mins <= 59) {
+                return { label: `In ${mins}m`, tooltip: formatIso(dateIso) };
+            } else if (mins <= 1440) { // 24 hours
+                return { label: `In ${Math.round(mins / 60)}h`, tooltip: formatIso(dateIso) };
+            }
+            return { label: formatIso(dateIso), tooltip: formatIso(dateIso) };
+        } else {
+            const minsAgo = Math.max(0, diffMinutes(dateMs, now));
+            if (minsAgo <= 59) {
+                return { label: `${minsAgo}m ago`, tooltip: formatIso(dateIso) };
+            } else if (minsAgo <= 1440) { // 24 hours
+                return { label: `${Math.round(minsAgo / 60)}h ago`, tooltip: formatIso(dateIso) };
+            }
+            return { label: formatIso(dateIso), tooltip: formatIso(dateIso) };
+        }
+    }
+
     function metadataPairs(job: Job): Array<[string, string]> {
         return Object.entries(job.metadata).filter(([k]) => k.startsWith("!"));
     }
@@ -280,6 +322,8 @@
                         maxNumberOfRetries: j.maxNumberOfRetries,
                         executedAt: bestExecutedAtIso(j),
                         scheduledAt: scheduledIso(j),
+                        nextPlanExecutionAt: j.nextPlanExecutionAt,
+                        completedAt: j.completedAt ?? bestExecutedAtIso(j),
                         workerLane: j.workerLane,
                         worker: j.agentWorkerId,
                         bucketId: j.bucketId,
@@ -425,7 +469,9 @@
                         <th>Status</th>
                         <th>Failure Attempts</th>
                         <th>Priority</th>
-                        <th>Time</th>
+                        <th>Next Planned Execution</th>
+                        <th>Data Schedule</th>
+                        <th>Complete</th>
                         <th>Worker Lane</th>
                         <th>Bucket</th>
                     </tr>
@@ -500,12 +546,32 @@
                             </td>
 
                             <td>
-                                {#if formatTimeCell(j).tooltip}
-                                    <span class="tooltip tooltip-bottom" data-tip={formatTimeCell(j).tooltip}>
-                                        {formatTimeCell(j).label}
+                                {#if formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}
+                                    <span class="tooltip tooltip-bottom" data-tip={formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}>
+                                        {formatDateCell(j.nextPlanExecutionAt, j.status, true).label}
                                     </span>
                                 {:else}
-                                    <span>{formatTimeCell(j).label}</span>
+                                    <span>{formatDateCell(j.nextPlanExecutionAt, j.status, true).label}</span>
+                                {/if}
+                            </td>
+
+                            <td>
+                                {#if formatDateCell(j.scheduledAt).tooltip}
+                                    <span class="tooltip tooltip-bottom" data-tip={formatDateCell(j.scheduledAt).tooltip}>
+                                        {formatDateCell(j.scheduledAt).label}
+                                    </span>
+                                {:else}
+                                    <span>{formatDateCell(j.scheduledAt).label}</span>
+                                {/if}
+                            </td>
+
+                            <td>
+                                {#if formatDateCell(j.completedAt).tooltip}
+                                    <span class="tooltip tooltip-bottom" data-tip={formatDateCell(j.completedAt).tooltip}>
+                                        {formatDateCell(j.completedAt).label}
+                                    </span>
+                                {:else}
+                                    <span>{formatDateCell(j.completedAt).label}</span>
                                 {/if}
                             </td>
                             
