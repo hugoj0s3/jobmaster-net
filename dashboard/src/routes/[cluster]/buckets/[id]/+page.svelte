@@ -6,6 +6,9 @@
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus, JobStatus } from "$lib/api/enums";
 	import { DateTimeUtil } from "$lib/helper/datetime-util";
+	import Pager from "$lib/components/Pager.svelte";
+	import { resolve } from '$app/paths';
+	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 
 	type ActiveJob = {
 		name: string;
@@ -33,6 +36,31 @@
 	let activeJobs: ActiveJob[] = [];
 	let activeApiJobs: ApiJobModel[] = [];
 	let historyApiJobs: ApiJobModel[] = [];
+
+	// Pagination state
+	let activeJobsTotalCount = 0;
+	let pageIndex = 0;
+	let pageSize = 10;
+
+	const urlParamDefs = {
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 10, ...Serializers.number }
+	};
+
+	let _initParams = readUrlParams(urlParamDefs);
+	pageIndex = _initParams.page;
+	pageSize = _initParams.size;
+
+	let filterKey = $page.url.search;
+	let lastSearch = $page.url.search;
+	$: if ($page.url.search !== lastSearch) {
+		lastSearch = $page.url.search;
+		filterKey = $page.url.search;
+		_initParams = readUrlParams(urlParamDefs);
+		pageIndex = _initParams.page;
+		pageSize = _initParams.size;
+		refreshNow();
+	}
 
 	function safeMsBetween(startIso: string | null | undefined, endIso: string | null | undefined): number | null {
 		if (!startIso || !endIso) return null;
@@ -63,6 +91,28 @@
 		}
 	}
 
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			page: pageIndex,
+			size: pageSize
+		});
+	}
+
+	$: pageIndex, pageSize, syncToUrl();
+
+	let lastPageIndexForRefresh = pageIndex;
+	$: if (pageIndex !== lastPageIndexForRefresh) {
+		lastPageIndexForRefresh = pageIndex;
+		refreshNow();
+	}
+
+	let lastPageSizeForRefresh = pageSize;
+	$: if (pageSize !== lastPageSizeForRefresh) {
+		lastPageSizeForRefresh = pageSize;
+		pageIndex = 0;
+		refreshNow();
+	}
+
 	async function refreshNow() {
 		isRefreshing = true;
 		refreshError = null;
@@ -73,7 +123,7 @@
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const [bucketResp, activeJobsResp, historyJobsResp] = await Promise.all([
+			const [bucketResp, activeJobsResp, activeJobsCountResp, historyJobsResp] = await Promise.all([
 				jm.GET("/{clusterId}/buckets/{bucketId}", {
 					params: { path: { clusterId: cid, bucketId: bid } }
 				}),
@@ -83,11 +133,24 @@
 						query: {
 							BucketId: bid,
 							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.AssignedToBucket],
-							CountLimit: 200,
+							CountLimit: pageSize,
+							Offset: Math.max(0, pageIndex) * pageSize,
 							OrderByProperty: "createdAt",
 							OrderByAsc: false
 						}
 					}
+				}),
+				jm.GET("/{clusterId}/jobs/count", {
+					params: {
+						path: { clusterId: cid },
+						query: {
+							BucketId: bid,
+							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.AssignedToBucket]
+						}
+					}
+				}).then((r) => {
+					if (r.error) throw r.error;
+					return r.data as number;
 				}),
 				jm.GET("/{clusterId}/jobs", {
 					params: {
@@ -118,6 +181,14 @@
 			} else {
 				const jobs = ((activeJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
 				activeApiJobs = jobs;
+				activeJobsTotalCount = activeJobsCountResp as number;
+
+				const newMaxPageIndex = Math.max(0, Math.ceil(activeJobsTotalCount / pageSize) - 1);
+				if (pageIndex > newMaxPageIndex) {
+					pageIndex = newMaxPageIndex;
+					return refreshNow();
+				}
+
 				activeJobs = jobs.map((j) => {
 					const createdAt = j.createdAt ? Date.parse(j.createdAt) : NaN;
 					const since = Number.isFinite(createdAt) ? DateTimeUtil.formatAgeShort(Date.now() - createdAt) : "—";
@@ -254,11 +325,6 @@
 			<div class="card-body gap-4">
 				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
 					<div class="flex items-center gap-4">
-						<!-- Icon -->
-						<div class="grid h-14 w-14 place-items-center rounded-2xl bg-base-200">
-							<span class="text-xl">🗄️</span>
-						</div>
-
 						<div>
 							<div class="flex items-center gap-2">
 								<div class="text-xl font-semibold">{bucketName}</div>
@@ -324,9 +390,17 @@
 			<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 				<div class="flex items-center gap-3">
 					<h2 class="text-xl font-semibold">Active Jobs</h2>
-					<span class="badge badge-ghost">{activeJobs.length}</span>
+					<span class="badge badge-ghost">{activeJobs.length} / {activeJobsTotalCount}</span>
 				</div>
 
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					totalCount={activeJobsTotalCount}
+					currentCount={activeJobs.length}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
 			</div>
 
 			<div class="card mt-3 bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -347,14 +421,23 @@
 							</thead>
 							<tbody>
 							{#each activeJobs as j (j.name + j.id)}
-								<tr>
+								<tr class="hover cursor-pointer">
 									<td>
 										<div class="flex items-center gap-2">
 											<span class="text-success">♥</span>
-											<span class="font-medium">{j.name}</span>
+											<a
+												class="link link-hover font-medium"
+												href={resolve(`/${clusterId()}/jobs/${j.id}`)}
+												aria-label={`Open job ${j.name}`}
+												>{j.name}</a
+											>
 										</div>
 									</td>
-									<td class="hidden md:table-cell opacity-80">{j.id || "--"}</td>
+									<td class="hidden md:table-cell opacity-80">
+										<span class="tooltip tooltip-bottom" data-tip={j.id || "--"}>
+											{j.id ? j.id.substring(0, 8) + "..." : "--"}
+										</span>
+									</td>
 									<td class="opacity-80">{j.since}</td>
 									<td>
 										<span class={"badge badge-sm " + stateBadge[j.state]}>{j.state}</span>
