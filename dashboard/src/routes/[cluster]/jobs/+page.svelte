@@ -29,6 +29,7 @@
     const urlParamDefs = {
         statuses: { defaultValue: [] as number[], ...Serializers.numberArray },
         scheduledAt: { defaultValue: "" as string },
+        jobDefinitionId: { defaultValue: "" as string },
         page: { defaultValue: 0, ...Serializers.number },
         size: { defaultValue: 10, ...Serializers.number }
     };
@@ -47,6 +48,7 @@
         pageSize = _initParams.size;
         pageIndex = _initParams.page;
         selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+        selectedJobDefinitionId = _initParams.jobDefinitionId;
         filterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
         refreshNow();
     }
@@ -142,21 +144,33 @@
     }
 
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+    let selectedJobDefinitionId: string = _initParams.jobDefinitionId;
+    let searchTimeout: number | undefined;
 
 
     type FilterValues = Record<string, unknown>;
     let filterValues: FilterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
 
+    function debouncedSearch(value: string) {
+        if (searchTimeout) clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            selectedJobDefinitionId = value;
+            pageIndex = 0;
+            refreshNow();
+        }, 300);
+    }
+
     function syncToUrl() {
         writeUrlParams(urlParamDefs, {
             statuses: selectedStatuses,
             scheduledAt: datetimeToParam(filterValues, "scheduledAt"),
+            jobDefinitionId: selectedJobDefinitionId,
             page: pageIndex,
             size: pageSize
         });
     }
 
-    $: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
+    $: filterValues, selectedStatuses, selectedJobDefinitionId, pageIndex, pageSize, syncToUrl();
 
     function buildJobsQuery() {
         const hb = (filterValues.scheduledAt ?? {}) as DatetimeFilterValue;
@@ -165,7 +179,8 @@
         return {
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: range.from?.toISOString(),
-            ScheduledTo: range.to?.toISOString()
+            ScheduledTo: range.to?.toISOString(),
+            JobDefinitionId: selectedJobDefinitionId || undefined
         } as const;
     }
 
@@ -406,6 +421,28 @@
         <div class="flex items-center justify-between gap-4 mt-4">
             {#key filterKey}
             <div class="flex flex-wrap items-center gap-2">
+                <div class="form-control">
+                    <input
+                        type="text"
+                        placeholder="Search definition ID (exact match)"
+                        class="input input-bordered input-sm w-64"
+                        value={selectedJobDefinitionId}
+                        on:input={(e) => {
+                            const value = e.target.value;
+                            debouncedSearch(value);
+                        }}
+                        on:keydown={(e) => {
+                            if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (searchTimeout) clearTimeout(searchTimeout);
+                                selectedJobDefinitionId = e.target.value;
+                                pageIndex = 0;
+                                refreshNow();
+                            }
+                        }}
+                    />
+                </div>
+
                 <FilterDropdownMulti
                     label="Statuses"
                     options={[
