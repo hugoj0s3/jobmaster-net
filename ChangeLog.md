@@ -39,6 +39,8 @@
   - `RecurringScheduleId` → `SourceId`
   - `ScheduledAt` → `NextPlanExecutionAt`
   - `OriginalScheduledAt` → `ScheduledAt`
+  - `SucceedExecutedAt` → `FinalizedAt` (now also set on failure and cancellation)
+  - `ProcessingStartedAt` → `ProcessStartedAt`
   - **Migration Scripts** in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
     - ⚠️ **Alpha Notice**: Not fully tested. Recommended approach: let
       JobMaster create a fresh database. Only use migration scripts if you
