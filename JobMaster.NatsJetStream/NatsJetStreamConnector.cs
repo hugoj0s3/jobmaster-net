@@ -18,7 +18,6 @@ internal sealed class NatsJetStreamConnector
     : System.IDisposable
 #endif
 {
-    
     private sealed class Entry
     {
         public NatsConnection Nats { get; set; } = null!;
@@ -77,7 +76,7 @@ internal sealed class NatsJetStreamConnector
             NatsTlsOpts? tlsOpts = config.AdditionalConnConfig.TryGetValue<NatsTlsOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey);
 
             // Build options (TLS/auth customizations can be added later)
-            var url = config.ConnectionString;
+            var url = NormalizeNatsUrl(config.ConnectionString);
             var clientName = NatsJetStreamUtils.GetStreamName(config.Id);
             var streamNameInit = NatsJetStreamUtils.GetStreamName(config.Id);
 
@@ -230,6 +229,73 @@ internal sealed class NatsJetStreamConnector
 
         return await CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId);
     } 
+    
+    private static string NormalizeNatsUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException("NATS connection string is null or empty.", nameof(url));
+        }
+
+        var trimmed = url!.Trim();
+
+        // Common when values come from JSON/env and end up with surrounding quotes
+        trimmed = trimmed.Trim('"', '\'', ' ', '\t', '\r', '\n');
+
+        var sepIdx = trimmed.IndexOfAny(new[] { ';', '\n', '\r' });
+        if (sepIdx > 0)
+        {
+            trimmed = trimmed[..sepIdx];
+        }
+
+        trimmed = trimmed.Trim();
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return trimmed;
+        }
+
+        // Auto-fix a very common configuration pitfall: password contains '@'.
+        // In URI syntax, '@' separates userinfo from host, so it must be percent-encoded inside the password.
+        // Example:
+        //   nats://user:MyP@ss@localhost:4222  ->  nats://user:MyP%40ss@localhost:4222
+        try
+        {
+            if (trimmed.StartsWith("nats://", StringComparison.OrdinalIgnoreCase))
+            {
+                var afterScheme = trimmed["nats://".Length..];
+                var lastAt = afterScheme.LastIndexOf('@');
+                var firstAt = afterScheme.IndexOf('@');
+
+                if (firstAt >= 0 && lastAt > firstAt)
+                {
+                    var userInfo = afterScheme[..lastAt];
+                    var hostPart = afterScheme[(lastAt + 1)..];
+
+                    var colonIdx = userInfo.IndexOf(':');
+                    if (colonIdx > 0 && colonIdx < userInfo.Length - 1)
+                    {
+                        var user = userInfo[..colonIdx];
+                        var pass = userInfo[(colonIdx + 1)..];
+                        var escapedPass = Uri.EscapeDataString(pass);
+                        var rebuilt = $"nats://{user}:{escapedPass}@{hostPart}";
+
+                        if (Uri.TryCreate(rebuilt, UriKind.Absolute, out var uri2) && !string.IsNullOrWhiteSpace(uri2.Host))
+                        {
+                            return rebuilt;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore and throw the final error below
+        }
+
+        throw new ArgumentException($"Invalid NATS URL: '{trimmed}'. Original value length: {url.Length}.", nameof(url));
+    }
+
 
 #if NET8_0_OR_GREATER
     public async ValueTask DisposeAsync()

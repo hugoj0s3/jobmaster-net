@@ -1,4 +1,4 @@
-﻿using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 
@@ -25,20 +25,20 @@ internal class JobExecution : JobMasterBaseModel
     public string? BucketId { get; set; } 
     public HostId? HostId { get; set; }
     
-    public DateTime? CompletedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     public string? OutcomeMessage { get; set; }
     public JobExecutionOutcomeStatus Outcome { get; set; }
     
     public void Fail(string message)
     {
         Outcome = JobExecutionOutcomeStatus.Failed;
-        CompletedAt = DateTime.UtcNow;
+        FinalizedAt = DateTime.UtcNow;
         OutcomeMessage = message;
     }
     
     public void Succeed()
     {
-        CompletedAt = DateTime.UtcNow;
+        FinalizedAt = DateTime.UtcNow;
         Outcome = JobExecutionOutcomeStatus.Succeeded;
         OutcomeMessage = "Job execution completed successfully.";
     }

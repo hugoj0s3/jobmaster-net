@@ -61,6 +61,7 @@ internal class MasterHeartbeatService : JobMasterClusterAwareComponent, IMasterH
         var criteria = new GenericRecordQueryCriteria()
         {
             EntryIds = resourceIds,
+            ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
         
         var groupId = type switch

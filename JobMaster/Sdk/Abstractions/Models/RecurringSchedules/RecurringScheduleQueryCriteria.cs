@@ -31,6 +31,8 @@ internal class RecurringScheduleQueryCriteria
     
     public string? WorkerLane { get; set; }
     
+    public IList<Guid>? Ids { get; set; }
+    
     public IList<GenericRecordValueFilter> MetadataFilters { get; set; } = new List<GenericRecordValueFilter>();
     
     public SortByCriteria? SortBy { get; set; }

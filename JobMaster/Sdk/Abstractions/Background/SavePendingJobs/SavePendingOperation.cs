@@ -96,8 +96,7 @@ internal class SavePendingOperation
     public async Task<AddSavePendingResult> AddSavePendingJobAsync(JobRawModel jobRaw, DateTime cutOffDate)
     {
         // Insert-first flow to avoid extra read; duplicate key maps to AlreadyExists
-
-        if (jobRaw.NextPlanExecutionAt > cutOffDate)
+        if (jobRaw.GetSafeNextPlanExecutionAt() > cutOffDate)
         {
             jobRaw.MarkAsHeldOnMaster();
             try
@@ -122,7 +121,7 @@ internal class SavePendingOperation
         var engine = backgroundAgentWorker.GetEngine(bucketId);
         // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
         if (engine is not null && 
-            jobRaw.Status == JobMasterJobStatus.SavePending && 
+            jobRaw.Status == JobMasterJobStatus.PendingSave && 
             currentBucket?.Status == BucketStatus.Active &&
             jobRaw.IsOnBoarding() && 
             engine.OnBoardingControl.CountAvailability() > 0)

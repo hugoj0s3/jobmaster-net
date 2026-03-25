@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -16,7 +16,7 @@ public class ApiJobModel : ApiClusterBaseModel
     public string? HostDisplayName { get; set; } = string.Empty;
     public JobMasterPriority Priority { get; set; }
     public DateTime ScheduledAt { get; set; }
-    public DateTime NextPlanExecutionAt { get; set; }
+    public DateTime? NextPlanExecutionAt { get; set; }
     public IDictionary<string, object?> MsgData { get; set; } = new Dictionary<string, object?>();
     public IDictionary<string, object?> Metadata { get; set; } = new Dictionary<string, object?>();
     public JobMasterJobStatus Status { get; set; }
@@ -27,7 +27,7 @@ public class ApiJobModel : ApiClusterBaseModel
     public string? SourceId { get; set; }
     public DateTime? ProcessDeadline { get; set; }
     public DateTime? ProcessStartedAt { get; set; }
-    public DateTime? CompletedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     public string? WorkerLane { get; set; }
 
     internal static ApiJobModel FromDomain(JobRawModel jobRawModel)
@@ -59,7 +59,7 @@ public class ApiJobModel : ApiClusterBaseModel
             SourceId = job.SourceId?.ToBase64(),
             ProcessDeadline = job.ProcessDeadline,
             ProcessStartedAt = job.ProcessStartedAt,
-            CompletedAt = job.CompletedAt,
+            FinalizedAt = job.FinalizedAt,
             WorkerLane = job.WorkerLane,
             HostId = job.HostId?.IdValue,
             HostDisplayName = job.HostId?.HostDisplayName,

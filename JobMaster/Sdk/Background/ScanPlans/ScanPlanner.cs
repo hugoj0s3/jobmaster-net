@@ -4,7 +4,7 @@ namespace JobMaster.Sdk.Background.ScanPlans;
 
 internal static class ScanPlanner
 {
-    private const int LaneWidth = 1024;
+    public const int LaneWidth = 1024;
 
     /// <summary>
     /// Calculates an optimized scan plan for job processing based on current system load.

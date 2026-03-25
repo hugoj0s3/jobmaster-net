@@ -139,6 +139,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IMasterClusterConfigurationService, MasterClusterConfigurationService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHeartbeatService, MasterHeartbeatService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterRecurringSchedulesService, MasterRecurringSchedulesService>();
+        clusterServiceRegistration.AddJobMasterComponent<IRecentlyInsertedRecurringScheduleQueue, RecentlyInsertedRecurringScheduleQueue>();
         clusterServiceRegistration.AddJobMasterComponent<IAgentJobsDispatcherService, AgentJobsDispatcherService>();
         clusterServiceRegistration.AddJobMasterComponent<IJobMasterSchedulerClusterAware, JobMasterSchedulerClusterAware>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();

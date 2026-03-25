@@ -2,22 +2,42 @@ using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Abstractions.Services;
+using JobMaster.Sdk.Abstractions.Services.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Services;
 
 namespace JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
 
-internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
+internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecurringSchedulerRunner
 {
     private readonly TimeSpan interval = TimeSpan.FromSeconds(2.5);
     private int failedSavedCountConsecutive = 0;
     
 
+    private readonly IMasterDistributedLockerService distributedLockerService;
+    private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
+    private readonly IMasterBucketsService masterBucketsService;
+    private readonly JobMasterLockKeys lockKeys;
+    private IWorkerClusterOperations workerClusterOperations;
+    private readonly IRecentlyInsertedRecurringScheduleQueue recentlyInsertedQueue;
+    
     public ManualSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
+        distributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
+        agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
+        masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
+        workerClusterOperations = backgroundAgentWorker.GetClusterAwareService<IWorkerClusterOperations>();
+        recentlyInsertedQueue = backgroundAgentWorker.GetClusterAwareService<IRecentlyInsertedRecurringScheduleQueue>();
+        
+        lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
     }
     
     public override TimeSpan SucceedInterval => interval;
@@ -43,12 +63,8 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
 
         if (recurringSchedules.Count <= 0)
         {
-            return OnTickResult.Skipped(TimeSpan.FromMilliseconds(interval.TotalMilliseconds * 5));
+            return OnTickResult.Skipped(TimeSpan.FromSeconds(1));
         }
-
-        // 2. BURST MODE: Force acquire slots.
-        // We force entry even if we slightly exceed limits to ensure persistence priority.
-        int acquiredCount = recurringSchedules.Count;
         
         bool hasFailed = false;
         
@@ -66,7 +82,7 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
 
         try
         {
-            // 3. Parallel Processing
+            // 2. Parallel Processing
             await JobMasterParallelUtil.ForEachAsync(recurringSchedules, parallelOptions, async (schedule, token) =>
             {
                 try
@@ -100,18 +116,6 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
                     return;
                 }
 
-                try
-                {
-                    // Step B: Schedule next jobs (only if Step A succeeds)
-                    logger.Debug("Scheduling next jobs", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
-                    await ScheduleNextJobs(schedule);
-                    logger.Debug("Scheduled next jobs", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
-                }
-                catch (Exception e2)
-                {
-                    hasFailed = true;
-                    logger.Error("Failed to schedule next jobs", JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e2);
-                }
             });
         }
         catch (OperationCanceledException)
@@ -126,6 +130,7 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
                 catch
                 {
                     // Log Critical
+                    logger.Critical($"Failed to add recurring schedule to queue. Data: {InternalJobMasterSerializer.Serialize(schedule)}", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
                 }
             }
         }
@@ -140,5 +145,31 @@ internal class ManualSaveRecurringScheduleRunner : SaveRecurringSchedulerRunner
         
         failedSavedCountConsecutive = 0;
         return OnTickResult.Success(this);
+    }
+    
+    private async Task SaveRecurringScheduleAsync(RecurringScheduleRawModel recurringScheduleRawModel)
+    {
+        if (this.distributedLockerService.IsLocked(lockKeys.RecurringScheduleCancellingLock(recurringScheduleRawModel.Id)))
+        {
+            BackgroundAgentWorker.WorkerClusterOperations.CancelRecurringSchedule(recurringScheduleRawModel.Id);
+            logger.Debug("Recurring schedule cancelled", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleRawModel.Id);
+            return;
+        }
+
+        recurringScheduleRawModel.Active();
+        await workerClusterOperations.ExecWithRetryAsync(o => o.Upsert(recurringScheduleRawModel));
+        recentlyInsertedQueue.Enqueue(recurringScheduleRawModel.Id);
+    }
+    
+
+    public void DefineBucketId(string bucketId)
+    {
+        if (string.IsNullOrEmpty(bucketId))
+            throw new ArgumentNullException(nameof(bucketId));
+        
+        if (!string.IsNullOrEmpty(BucketId))
+            throw new InvalidOperationException("BucketId is already defined.");
+        
+        this.BucketId = bucketId;
     }
 }

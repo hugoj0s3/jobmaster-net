@@ -99,7 +99,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
 
         EnforceDispatchSizeLimit(json, correlationId);
 
-        return processingRepository.PushMessage(fullBucketAddressId, json, jobRaw.NextPlanExecutionAt, correlationId);
+        return processingRepository.PushMessage(fullBucketAddressId, json, jobRaw.GetSafeNextPlanExecutionAt(), correlationId);
     }
     
     public async Task<string> PushToProcessingAsync(JobRawModel jobRaw)
@@ -110,7 +110,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
 
         EnforceDispatchSizeLimit(json, correlationId);
 
-        return await processingRepository.PushMessageAsync(fullBucketAddressId, json, jobRaw.NextPlanExecutionAt, correlationId);
+        return await processingRepository.PushMessageAsync(fullBucketAddressId, json, jobRaw.GetSafeNextPlanExecutionAt(), correlationId);
     }
 
     public async Task<IList<string>> BulkPushSavePendingJobAsync(string bucketId, IList<JobRawModel> jobRaw)

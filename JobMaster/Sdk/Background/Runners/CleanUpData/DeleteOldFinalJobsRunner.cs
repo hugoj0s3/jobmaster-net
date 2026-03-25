@@ -53,7 +53,7 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await jobsRepo.PurgeFinalByNextPlanExecutionAtAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            var deleted = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

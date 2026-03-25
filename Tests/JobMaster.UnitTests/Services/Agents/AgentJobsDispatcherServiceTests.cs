@@ -76,7 +76,7 @@ public class AgentJobsDispatcherServiceTests
             NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.SavePending,
+            Status = JobMasterJobStatus.PendingSave,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
             AgentConnectionId = agentConnId,

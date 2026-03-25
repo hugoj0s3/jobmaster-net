@@ -23,7 +23,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
     private IMasterJobsService masterJobsService;
     
     public CancelJobsFromRecurScheduleInactiveOrCanceledRunner(
-        IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker, bucketAwareLifeCycle: true, useSemaphore: true)
+        IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
         masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
         masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
@@ -85,6 +85,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
+        
         foreach (var recurringSchedule in recurringSchedules)
         {
             if (cutOffTime <= DateTime.UtcNow)
@@ -108,6 +109,11 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
 
     private async Task CencelJobsAsync(RecurringScheduleRawModel recurringScheduleRawModel, int lockId, TimeSpan durationToLock, CancellationToken ct)
     {
+        if (distributedLockerService.IsLocked(lockKeys.RecurringSchedulePlan(recurringScheduleRawModel.Id)))
+        {
+            return;
+        }
+        
         var jobQueryCriteria = new JobQueryCriteria()
         {
             CountLimit = BackgroundAgentWorker.TransferBatchSize,
@@ -144,7 +150,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         if (jobIdsToCancel.Count <= 0)
         {
             recurringScheduleRawModel.HasCancelJobsFinish();
-            masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+            await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
             return;
         }
         
@@ -152,7 +158,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         masterJobsService.BulkUpdateStatus(jobIdsToCancel, JobMasterJobStatus.Cancelled, null, null, null, excludeStatuses: finalStatuses);
 
         recurringScheduleRawModel.HasCancelJobsFinish();
-        masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+        await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
     }
     
 

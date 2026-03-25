@@ -66,7 +66,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
                 return;
             }
 
-            var target = payload.NextPlanExecutionAt - BackgroundAgentWorker.BucketBufferLeadTime;
+            var target = payload.GetSafeNextPlanExecutionAt() - BackgroundAgentWorker.BucketBufferLeadTime;
             var delay = target > utcNow ? target - utcNow : TimeSpan.Zero;
             var jitter = TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(5, 50));
             

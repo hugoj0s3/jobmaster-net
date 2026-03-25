@@ -151,7 +151,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 rec.ScheduledAt, rec.NextPlanExecutionAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
                 SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
                 ProcessStartedAt = rec.ProcessStartedAt,
-                CompletedAt = rec.CompletedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
+                FinalizedAt = rec.FinalizedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
             
             if (rowsAffected == 0)
             {
@@ -213,7 +213,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 rec.ScheduledAt, rec.NextPlanExecutionAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
                 SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
                 ProcessStartedAt = rec.ProcessStartedAt,
-                CompletedAt = rec.CompletedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
+                FinalizedAt = rec.FinalizedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
             
             if (rowsAffected == 0)
             {
@@ -391,7 +391,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         }
     }
 
-    public async Task<int> PurgeFinalByNextPlanExecutionAtAsync(DateTime cutoffUtc, int limit)
+    public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
 
@@ -404,13 +404,14 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
             var cStatus = Col(x => x.Status);
-            var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
+            var cFinalizedAt = Col(x => x.FinalizedAt);
 
             var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
 WHERE {cClusterId} = @ClusterId
   AND {cStatus} IN (@Succeeded, @Failed, @Cancelled, @Aborted)
-  AND {cNextPlanExecutionAt} <= @CutoffUtc
-ORDER BY {cNextPlanExecutionAt} ASC, {cId} ASC");
+  AND {cFinalizedAt} IS NOT NULL
+  AND {cFinalizedAt} <= @CutoffUtc
+ORDER BY {cFinalizedAt} ASC, {cId} ASC");
             selectSql.Append('\n');
             selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
@@ -654,7 +655,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
             Col(x => x.CreatedAt), Col(x => x.SourceId),
             Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.ProcessDeadline),
-            Col(x => x.ProcessStartedAt), Col(x => x.CompletedAt),
+            Col(x => x.ProcessStartedAt), Col(x => x.FinalizedAt),
             Col(x => x.WorkerLane), Col(x => x.Version), Col(x => x.HostId), Col(x => x.HostDisplayName)
         };
         var vals = new[]
@@ -665,7 +666,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
             "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
-            "@ProcessStartedAt", "@CompletedAt",
+            "@ProcessStartedAt", "@FinalizedAt",
             "@WorkerLane", "@Version", "@HostId", "@HostDisplayName"
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
@@ -693,7 +694,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.ProcessDeadline)} = @ProcessDeadline",
             $"{Col(x => x.ProcessStartedAt)} = @ProcessStartedAt",
-            $"{Col(x => x.CompletedAt)} = @CompletedAt",
+            $"{Col(x => x.FinalizedAt)} = @FinalizedAt",
             $"{Col(x => x.WorkerLane)} = @WorkerLane",
             $"{Col(x => x.Version)} = @Version",
             $"{Col(x => x.HostId)} = @HostId",
@@ -727,7 +728,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{jobAlias}.{Col(x => x.PartitionLockExpiresAt)}",
             $"{jobAlias}.{Col(x => x.ProcessDeadline)}",
             $"{jobAlias}.{Col(x => x.ProcessStartedAt)}",
-            $"{jobAlias}.{Col(x => x.CompletedAt)}",
+            $"{jobAlias}.{Col(x => x.FinalizedAt)}",
             $"{jobAlias}.{Col(x => x.WorkerLane)}",
             $"{jobAlias}.{Col(x => x.Version)}",
             $"{jobAlias}.{Col(x => x.HostId)}",
@@ -831,7 +832,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
                 PartitionLockExpiresAt = first.PartitionLockExpiresAt,
                 ProcessDeadline = first.ProcessDeadline,
                 ProcessStartedAt = first.ProcessStartedAt,
-                CompletedAt = first.CompletedAt,
+                FinalizedAt = first.FinalizedAt,
                 Metadata = metadata,
                 WorkerLane = first.WorkerLane,
                 Version = first.Version,

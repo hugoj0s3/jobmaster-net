@@ -89,7 +89,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             var (validationResult, _) = await ValidateRecurringScheduleAsync(
                 payload.SourceId.Value, 
-                payload.NextPlanExecutionAt, 
+                payload.GetSafeNextPlanExecutionAt(), 
                 payload.Id);
             
             switch (validationResult)
@@ -125,12 +125,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         // Try to buffer into OnBoarding. If briefly full, retry quickly before falling back.
         if (forceIfNoCapacity)
         {
-            OnBoardingControl.ForcePush(payload, payload.Id.ToString(), payload.NextPlanExecutionAt, payload.ProcessDeadline!.Value);
+            var departureTime = payload.GetSafeNextPlanExecutionAt();
+            OnBoardingControl.ForcePush(payload, payload.Id.ToString(), departureTime, payload.ProcessDeadline!.Value);
             logger.Debug($"OnBoarding (forced): JobId={payload.Id}");
             return OnBoardingResult.Accepted;
         }
 
-        var result = OnBoardingControl.Push(payload, payload.Id.ToString(), payload.NextPlanExecutionAt, payload.ProcessDeadline!.Value);
+        var result = OnBoardingControl.Push(payload, payload.Id.ToString(), payload.GetSafeNextPlanExecutionAt(), payload.ProcessDeadline!.Value);
         if (result)
         {
             logger.Debug($"OnBoarding: JobId={payload.Id}");
@@ -284,7 +285,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     continue;
                 }
                 
-                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.NextPlanExecutionAt, job.ProcessDeadline!.Value);
+                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt(), job.ProcessDeadline!.Value);
             }
         }
         
@@ -358,7 +359,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     // Check recurring schedule again at execution time (job may have been onboarded before cancellation)
                     var (validationResult, recurringSchedule) = await ValidateRecurringScheduleAsync(
                         jobRawModel.SourceId.Value, 
-                        jobRawModel.NextPlanExecutionAt, 
+                        jobRawModel.GetSafeNextPlanExecutionAt(), 
                         jobRawModel.Id);
                     
                     switch (validationResult)

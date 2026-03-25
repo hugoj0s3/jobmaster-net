@@ -54,7 +54,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     public async Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
     {
         if (jobRaw.Status != JobMasterJobStatus.OnMaster && 
-            jobRaw.Status != JobMasterJobStatus.SavePending)
+            jobRaw.Status != JobMasterJobStatus.PendingSave)
         {
             return;
         }
@@ -211,6 +211,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
         return workers.Count(x => x.Status() == AgentWorkerStatus.Active && 
                                   (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Full));
+    }
+    
+    public async Task<int> CountActiveExecutorWorkersAsync()
+    {
+        var workers = await masterAgentWorkersService.QueryWorkersAsync();
+        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && 
+                                  (x.Mode == AgentWorkerMode.Execution || x.Mode == AgentWorkerMode.Full));
     }
     
     public void CancelRecurringSchedule(Guid id)

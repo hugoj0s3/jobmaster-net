@@ -16,7 +16,7 @@ public class ApiJobExecution
     public string? HostId { get; set; }
     public string? HostDisplayName { get; set; }
     
-    public DateTime? CompletedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     public string? OutcomeMessage { get; set; }
     public string Outcome { get; set; } = string.Empty;
 
@@ -33,7 +33,7 @@ public class ApiJobExecution
             BucketId = execution.BucketId,
             HostId = execution.HostId?.IdValue,
             HostDisplayName = execution.HostId?.HostDisplayName,
-            CompletedAt = execution.CompletedAt,
+            FinalizedAt = execution.FinalizedAt,
             OutcomeMessage = execution.OutcomeMessage,
             Outcome = execution.Outcome.ToString(),
         };

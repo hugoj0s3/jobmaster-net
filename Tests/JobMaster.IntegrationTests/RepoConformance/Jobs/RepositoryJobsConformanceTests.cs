@@ -40,7 +40,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.PartitionLockExpiresAt = now.AddMinutes(30);
         job.ProcessDeadline = now.AddMinutes(20);
         job.ProcessStartedAt = now.AddMinutes(-2);
-        job.CompletedAt = now.AddMinutes(-1);
+        job.FinalizedAt = now.AddMinutes(-1);
         job.MsgData = "{\"a\":1,\"b\":\"x\"}";
         job.Metadata = "{\"meta_k\":\"meta_v\",\"n\":5}";
         job.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
@@ -65,7 +65,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var originalVersion = job.Version;
         updated.JobDefinitionId = job.JobDefinitionId + "-updated";
         updated.Status = JobMasterJobStatus.Succeeded;
-        updated.NextPlanExecutionAt = job.NextPlanExecutionAt.AddMinutes(5);
+        updated.NextPlanExecutionAt = job.NextPlanExecutionAt?.AddMinutes(5);
         updated.WorkerLane = "LANE_UPDATE";
         updated.BucketId = "bucket-updated";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
@@ -78,7 +78,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(15);
         updated.ProcessDeadline = DateTime.UtcNow.AddMinutes(5);
         updated.ProcessStartedAt = DateTime.UtcNow.AddMinutes(-10);
-        updated.CompletedAt = DateTime.UtcNow.AddMinutes(-1);
+        updated.FinalizedAt = DateTime.UtcNow.AddMinutes(-1);
         updated.MsgData = "{\"x\":\"y\"}";
         updated.Metadata = "{\"k\":\"v\"}";
         updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
@@ -470,7 +470,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var now = DateTime.UtcNow;
         var sched = scheduledAt ?? now;
 
-        return new JobRawModel(Fixture.ClusterId)
+        var job = new JobRawModel(Fixture.ClusterId)
         {
             Id = Guid.NewGuid(),
             JobDefinitionId = jobDefinitionId ?? ("job-def-" + Guid.NewGuid()),
@@ -485,6 +485,14 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             CreatedAt = now,
             WorkerLane = workerLane
         };
+
+        if (status.IsFinalStatus())
+        {
+            job.NextPlanExecutionAt = null;
+            job.FinalizedAt = sched;
+        }
+
+        return job;
     }
 
     private static void AssertJobEquivalent(JobRawModel expected, JobRawModel actual)
@@ -501,7 +509,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         Assert.Equal(expected.Priority, actual.Priority);
         AssertDateTimeEquivalent(ToUtc(expected.ScheduledAt), ToUtc(actual.ScheduledAt));
-        AssertDateTimeEquivalent(ToUtc(expected.NextPlanExecutionAt), ToUtc(actual.NextPlanExecutionAt));
+        AssertDateTimeEquivalent(ToUtcN(expected.NextPlanExecutionAt), ToUtcN(actual.NextPlanExecutionAt));
 
         AssertJsonEquivalent(expected.MsgData, actual.MsgData);
         AssertJsonEquivalent(expected.Metadata, actual.Metadata);
@@ -519,7 +527,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         AssertDateTimeEquivalent(ToUtcN(expected.ProcessDeadline), ToUtcN(actual.ProcessDeadline));
         AssertDateTimeEquivalent(ToUtcN(expected.ProcessStartedAt), ToUtcN(actual.ProcessStartedAt));
-        AssertDateTimeEquivalent(ToUtcN(expected.CompletedAt), ToUtcN(actual.CompletedAt));
+        AssertDateTimeEquivalent(ToUtcN(expected.FinalizedAt), ToUtcN(actual.FinalizedAt));
         Assert.Equal(expected.WorkerLane, actual.WorkerLane);
         Assert.Equal(expected.HostId?.IdValue, actual.HostId?.IdValue);
         Assert.Equal(expected.HostId?.HostDisplayName, actual.HostId?.HostDisplayName);
@@ -564,20 +572,20 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task PurgeFinalByScheduledAtAsync_ShouldDelete_OnlyFinalJobsOlderThanCutoff()
+    public async Task PurgeFinalizedAsync_ShouldDelete_OnlyFinalJobsOlderThanCutoff()
     {
         var def = "defPurgeFinal-" + Guid.NewGuid();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(5);
 
         var oldSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(1));
-        oldSucceeded.CompletedAt = baseTime.AddMinutes(1);
+        oldSucceeded.FinalizedAt = baseTime.AddMinutes(1);
 
         var oldFailed = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Failed, scheduledAt: baseTime.AddMinutes(3));
-        oldFailed.CompletedAt = baseTime.AddMinutes(3);
+        oldFailed.FinalizedAt = baseTime.AddMinutes(3);
 
         var recentSucceeded = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(10));
-        recentSucceeded.CompletedAt = baseTime.AddMinutes(10);
+        recentSucceeded.FinalizedAt = baseTime.AddMinutes(10);
 
         var heldOnMaster = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1));
 
@@ -586,7 +594,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(recentSucceeded);
         await Fixture.MasterJobs.AddAsync(heldOnMaster);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
@@ -602,7 +610,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task PurgeFinalByScheduledAtAsync_ShouldRespect_Limit()
+    public async Task PurgeFinalizedAsync_ShouldRespect_Limit()
     {
         var def = "defPurgeFinalLimit-" + Guid.NewGuid();
         var baseTime = DateTime.UtcNow.AddHours(-10);
@@ -611,11 +619,11 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         for (var i = 0; i < 10; i++)
         {
             var j = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(i));
-            j.CompletedAt = baseTime.AddMinutes(i);
+            j.FinalizedAt = baseTime.AddMinutes(i);
             await Fixture.MasterJobs.AddAsync(j);
         }
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 3);
+        var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 3);
         Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
         Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
 
@@ -628,7 +636,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task PurgeFinalByScheduledAtAsync_ShouldNotDelete_NonFinalJobs()
+    public async Task PurgeFinalizedAsync_ShouldNotDelete_NonFinalJobs()
     {
         var def = "defPurgeNonFinal-" + Guid.NewGuid();
         var baseTime = DateTime.UtcNow.AddHours(-10);
@@ -644,7 +652,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(processing);
         await Fixture.MasterJobs.AddAsync(pendingRetry);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
@@ -659,7 +667,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task PurgeFinalByScheduledAtAsync_ShouldDelete_AllFinalStatuses()
+    public async Task PurgeFinalizedAsync_ShouldDelete_AllFinalStatuses()
     {
         var def = "defPurgeAllFinal-" + Guid.NewGuid();
         var baseTime = DateTime.UtcNow.AddHours(-10);
@@ -669,11 +677,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var failed = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Failed, scheduledAt: baseTime.AddMinutes(2));
         var canceled = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Cancelled, scheduledAt: baseTime.AddMinutes(3));
 
+        succeeded.FinalizedAt = succeeded.ScheduledAt;
+        failed.FinalizedAt = failed.ScheduledAt;
+        canceled.FinalizedAt = canceled.ScheduledAt;
+
         await Fixture.MasterJobs.AddAsync(succeeded);
         await Fixture.MasterJobs.AddAsync(failed);
         await Fixture.MasterJobs.AddAsync(canceled);
 
-        var deleted = await Fixture.MasterJobs.PurgeFinalByNextPlanExecutionAtAsync(cutoff, limit: 100);
+        var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 3, $"Expected at least 3 deleted, got {deleted}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
@@ -712,7 +724,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             PartitionLockExpiresAt = job.PartitionLockExpiresAt,
             ProcessDeadline = job.ProcessDeadline,
             ProcessStartedAt = job.ProcessStartedAt,
-            CompletedAt = job.CompletedAt,
+            FinalizedAt = job.FinalizedAt,
             WorkerLane = job.WorkerLane,
             Version = job.Version,
             HostId = job.HostId

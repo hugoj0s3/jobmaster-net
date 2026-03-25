@@ -276,41 +276,6 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
     }
 
-    public bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var t = TableName();
-            var sqlText = @$"
-UPDATE {t} SET 
-    {Col(x => x.PartitionLockId)} = @LockId, 
-    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE {this.sql.InClauseFor(Col(x => x.Id), "@RecurringScheduleIds")} 
-    AND ({Col(x => x.PartitionLockId)} is null OR {Col(x => x.PartitionLockExpiresAt)} < @NowUtc) ";
-            
-            var rowsAffected = conn.Execute(sqlText, new { RecurringScheduleIds = recurringScheduleIds, LockId = lockId, LockExpiresAt = expiresAt, NowUtc = JobMasterConstants.NowUtcWithSkewTolerance() }, trans);
-            
-            // lock all or nothing.
-            if (rowsAffected != recurringScheduleIds.Count)
-            {
-                trans.SafeRollback();
-                return false;
-            }
-            
-            trans.Commit();
-            
-            return true;
-        }
-        catch (Exception)
-        {
-            trans.SafeRollback();
-            throw;
-        }
-    }
-
     public async Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
@@ -613,6 +578,12 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         {
             where.Add($"s.{Col(x => x.WorkerLane)} = @WorkerLane");
             args.Add("WorkerLane", c.WorkerLane);
+        }
+        
+        if (c.Ids != null && c.Ids.Count > 0)
+        {
+            where.Add(sql.InClauseFor($"s.{Col(x => x.Id)}", "@Ids"));
+            args.Add("Ids", c.Ids);
         }
         
         if (c.RecurringScheduleType.HasValue)

@@ -2,7 +2,7 @@ namespace JobMaster.Abstractions.Models;
 
 public enum JobMasterJobStatus
 {
-    SavePending = 1,
+    PendingSave = 1,
     OnMaster = 2,
     InBucket = 3,
     Processing = 4,

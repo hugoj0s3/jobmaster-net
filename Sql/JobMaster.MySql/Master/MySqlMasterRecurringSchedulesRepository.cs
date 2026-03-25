@@ -90,6 +90,7 @@ WHERE s.{cClusterId} = @ClusterId
 
             var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
             var records = LinearListToDomain(linearRows);
+            tx.Commit();
             return records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
         }
         catch
