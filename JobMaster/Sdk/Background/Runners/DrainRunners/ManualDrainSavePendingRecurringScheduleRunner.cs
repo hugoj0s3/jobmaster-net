@@ -2,10 +2,9 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
-using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Background.SavePendingRecurringSchedules;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
-using JobMaster.Sdk.Abstractions.Models.Logs;
-using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -13,9 +12,9 @@ namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
 internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner, IDrainSavePendingRecurringScheduleRunner
 {
-    private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
     private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
     private readonly IMasterBucketsService masterBucketsService;
+    private readonly RecurringScheduleSavePendingOperation savePendingOperation;
 
     private int failedSavedCountConsecutive = 0;
 
@@ -23,9 +22,9 @@ internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner
 
     public ManualDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
-        masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
+        savePendingOperation = new RecurringScheduleSavePendingOperation(backgroundAgentWorker);
     }
 
     public void DefineBucketId(string bucketId)
@@ -59,29 +58,9 @@ internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner
         bool hasFailed = false;
         foreach (var recurringScheduleRawModel in recurringSchedules)
         {
-            try
-            {
-                if (recurringScheduleRawModel.Status == RecurringScheduleStatus.PendingSave)
-                {
-                    recurringScheduleRawModel.Active();
-                }
-
-                await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
-            }
-            catch
-            {
-                logger.Error("Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleRawModel.Id);
+            var result = await savePendingOperation.SaveDrainWithSafeGuardAsync(recurringScheduleRawModel);
+            if (result == SaveDrainResultCode.Failed)
                 hasFailed = true;
-
-                try
-                {
-                    await agentJobsDispatcherService.AddSavePendingRecurAsync(recurringScheduleRawModel);
-                }
-                catch
-                {
-                    logger.Critical($"Failed to add recurring schedule to queue. Data: {InternalJobMasterSerializer.Serialize(recurringScheduleRawModel)}", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleRawModel.Id);
-                }
-            }
         }
 
         if (hasFailed)

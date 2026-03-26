@@ -32,8 +32,8 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        var countExecutor = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveExecutorWorkersAsync();
-        var maxPartitionLockId = MinPartitionLockId + countExecutor + 1;
+        var countWorkers = await BackgroundAgentWorker.WorkerClusterOperations.CountWorkersAsync();
+        var maxPartitionLockId = MinPartitionLockId + countWorkers + 1;
         var partitionLockId = JobMasterRandomUtil.GetInt(MinPartitionLockId, maxPartitionLockId);
         var ids = queue.Dequeue(BackgroundAgentWorker.TransferBatchSize);
         if (ids.Count == 0)

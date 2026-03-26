@@ -119,6 +119,7 @@ internal class JobSavePendingOperation
 
         var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         var engine = backgroundAgentWorker.GetEngine(bucketId);
+        
         // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
         if (engine is not null && 
             jobRaw.Status == JobMasterJobStatus.PendingSave && 

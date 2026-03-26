@@ -213,11 +213,10 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                                   (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Full));
     }
     
-    public async Task<int> CountActiveExecutorWorkersAsync()
+    public async Task<int> CountWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && 
-                                  (x.Mode == AgentWorkerMode.Execution || x.Mode == AgentWorkerMode.Full));
+        return workers.Count(x => x.Status() == AgentWorkerStatus.Active);
     }
     
     public void CancelRecurringSchedule(Guid id)

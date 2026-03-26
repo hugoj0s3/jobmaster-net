@@ -221,6 +221,19 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         {
             await LoadExecutionRunners();
         }
+
+        if (this.Mode != AgentWorkerMode.Coordinator)
+        {
+            // Runs in Full, Execution, and Drain modes — excluded from Coordinator since it never
+            // saves recurring schedules and therefore never populates the queue.
+            // Consumes the in-memory queue fed by save runners (execution and drain paths) after
+            // activating a schedule, triggering immediate next-job scheduling.
+            // Started once here rather than inside each mode's loader to avoid duplicate instances.
+            // ScheduleRecurringJobsRunner (coordinator) remains the fallback for schedules not
+            // caught by this fast path.
+            var recentlyInsertedScheduleRunner = new RecentlyInsertedScheduleRecurringJobsRunner(this);
+            await recentlyInsertedScheduleRunner.StartAsync();
+        }
         
         // Mark as initialized after all buckets and runners are created
         IsInitialized = true;
@@ -334,15 +347,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             saveRecurringScheduleRunner.DefineBucketId(bucketModel.Id);
             await saveRecurringScheduleRunner.StartAsync();
         }
-        
-        // Although planning sounds like a coordinator concern, this runner is intentionally started
-        // here in Execution mode alongside SaveRecurringScheduleRunner. It consumes the in-memory
-        // queue that ManualSaveRecurringScheduleRunner/NetsJetStreamSaveRecurringScheduleRunner feed
-        // after activating a schedule. Producer and consumer must be co-located in the same worker
-        // mode so the queue is never populated without a consumer. ScheduleRecurringJobsRunner
-        // (coordinator) remains the fallback for any schedules not caught by this fast path.
-        var recentlyInsertedScheduleRunner = new RecentlyInsertedScheduleRecurringJobsRunner(this);
-        await recentlyInsertedScheduleRunner.StartAsync();
     }
 
     public async Task StopImmediatelyAsync()
