@@ -70,7 +70,7 @@ internal class NetsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBas
             }
             
             logger.Debug("Scheduling next jobs", JobMasterLogSubjectType.RecurringSchedule, payload.Id);
-            await recurringSchedulePlanner.ScheduleNextJobsAsync(payload, byPassStatusValidation: true);
+            await recurringSchedulePlanner.ScheduleNextJobsAsync(payload);
         }
         catch (Exception e)
         {

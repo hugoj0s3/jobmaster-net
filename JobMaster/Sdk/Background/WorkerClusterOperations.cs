@@ -245,7 +245,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobDuplicationException)
+                if (e is JobMasterDuplicationException)
                 {
                     throw;
                 }
@@ -284,7 +284,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobDuplicationException)
+                if (e is JobMasterDuplicationException)
                 {
                     throw;
                 }

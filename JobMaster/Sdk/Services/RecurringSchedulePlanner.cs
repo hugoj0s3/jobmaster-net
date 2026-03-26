@@ -49,15 +49,15 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
 
-    public async Task ScheduleNextJobsAsync(RecurringScheduleRawModel scheduleRawModel, bool byPassStatusValidation = false)
+    public async Task ScheduleNextJobsAsync(RecurringScheduleRawModel scheduleRawModel)
     {
-        if (scheduleRawModel.Status != RecurringScheduleStatus.Active || byPassStatusValidation)
+        if (scheduleRawModel.Status != RecurringScheduleStatus.Active)
         {
             logger.Debug($"Skipping: Status is {scheduleRawModel.Status}, not Active", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
-        if (scheduleRawModel.IsStaticIdle(jobMasterRuntime.StartingAt) || byPassStatusValidation)
+        if (scheduleRawModel.IsStaticIdle(jobMasterRuntime.StartingAt))
         {
             logger.Debug("Skipping: Schedule is in static idle period", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
             return;

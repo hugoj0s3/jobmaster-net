@@ -56,7 +56,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Update_ShouldPersistChanges()
+    public async Task Upsert_ShouldPersistChanges()
     {
         var job = NewJob();
         await Fixture.MasterJobs.AddAsync(job);
@@ -83,61 +83,54 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.Metadata = "{\"k\":\"v\"}";
         updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
 
-        await Fixture.MasterJobs.UpdateAsync(updated);
+        await Fixture.MasterJobs.UpsertAsync(updated);
 
         var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
 
         Assert.NotNull(fromDb);
         AssertJobEquivalent(updated, fromDb!);
-        // Version should change on update
+        // Version should change on upsert
         Assert.False(string.IsNullOrEmpty(fromDb!.Version));
         Assert.NotEqual(originalVersion, fromDb!.Version);
     }
 
     [Fact]
-    public async Task Update_ShouldThrow_OnVersionConflict()
+    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
         var job = NewJob();
         await Fixture.MasterJobs.AddAsync(job);
 
-        // Load two separate copies to simulate concurrent updates
+        // Load two separate copies to simulate concurrent upserts
         var copyA = await Fixture.MasterJobs.GetAsync(job.Id);
         var copyB = await Fixture.MasterJobs.GetAsync(job.Id);
         Assert.NotNull(copyA);
         Assert.NotNull(copyB);
 
-        // First update succeeds and advances the version
+        // First upsert succeeds and advances the version
         copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
-        await Fixture.MasterJobs.UpdateAsync(copyA);
+        await Fixture.MasterJobs.UpsertAsync(copyA);
 
-        // Second update uses stale version and must fail
+        // Second upsert uses stale version — should throw
         copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
-        await Assert.ThrowsAsync<JobMasterVersionConflictException>(async () =>
-        {
-            await Fixture.MasterJobs.UpdateAsync(copyB);
-        });
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterJobs.UpsertAsync(copyB));
     }
 
     [Fact]
-    public async Task Update_ShouldThrow_WhenVersionMismatch_Manual()
+    public async Task Upsert_ShouldThrow_WhenVersionMismatch()
     {
         var job = NewJob();
         await Fixture.MasterJobs.AddAsync(job);
 
-        // Get latest from DB to ensure we have a real current version
         var current = await Fixture.MasterJobs.GetAsync(job.Id);
         Assert.NotNull(current);
-        Assert.False(string.IsNullOrEmpty(current!.Version));
 
-        // Clone and force an incorrect (random) version
-        var wrong = Clone(current);
-        wrong.Version = Guid.NewGuid().ToString("N"); // wrong expected version
-        wrong.JobDefinitionId = wrong.JobDefinitionId + "-WRONG-VERSION";
+        var stale = Clone(current!);
+        stale.Version = Guid.NewGuid().ToString("N");
+        stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
-        await Assert.ThrowsAsync<JobMasterVersionConflictException>(async () =>
-        {
-            await Fixture.MasterJobs.UpdateAsync(wrong);
-        });
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterJobs.UpsertAsync(stale));
     }
 
     [Fact]

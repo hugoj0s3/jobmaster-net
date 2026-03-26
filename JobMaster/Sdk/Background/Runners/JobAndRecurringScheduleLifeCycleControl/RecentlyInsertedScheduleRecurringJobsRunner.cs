@@ -35,7 +35,7 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
         var countExecutor = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveExecutorWorkersAsync();
         var maxPartitionLockId = MinPartitionLockId + countExecutor + 1;
         var partitionLockId = JobMasterRandomUtil.GetInt(MinPartitionLockId, maxPartitionLockId);
-        var ids = queue.Dequeue(maxCount: 50);
+        var ids = queue.Dequeue(BackgroundAgentWorker.TransferBatchSize);
         if (ids.Count == 0)
         {
             return OnTickResult.Skipped(TimeSpan.FromSeconds(1));

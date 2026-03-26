@@ -17,7 +17,7 @@ internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJob
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
     
-    protected SavePendingOperation? savePendingOperation;
+    protected JobSavePendingOperation? savePendingOperation;
 
     public ManualDrainJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -32,7 +32,7 @@ internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJob
         
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
         }
         
         var bucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);

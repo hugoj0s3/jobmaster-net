@@ -53,7 +53,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
 
     private int failedSavedCountConsecutive = 0;
     
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
 
     public ManualSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -73,7 +73,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
 
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
         }
         
         var bucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);

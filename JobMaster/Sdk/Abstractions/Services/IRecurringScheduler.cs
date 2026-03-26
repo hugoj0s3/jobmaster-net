@@ -5,5 +5,5 @@ namespace JobMaster.Sdk.Abstractions.Services;
 
 internal interface IRecurringSchedulePlanner : IJobMasterClusterAwareService
 {
-    Task ScheduleNextJobsAsync(RecurringScheduleRawModel schedule, bool byPassStatusValidation = false);
+    Task ScheduleNextJobsAsync(RecurringScheduleRawModel schedule);
 }

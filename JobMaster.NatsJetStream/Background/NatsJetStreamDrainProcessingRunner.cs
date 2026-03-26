@@ -18,7 +18,7 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
     private IMasterDistributedLockerService masterDistributedLockerService;
     private JobMasterLockKeys jobmasterBaseLockKeys = null!;
     private readonly IMasterJobsService masterJobsService;
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
 
     public NatsJetStreamDrainProcessingRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -42,7 +42,7 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
     {
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
+            savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
         }
         
         await savePendingOperation.SaveDrainProcessingAsync(job);

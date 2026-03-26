@@ -78,7 +78,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
             trans.SafeRollback();
-            throw new JobDuplicationException(jobRaw.Id, ex);
+            throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
         }
         catch
         {
@@ -121,7 +121,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
             trans.SafeRollback();
-            throw new JobDuplicationException(jobRaw.Id, ex);
+            throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
         }
         catch
         {
@@ -130,7 +130,37 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
     }
 
-    public void Update(JobRawModel jobRaw)
+    public bool Exists(Guid jobId)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return conn.ExecuteScalar<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId });
+    }
+
+    public async Task<bool> ExistsAsync(Guid jobId)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId });
+    }
+
+    public virtual void Upsert(JobRawModel jobRaw)
+    {
+        if (Exists(jobRaw.Id))
+            Update(jobRaw);
+        else
+            Add(jobRaw);
+    }
+
+    public virtual async Task UpsertAsync(JobRawModel jobRaw)
+    {
+        if (await ExistsAsync(jobRaw.Id))
+            await UpdateAsync(jobRaw);
+        else
+            await AddAsync(jobRaw);
+    }
+
+    protected virtual void Update(JobRawModel jobRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -192,7 +222,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
     }
 
-    public async Task UpdateAsync(JobRawModel jobRaw)
+    protected virtual async Task UpdateAsync(JobRawModel jobRaw)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -645,7 +675,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return sql.TableNameFor<Job>(additionalConnConfig);
     }
 
-    private (string Columns, string ValuesParams) InsertColumnsAndParams()
+    protected (string Columns, string ValuesParams) InsertColumnsAndParams()
     {
         var cols = new[]
         {
@@ -672,7 +702,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return (string.Join(", ", cols), string.Join(", ", vals));
     }
 
-    private string UpdateSetClause()
+    protected string UpdateSetClause()
     {
         return string.Join(", ", new[]
         {

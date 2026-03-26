@@ -10,7 +10,7 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
-internal class SavePendingOperation
+internal class JobSavePendingOperation
 {
     
     protected readonly IAgentJobsDispatcherService agentJobsDispatcherService;
@@ -21,7 +21,7 @@ internal class SavePendingOperation
     protected readonly IJobMasterBackgroundAgentWorker backgroundAgentWorker;
     private readonly string bucketId;
 
-    public SavePendingOperation(IJobMasterBackgroundAgentWorker backgroundAgentWorker, string bucketId)
+    public JobSavePendingOperation(IJobMasterBackgroundAgentWorker backgroundAgentWorker, string bucketId)
     {
         
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
@@ -103,7 +103,7 @@ internal class SavePendingOperation
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
             }
-            catch (JobDuplicationException ex)
+            catch (JobMasterDuplicationException ex)
             {
                 logger.Debug("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
@@ -133,7 +133,7 @@ internal class SavePendingOperation
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
             }
-            catch (JobDuplicationException e)
+            catch (JobMasterDuplicationException e)
             {
                 logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
@@ -175,7 +175,7 @@ internal class SavePendingOperation
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
             }
-            catch (JobDuplicationException)
+            catch (JobMasterDuplicationException)
             {
                 logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
@@ -190,7 +190,7 @@ internal class SavePendingOperation
         {
             await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
         }
-        catch (JobDuplicationException e)
+        catch (JobMasterDuplicationException e)
         {
             logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
             return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);

@@ -37,16 +37,15 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             {
                 await masterJobsRepository.AddAsync(jobRaw);
             }
-            catch (JobDuplicationException) 
+            catch (JobMasterDuplicationException) 
             {
                 throw;
             }
             catch (Exception ex)
             {
-                var exists = await this.masterJobsRepository.GetAsync(jobRaw.Id);
-                if (exists is not null)
+                if (await this.masterJobsRepository.ExistsAsync(jobRaw.Id))
                 {
-                    throw new JobDuplicationException(jobRaw.Id, ex);
+                    throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
                 }
                 
                 throw;
@@ -64,9 +63,9 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             }
             catch (Exception ex)
             {
-                if (this.masterJobsRepository.Get(jobRaw.Id) is not null)
+                if (this.masterJobsRepository.Exists(jobRaw.Id))
                 {
-                    throw new JobDuplicationException(jobRaw.Id, ex);
+                    throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
                 }
                 
                 throw;
@@ -187,27 +186,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         operationThrottler.Exec(() => { masterJobsRepository.BulkUpdateStatus(jobIds, status, agentConnectionId, agentWorkerId, bucketId, negateStatuses); return true; });
     }
 
-    private void DoUpsert(JobRawModel jobRaw)
-    {
-        var jobEntity = masterJobsRepository.Get(jobRaw.Id);
-        if (jobEntity is null)
-        {
-            masterJobsRepository.Add(jobRaw);
-            return;
-        }
+    private void DoUpsert(JobRawModel jobRaw) => masterJobsRepository.Upsert(jobRaw);
 
-        masterJobsRepository.Update(jobRaw);
-    }
-    
-    private async Task DoUpsertAsync(JobRawModel jobRaw)
-    {
-        var jobEntity = await masterJobsRepository.GetAsync(jobRaw.Id);
-        if (jobEntity == null)
-        {
-            await masterJobsRepository.AddAsync(jobRaw);
-            return;
-        }
-
-        await masterJobsRepository.UpdateAsync(jobRaw);
-    }
+    private Task DoUpsertAsync(JobRawModel jobRaw) => masterJobsRepository.UpsertAsync(jobRaw);
 }

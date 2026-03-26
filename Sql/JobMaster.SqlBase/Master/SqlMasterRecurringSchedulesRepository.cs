@@ -117,7 +117,37 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
     }
 
-    public void Update(RecurringScheduleRawModel scheduleRaw)
+    public bool Exists(Guid recurringScheduleId)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return conn.ExecuteScalar<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
+    }
+
+    public async Task<bool> ExistsAsync(Guid recurringScheduleId)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
+    }
+
+    public virtual void Upsert(RecurringScheduleRawModel scheduleRaw)
+    {
+        if (Exists(scheduleRaw.Id))
+            Update(scheduleRaw);
+        else
+            Add(scheduleRaw);
+    }
+
+    public virtual async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    {
+        if (await ExistsAsync(scheduleRaw.Id))
+            await UpdateAsync(scheduleRaw);
+        else
+            await AddAsync(scheduleRaw);
+    }
+
+    protected virtual void Update(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -174,7 +204,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
     }
 
-    public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
+    protected virtual async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);

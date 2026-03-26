@@ -16,7 +16,7 @@ namespace JobMaster.NatsJetStream.Background;
 internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase<JobRawModel>, IDrainSavePendingJobsRunner
 {
     private readonly IMasterJobsService masterJobsService;
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
     
     public NatsJetStreamDrainSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, IMasterJobsService masterJobsService) : base(backgroundAgentWorker)
     {
@@ -42,7 +42,7 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
     {
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(this.BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, BucketId!);
         }
         
         var resultCode = await savePendingOperation.SaveDrainSavePendingAsync(payload);

@@ -23,7 +23,7 @@ internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBa
 {
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
 
 
     public NatsJetStreamSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
@@ -55,7 +55,7 @@ internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBa
     {
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
+            savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
         }
         
         var configuration = masterClusterConfigurationService.Get();

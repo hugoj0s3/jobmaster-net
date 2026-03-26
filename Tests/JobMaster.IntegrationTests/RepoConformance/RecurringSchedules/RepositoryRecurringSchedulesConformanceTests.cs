@@ -71,7 +71,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Update_ShouldPersistChanges()
+    public async Task Upsert_ShouldPersistChanges()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-upd-" + Guid.NewGuid());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
@@ -102,7 +102,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.StaticDefinitionLastEnsured = DateTime.UtcNow.AddMinutes(-1);
         updated.WorkerLane = "LANE_UPD";
 
-        await Fixture.MasterRecurringSchedules.UpdateAsync(updated);
+        await Fixture.MasterRecurringSchedules.UpsertAsync(updated);
 
         var fromDb = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(fromDb);
@@ -110,49 +110,42 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Update_ShouldThrow_OnVersionConflict()
+    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + Guid.NewGuid());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
-        // Load two separate copies to simulate concurrent updates
+        // Load two separate copies to simulate concurrent upserts
         var copyA = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         var copyB = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(copyA);
         Assert.NotNull(copyB);
 
-        // First update succeeds and advances the version
+        // First upsert succeeds and advances the version
         copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
-        await Fixture.MasterRecurringSchedules.UpdateAsync(copyA);
+        await Fixture.MasterRecurringSchedules.UpsertAsync(copyA);
 
-        // Second update uses stale version and must fail
+        // Second upsert uses stale version — should throw
         copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
-        await Assert.ThrowsAsync<JobMasterVersionConflictException>(async () =>
-        {
-            await Fixture.MasterRecurringSchedules.UpdateAsync(copyB);
-        });
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterRecurringSchedules.UpsertAsync(copyB));
     }
 
     [Fact]
-    public async Task Update_ShouldThrow_WhenVersionMismatch_Manual()
+    public async Task Upsert_ShouldThrow_WhenVersionMismatch()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + Guid.NewGuid());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
-        // Get latest from DB to ensure we have a real current version
         var current = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(current);
-        Assert.False(string.IsNullOrEmpty(current!.Version));
 
-        // Clone and force an incorrect (random) version
-        var wrong = Clone(current);
-        wrong.Version = Guid.NewGuid().ToString("N"); // wrong expected version
-        wrong.JobDefinitionId = wrong.JobDefinitionId + "-WRONG-VERSION";
+        var stale = Clone(current!);
+        stale.Version = Guid.NewGuid().ToString("N");
+        stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
-        await Assert.ThrowsAsync<JobMasterVersionConflictException>(async () =>
-        {
-            await Fixture.MasterRecurringSchedules.UpdateAsync(wrong);
-        });
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterRecurringSchedules.UpsertAsync(stale));
     }
 
     [Fact]

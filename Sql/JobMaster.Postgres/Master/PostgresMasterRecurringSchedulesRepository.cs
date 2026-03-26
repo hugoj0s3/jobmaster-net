@@ -2,6 +2,7 @@ using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -96,5 +97,111 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             tx.SafeRollback();
             throw;
         }
+    }
+
+    public override void Upsert(RecurringScheduleRawModel scheduleRaw)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var t = TableName();
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = conn.Execute(BuildUpsertSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = conn.ExecuteScalar<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
+            }
+
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var (updateEntrySql, entryParams) = genericUtil.BuildUpdateEntrySql(sqlEntry);
+                if (conn.Execute(updateEntrySql, entryParams, trans) == 0)
+                {
+                    var (insertEntrySql, insertEntryParams) = genericUtil.BuildInsertEntrySql(sqlEntry);
+                    conn.Execute(insertEntrySql, insertEntryParams, trans);
+                }
+                var deleteValuesSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
+                conn.Execute(deleteValuesSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
+                conn.Execute(insertValuesSql, paramRows, trans);
+            }
+
+            trans.Commit();
+            scheduleRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public override async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var t = TableName();
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = await conn.ExecuteAsync(BuildUpsertSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = await conn.ExecuteScalarAsync<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
+            }
+
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var (updateEntrySql, entryParams) = genericUtil.BuildUpdateEntrySql(sqlEntry);
+                if (await conn.ExecuteAsync(updateEntrySql, entryParams, trans) == 0)
+                {
+                    var (insertEntrySql, insertEntryParams) = genericUtil.BuildInsertEntrySql(sqlEntry);
+                    await conn.ExecuteAsync(insertEntrySql, insertEntryParams, trans);
+                }
+                var deleteValuesSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
+                await conn.ExecuteAsync(deleteValuesSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
+                await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
+            }
+
+            trans.Commit();
+            scheduleRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    private string BuildUpsertSql()
+    {
+        var t = TableName();
+        var (cols, vals) = InsertColumnsAndParams();
+        var conflictCols = $"{Col(x => x.ClusterId)}, {Col(x => x.Id)}";
+        return $"INSERT INTO {t} ({cols}) VALUES ({vals}) ON CONFLICT ({conflictCols}) DO UPDATE SET {UpdateSetClause()} WHERE {t}.{Col(x => x.Version)} = @ExpectedVersion;";
     }
 }
