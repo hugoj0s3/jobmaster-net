@@ -97,7 +97,13 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
         if (handlerType == null)
         {
-            throw new KeyNotFoundException($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId}");
+            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}");
+            
+            // Avoid keep get this schedule again and again. Delay the next attempt.
+            scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);
+            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            
+            return;
         }
 
         var baseDateTime = scheduleRawModel.LastPlanCoverageUntil ?? scheduleRawModel.StartAfter ?? scheduleRawModel.CreatedAt;
@@ -131,9 +137,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
                 scheduleRawModel.HasFailedOnLastPlanExecution = false;
                 scheduleRawModel.LastPlanCoverageUntil = checkTime;
                 scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-                await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
-                
-                masterDistributedLockerService.ReleaseLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), lockToken);
+                await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
                 return;
             }
             
@@ -145,9 +149,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.HasFailedOnLastPlanExecution = false;
             scheduleRawModel.LastPlanCoverageUntil = checkTime;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
-            
-            masterDistributedLockerService.ReleaseLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), lockToken);
+            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
 
@@ -172,32 +174,15 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.HasFailedOnLastPlanExecution = true;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
             
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
-            
-            masterDistributedLockerService.ReleaseLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), lockToken);
+            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
        
         scheduleRawModel.HasFailedOnLastPlanExecution = false;
         scheduleRawModel.LastPlanCoverageUntil = lastPlanCoverageUntilUtc;
         scheduleRawModel.LastExecutedPlan = lastPlanCoverageUntilUtc;
-        await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
-        
-        masterDistributedLockerService.ReleaseLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), lockToken);
+        await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
     }
-    
-
-    private JobRawModel NewJobRawModel(RecurringScheduleRawModel rawModel, Type handlerType, DateTime scheduledAt, ClusterConfigurationModel? config)
-    {
-        var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(rawModel);
-        return Job.FromRecurringSchedule(rawModel.ClusterId, handlerType, recurringSchedule, scheduledAt, masterConfig: config).ToModel();
-    }
-    
-    private static readonly int MaxOccurrencesPerRun = (int)(JobMasterConstants.MaxRunnerInterval.TotalSeconds * 1.5);
-    private static readonly TimeSpan MinInterval = TimeSpan.FromSeconds(1);
-
-
-    private static long ToSec(DateTime dt) => dt.Ticks / TimeSpan.TicksPerSecond;
 
     internal (DateTime? lastSchedule, IList<DateTime> nextDates, DateTime planningHorizon) PlanNextDates(
         Guid recurringScheduleId,
@@ -298,4 +283,28 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
 
         return (lastScheduleAt, results, stopAt);
     }
+    
+    private async Task UpsertAndReleasePlanLockAsync(RecurringScheduleRawModel scheduleRawModel, string lockToken)
+    {
+        try
+        {
+            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), lockToken);
+        }
+    }
+
+    private JobRawModel NewJobRawModel(RecurringScheduleRawModel rawModel, Type handlerType, DateTime scheduledAt, ClusterConfigurationModel? config)
+    {
+        var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(rawModel);
+        return Job.FromRecurringSchedule(rawModel.ClusterId, handlerType, recurringSchedule, scheduledAt, masterConfig: config).ToModel();
+    }
+    
+    private static readonly int MaxOccurrencesPerRun = (int)(JobMasterConstants.MaxRunnerInterval.TotalSeconds * 1.5);
+    private static readonly TimeSpan MinInterval = TimeSpan.FromSeconds(1);
+
+
+    private static long ToSec(DateTime dt) => dt.Ticks / TimeSpan.TicksPerSecond;
 }

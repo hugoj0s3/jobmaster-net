@@ -84,6 +84,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return;
                 }
+
+                if (result == OnBoardingResult.Cancelled)
+                {
+                    logger.Warn($"Short-circuit failed job or recurring scheduled was cancelled", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    return;
+                }
                 
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
             }

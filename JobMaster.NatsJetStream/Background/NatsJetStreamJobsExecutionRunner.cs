@@ -108,6 +108,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
     public JobMasterPriority Priority { get; internal set; }
 
+    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(1);
     protected override TimeSpan LongDelayAfterBatchSize() => TimeSpan.FromMilliseconds(10);
     protected override TimeSpan DelayAfterProcessPayload() => TimeSpan.Zero;
 }

@@ -59,10 +59,10 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
 
         var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchByIdsAsync(
             ids.ToList(),
-            MinPartitionLockId,
+            partitionLockId,
             utcNow.Add(durationToLock));
 
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(MinPartitionLockId), lockToken);
+        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(partitionLockId), lockToken);
 
         foreach (var schedule in recurringSchedules)
         {

@@ -1,44 +1,32 @@
-# Reminders and Improvements.
-
-## Code clean up.
-# Consolidate the GetJobDefinitionId and GetJobHandlerTypeFromId. In some places we are get definition id without using the method and filtering the attribute directly.
-# Improve the names and ids.
-    # Validates dupes names in cluster by removing the -, . and _, : and make case insensitive. e.g joe-does is the same as joeDoes and joe_does and joe:does.
-    # Don't use . or : for worknames and buckets use _ or -. : . is separator of segment.
-    # Limit the cluster name to X characters the same for agent connection id
-
-## Performance
-## Do upsert specfic for each db. avoid 2 roundtrips - get and update/insert. the version can also be very specific.
-## Reduce the roundtrips instead of using partition lock do something like lockandfecth 
+# JobMaster – Reminders & Improvement Backlog
 
 ## Scheduler
-### Ignoring the recurring schedule if the handle does not exists anymore and log error. It will avoid to explode later when the job is scheduled.
-### Review lockers we might not need ~~saving~~ anymore and ideally it should be per resource not action, but keep this design for now if it is difficulty.
+- **Locking strategy**: Re‑evaluate the locker usage (we probably no longer need the “saving” locks). Ideal design is per-resource locking; keep the current action-level approach only if the refactor is too costly right now.
+- **Missing handler fallout (`RecurringSchedulePlanner.ScheduleNextJobsAsync`)**: Current guard just logs and skips when a handler is gone; add logic to automatically terminate the recurring schedule after X consecutive errors or a time threshold so logs don’t spam forever.
 
 ## Runners
-### The stop gracefully should be reviewed. it is not quite good.
-### Also the immediate stop should be reviewed. it is not quite good as well.
+- **Graceful stop**: Review and refine the shutdown sequence—the current implementation is unreliable.
+- **Immediate stop**: Improve the hard-stop path as well; it still behaves awkwardly.
 
-## Ideas
-### Create a JobExecution entity align JobExecution log subject. If job run many times we have all execution start-end and result.
-    -- JobExecution
-        -- Id        
-        -- JobId
-        -- StartedAt
-        -- CompletedAt
-        -- Status
+## Ideas & Experiments
 
-### JobMasterSchedulerClusterAware creates a timer or something that ensure the job/recurring schedule is saved. 
-    - Hold in memory and then ensure it is saved after X minutes
-    = Insert it in a bulk into the generic repository.
-    = Consider saved saved in partition of X jobs. e.g 100 jobs represent single record. 
-    = Flush like a log after X minutes and X number of items.
-    = Create a runner that get data from the group id that the records were stored and move to master db.
-    = If it works consider using this on SaveOperation class also, but it is tricky since can conflict with the JobMasterSchedulerClusterAware
-    
-### Explorer the posibility to schedule based JobDefinition.
-    - it will be class that define timeout all job configration. 
-    - it for advance scenario when the user want truly separation of consumer and publisher. 
-    - The handler code will leave on the consumer JobHandlerA : IJobHandler<DefinitionJobA>, but keep the handler direct as well for simple scnerario. (maybe it can be on version 2)
+### Cluster-aware bulk persistence
+Goal: let `JobMasterSchedulerClusterAware` batch job/recurring schedule writes.
+
+Possible steps:
+1. Buffer schedules in memory and force a save after X minutes.
+2. Flush buffered jobs in bulk to the generic repository.
+3. Partition buffers (e.g., 100 jobs per record) so each write is compact.
+4. Flush either on a timer or when the buffer hits the item threshold.
+5. Add a runner that pulls partitions by group id and moves them to the master DB.
+6. If stable, explore reusing the mechanism for `SaveOperation` (watch for conflicts with the scheduler component).
+
+### JobDefinition-based scheduling
+Goal: support advanced scenarios where publishers and consumers are fully separated.
+
+Approach:
+1. Introduce a `JobDefinition` class that encapsulates timeouts and configuration.
+2. Allow handlers such as `JobHandlerA : IJobHandler<DefinitionJobA>` so consumers can bind to definitions directly.
+3. Keep the current “direct handler” option for simple scenarios, and consider releasing the definitional model as a v2 feature.
 
 
