@@ -6,7 +6,6 @@
         <ImplicitUsings>enable</ImplicitUsings>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
         <UserSecretsId>JobMaster.SampleWeb-3e4cc8f0-5b50-4e29-8c15-43e972b0b6ad</UserSecretsId>
-        <UseProjectRefs>true</UseProjectRefs>
     </PropertyGroup>
 
     <ItemGroup>
@@ -29,13 +28,13 @@
     </ItemGroup>
 
     <ItemGroup Condition="'$(UseProjectRefs)' != 'true'">
-        <PackageReference Include="JobMaster" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.Api" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.MySql" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.NatsJetStream" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.Postgres" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.SqlBase" Version="$(JobMasterVersion)" />
-        <PackageReference Include="JobMaster.SqlServer" Version="$(JobMasterVersion)" />
+        <PackageReference Include="JobMaster" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.Api" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.MySql" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.NatsJetStream" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.Postgres" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlBase" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlServer" Version="$(JobMasterPackageVersion)" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(UseProjectRefs)' == 'true'">

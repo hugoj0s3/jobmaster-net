@@ -89,7 +89,8 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
                 this.BackgroundAgentWorker.JobMasterAgentConnectionConfig,
                 fullBucketAddressId,
-                BackgroundAgentWorker.TransferBatchSize,
+                BackgroundAgentWorker.BucketBufferSize,
+                BackgroundAgentWorker.BucketBufferLeadTime,
                 ct);
             hasInitialized = true;
             ackThrottler =
@@ -157,7 +158,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             // Stop runner if no message received for 90 seconds
             if (timeSinceLastMessage > TimeSpan.FromSeconds(90))
             {
-                logger.Error($"{GetRunnerDescription()}: No messages received for {timeSinceLastMessage.TotalSeconds:F0}s, stopping runner for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Error($"{GetRunnerDescription()}: Consumer unresponsive for {timeSinceLastMessage.TotalSeconds:F0}s (no messages or heartbeats), marking bucket {BucketId} as lost", JobMasterLogSubjectType.Bucket, BucketId);
                 await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(BucketId!);
                 await this.StopAsync();
                 return OnTickResult.Failed(TimeSpan.FromMinutes(1));
@@ -179,7 +180,13 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
         try
         {
-            await foreach (var msg in consumer.ConsumeAsync<byte[]>(cancellationToken: ct))
+            var opts = new NatsJSConsumeOpts
+            {
+                MaxMsgs = 
+                    (int)(NatsJetStreamConstants.CalcMaxAckPending(BackgroundAgentWorker.BucketBufferSize) * 0.75)
+            };
+
+            await foreach (var msg in consumer.ConsumeAsync<byte[]>(opts: opts, cancellationToken: ct))
             {
                 try
                 {
@@ -191,7 +198,9 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     // Update last message received timestamp for any message
                     lastMessageReceivedAt = DateTime.UtcNow;
                     
-                    
+                    // Send AckProgress to reset AckWait timer now that we're actually processing this message
+                    // This prevents NATS from redelivering due to AckWait timeout while message sits in buffer
+                    await msg.AckProgressAsync(cancellationToken: ct).ConfigureAwait(false);
                     
                     // Check if this is a heartbeat message and skip processing
                     var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
@@ -224,10 +233,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 {
                     Interlocked.Increment(ref processCycleCount);
                     Interlocked.Increment(ref totalMessagesProcessed);
-                    if (processCycleCount >= BackgroundAgentWorker.TransferBatchSize)
+                    if (processCycleCount >= BackgroundAgentWorker.BucketBufferSize)
                     {
                         Interlocked.Exchange(ref processCycleCount, 0);
-                        await Task.Delay(LongDelayAfterBatchSize(), ct).ConfigureAwait(false);
+                        await Task.Delay(LongDelayAfterBufferSize(), ct).ConfigureAwait(false);
                     }
 
                     var jitter = JobMasterRandomUtil.GetInt(0, 50);
@@ -254,7 +263,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
     protected virtual TimeSpan DelayAfterProcessPayloadFails() => TimeSpan.FromSeconds(2);
 
-    protected virtual TimeSpan LongDelayAfterBatchSize() => TimeSpan.FromSeconds(2.5);
+    protected virtual TimeSpan LongDelayAfterBufferSize() => TimeSpan.FromSeconds(2.5);
 
     protected virtual Task OnTickAfterSetupAsync(CancellationToken ct) => Task.CompletedTask;
 

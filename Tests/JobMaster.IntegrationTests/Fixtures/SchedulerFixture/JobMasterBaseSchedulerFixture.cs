@@ -83,7 +83,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         );
     }
     
-    public async Task InitializeAsync()
+    public async virtual Task InitializeAsync()
     {
         Trace.Listeners.Clear();
         Trace.AutoFlush = true;

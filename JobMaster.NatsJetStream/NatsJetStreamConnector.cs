@@ -44,8 +44,8 @@ internal sealed class NatsJetStreamConnector
     public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId)
         => Instance.GetOrCreateConsumerInternalAsync(config, fullBucketAddressId);
     
-    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, CancellationToken ct)
-        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, ct);
+    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, CancellationToken ct)
+        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, ct);
 
 #if NET8_0_OR_GREATER
     public static ValueTask DisposeAllAsync() => Instance.DisposeAsync();
@@ -149,6 +149,7 @@ internal sealed class NatsJetStreamConnector
         JobMasterAgentConnectionConfig config, 
         string fullBucketAddressId,
         int? bufferSize = null,
+        TimeSpan? bucketBufferLeadTime = null,
         CancellationToken ct = default)
     {
         // Ensure connection and stream are available
@@ -163,12 +164,12 @@ internal sealed class NatsJetStreamConnector
         }
 
         // Serialize create/update GLOBALLY to avoid parallel API calls across entries; try once and proceed regardless
-        var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15));
+        var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         try
         {
             // Also serialize per-entry to limit contention inside an agent; try once and proceed regardless
-            var gotEntry = await entry.Lock.WaitAsync(TimeSpan.FromSeconds(10));
+            var gotEntry = await entry.Lock.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
             try
             {
@@ -180,22 +181,26 @@ internal sealed class NatsJetStreamConnector
 
                 // 2. Handle the missing CancellationToken (for Repository/Dispatcher calls)
                 // We create a local 10s timeout to ensure the boot process doesn't hang if NATS is unreachable.
-                using var cts = ct == default ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
+                using var cts = ct == CancellationToken.None ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
                 var token = cts?.Token ?? ct;
 
                 var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
                 var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
 
                 bufferSize ??= new WorkerDefinition().BucketBufferSize; // Get default buffer size if not specified.
-
+                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value);
+                
+                bucketBufferLeadTime ??= new WorkerDefinition().BucketBufferLeadTime;
+                var ackWait = bucketBufferLeadTime.Value + NatsJetStreamConstants.MinConsumerAckWait;
+                
                 var consumerConfig = new ConsumerConfig(consumerName)
                 {
                     FilterSubject = subject,
                     DurableName = consumerName,
                     AckPolicy = ConsumerConfigAckPolicy.Explicit,
                     DeliverPolicy = ConsumerConfigDeliverPolicy.All,
-                    MaxAckPending = bufferSize.Value * 10, 
-                    AckWait = NatsJetStreamConstants.ConsumerAckWait,
+                    MaxAckPending = maxAckPending, 
+                    AckWait = ackWait,
                     MaxDeliver = NatsJetStreamConstants.MaxDeliver,
                 };
 

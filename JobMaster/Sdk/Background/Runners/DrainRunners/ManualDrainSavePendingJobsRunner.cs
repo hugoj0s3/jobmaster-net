@@ -53,7 +53,7 @@ internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJob
         bool hasFailed = false;
         foreach (var job in savingPendingJobs)
         {
-            var result = await savePendingOperation.SaveDrainSavePendingWithSafeGuardAsync(job); 
+            var result = await savePendingOperation.AddPendingSaveJobForDrainWithSafeGuardAsync(job); 
             if (result != SaveDrainResultCode.Success && result != SaveDrainResultCode.Skipped)
             {
                hasFailed = true;

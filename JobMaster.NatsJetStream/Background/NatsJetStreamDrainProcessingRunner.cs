@@ -45,7 +45,7 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
             savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
         }
         
-        await savePendingOperation.SaveDrainProcessingAsync(job);
+        await savePendingOperation.HeldOnMasterProcessingForDrainAsync(job);
     }
 
     protected override async Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct)
@@ -57,6 +57,6 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
     protected override TimeSpan DelayAfterProcessPayload() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromMilliseconds(250);
     
-    protected override TimeSpan LongDelayAfterBatchSize() => 
+    protected override TimeSpan LongDelayAfterBufferSize() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(250) : TimeSpan.FromMilliseconds(1000);
 }

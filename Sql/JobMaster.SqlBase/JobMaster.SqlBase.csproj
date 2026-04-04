@@ -6,8 +6,6 @@
         <Nullable>enable</Nullable>
         <LangVersion>12</LangVersion>
         <PackageId>JobMaster.SqlBase</PackageId>
-        <VersionPrefix>0.0.6</VersionPrefix>
-        <VersionSuffix>alpha</VersionSuffix>
         <Authors>Hugo Silva</Authors>
         <Company>Hugo Silva</Company>
         <Copyright>Copyright 2026 Hugo Silva</Copyright>
@@ -25,8 +23,11 @@
       <PackageReference Include="Dapper" Version="2.1.72" />
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(UseProjectRefs)' == 'true'">
         <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+    </ItemGroup>
+    <ItemGroup Condition="'$(UseProjectRefs)' != 'true'">
+        <PackageReference Include="JobMaster" Version="$(JobMasterPackageVersion)" />
     </ItemGroup>
 
     <PropertyGroup>

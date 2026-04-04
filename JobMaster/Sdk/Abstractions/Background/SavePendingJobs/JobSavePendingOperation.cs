@@ -34,13 +34,18 @@ internal class JobSavePendingOperation
         this.bucketId = bucketId;
     }
     
-    public async Task<SaveDrainResultCode> SaveDrainSavePendingWithSafeGuardAsync(JobRawModel job)
+    public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainWithSafeGuardAsync(JobRawModel job)
     {
         try
-        { 
+        {
             job.MarkAsHeldOnMaster();
             await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
             return SaveDrainResultCode.Success;
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, job.Id, exception: e);
+            return SaveDrainResultCode.AlreadyExists;
         }
         catch
         {
@@ -58,22 +63,27 @@ internal class JobSavePendingOperation
         return SaveDrainResultCode.Failed;
     }
     
-    public async Task<SaveDrainResultCode> SaveDrainSavePendingAsync(JobRawModel job)
+    public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainAsync(JobRawModel job)
     {
         try
         { 
             job.MarkAsHeldOnMaster();
-            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(job));
             return SaveDrainResultCode.Success;
         }
-        catch
+        catch (JobMasterDuplicationException dupE)
         {
-            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
+            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, job.Id, exception: dupE);
+            return SaveDrainResultCode.AlreadyExists;
+        }
+        catch (Exception ex)
+        {
+            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id, exception: ex);
             return SaveDrainResultCode.Failed;
         }
     }
     
-    public async Task<SaveDrainResultCode> SaveDrainProcessingAsync(JobRawModel job)
+    public async Task<SaveDrainResultCode> HeldOnMasterProcessingForDrainAsync(JobRawModel job)
     {
         if (job.ExceedProcessDeadline() && !job.CanHeldOnMasterExceedDeadline())
         {
@@ -105,7 +115,7 @@ internal class JobSavePendingOperation
             }
             catch (JobMasterDuplicationException ex)
             {
-                logger.Debug("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+                logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
             catch (Exception ex)

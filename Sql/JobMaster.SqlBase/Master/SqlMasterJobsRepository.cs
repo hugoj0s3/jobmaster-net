@@ -586,6 +586,15 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("Status", (int)c.Status.Value);
         }
 
+        if (!c.Statuses.IsNullOrEmpty())
+        {
+            where.Add($"j.{Col(x => x.Status)} IN ({string.Join(", ", c.Statuses.Select(s => $"@Status_{s}"))})");
+            foreach (var status in c.Statuses)
+            {
+                args.Add($"Status_{status}", (int)status);
+            }
+        }
+
         if (c.NextPlanExecutionAtFrom.HasValue)
         {
             where.Add($"j.{Col(x => x.NextPlanExecutionAt)} >= @NextPlanExecutionAtFrom");

@@ -57,7 +57,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
         bool hasFailed = false;
         foreach (var job in processingJobs)
         {
-            var result = await savePendingOperation.SaveDrainProcessingAsync(job); 
+            var result = await savePendingOperation.HeldOnMasterProcessingForDrainAsync(job); 
             if (result != SaveDrainResultCode.Success && result != SaveDrainResultCode.Skipped)
             {
                 hasFailed = true;
