@@ -56,11 +56,11 @@ internal class JobMasterClusterConnectionConfig
     
     public bool IsReady { get; private set; }
     
-    public int? RuntimeDbOperationThrottleLimit { get; private set; }
+    public int? RuntimeDbOperationLimit { get; private set; }
 
-    public void SetRuntimeDbOperationThrottleLimit(int? value)
+    public void SetRuntimeDbOperationLimit(int? value)
     {
-        RuntimeDbOperationThrottleLimit = value;
+        RuntimeDbOperationLimit = value;
     }
     
     public void SetMirrorLog(Action<LogItem>? mirrorLog)
@@ -108,7 +108,7 @@ internal class JobMasterClusterConnectionConfig
                 this.ConnectionString, 
                 this.RepositoryTypeId, 
                 this.AdditionalConnConfig, 
-                this.RuntimeDbOperationThrottleLimit);
+                this.RuntimeDbOperationLimit);
                 
             AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
                     
@@ -220,7 +220,7 @@ internal class JobMasterClusterConnectionConfig
                 DefaultConfig = config;
             }
             
-            config.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+            config.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
             
             return config;
         }

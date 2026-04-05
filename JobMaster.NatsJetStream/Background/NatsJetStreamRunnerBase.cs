@@ -23,7 +23,7 @@ namespace JobMaster.NatsJetStream.Background;
 internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
-    private OperationThrottler ackThrottler = null!;
+    private OperationLimiter ackLimiter = null!;
 
     private bool hasInitialized;
     private Task? consumptionTask;
@@ -93,10 +93,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 BackgroundAgentWorker.BucketBufferLeadTime,
                 ct);
             hasInitialized = true;
-            ackThrottler =
+            ackLimiter =
                 BackgroundAgentWorker
                     .Runtime!
-                    .GetOperationThrottlerForAgent(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.ClusterId, this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.Id);
+                    .GetOperationLimiterForAgent(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.ClusterId, this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.Id);
         }
 
         // 4. Subscriber Startup & Watchdog

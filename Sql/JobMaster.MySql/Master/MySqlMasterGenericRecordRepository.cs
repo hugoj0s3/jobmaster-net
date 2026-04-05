@@ -35,6 +35,7 @@ ON DUPLICATE KEY UPDATE
     subject_type = VALUES(subject_type),
     subject_id = VALUES(subject_id),
     expires_at = VALUES(expires_at);";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -78,6 +79,7 @@ ON DUPLICATE KEY UPDATE
     {cValueDecimal} = VALUES({cValueDecimal}),
     {cValueDateTime} = VALUES({cValueDateTime}),
     {cValueGuid} = VALUES({cValueGuid});";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "Upsert.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {
@@ -121,6 +123,7 @@ ON DUPLICATE KEY UPDATE
     subject_type = VALUES(subject_type),
     subject_id = VALUES(subject_id),
     expires_at = VALUES(expires_at);";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -164,6 +167,7 @@ ON DUPLICATE KEY UPDATE
     {cValueDecimal} = VALUES({cValueDecimal}),
     {cValueDateTime} = VALUES({cValueDateTime}),
     {cValueGuid} = VALUES({cValueGuid});";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "UpsertAsync.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {

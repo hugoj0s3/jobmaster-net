@@ -168,7 +168,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         var sentinelKey = sentinelKeys.Bucket(id);
         var bucketFromCache = jobMasterMemoryCache.Get<BucketModel>(cacheKey);
         if (bucketFromCache?.Value is not null &&
-            !masterChangesSentinelService.HasChangesAfter(sentinelKey, bucketFromCache.Value.CreatedAt, allowedDiscrepancy))
+            !masterChangesSentinelService.HasChangesAfter(sentinelKey, bucketFromCache.CreatedAt, allowedDiscrepancy))
         {
             return bucketFromCache?.Value;
         }
@@ -241,7 +241,8 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                         Operation = GenericFilterOperation.Eq,
                         Value = (int)BucketStatus.Active,
                     }
-                }
+                },
+                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             };
 
             var records = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
@@ -399,4 +400,3 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         return genericRecordQueryCriteria;
     }
 }
-

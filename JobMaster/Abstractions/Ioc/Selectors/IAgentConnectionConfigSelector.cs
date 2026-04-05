@@ -14,5 +14,5 @@ public interface IAgentConnectionConfigSelector
     
     internal IAgentConnectionConfigSelector AgentRepoType(string repoType);
     internal IAgentConnectionConfigSelector AgentConnString(string connString);
-    internal IAgentConnectionConfigSelector RuntimeDbOperationThrottleLimit(int limit);
+    internal IAgentConnectionConfigSelector RuntimeDbOperationLimit(int limit);
 }
