@@ -37,9 +37,9 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         // Set default options
         foreach (var clusterConfig in configs)
         {
-            if (!clusterConfig.RuntimeDbOperationThrottleLimit.HasValue)
+            if (!clusterConfig.RuntimeDbOperationLimit.HasValue)
             {
-                clusterConfig.SetRuntimeDbOperationThrottleLimit(DefaultDbOperationThrottleLimitForCluster);
+                clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
             }
             
             var clusterTablePrefix = 
@@ -127,9 +127,9 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 agentConfig.AdditionalConnConfig.SetValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey, "JM_");
             }
             
-            if (!agentConfig.RuntimeDbOperationThrottleLimit.HasValue)
+            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
             {
-                agentConfig.SetRuntimeDbOperationThrottleLimit(this.DefaultDbOperationThrottleLimitForAgent);
+                agentConfig.SetRuntimeDbOperationLimit(this.DefaultDbOperationThrottleLimitForAgent);
             }
         }
 

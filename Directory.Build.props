@@ -1,0 +1,15 @@
+<Project>
+  <PropertyGroup>
+    <VersionPrefix>0.0.6</VersionPrefix>
+    <VersionSuffix>alpha</VersionSuffix>
+
+    <!-- Package version string used by PackageReference entries -->
+    <JobMasterPackageVersion Condition="'$(VersionSuffix)' != ''">$(VersionPrefix)-$(VersionSuffix)</JobMasterPackageVersion>
+    <JobMasterPackageVersion Condition="'$(VersionSuffix)' == ''">$(VersionPrefix)</JobMasterPackageVersion>
+    <JobMasterVersion>$(JobMasterPackageVersion)</JobMasterVersion>
+
+    <!-- true  = ProjectReference (development, IDE rename/refactor works) -->
+    <!-- false = PackageReference (pack / publish / CI) -->
+    <UseProjectRefs Condition="'$(UseProjectRefs)' == ''">true</UseProjectRefs>
+  </PropertyGroup>
+</Project>

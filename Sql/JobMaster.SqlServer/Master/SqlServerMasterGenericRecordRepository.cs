@@ -40,6 +40,7 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
     VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt);";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -88,6 +89,7 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
     VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid);";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "Upsert.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {
@@ -136,6 +138,7 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
     VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt);";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -184,6 +187,7 @@ WHEN MATCHED THEN
 WHEN NOT MATCHED THEN
     INSERT ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
     VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid);";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "UpsertAsync.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {

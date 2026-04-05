@@ -18,7 +18,7 @@ internal class JobMasterAgentConnectionConfig
         ConnectionString = connectionString;
         RepositoryTypeId = repositoryTypeId;
         Id = new AgentConnectionId(clusterId, name).IdValue;
-        RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+        RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
     }
     
     public JobMasterConfigDictionary AdditionalConnConfig { get; set; } = new();
@@ -29,10 +29,10 @@ internal class JobMasterAgentConnectionConfig
     public string ConnectionString { get; private set; }
     public string RepositoryTypeId { get; private set; }
     
-    public int? RuntimeDbOperationThrottleLimit { get; private set; }
+    public int? RuntimeDbOperationLimit { get; private set; }
 
-    public void SetRuntimeDbOperationThrottleLimit(int? value)
+    public void SetRuntimeDbOperationLimit(int? value)
     {
-        this.RuntimeDbOperationThrottleLimit = value;
+        this.RuntimeDbOperationLimit = value;
     }
 }

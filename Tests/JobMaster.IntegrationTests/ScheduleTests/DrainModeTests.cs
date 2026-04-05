@@ -13,9 +13,9 @@ public class NatsJetStreamDrainModeTests : JobMasterSchedulerTestsBase<NatsJetSt
     public NatsJetStreamDrainModeTests(NatsJetStreamDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 10, 30)]
-    [InlineData(300000, 30, 30)]
-    [InlineData(1000000, 50, 30)]
+    [InlineData(100000, 20, 30)]
+    [InlineData(300000, 60, 90)]
+    [InlineData(1000000, 100, 180)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
@@ -28,12 +28,12 @@ public class PostgresDrainModeTests : JobMasterSchedulerTestsBase<PostgresDrainM
     public PostgresDrainModeTests(PostgresDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 10, 30)]
-    [InlineData(300000, 30, 30)]
-    [InlineData(1000000, 50, 30)]
+    [InlineData(100000, 40, 60)]
+    [InlineData(300000, 120, 180)]
+    [InlineData(1000000, 200, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
     }
 }
 
@@ -43,12 +43,12 @@ public class SqlServerDrainModeTests : JobMasterSchedulerTestsBase<SqlServerDrai
     public SqlServerDrainModeTests(SqlServerDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 10, 30)]
-    [InlineData(300000, 30, 30)]
-    [InlineData(1000000, 50, 30)]
+    [InlineData(100000, 40, 60)]
+    [InlineData(300000, 120, 180)]
+    [InlineData(1000000, 200, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, 3);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
     }
 }
 
@@ -58,12 +58,12 @@ public class MySqlDrainModeTests : JobMasterSchedulerTestsBase<MySqlDrainModeFix
     public MySqlDrainModeTests(MySqlDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 10, 30)]
-    [InlineData(300000, 30, 30)]
-    [InlineData(1000000, 50, 30)]
+    [InlineData(100000, 40, 60)]
+    [InlineData(300000, 120, 180)]
+    [InlineData(1000000, 200, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
     }
 }
 
@@ -73,11 +73,11 @@ public class MixedDrainModeTests : JobMasterSchedulerTestsBase<MixedDrainModeFix
     public MixedDrainModeTests(MixedDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 10, 30)]
-    [InlineData(300000, 30, 30)]
-    [InlineData(1000000, 50, 30)]
+    [InlineData(100000, 40, 60)]
+    [InlineData(300000, 120, 180)]
+    [InlineData(1000000, 200, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
     }
 }

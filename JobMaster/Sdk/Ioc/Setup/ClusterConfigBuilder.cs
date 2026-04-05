@@ -86,7 +86,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             finalClusterRepoType, 
             finalClusterConnString, 
             isDefault: clusterDefinition.IsDefault, 
-            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationThrottleLimit);
+            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationLimit);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
@@ -116,7 +116,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
                 agentConnDefinition.AgentConnString ?? string.Empty, 
                 agentConnDefinition.AgentRepoType!, 
                 agentConnDefinition.AgentAdditionalConnConfig, 
-                agentConnDefinition.RuntimeDbOperationThrottleLimit);
+                agentConnDefinition.RuntimeDbOperationLimit);
         }
         
         if (clusterDefinition.IsStandalone)
@@ -262,9 +262,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
-    public IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit)
+    public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
-        this.clusterDefinition.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+        this.clusterDefinition.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
         return this;
     }
 

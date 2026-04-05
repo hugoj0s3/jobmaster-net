@@ -39,7 +39,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
 
-        var (sqlText, args) = genericUtil.BuildGetSql(groupId, entryId, includeExpired);
+        var (sqlText, args) = BuildGetSql(groupId, entryId, includeExpired);
 
         var result = conn.Query<SqlGenericRecordEntryLinearDto>(
             sqlText,
@@ -292,7 +292,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
             selectSql.AppendLine();
             selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
-            var ids = (await conn.QueryAsync<string>(selectSql.ToString(), new
+            var ids = (await conn.QueryAsync<string>(AppendSqlTag(selectSql.ToString(), "DeleteByCreatedAt.SelectIds", groupId), new
             {
                 ClusterId = ClusterConnConfig.ClusterId,
                 GroupId = groupId,
@@ -308,11 +308,11 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
             // Delete values first
             var vt = genericUtil.EntryValueTable(groupId);
             var cValRecordId = ColVal(x => x.RecordUniqueId);
-            var delValuesSql = $"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}";
+            var delValuesSql = AppendSqlTag($"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}", "DeleteByCreatedAt.DeleteValues", groupId);
             await conn.ExecuteAsync(delValuesSql, new { RecordUniqueIds = ids }, tx);
 
             // Then delete entries
-            var delEntriesSql = $"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}";
+            var delEntriesSql = AppendSqlTag($"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}", "DeleteByCreatedAt.DeleteEntries", groupId);
             await conn.ExecuteAsync(delEntriesSql, new { RecordUniqueIds = ids }, tx);
 
             tx.Commit();
@@ -369,7 +369,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                         dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
                     }
 
-                    await conn.ExecuteAsync(sb.ToString(), dynParams, transaction);
+                    await conn.ExecuteAsync(AppendSqlTag(sb.ToString(), "BulkInsert.InsertEntries", batch[0].GroupId), dynParams, transaction);
 
                     // Insert values for each entry (uses Dapper multi-exec under the hood per entry)
                     foreach (var e in sqlEntries)
@@ -416,7 +416,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
                 selectSql.AppendLine();
                 selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
-                var ids = (await conn.QueryAsync<string>(selectSql.ToString(), new
+                var ids = (await conn.QueryAsync<string>(AppendSqlTag(selectSql.ToString(), "DeleteExpired.SelectIds", "*", $"familySuffix={suffix}"), new
                 {
                     ClusterId = ClusterConnConfig.ClusterId,
                     ExpiresAtTo = DateTime.SpecifyKind(expiresAtTo, DateTimeKind.Utc)
@@ -431,11 +431,11 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
                 // Delete values first
                 var vt = genericUtil.EntryValueTableForSuffix(suffix);
                 var cValRecordId = ColVal(x => x.RecordUniqueId);
-                var delValuesSql = $"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}";
+                var delValuesSql = AppendSqlTag($"DELETE FROM {vt} WHERE {this.sql.InClauseFor(cValRecordId, "@RecordUniqueIds")}", "DeleteExpired.DeleteValues", "*", $"familySuffix={suffix}");
                 await conn.ExecuteAsync(delValuesSql, new { RecordUniqueIds = ids }, tx);
 
                 // Then delete entries
-                var delEntriesSql = $"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}";
+                var delEntriesSql = AppendSqlTag($"DELETE FROM {t} WHERE {this.sql.InClauseFor(cRecordId, "@RecordUniqueIds")}", "DeleteExpired.DeleteEntries", "*", $"familySuffix={suffix}");
                 await conn.ExecuteAsync(delEntriesSql, new { RecordUniqueIds = ids }, tx);
 
                 tx.Commit();
@@ -457,7 +457,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         criteria ??= new GenericRecordQueryCriteria();
 
         var (sqlText, args) = genericUtil.BuildCountSql(groupId, criteria);
-        return conn.ExecuteScalar<int>(sqlText, args);
+        return conn.ExecuteScalar<int>(AppendSqlTag(sqlText, "Count", groupId), args);
     }
 
     public async Task<int> CountAsync(string groupId, GenericRecordQueryCriteria? criteria = null)
@@ -466,7 +466,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
         criteria ??= new GenericRecordQueryCriteria();
 
         var (sqlText, args) = genericUtil.BuildCountSql(groupId, criteria);
-        return await conn.ExecuteScalarAsync<int>(sqlText, args);
+        return await conn.ExecuteScalarAsync<int>(AppendSqlTag(sqlText, "CountAsync", groupId), args);
     }
 
     private string Col(Expression<Func<GenericRecordEntry, object?>> prop) => genericUtil.Col(prop);
@@ -476,7 +476,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
     private string ColSqlEntry(Expression<Func<SqlGenericRecordEntry, object?>> prop) => genericUtil.ColSqlEntry(prop);
     
     
-    public IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)
+    private IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)
     {
         return genericUtil.LinearListToDomain(result);
     }
@@ -488,48 +488,75 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
     
     private (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
     {
-        return genericUtil.BuildGetSql(groupId, entryId, includeExpired);
+        var (sqlText, args) = genericUtil.BuildGetSql(groupId, entryId, includeExpired);
+        sqlText = AppendSqlTag(sqlText, "Get", groupId);
+        return (sqlText, args);
     }
     
     private (string Sql, object Args) BuildQuerySql(string groupId, GenericRecordQueryCriteria criteria)
     {
-        return genericUtil.BuildQuerySql(groupId, criteria);
+        var (sqlText, args) = genericUtil.BuildQuerySql(groupId, criteria);
+        sqlText = AppendSqlTag(sqlText, "Query", groupId);
+        return (sqlText, args);
     }
-    protected (string, IDictionary<string, object?>) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
+    
+    private (string, IDictionary<string, object?>) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
     {
-        return genericUtil.BuildUpdateEntrySql(entry);
+        var (sqlText, args) = genericUtil.BuildUpdateEntrySql(entry);
+        sqlText = AppendSqlTag(sqlText, "UpdateEntry", entry.GroupId);
+        return (sqlText, args);
     }
 
-    protected (string, IDictionary<string, object?>) BuildInsertEntrySql(SqlGenericRecordEntry entry)
+    private (string, IDictionary<string, object?>) BuildInsertEntrySql(SqlGenericRecordEntry entry)
     {
-        return genericUtil.BuildInsertEntrySql(entry);
+        var (sqlText, args) = genericUtil.BuildInsertEntrySql(entry);
+        sqlText = AppendSqlTag(sqlText, "InsertEntry", entry.GroupId);
+        return (sqlText, args);
     }
 
-    protected void InsertEntryValues(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
-    {
-        if (entry.Values.Count == 0) return;
-        
-        var (insertSql, rows) = genericUtil.BuildInsertEntryValuesSql(entry);
-
-        conn.Execute(insertSql, rows, tx);
-    }
-
-    protected async Task InsertEntryValuesAsync(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
+    private void InsertEntryValues(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
     {
         if (entry.Values.Count == 0) return;
         
         var (insertSql, rows) = genericUtil.BuildInsertEntryValuesSql(entry);
 
-        await conn.ExecuteAsync(insertSql, rows, tx);
+        conn.Execute(AppendSqlTag(insertSql, "InsertEntryValues", entry.GroupId), rows, tx);
     }
 
-    protected string BuildDeleteValuesSql(string groupId)
+    private async Task InsertEntryValuesAsync(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
     {
-        return genericUtil.BuildDeleteValuesSql(groupId);
+        if (entry.Values.Count == 0) return;
+        
+        var (insertSql, rows) = genericUtil.BuildInsertEntryValuesSql(entry);
+
+        await conn.ExecuteAsync(AppendSqlTag(insertSql, "InsertEntryValuesAsync", entry.GroupId), rows, tx);
+    }
+
+    private string BuildDeleteValuesSql(string groupId)
+    {
+        return AppendSqlTag(genericUtil.BuildDeleteValuesSql(groupId), "DeleteValues", groupId);
     }
 
     private string BuildDeleteEntrySql(string groupId)
     {
-        return genericUtil.BuildDeleteEntrySql(groupId);
+        return AppendSqlTag(genericUtil.BuildDeleteEntrySql(groupId), "DeleteEntry", groupId);
+    }
+    
+    protected string AppendSqlTag(string sqlText, string operation, string? groupId = null, string? scope = null)
+    {
+        var normalizedGroup = string.IsNullOrWhiteSpace(groupId) ? "*" : SanitizeTagValue(groupId!);
+        var normalizedOp = SanitizeTagValue(operation);
+        var normalizedScope = string.IsNullOrWhiteSpace(scope) ? null : SanitizeTagValue(scope!);
+        var scopePart = normalizedScope is null ? string.Empty : $";scope={normalizedScope}";
+
+        return $"/* JM:repo=GenericRecord;op={normalizedOp};group={normalizedGroup}{scopePart} */\n{sqlText}";
+    }
+    
+    private static string SanitizeTagValue(string value)
+    {
+        return value
+            .Replace("*/", "* /")
+            .Replace('\r', ' ')
+            .Replace('\n', ' ');
     }
 }

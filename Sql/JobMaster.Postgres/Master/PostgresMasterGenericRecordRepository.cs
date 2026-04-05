@@ -34,6 +34,7 @@ ON CONFLICT (record_unique_id) DO UPDATE SET
     subject_type = EXCLUDED.subject_type,
     subject_id = EXCLUDED.subject_id,
     expires_at = EXCLUDED.expires_at;";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -77,6 +78,7 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
     {cValueDecimal} = EXCLUDED.{cValueDecimal},
     {cValueDateTime} = EXCLUDED.{cValueDateTime},
     {cValueGuid} = EXCLUDED.{cValueGuid};";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "Upsert.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {
@@ -120,6 +122,7 @@ ON CONFLICT (record_unique_id) DO UPDATE SET
     subject_type = EXCLUDED.subject_type,
     subject_id = EXCLUDED.subject_id,
     expires_at = EXCLUDED.expires_at;";
+            entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
             
             var entryArgs = new Dictionary<string, object?>
             {
@@ -163,6 +166,7 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
     {cValueDecimal} = EXCLUDED.{cValueDecimal},
     {cValueDateTime} = EXCLUDED.{cValueDateTime},
     {cValueGuid} = EXCLUDED.{cValueGuid};";
+                valueUpsertSql = AppendSqlTag(valueUpsertSql, "UpsertAsync.Values", recordEntry.GroupId);
                 
                 var valueRows = sqlEntry.Values.Select(v => new
                 {
