@@ -16,8 +16,6 @@ export interface paths {
                 query?: {
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -56,8 +54,6 @@ export interface paths {
                 query?: {
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -137,8 +133,6 @@ export interface paths {
                     WorkerLane?: string;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -182,8 +176,6 @@ export interface paths {
                     WorkerLane?: string;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -359,8 +351,6 @@ export interface paths {
                 query?: {
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -399,8 +389,6 @@ export interface paths {
                 query?: {
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -482,6 +470,7 @@ export interface paths {
                     ScheduledTo?: string;
                     ProcessDeadlineTo?: string;
                     TriggerSourceTypes?: components["schemas"]["JobMasterTriggerSourceType"][];
+                    SourceIds?: string[];
                     SourceId?: string;
                     JobDefinitionId?: string;
                     WorkerId?: string;
@@ -492,8 +481,6 @@ export interface paths {
                     CountLimit?: number;
                     Offset?: number;
                     MetadataFiltersJson?: string;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -539,6 +526,7 @@ export interface paths {
                     ScheduledTo?: string;
                     ProcessDeadlineTo?: string;
                     TriggerSourceTypes?: components["schemas"]["JobMasterTriggerSourceType"][];
+                    SourceIds?: string[];
                     SourceId?: string;
                     JobDefinitionId?: string;
                     WorkerId?: string;
@@ -549,8 +537,6 @@ export interface paths {
                     CountLimit?: number;
                     Offset?: number;
                     MetadataFiltersJson?: string;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -798,8 +784,6 @@ export interface paths {
                     MetadataFiltersJson?: string;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -851,8 +835,6 @@ export interface paths {
                     MetadataFiltersJson?: string;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -932,8 +914,6 @@ export interface paths {
                     IsAlive?: boolean;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {
@@ -977,8 +957,6 @@ export interface paths {
                     IsAlive?: boolean;
                     CountLimit?: number;
                     Offset?: number;
-                    SortByProperty?: string;
-                    SortByAscending?: boolean;
                 };
                 header?: never;
                 path: {

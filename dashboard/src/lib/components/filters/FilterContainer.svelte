@@ -1,15 +1,26 @@
 <script lang="ts">
     import { setContext, createEventDispatcher } from "svelte";
-    import { writable, derived, get } from "svelte/store";
-    import { FILTERS_CTX_KEY, type FilterValue, type FilterValues, type FiltersContext } from "$lib/components/filters/context";
+    import { writable, derived } from "svelte/store";
+    import {
+        FILTERS_CTX_KEY,
+        type FilterValue,
+        type FilterValues,
+        type FiltersContext
+    } from "$lib/components/filters/context";
+
+    let initialized = false;
+
+    $: if (!initialized) {
+        values.set({ ...initialValues });
+        initialized = true;
+    }
 
     export let initialValues: FilterValues = {};
     export let onChange: ((values: FilterValues) => void) | undefined = undefined;
 
     const dispatch = createEventDispatcher<{ change: FilterValues }>();
 
-    const draftValues = writable<FilterValues>({ ...initialValues });
-    const appliedValues = writable<FilterValues>({ ...initialValues });
+    const values = writable<FilterValues>({ ...initialValues });
 
     function isActiveValue(value: FilterValue): boolean {
         if (value === null || value === undefined) return false;
@@ -22,43 +33,46 @@
         return true;
     }
 
+    function emitChange(next: FilterValues) {
+        dispatch("change", next);
+        onChange?.(next);
+    }
+
     function setValue(id: string, value: FilterValue) {
-        draftValues.update((v) => ({ ...v, [id]: value }));
+        values.update((current) => {
+            const next = { ...current, [id]: value };
+            emitChange(next);
+            return next;
+        });
     }
 
     function clearValue(id: string) {
-        draftValues.update((v) => {
-            const next = { ...v };
+        values.update((current) => {
+            const next = { ...current };
             delete next[id];
+            emitChange(next);
             return next;
         });
     }
 
     function clearAll() {
-        draftValues.set({});
-        appliedValues.set({});
-        dispatch("change", {});
-        onChange?.({});
+        const next = {};
+        values.set(next);
+        emitChange(next);
     }
 
-    function apply() {
-        const next = get(draftValues);
-        appliedValues.set(next);
-        dispatch("change", next);
-        onChange?.(next);
-    }
+    const appliedActiveCount = derived(values, ($values) => {
+        let count = 0;
 
-    const appliedActiveCount = derived(appliedValues, ($values) => {
-        return Object.values($values).reduce((acc, v) => (isActiveValue(v) ? acc + 1 : acc), 0);
-    });
+        for (const v of Object.values($values)) {
+            if (isActiveValue(v)) count++;
+        }
 
-    const isDirty = derived([draftValues, appliedValues], ([$draft, $applied]) => {
-        // Basic (fast) deep compare good enough for small filter objects.
-        return JSON.stringify($draft) !== JSON.stringify($applied);
+        return count;
     });
 
     setContext<FiltersContext>(FILTERS_CTX_KEY, {
-        values: draftValues,
+        values,
         setValue,
         clearValue,
         clearAll,
@@ -68,10 +82,12 @@
 
 <div class="flex flex-wrap items-center gap-2">
     <slot />
-
-    <button class="btn btn-primary btn-sm" on:click={apply} disabled={!$isDirty}>Apply</button>
-
     {#if $appliedActiveCount > 0}
-        <button class="btn btn-ghost btn-sm" on:click={clearAll}>Clear</button>
+        <button
+          class="btn btn-sm bg-transparent border border-white/10 text-white/70 hover:text-white hover:bg-white/10"
+          on:click={clearAll}
+        >
+            Reset
+        </button>
     {/if}
 </div>

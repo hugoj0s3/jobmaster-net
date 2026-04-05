@@ -16,6 +16,39 @@
 		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
+    import SearchSelectModal from "$lib/components/filters/SearchSelectModal.svelte";
+
+    let isDefinitionSearchOpen = false;
+
+    $: definitionOptions = Array.from(
+      new Map(
+        jobs
+          .filter((j) => j.definitionId)
+          .map((j) => [
+              j.definitionId,
+              {
+                  value: j.definitionId,
+                  label: j.definitionId,
+                  description: j.jobId
+              } satisfies SearchSelectOption
+          ])
+      ).values()
+    );
+
+    function openDefinitionSearch() {
+        isDefinitionSearchOpen = true;
+    }
+
+    function closeDefinitionSearch() {
+        isDefinitionSearchOpen = false;
+    }
+
+    function handleDefinitionSelect(option: SearchSelectOption) {
+        selectedJobDefinitionId = option.value;
+        pageIndex = 0;
+        isDefinitionSearchOpen = false;
+        refreshNow();
+    }
 
     const refreshIntervalSec = 20;
 
@@ -162,6 +195,15 @@
             pageIndex = 0;
             refreshNow();
         }, 300);
+    }
+
+    function resetFilters() {
+        selectedStatuses = [];
+        selectedJobDefinitionId = "";
+        selectedSortDirection = "";
+        filterValues = {};
+        pageIndex = 0;
+        refreshNow();
     }
 
     function syncToUrl() {
@@ -394,6 +436,12 @@
 			if (nowTicker) window.clearInterval(nowTicker);
 			if (poller) window.clearInterval(poller);
     });
+
+    $: activeFiltersCount =
+      (selectedStatuses.length > 0 ? 1 : 0) +
+      (selectedJobDefinitionId ? 1 : 0) +
+      (selectedSortDirection ? 1 : 0) +
+      (filterValues?.scheduledAt ? 1 : 0);
 </script>
 
 <div class="min-h-screen bg-base-100">
@@ -429,25 +477,30 @@
             {#key filterKey}
             <div class="flex flex-wrap items-center gap-2">
                 <div class="form-control">
-                    <input
-                        type="text"
-                        placeholder="Search definition ID (exact match)"
-                        class="input input-bordered input-sm w-64"
-                        value={selectedJobDefinitionId}
-                        on:input={(e) => {
-                            const value = e.target.value;
-                            debouncedSearch(value);
-                        }}
-                        on:keydown={(e) => {
-                            if (e.key === 'Enter') {
-                                e.preventDefault();
-                                if (searchTimeout) clearTimeout(searchTimeout);
-                                selectedJobDefinitionId = e.target.value;
-                                pageIndex = 0;
-                                refreshNow();
-                            }
-                        }}
-                    />
+                    <div class="join">
+                        <button
+                          type="button"
+                          class="btn btn-sm join-item"
+                          on:click={openDefinitionSearch}
+                        >
+                            Search Definition
+                        </button>
+
+                        {#if selectedJobDefinitionId}
+                            <button
+                              type="button"
+                              class="btn btn-sm btn-ghost join-item"
+                              aria-label="Clear definition filter"
+                              on:click={() => {
+                              selectedJobDefinitionId = "";
+                              pageIndex = 0;
+                              refreshNow();
+                            }}
+                            >
+                                ✕
+                            </button>
+                        {/if}
+                    </div>
                 </div>
 
                 <FilterDropdown
@@ -502,6 +555,16 @@
                         ]}
                     />
                 </FilterContainer>
+
+                {#if activeFiltersCount > 0}
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-ghost"
+                        on:click={resetFilters}
+                    >
+                        Reset filters
+                    </button>
+                {/if}
             </div>
             {/key}
 
@@ -655,6 +718,16 @@
                     {/each}
                     </tbody>
                 </table>
+                <SearchSelectModal
+                  open={isDefinitionSearchOpen}
+                  title="Search Definition ID"
+                  placeholder="Type exactly definition id name"
+                  options={definitionOptions}
+                  selectedValue={selectedJobDefinitionId}
+                  emptyText="No definition found"
+                  on:close={closeDefinitionSearch}
+                  on:select={(e) => handleDefinitionSelect(e.detail)}
+                />
             </div>
         </div>
     </div>

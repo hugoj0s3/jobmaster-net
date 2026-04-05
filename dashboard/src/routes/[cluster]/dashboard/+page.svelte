@@ -56,7 +56,7 @@
         jobId: string;
         definitionId: string;
         status: JobStatusLabel;
-        executedAt: string;
+        finalizedAt: string;
         durationText?: string;
     };
 
@@ -159,7 +159,9 @@
 
     function executedAgo(iso: string): string {
         const ms = uiNow.getTime() - new Date(iso).getTime();
-        return DateTimeUtil.formatAgeShort(ms);
+        const text = DateTimeUtil.formatAgeShort(ms);
+
+        return ms < 3600000 ? `${text} ago` : text;
     }
 
     function kpiBadgeClass(count: number, activeClass: string): string {
@@ -367,7 +369,7 @@
                     jobId: j.id ?? "",
                     definitionId: j.jobDefinitionId ?? "",
                     status: JobStatusUtil.getLabel(j.status ?? ApiJobStatus.Succeeded),
-                    executedAt: bestJobTimestampIso(j),
+                    finalizedAt: bestJobTimestampIso(j),
                     durationText: "—"
                 }));
             } catch (e) {
@@ -658,7 +660,7 @@
                                     <th>JobId</th>
                                     <th>Status</th>
                                     <th>Definition Id</th>
-                                    <th>Executed</th>
+                                    <th>Finalized At</th>
                                     <th class="text-right">Duration</th>
                                 </tr>
                                 </thead>
@@ -692,7 +694,7 @@
                                             </span>
                                         </td>
                                         <td>{j.definitionId}</td>
-                                        <td class="opacity-80">{executedAgo(j.executedAt)} ago</td>
+                                        <td class="opacity-80">{executedAgo(j.finalizedAt)} ago</td>
                                         <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
                                     </tr>
                                 {/each}
