@@ -40,7 +40,7 @@ internal class JobRawModel : JobMasterBaseModel
     [JsonInclude]
     public DateTime ScheduledAt { get; internal set; }
     [JsonInclude]
-    public DateTime NextPlanExecutionAt { get; internal set; }
+    public DateTime? NextPlanExecutionAt { get; internal set; }
     
     [JsonInclude]
     public string MsgData { get; internal set; } = "{}";
@@ -76,7 +76,7 @@ internal class JobRawModel : JobMasterBaseModel
     public DateTime? ProcessStartedAt { get; internal set; }
 
     [JsonInclude]
-    public DateTime? CompletedAt { get; internal set; }
+    public DateTime? FinalizedAt { get; internal set; }
     
     [JsonInclude]
     public string? WorkerLane { get; internal set; }
@@ -90,6 +90,11 @@ internal class JobRawModel : JobMasterBaseModel
     public void SetVersion(string version)
     {
         Version = version;
+    }
+
+    public DateTime GetSafeNextPlanExecutionAt()
+    {
+        return this.NextPlanExecutionAt ?? this.ScheduledAt;
     }
 
     public Job ToJob()
@@ -154,8 +159,8 @@ internal class JobRawModel : JobMasterBaseModel
             processDeadlineDuration = JobMasterConstants.JobProcessDeadlineDuration;
         }
         
-        var jobProcessDeadline = this.NextPlanExecutionAt.Add(processDeadlineDuration.Value);
-        if (this.NextPlanExecutionAt < DateTime.UtcNow)
+        var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration.Value);
+        if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)
         {
             jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration.Value);
         }
@@ -165,6 +170,11 @@ internal class JobRawModel : JobMasterBaseModel
     
     public void MarkAsHeldOnMaster()
     {
+        if (this.NextPlanExecutionAt is null)
+        {
+            this.NextPlanExecutionAt = this.ScheduledAt > DateTime.UtcNow ? this.ScheduledAt : DateTime.UtcNow;
+        }
+        
         AgentConnectionId = null;
         BucketId = null;
         AgentWorkerId = null;
@@ -181,10 +191,10 @@ internal class JobRawModel : JobMasterBaseModel
 
         if (extraWindow.HasValue)
         {
-            window = window + extraWindow.Value;
+            window += extraWindow.Value;
         }
 
-        return NextPlanExecutionAt <= now.Add(window);
+        return GetSafeNextPlanExecutionAt() <= now.Add(window);
     }
 
     public bool TryToCancel(bool ignoreOnBoarding = false)
@@ -204,7 +214,8 @@ internal class JobRawModel : JobMasterBaseModel
             
             Status = JobMasterJobStatus.Cancelled;
             ProcessDeadline = null;
-            
+            NextPlanExecutionAt = null;
+            FinalizedAt = DateTime.UtcNow;
             return true;
         }
         
@@ -213,7 +224,8 @@ internal class JobRawModel : JobMasterBaseModel
     
     public void DelayNextExecutionPlan(TimeSpan delay)
     {
-        NextPlanExecutionAt = DateTime.UtcNow.Add(delay);
+        var baseDate = ScheduledAt > DateTime.UtcNow ? ScheduledAt : DateTime.UtcNow;
+        NextPlanExecutionAt = baseDate.Add(delay);
     }
     
     public bool TryRetry()
@@ -229,14 +241,14 @@ internal class JobRawModel : JobMasterBaseModel
         var timeToWait = TimeSpan.FromSeconds(secondsToWait);
         timeToWait += JobMasterConstants.JobProcessDeadlineDuration;
         
-        NextPlanExecutionAt = DateTime.UtcNow.Add(timeToWait);
+        DelayNextExecutionPlan(timeToWait);
         ProcessDeadline = null;
         Status = JobMasterJobStatus.OnMaster;
         AgentConnectionId = null;
         AgentWorkerId = null;
         BucketId = null;
         NumberOfFailures++;
-        CompletedAt = DateTime.UtcNow;
+        FinalizedAt = DateTime.UtcNow;
         return true;
     }
     
@@ -247,18 +259,20 @@ internal class JobRawModel : JobMasterBaseModel
         AgentWorkerId = null;
         BucketId = null;
         ProcessDeadline = null;
+        NextPlanExecutionAt = null;
         NumberOfFailures++;
-        CompletedAt = DateTime.UtcNow;
+        FinalizedAt = DateTime.UtcNow;
     }
     
     public void MarkAsSucceeded()
     {
         Status = JobMasterJobStatus.Succeeded;
-        CompletedAt = DateTime.UtcNow;
+        FinalizedAt = DateTime.UtcNow;
         AgentConnectionId = null;
         AgentWorkerId = null;
         BucketId = null;
         ProcessDeadline = null;
+        NextPlanExecutionAt = null;
     }
     
     public void ReSchedule(DateTime scheduledAt)
@@ -341,11 +355,6 @@ internal class JobRawModel : JobMasterBaseModel
         var nowWithSkew = DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding);
         var threshold = nowWithSkew.Add(TimeSpan.FromMinutes(1));
         return this.ProcessDeadline.Value <= threshold;
-    }
-    
-    public int CalcEstimateByteSize()
-    {
-        return JobMasterRawMessage.CalcEstimateByteSize(this);
     }
     
     public static JobRawModel RecoverFromDb(JobPersistenceRecord d)

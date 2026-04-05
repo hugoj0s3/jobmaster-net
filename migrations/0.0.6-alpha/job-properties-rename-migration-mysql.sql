@@ -12,6 +12,8 @@
 --   - RecurringScheduleId -> SourceId
 --   - ScheduledAt -> NextPlanExecutionAt
 --   - OriginalScheduledAt -> ScheduledAt (if exists)
+--   - SucceedExecutedAt -> FinalizedAt
+--   - ProcessingStartedAt -> ProcessStartedAt
 
 -- Step 1: Rename RecurringScheduleId to SourceId
 ALTER TABLE [your-prefix]job RENAME COLUMN recurring_schedule_id TO source_id;
@@ -28,3 +30,9 @@ ALTER TABLE [your-prefix]job CHANGE COLUMN original_scheduled_at scheduled_at_te
 ALTER TABLE [your-prefix]job CHANGE COLUMN scheduled_at next_plan_execution_at_temp DATETIME NOT NULL;
 ALTER TABLE [your-prefix]job CHANGE COLUMN scheduled_at_temp scheduled_at DATETIME NOT NULL;
 ALTER TABLE [your-prefix]job DROP COLUMN next_plan_execution_at_temp;
+
+-- Step 5: Rename SucceedExecutedAt to FinalizedAt
+ALTER TABLE [your-prefix]job RENAME COLUMN succeed_executed_at TO finalized_at;
+
+-- Step 6: Rename ProcessingStartedAt to ProcessStartedAt
+ALTER TABLE [your-prefix]job RENAME COLUMN processing_started_at TO process_started_at;

@@ -30,7 +30,7 @@ internal class PostgresRawMessagesDispatcherRepository : SqlRawMessagesDispatche
         int numberOfJobs, 
         DateTime? referenceTimeTo = null)
     {
-        // Postgres-specific: DELETE ... RETURNING for atomic dequeue (single operation instead of SELECT + DELETE)
+        // Postgres-specific: ensure deterministic order by selecting IDs ordered, deleting, then returning ordered rows
         var table = MessageTableName();
         var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
         var colPayload = sql.ColumnNameFor<JobMasterRawMessage>(x => x.Payload);
@@ -40,23 +40,29 @@ internal class PostgresRawMessagesDispatcherRepository : SqlRawMessagesDispatche
         var colBucket = "bucket_address_id";
 
         var deleteSql = $@"
-DELETE FROM {table}
-WHERE {colMsgId} IN (
+WITH cte AS (
     SELECT {colMsgId}
     FROM {table}
-    WHERE {colBucket} = @Bucket";
+    WHERE {colBucket} = @Bucket
+";
 
         if (referenceTimeTo.HasValue)
         {
-            deleteSql += $" AND {colRefTime} <= @RefTo";
+            deleteSql += $"    AND {colRefTime} <= @RefTo\n";
         }
 
-        deleteSql += $@"
-    ORDER BY {colRefTime} ASC, {colMsgId} ASC
+        deleteSql += $@"    ORDER BY {colRefTime} ASC, {colMsgId} ASC
     LIMIT @Limit
     FOR UPDATE SKIP LOCKED
+), deleted AS (
+    DELETE FROM {table} t
+    USING cte
+    WHERE t.{colMsgId} = cte.{colMsgId}
+    RETURNING t.{colMsgId} AS {colMsgId}, t.{colPayload} AS {colPayload}, t.{colRefTime} AS {colRefTime}, t.{colCorrId} AS {colCorrId}, t.{colEnqAt} AS {colEnqAt}
 )
-RETURNING {colMsgId}, {colPayload}, {colRefTime}, {colCorrId}, {colEnqAt};";
+SELECT {colMsgId}, {colPayload}, {colRefTime}, {colCorrId}, {colEnqAt}
+FROM deleted
+ORDER BY {colRefTime} ASC, {colMsgId} ASC;";
 
         var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(deleteSql, new
         {

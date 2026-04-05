@@ -22,6 +22,7 @@ public class ApiJobQueryCriteria
     
     public DateTime? ProcessDeadlineTo { get; set; }
     public JobMasterTriggerSourceType[]? TriggerSourceTypes { get; set; }
+    public string[]? SourceIds { get; set; }
     public string? SourceId { get; set; }
     
     public string? JobDefinitionId { get; set; }
@@ -46,8 +47,12 @@ public class ApiJobQueryCriteria
         {
             sourceId = SourceId!.FromBase64();
         }
+        
+        var sourceIds = (SourceIds ?? Array.Empty<string>()).Select(s => s.FromBase64()).ToArray();
 
         var triggerSourceTypes = (TriggerSourceTypes ?? Array.Empty<JobMasterTriggerSourceType>()).ToList();
+        
+        var statuses = (Statuses ?? Array.Empty<JobMasterJobStatus>()).ToList();
 
         // Validate sort property if provided
         if (SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property))
@@ -58,12 +63,15 @@ public class ApiJobQueryCriteria
         return new JobQueryCriteria
         {
             Status = Status,
+            Statuses = statuses,
+            Priority = Priority,
             NextPlanExecutionAtTo = NextPlanExecutionAtTo,
             NextPlanExecutionAtFrom = NextPlanExecutionAtFrom,
             ScheduledFrom = ScheduledFrom,
             ScheduledTo = ScheduledTo,
             ProcessDeadlineTo = ProcessDeadlineTo,
             TriggerSourceTypes = triggerSourceTypes,
+            SourceIds = sourceIds,
             SourceId = sourceId,
             MetadataFilters = ApiGenericRecordValueFilterMappings.ParseMetadataFiltersJson(MetadataFiltersJson),
             JobDefinitionId = JobDefinitionId,

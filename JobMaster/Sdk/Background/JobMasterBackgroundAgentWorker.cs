@@ -219,7 +219,20 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         if (this.Mode == AgentWorkerMode.Execution)
         {
-            await LoadBucketsForExecution();
+            await LoadExecutionRunners();
+        }
+
+        if (this.Mode != AgentWorkerMode.Coordinator)
+        {
+            // Runs in Full, Execution, and Drain modes — excluded from Coordinator since it never
+            // saves recurring schedules and therefore never populates the queue.
+            // Consumes the in-memory queue fed by save runners (execution and drain paths) after
+            // activating a schedule, triggering immediate next-job scheduling.
+            // Started once here rather than inside each mode's loader to avoid duplicate instances.
+            // ScheduleRecurringJobsRunner (coordinator) remains the fallback for schedules not
+            // caught by this fast path.
+            var recentlyInsertedScheduleRunner = new RecentlyInsertedScheduleRecurringJobsRunner(this);
+            await recentlyInsertedScheduleRunner.StartAsync();
         }
         
         // Mark as initialized after all buckets and runners are created
@@ -230,7 +243,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     private async Task LoadFullRunnersAsync()
     {
         // Load buckets first to avoid deadlocks with maintenance runners
-        await LoadBucketsForExecution();
+        await LoadExecutionRunners();
         
         // Then load coordination and drain runners after buckets are created
         await LoadCoordinatorRunnersAsync();
@@ -303,7 +316,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         await deleteOldLogsRunner.StartAsync();
     }
 
-    private async Task LoadBucketsForExecution()
+    private async Task LoadExecutionRunners()
     {
         var buckets = new List<BucketModel>();
         foreach (var item in this.BucketQty)

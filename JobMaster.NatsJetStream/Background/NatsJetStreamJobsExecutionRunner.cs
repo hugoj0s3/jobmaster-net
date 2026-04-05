@@ -66,7 +66,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
                 return;
             }
 
-            var target = payload.NextPlanExecutionAt - BackgroundAgentWorker.BucketBufferLeadTime;
+            var target = payload.GetSafeNextPlanExecutionAt() - BackgroundAgentWorker.BucketBufferLeadTime;
             var delay = target > utcNow ? target - utcNow : TimeSpan.Zero;
             var jitter = TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(5, 50));
             
@@ -108,6 +108,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
     public JobMasterPriority Priority { get; internal set; }
 
-    protected override TimeSpan LongDelayAfterBatchSize() => TimeSpan.FromMilliseconds(10);
+    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(1);
+    protected override TimeSpan LongDelayAfterBufferSize() => TimeSpan.FromMilliseconds(10);
     protected override TimeSpan DelayAfterProcessPayload() => TimeSpan.Zero;
 }

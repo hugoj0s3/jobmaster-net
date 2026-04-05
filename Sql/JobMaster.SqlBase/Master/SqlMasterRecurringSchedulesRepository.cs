@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Utils;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
@@ -73,7 +74,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -111,12 +112,42 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
 
-    public void Update(RecurringScheduleRawModel scheduleRaw)
+    public bool Exists(Guid recurringScheduleId)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return conn.ExecuteScalar<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
+    }
+
+    public async Task<bool> ExistsAsync(Guid recurringScheduleId)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
+    }
+
+    public virtual void Upsert(RecurringScheduleRawModel scheduleRaw)
+    {
+        if (Exists(scheduleRaw.Id))
+            Update(scheduleRaw);
+        else
+            Add(scheduleRaw);
+    }
+
+    public virtual async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    {
+        if (await ExistsAsync(scheduleRaw.Id))
+            await UpdateAsync(scheduleRaw);
+        else
+            await AddAsync(scheduleRaw);
+    }
+
+    protected virtual void Update(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -137,8 +168,9 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Recurring Schedule not found");
@@ -167,12 +199,12 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
 
-    public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
+    protected virtual async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -193,8 +225,9 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Recurring Schedule not found");
@@ -223,7 +256,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -273,41 +306,6 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
     }
 
-    public bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var t = TableName();
-            var sqlText = @$"
-UPDATE {t} SET 
-    {Col(x => x.PartitionLockId)} = @LockId, 
-    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE {this.sql.InClauseFor(Col(x => x.Id), "@RecurringScheduleIds")} 
-    AND ({Col(x => x.PartitionLockId)} is null OR {Col(x => x.PartitionLockExpiresAt)} < @NowUtc) ";
-            
-            var rowsAffected = conn.Execute(sqlText, new { RecurringScheduleIds = recurringScheduleIds, LockId = lockId, LockExpiresAt = expiresAt, NowUtc = JobMasterConstants.NowUtcWithSkewTolerance() }, trans);
-            
-            // lock all or nothing.
-            if (rowsAffected != recurringScheduleIds.Count)
-            {
-                trans.Rollback();
-                return false;
-            }
-            
-            trans.Commit();
-            
-            return true;
-        }
-        catch (Exception)
-        {
-            trans.Rollback();
-            throw;
-        }
-    }
-
     public async Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
@@ -348,7 +346,7 @@ WHERE {cClusterId} = @ClusterId
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -383,7 +381,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -455,7 +453,7 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -610,6 +608,12 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         {
             where.Add($"s.{Col(x => x.WorkerLane)} = @WorkerLane");
             args.Add("WorkerLane", c.WorkerLane);
+        }
+        
+        if (c.Ids != null && c.Ids.Count > 0)
+        {
+            where.Add(sql.InClauseFor($"s.{Col(x => x.Id)}", "@Ids"));
+            args.Add("Ids", c.Ids);
         }
         
         if (c.RecurringScheduleType.HasValue)

@@ -1,7 +1,9 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Background.SavePendingRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -13,17 +15,21 @@ using NATS.Client.JetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
-internal class NetsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, ISaveRecurringSchedulerRunner
+internal class NatsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, ISaveRecurringSchedulerRunner
 {
-    private IMasterRecurringSchedulesService masterRecurringSchedulesService;
-    private IRecurringSchedulePlanner recurringSchedulePlanner;
-    private IWorkerClusterOperations workerClusterOperations;
+    private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
+    private readonly IRecurringSchedulePlanner recurringSchedulePlanner;
+    private readonly IMasterDistributedLockerService distributedLockerService;
+    private readonly JobMasterLockKeys lockKeys;
+    private readonly RecurringScheduleSavePendingOperation savePendingOperation;
     
-    public NetsJetStreamSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public NatsJetStreamSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         masterRecurringSchedulesService = BackgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
-        workerClusterOperations = backgroundAgentWorker.GetClusterAwareService<IWorkerClusterOperations>();
         recurringSchedulePlanner = backgroundAgentWorker.GetClusterAwareService<IRecurringSchedulePlanner>();
+        distributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
+        lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
+        savePendingOperation = new RecurringScheduleSavePendingOperation(backgroundAgentWorker);
     }
 
     protected override string GetFullBucketAddressId(string bucketId) => FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
@@ -41,26 +47,12 @@ internal class NetsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBas
     {
         try
         {
-            if (payload.Status == RecurringScheduleStatus.PendingSave)
-            {
-                payload.Active();
-            }
-        
-            await workerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
+            await savePendingOperation.SaveRecurringScheduleAsync(payload);
         }
         catch (Exception e)
         {
             this.logger.Error($"{GetRunnerDescription()} - Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, payload.Id, e);
             throw;
-        }
-
-        try
-        {
-            await recurringSchedulePlanner.ScheduleNextJobsAsync(payload);
-        }
-        catch (Exception e)
-        {
-            this.logger.Error($"{GetRunnerDescription()} - Failed to schedule next jobs after save", JobMasterLogSubjectType.RecurringSchedule, payload.Id, e);
         }
     }
 

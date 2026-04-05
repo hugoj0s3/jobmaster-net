@@ -54,7 +54,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     public async Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
     {
         if (jobRaw.Status != JobMasterJobStatus.OnMaster && 
-            jobRaw.Status != JobMasterJobStatus.SavePending)
+            jobRaw.Status != JobMasterJobStatus.PendingSave)
         {
             return;
         }
@@ -82,6 +82,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 if (result == OnBoardingResult.MovedToMaster)
                 {
                     logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    return;
+                }
+
+                if (result == OnBoardingResult.Cancelled)
+                {
+                    logger.Warn($"Short-circuit failed job or recurring scheduled was cancelled", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return;
                 }
                 
@@ -213,6 +219,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                                   (x.Mode == AgentWorkerMode.Coordinator || x.Mode == AgentWorkerMode.Full));
     }
     
+    public async Task<int> CountWorkersAsync()
+    {
+        var workers = await masterAgentWorkersService.QueryWorkersAsync();
+        return workers.Count(x => x.Status() == AgentWorkerStatus.Active);
+    }
+    
     public void CancelRecurringSchedule(Guid id)
     {
         var recurringScheduleRawModel = masterRecurringSchedulesService.Get(id);
@@ -238,7 +250,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobDuplicationException)
+                if (e is JobMasterDuplicationException)
                 {
                     throw;
                 }
@@ -277,7 +289,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobDuplicationException)
+                if (e is JobMasterDuplicationException)
                 {
                     throw;
                 }

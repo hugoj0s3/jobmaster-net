@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
 
@@ -89,12 +90,14 @@ WHERE s.{cClusterId} = @ClusterId
 
             var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
             var records = LinearListToDomain(linearRows);
+            tx.Commit();
             return records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
+
 }

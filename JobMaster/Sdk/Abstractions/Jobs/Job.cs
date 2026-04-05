@@ -15,7 +15,7 @@ internal class Job : JobMasterBaseModel
     internal Job(string clusterId) : base(clusterId)
     {
         Id = JobMasterRandomUtil.NewGuid();
-        Status = JobMasterJobStatus.SavePending;
+        Status = JobMasterJobStatus.PendingSave;
         CreatedAt = DateTime.UtcNow;
     }
 
@@ -126,7 +126,7 @@ internal class Job : JobMasterBaseModel
     public Guid Id { get; internal set; }
     public DateTime CreatedAt { get; internal set; }
     public DateTime ScheduledAt { get; internal set; }
-    public  DateTime NextPlanExecutionAt { get; internal set; }
+    public  DateTime? NextPlanExecutionAt { get; internal set; }
     public  JobMasterJobStatus Status { get; internal set;}
     public  string? BucketId { get; internal set; }
     public  AgentConnectionId? AgentConnectionId { get; internal set; }
@@ -143,7 +143,7 @@ internal class Job : JobMasterBaseModel
 
     public DateTime? ProcessStartedAt { get; internal set; }
 
-    public DateTime? CompletedAt { get; internal set; }
+    public DateTime? FinalizedAt { get; internal set; }
     public  TimeSpan Timeout { get; internal set; }
     public  int MaxNumberOfRetries { get; internal set; }
     public IWriteableMessageData MsgData { get; internal set; } = new MessageData();

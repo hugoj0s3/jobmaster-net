@@ -19,7 +19,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
     
-    protected SavePendingOperation? savePendingOperation;
+    protected JobSavePendingOperation? savePendingOperation;
 
     public ManualDrainProcessingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -37,7 +37,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
         
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
         }
         
         var bucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
@@ -57,7 +57,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
         bool hasFailed = false;
         foreach (var job in processingJobs)
         {
-            var result = await savePendingOperation.SaveDrainProcessingAsync(job); 
+            var result = await savePendingOperation.HeldOnMasterProcessingForDrainAsync(job); 
             if (result != SaveDrainResultCode.Success && result != SaveDrainResultCode.Skipped)
             {
                 hasFailed = true;

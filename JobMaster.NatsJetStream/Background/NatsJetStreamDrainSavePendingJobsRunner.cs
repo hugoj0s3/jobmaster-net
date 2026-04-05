@@ -16,7 +16,7 @@ namespace JobMaster.NatsJetStream.Background;
 internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase<JobRawModel>, IDrainSavePendingJobsRunner
 {
     private readonly IMasterJobsService masterJobsService;
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
     
     public NatsJetStreamDrainSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, IMasterJobsService masterJobsService) : base(backgroundAgentWorker)
     {
@@ -42,10 +42,10 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
     {
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(this.BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, BucketId!);
         }
         
-        var resultCode = await savePendingOperation.SaveDrainSavePendingAsync(payload);
+        var resultCode = await savePendingOperation.AddPendingSaveJobForDrainAsync(payload);
         if (resultCode == SaveDrainResultCode.Failed)
         {
             var messageId = NatsJetStreamUtils.GetHeaderMessageId(ackGuard.Msg.Headers);
@@ -62,6 +62,6 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
     protected override TimeSpan DelayAfterProcessPayload() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(25) : TimeSpan.FromMilliseconds(125);
     
-    protected override TimeSpan LongDelayAfterBatchSize() => 
+    protected override TimeSpan LongDelayAfterBufferSize() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(125) : TimeSpan.FromMilliseconds(500);
 }

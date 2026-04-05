@@ -3,6 +3,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 
 namespace JobMaster.SqlServer.Master;
@@ -108,7 +109,7 @@ WHEN NOT MATCHED THEN
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -204,7 +205,7 @@ WHEN NOT MATCHED THEN
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }

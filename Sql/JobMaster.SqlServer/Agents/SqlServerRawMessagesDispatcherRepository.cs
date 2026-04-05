@@ -30,7 +30,7 @@ internal class SqlServerRawMessagesDispatcherRepository : SqlRawMessagesDispatch
         int numberOfJobs, 
         DateTime? referenceTimeTo = null)
     {
-        // SQL Server-specific: DELETE with OUTPUT clause for atomic dequeue (single operation instead of SELECT + DELETE)
+        // SQL Server-specific: Use CTE to select TOP (@Limit) IDs in order, then DELETE with JOIN and OUTPUT
         var table = MessageTableName();
         var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
         var colPayload = sql.ColumnNameFor<JobMasterRawMessage>(x => x.Payload);
@@ -40,9 +40,10 @@ internal class SqlServerRawMessagesDispatcherRepository : SqlRawMessagesDispatch
         var colBucket = "bucket_address_id";
 
         var deleteSql = $@"
-DELETE TOP (@Limit) FROM {table}
-OUTPUT DELETED.{colMsgId}, DELETED.{colPayload}, DELETED.{colRefTime}, DELETED.{colCorrId}, DELETED.{colEnqAt}
-WHERE {colBucket} = @Bucket";
+WITH cte AS (
+    SELECT TOP (@Limit) {colMsgId}
+    FROM {table}
+    WHERE {colBucket} = @Bucket";
 
         if (referenceTimeTo.HasValue)
         {
@@ -50,7 +51,12 @@ WHERE {colBucket} = @Bucket";
         }
 
         deleteSql += $@"
-ORDER BY {colRefTime} ASC, {colMsgId} ASC;";
+    ORDER BY {colRefTime} ASC, {colMsgId} ASC
+)
+DELETE t
+OUTPUT DELETED.{colMsgId}, DELETED.{colPayload}, DELETED.{colRefTime}, DELETED.{colCorrId}, DELETED.{colEnqAt}
+FROM {table} t
+INNER JOIN cte ON t.{colMsgId} = cte.{colMsgId};";
 
         var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(deleteSql, new
         {
@@ -59,6 +65,11 @@ ORDER BY {colRefTime} ASC, {colMsgId} ASC;";
             Limit = numberOfJobs
         }, tx);
 
-        return rows.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
+        var ordered = rows
+            .OrderBy(r => r.ReferenceTime)
+            .ThenBy(r => r.MessageId)
+            .ToList();
+
+        return ordered.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
     }
 }

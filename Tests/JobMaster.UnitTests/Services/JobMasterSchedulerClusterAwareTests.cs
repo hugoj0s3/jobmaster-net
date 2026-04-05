@@ -389,7 +389,7 @@ public class JobMasterSchedulerClusterAwareTests
             Priority = JobMasterPriority.Medium,
             ScheduledAt = DateTime.UtcNow,
             NextPlanExecutionAt = DateTime.UtcNow,
-            Status = JobMasterJobStatus.SavePending,
+            Status = JobMasterJobStatus.PendingSave,
             Timeout = TimeSpan.FromSeconds(5),
             MaxNumberOfRetries = 0,
             MsgData = "{}",

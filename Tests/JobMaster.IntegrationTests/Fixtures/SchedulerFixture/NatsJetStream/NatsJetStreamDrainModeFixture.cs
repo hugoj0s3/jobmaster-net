@@ -8,15 +8,15 @@ namespace JobMaster.IntegrationTests.Fixtures.SchedulerFixture.NatsJetStream;
 
 public sealed class NatsJetStreamDrainModeFixture : JobMasterBaseSchedulerFixture
 {
-    public override string IncludeWildcards => "*postgres-NatsJetStream";
+    public override string IncludeWildcards => "*-postgres-nats";
     public override string ExcludeWildcards => "";
-    public override string DefaultClusterId => "cluster-postgres-NatsJetStream";
+    public override string DefaultClusterId => "cluster-postgres-Nats";
     public override bool IsDrainingModeTest => true;
 
-    public new async Task InitializeAsync()
+    public override async Task InitializeAsync()
     {
-        await base.InitializeAsync();
         await CleanupJetStreamAsync();
+        await base.InitializeAsync();
     }
 
     private static async Task CleanupJetStreamAsync()

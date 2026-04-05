@@ -21,7 +21,7 @@ internal class JobPersistenceRecord
     public int Priority { get; set; }
 
     public DateTime ScheduledAt { get; set; }
-    public DateTime NextPlanExecutionAt { get; set; }
+    public DateTime? NextPlanExecutionAt { get; set; }
 
     public string MsgData { get; set; } = "{}";
     
@@ -45,7 +45,7 @@ internal class JobPersistenceRecord
 
     public DateTime? ProcessStartedAt { get; set; }
 
-    public DateTime? CompletedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     
     public string? WorkerLane { get; set; }
     

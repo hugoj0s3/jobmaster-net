@@ -13,6 +13,7 @@ internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareServ
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<Guid>> QueryIdsAsync(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, int partitionLockId, DateTime expiresAtUtc);
     long Count(RecurringScheduleQueryCriteria queryCriteria);
     RecurringScheduleRawModel? Get(Guid recurringScheduleId);
     Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId);

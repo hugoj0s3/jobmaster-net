@@ -19,7 +19,7 @@ public class JobTests
 
         job.ClusterId.Should().Be(clusterId);
         job.JobDefinitionId.Should().Be("JobHandlerForTest");
-        job.Status.Should().Be(JobMasterJobStatus.SavePending);
+        job.Status.Should().Be(JobMasterJobStatus.PendingSave);
         job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.Once);
         job.NextPlanExecutionAt.Should().Be(scheduledAt);
         job.ScheduledAt.Should().Be(scheduledAt);

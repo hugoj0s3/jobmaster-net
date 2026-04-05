@@ -19,6 +19,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
@@ -76,12 +77,12 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
-            trans.Rollback();
-            throw new JobDuplicationException(jobRaw.Id, ex);
+            trans.SafeRollback();
+            throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -119,17 +120,47 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch (Exception ex) when (IsDupeViolation(jobRaw.Id, ex))
         {
-            trans.Rollback();
-            throw new JobDuplicationException(jobRaw.Id, ex);
+            trans.SafeRollback();
+            throw new JobMasterDuplicationException(jobRaw.Id, "Job", ex);
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
 
-    public void Update(JobRawModel jobRaw)
+    public bool Exists(Guid jobId)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return conn.ExecuteScalar<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId });
+    }
+
+    public async Task<bool> ExistsAsync(Guid jobId)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId });
+    }
+
+    public virtual void Upsert(JobRawModel jobRaw)
+    {
+        if (Exists(jobRaw.Id))
+            Update(jobRaw);
+        else
+            Add(jobRaw);
+    }
+
+    public virtual async Task UpsertAsync(JobRawModel jobRaw)
+    {
+        if (await ExistsAsync(jobRaw.Id))
+            await UpdateAsync(jobRaw);
+        else
+            await AddAsync(jobRaw);
+    }
+
+    protected virtual void Update(JobRawModel jobRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -150,12 +181,14 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 rec.ScheduledAt, rec.NextPlanExecutionAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
                 SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
                 ProcessStartedAt = rec.ProcessStartedAt,
-                CompletedAt = rec.CompletedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
+                FinalizedAt = rec.FinalizedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                // Do not rollback here; let the outer catch rollback once to avoid double-rollback on providers like Npgsql
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Job not found");
@@ -184,12 +217,12 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
 
-    public async Task UpdateAsync(JobRawModel jobRaw)
+    protected virtual async Task UpdateAsync(JobRawModel jobRaw)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -210,12 +243,13 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 rec.ScheduledAt, rec.NextPlanExecutionAt, rec.MsgData, rec.Status, rec.NumberOfFailures, rec.TimeoutTicks, rec.MaxNumberOfRetries,
                 SourceId = rec.SourceId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.ProcessDeadline,
                 ProcessStartedAt = rec.ProcessStartedAt,
-                CompletedAt = rec.CompletedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
+                FinalizedAt = rec.FinalizedAt, rec.WorkerLane, rec.HostId, rec.HostDisplayName }, trans);
             
             if (rowsAffected == 0)
             {
-                trans.Rollback();
-                var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
+                var idExists = conn.ExecuteScalar<bool>(
+                    "SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
                 if (!idExists)
                 {
                     throw new Exception("Job not found");
@@ -244,7 +278,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
         catch
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -382,12 +416,12 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
 
-    public async Task<int> PurgeFinalByNextPlanExecutionAtAsync(DateTime cutoffUtc, int limit)
+    public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
 
@@ -400,13 +434,14 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
             var cId = Col(x => x.Id);
             var cClusterId = Col(x => x.ClusterId);
             var cStatus = Col(x => x.Status);
-            var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
+            var cFinalizedAt = Col(x => x.FinalizedAt);
 
             var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
 WHERE {cClusterId} = @ClusterId
   AND {cStatus} IN (@Succeeded, @Failed, @Cancelled, @Aborted)
-  AND {cNextPlanExecutionAt} <= @CutoffUtc
-ORDER BY {cNextPlanExecutionAt} ASC, {cId} ASC");
+  AND {cFinalizedAt} IS NOT NULL
+  AND {cFinalizedAt} <= @CutoffUtc
+ORDER BY {cFinalizedAt} ASC, {cId} ASC");
             selectSql.Append('\n');
             selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
@@ -450,7 +485,7 @@ ORDER BY {cNextPlanExecutionAt} ASC, {cId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -551,6 +586,15 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("Status", (int)c.Status.Value);
         }
 
+        if (!c.Statuses.IsNullOrEmpty())
+        {
+            where.Add($"j.{Col(x => x.Status)} IN ({string.Join(", ", c.Statuses.Select(s => $"@Status_{s}"))})");
+            foreach (var status in c.Statuses)
+            {
+                args.Add($"Status_{status}", (int)status);
+            }
+        }
+
         if (c.NextPlanExecutionAtFrom.HasValue)
         {
             where.Add($"j.{Col(x => x.NextPlanExecutionAt)} >= @NextPlanExecutionAtFrom");
@@ -640,7 +684,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return sql.TableNameFor<Job>(additionalConnConfig);
     }
 
-    private (string Columns, string ValuesParams) InsertColumnsAndParams()
+    protected (string Columns, string ValuesParams) InsertColumnsAndParams()
     {
         var cols = new[]
         {
@@ -650,7 +694,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
             Col(x => x.CreatedAt), Col(x => x.SourceId),
             Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.ProcessDeadline),
-            Col(x => x.ProcessStartedAt), Col(x => x.CompletedAt),
+            Col(x => x.ProcessStartedAt), Col(x => x.FinalizedAt),
             Col(x => x.WorkerLane), Col(x => x.Version), Col(x => x.HostId), Col(x => x.HostDisplayName)
         };
         var vals = new[]
@@ -661,13 +705,13 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
             "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
-            "@ProcessStartedAt", "@CompletedAt",
+            "@ProcessStartedAt", "@FinalizedAt",
             "@WorkerLane", "@Version", "@HostId", "@HostDisplayName"
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
     }
 
-    private string UpdateSetClause()
+    protected string UpdateSetClause()
     {
         return string.Join(", ", new[]
         {
@@ -689,7 +733,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.ProcessDeadline)} = @ProcessDeadline",
             $"{Col(x => x.ProcessStartedAt)} = @ProcessStartedAt",
-            $"{Col(x => x.CompletedAt)} = @CompletedAt",
+            $"{Col(x => x.FinalizedAt)} = @FinalizedAt",
             $"{Col(x => x.WorkerLane)} = @WorkerLane",
             $"{Col(x => x.Version)} = @Version",
             $"{Col(x => x.HostId)} = @HostId",
@@ -723,7 +767,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             $"{jobAlias}.{Col(x => x.PartitionLockExpiresAt)}",
             $"{jobAlias}.{Col(x => x.ProcessDeadline)}",
             $"{jobAlias}.{Col(x => x.ProcessStartedAt)}",
-            $"{jobAlias}.{Col(x => x.CompletedAt)}",
+            $"{jobAlias}.{Col(x => x.FinalizedAt)}",
             $"{jobAlias}.{Col(x => x.WorkerLane)}",
             $"{jobAlias}.{Col(x => x.Version)}",
             $"{jobAlias}.{Col(x => x.HostId)}",
@@ -827,7 +871,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
                 PartitionLockExpiresAt = first.PartitionLockExpiresAt,
                 ProcessDeadline = first.ProcessDeadline,
                 ProcessStartedAt = first.ProcessStartedAt,
-                CompletedAt = first.CompletedAt,
+                FinalizedAt = first.FinalizedAt,
                 Metadata = metadata,
                 WorkerLane = first.WorkerLane,
                 Version = first.Version,

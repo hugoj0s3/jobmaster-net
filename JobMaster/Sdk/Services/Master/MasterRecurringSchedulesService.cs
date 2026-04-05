@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -33,33 +34,14 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         operationThrottler = runtime.GetOperationThrottlerForCluster(clusterConnConfig.ClusterId);
     }
 
-    public async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    public Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
     {
-        await operationThrottler.ExecAsync(async () =>
-        {
-            var entity = await masterRecurringSchedulesRepository.GetAsync(scheduleRaw.Id);
-            if (entity == null)
-            {
-                await masterRecurringSchedulesRepository.AddAsync(scheduleRaw);
-            }
-
-            await masterRecurringSchedulesRepository.UpdateAsync(scheduleRaw);
-        });
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
     }
 
     public void Upsert(RecurringScheduleRawModel scheduleRaw)
     {
-        operationThrottler.Exec(() =>
-        {
-            var entity = masterRecurringSchedulesRepository.Get(scheduleRaw.Id);
-            if (entity is null)
-            {
-                masterRecurringSchedulesRepository.Add(scheduleRaw);
-            }
-
-            masterRecurringSchedulesRepository.Update(scheduleRaw);
-            return true;
-        });
+        operationThrottler.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
     }
 
     public void UpsertStatic(StaticRecurringScheduleDefinition definition)
@@ -91,7 +73,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
             else
             {
                 rawModel.UpdateStaticFromDefinition(definition);
-                masterRecurringSchedulesRepository.Update(rawModel);
+                masterRecurringSchedulesRepository.Upsert(rawModel);
             }
             return true;
         });
@@ -126,6 +108,18 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
     {
         return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+    }
+
+    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, int partitionLockId, DateTime expiresAtUtc)
+    {
+        var criteria = new RecurringScheduleQueryCriteria
+        {
+            Ids = ids,
+            Status = RecurringScheduleStatus.Active,
+            IsLocked = false,
+            CountLimit = ids.Count,
+        };
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc));
     }
 
     public Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)

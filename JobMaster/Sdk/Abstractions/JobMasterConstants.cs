@@ -32,7 +32,7 @@ internal static class JobMasterConstants
 
     public static readonly TimeSpan ClockSkewPadding = TimeSpan.FromSeconds(15);
     
-    public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(30);
+    public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(10);
 
     public const int MaxBatchSizeForBulkOperation = 50;
     public const int MaxAllowedRetries = 10;

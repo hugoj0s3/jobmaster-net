@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
@@ -115,7 +116,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -143,7 +144,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         } 
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -162,7 +163,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -181,7 +182,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -204,7 +205,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -226,7 +227,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
 
@@ -246,7 +247,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -264,7 +265,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -319,7 +320,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -382,7 +383,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -442,7 +443,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
             }
             catch
             {
-                tx.Rollback();
+                tx.SafeRollback();
                 throw;
             }
         }

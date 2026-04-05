@@ -7,9 +7,12 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
 {
     void Add(RecurringScheduleRawModel scheduleRaw);
     Task AddAsync(RecurringScheduleRawModel scheduleRaw);
-    
-    void Update(RecurringScheduleRawModel scheduleRaw);
-    Task UpdateAsync(RecurringScheduleRawModel scheduleRaw);
+
+    void Upsert(RecurringScheduleRawModel scheduleRaw);
+    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
+
+    bool Exists(Guid recurringScheduleId);
+    Task<bool> ExistsAsync(Guid recurringScheduleId);
     IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);
     RecurringScheduleRawModel? Get(Guid recurringScheduleId);
@@ -19,8 +22,6 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
 
     Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
     
-    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
-    bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt);
     long Count(RecurringScheduleQueryCriteria queryCriteria);
 
     Task<int> PurgeTerminatedAsync(DateTime cutoffUtc, int limit);

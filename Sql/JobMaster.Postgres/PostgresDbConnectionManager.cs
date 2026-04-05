@@ -32,6 +32,5 @@ internal class PostgresDbConnectionManager : DbConnectionManager, IDbConnectionM
         
         
         return conn;
-       
     }
 }

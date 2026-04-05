@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Background.SavePendingRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
@@ -15,11 +16,13 @@ internal sealed class NatsJetStreamDrainSavePendingRecurringScheduleRunner
     : NatsJetStreamRunnerBase<RecurringScheduleRawModel>, IDrainSavePendingRecurringScheduleRunner
 {
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
+    private readonly RecurringScheduleSavePendingOperation savePendingOperation;
 
     public NatsJetStreamDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
         : base(backgroundAgentWorker)
     {
         masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
+        savePendingOperation = new RecurringScheduleSavePendingOperation(backgroundAgentWorker);
     }
 
     protected override string GetFullBucketAddressId(string bucketId)
@@ -35,15 +38,8 @@ internal sealed class NatsJetStreamDrainSavePendingRecurringScheduleRunner
     protected override RecurringScheduleRawModel Deserialize(string json)
         => InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(json);
 
-    protected override async Task ProcessPayloadAsync(RecurringScheduleRawModel recurring, MsgAckGuard ackGuard)
-    {
-        if (recurring.Status == RecurringScheduleStatus.PendingSave)
-        {
-            recurring.Active();
-        }
-        await BackgroundAgentWorker.WorkerClusterOperations
-            .ExecWithRetryAsync(o => o.Upsert(recurring));
-    }
+    protected override Task ProcessPayloadAsync(RecurringScheduleRawModel recurring, MsgAckGuard ackGuard)
+        => savePendingOperation.SaveRecurringScheduleAsync(recurring);
 
     protected override async Task<bool> ShouldAckAfterLockAsync(RecurringScheduleRawModel payload, CancellationToken ct)
     {
@@ -54,6 +50,6 @@ internal sealed class NatsJetStreamDrainSavePendingRecurringScheduleRunner
     protected override TimeSpan DelayAfterProcessPayload() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromMilliseconds(250);
     
-    protected override TimeSpan LongDelayAfterBatchSize() => 
+    protected override TimeSpan LongDelayAfterBufferSize() => 
         this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(250) : TimeSpan.FromMilliseconds(1000);
 }

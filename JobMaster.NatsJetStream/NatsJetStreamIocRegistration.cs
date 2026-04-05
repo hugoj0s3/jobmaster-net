@@ -26,6 +26,6 @@ internal static class NatsJetStreamIocRegistration
         registration.AddBucketAwareRunner<IDrainSavePendingJobsRunner, NatsJetStreamDrainSavePendingJobsRunner>(RepositoryType);
         registration.AddBucketAwareRunner<IDrainProcessingJobsRunner, NatsJetStreamDrainProcessingRunner>(RepositoryType);
         registration.AddBucketAwareRunner<IDrainSavePendingRecurringScheduleRunner, NatsJetStreamDrainSavePendingRecurringScheduleRunner>(RepositoryType);
-        registration.AddBucketAwareRunner<ISaveRecurringSchedulerRunner, NetsJetStreamSaveRecurringScheduleRunner>(RepositoryType);
+        registration.AddBucketAwareRunner<ISaveRecurringSchedulerRunner, NatsJetStreamSaveRecurringScheduleRunner>(RepositoryType);
     }
 }

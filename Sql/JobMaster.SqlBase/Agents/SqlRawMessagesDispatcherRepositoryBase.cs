@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Data;
 using System.Text;
 using Dapper;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Abstractions;
@@ -83,7 +84,7 @@ internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterCluste
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -174,7 +175,7 @@ WHERE {colBucket} = @Bucket";
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -203,7 +204,7 @@ WHERE {colBucket} = @Bucket";
         }
         catch (Exception)
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -241,7 +242,7 @@ WHERE {colBucket} = @Bucket";
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -301,7 +302,7 @@ WHERE {colBucket} = @Bucket";
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }
@@ -327,7 +328,7 @@ WHERE {colBucket} = @Bucket";
         }
         catch
         {
-            transaction.Rollback();
+            transaction.SafeRollback();
             throw;
         }
     }

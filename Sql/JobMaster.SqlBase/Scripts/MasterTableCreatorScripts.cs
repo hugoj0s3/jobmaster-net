@@ -225,7 +225,7 @@ internal static class MasterTableCreatorScripts
         var scheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
         var nextPlanExecutionAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.NextPlanExecutionAt);
-        var nextPlanExecutionAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+        var nextPlanExecutionAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
         var dataCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MsgData);
         var dataType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
@@ -260,8 +260,8 @@ internal static class MasterTableCreatorScripts
         var processStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessStartedAt);
         var processStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var completedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.CompletedAt);
-        var completedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var finalizedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.FinalizedAt);
+        var finalizedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
         
         var workerLaneCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.WorkerLane);
         var workerLaneType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
@@ -298,7 +298,7 @@ internal static class MasterTableCreatorScripts
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{processDeadlineCol} {processDeadlineType}",
             $"{processStartedAtCol} {processStartedAtType}",
-            $"{completedAtCol} {completedAtType}",
+            $"{finalizedAtCol} {finalizedAtType}",
             $"{workerLaneCol} {workerLaneType}",
             $"{versionCol} {versionType}",
             $"{hostIdCol} {hostIdType}",

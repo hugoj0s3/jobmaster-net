@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -125,13 +126,13 @@ WHERE {ColClusterId()} = @ClusterId AND {ColKey()} = @Key AND ({ColExpiresAt()} 
             catch
             {
                 // Likely unique constraint violation (already locked and not expired)
-                tx.Rollback();
+                tx.SafeRollback();
                 return null;
             }
         }
         catch
         {
-            try { tx?.Rollback(); } catch { /* ignore */ }
+            tx?.SafeRollback();
             throw;
         }
     }

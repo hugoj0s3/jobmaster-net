@@ -8,9 +8,12 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
 {
     void Add(JobRawModel jobRaw);
     Task AddAsync(JobRawModel jobRaw);
-    
-    void Update(JobRawModel jobRaw);
-    Task UpdateAsync(JobRawModel jobRaw);
+
+    void Upsert(JobRawModel jobRaw);
+    Task UpsertAsync(JobRawModel jobRaw);
+
+    bool Exists(Guid jobId);
+    Task<bool> ExistsAsync(Guid jobId);
 
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
@@ -28,6 +31,6 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     
     void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
 
-    Task<int> PurgeFinalByNextPlanExecutionAtAsync(DateTime cutoffUtc, int limit);
+    Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
 }

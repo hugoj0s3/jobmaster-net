@@ -83,7 +83,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         );
     }
     
-    public async Task InitializeAsync()
+    public async virtual Task InitializeAsync()
     {
         Trace.Listeners.Clear();
         Trace.AutoFlush = true;
@@ -256,14 +256,14 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                         {
                             selector.WorkerLane(w.WorkerLane);
                         }
-                            
+
                         selector.BucketQtyConfig(JobMasterPriority.VeryLow, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Low, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .TransferBatchSize(1000)
-                            .SkipWarmUpTime();
+                            .TransferBatchSize(1000);
+                        // .SkipWarmUpTime();
                     }
 
                     if (IsDrainingModeTest)
