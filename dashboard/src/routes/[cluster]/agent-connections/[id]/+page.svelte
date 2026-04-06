@@ -5,7 +5,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus } from "$lib/api/enums";
-	import { DateTimeUtil } from "$lib/helper/datetime-util";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 
@@ -96,10 +96,7 @@
 			statusBadge: (w?.status === 2 ? "warning" : "neutral") as WorkerRow["statusBadge"],
 			lastHeartbeat: (() => {
 				const rawHeartbeat = w?.lastHeartbeatAt ?? w?.lastHeartbeat;
-				if (!rawHeartbeat) return "—";
-				const d = new Date(rawHeartbeat);
-				if (Number.isNaN(d.getTime())) return "—";
-				return DateTimeUtil.formatDateTime(d);
+				return DateDisplayUtil.formatRelativeOrDate(rawHeartbeat);
 			})(),
 			mode: mapWorkerMode(w?.mode)
 		}));
@@ -121,9 +118,7 @@
 		database: agentConn?.database ?? "—"
 	};
 
-	$: lastUpdated = DateTimeUtil.formatDateTime(lastUpdatedAt);
-
-	$: updatedAgo = DateTimeUtil.lastUpdatedAgo(new Date(), lastUpdatedAt);
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 	async function refreshNow() {
 		isRefreshing = true;

@@ -5,7 +5,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus, JobStatus } from "$lib/api/enums";
-	import { DateTimeUtil } from "$lib/helper/datetime-util";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 	import { resolve } from '$app/paths';
 	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
@@ -83,12 +83,7 @@
 	}
 
 	function safeFormatDateTime(d: string | null | undefined): string {
-		if (!d) return "—";
-		try {
-			return DateTimeUtil.formatDateTime(new Date(d));
-		} catch {
-			return "—";
-		}
+		return DateDisplayUtil.formatRelativeOrDate(d);
 	}
 
 	function syncToUrl() {
@@ -190,8 +185,7 @@
 				}
 
 				activeJobs = jobs.map((j) => {
-					const createdAt = j.createdAt ? Date.parse(j.createdAt) : NaN;
-					const since = Number.isFinite(createdAt) ? DateTimeUtil.formatAgeShort(Date.now() - createdAt) : "—";
+					const since = DateDisplayUtil.formatRelativeOrDate(j.createdAt);
 					const queueMs = safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null);
 					const runMs =
 						j.status === JobStatus.Processing && j.processingStartedAt
@@ -242,7 +236,7 @@
 	$: bucketWorker = bucket?.workerLane ?? bucket?.agentWorkerId ?? "—";
 	$: bucketCreatedAt = bucket?.createdAt;
 	$: bucketLastExecutionAt = bucket?.lastStatusChangeAt;
-	$: lastUpdatedLabel = DateTimeUtil.formatDateTime(lastUpdatedAt);
+	$: lastUpdatedLabel = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 	$: bucketStatus = bucket?.status;
 	$: bucketStatusBadge =
 		bucketStatus === BucketStatus.Active

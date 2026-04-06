@@ -9,7 +9,7 @@
     import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
     import FilterItem from "$lib/components/filters/FilterItem.svelte";
     import Pager from "$lib/components/Pager.svelte";
-    import { DateTimeUtil } from "$lib/helper/datetime-util";
+    import { DateDisplayUtil } from "$lib/helper/date-display-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
 		import { resolve } from '$app/paths';
@@ -235,49 +235,11 @@
 
 
     function formatIso(iso: string) {
-        const d = new Date(iso);
-        return d.toLocaleString();
+        return DateDisplayUtil.formatDateTime(iso);
     }
 
     function diffMinutes(fromMs: number, toMs: number) {
         return Math.round((toMs - fromMs) / 60_000);
-    }
-
-    function formatTimeCell(job: Job): { label: string; tooltip?: string } {
-        const now = Date.now();
-
-        if (
-            job.status === JobStatusUtil.Label.Succeeded ||
-            job.status === JobStatusUtil.Label.Failed ||
-            job.status === JobStatusUtil.Label.Cancelled
-        ) {
-            if (!job.executedAt) return { label: "Executed", tooltip: undefined };
-            
-            const executedMs = new Date(job.executedAt).getTime();
-            const minsAgo = Math.max(0, diffMinutes(executedMs, now));
-            
-            if (minsAgo <= 59) {
-                return { label: `Executed ${minsAgo}m ago`, tooltip: formatIso(job.executedAt) };
-            }
-            
-            return { label: `Executed at ${formatIso(job.executedAt)}`, tooltip: formatIso(job.executedAt) };
-        }
-
-        if (job.scheduledAt) {
-            const scheduledMs = new Date(job.scheduledAt).getTime();
-            if (scheduledMs > now) {
-                const mins = diffMinutes(now, scheduledMs);
-                if (mins <= 59) {
-                    return { label: `Scheduled in ${mins}m`, tooltip: formatIso(job.scheduledAt) };
-                }
-                return { label: `Scheduled at ${formatIso(job.scheduledAt)}`, tooltip: formatIso(job.scheduledAt) };
-            }
-
-            const delayedMins = Math.max(0, diffMinutes(scheduledMs, now));
-            return { label: `Delayed ${delayedMins}m`, tooltip: formatIso(job.scheduledAt) };
-        }
-
-        return { label: "—", tooltip: undefined };
     }
 
     function formatDateCell(dateIso: string | undefined, jobStatus?: JobStatus, showOnlyFuture: boolean = false): { label: string; tooltip?: string } {
@@ -305,16 +267,12 @@
             const mins = diffMinutes(now, dateMs);
             if (mins <= 59) {
                 return { label: `In ${mins}m`, tooltip: formatIso(dateIso) };
-            } else if (mins <= 1440) { // 24 hours
-                return { label: `In ${Math.round(mins / 60)}h`, tooltip: formatIso(dateIso) };
             }
             return { label: formatIso(dateIso), tooltip: formatIso(dateIso) };
         } else {
             const minsAgo = Math.max(0, diffMinutes(dateMs, now));
             if (minsAgo <= 59) {
                 return { label: `${minsAgo}m ago`, tooltip: formatIso(dateIso) };
-            } else if (minsAgo <= 1440) { // 24 hours
-                return { label: `${Math.round(minsAgo / 60)}h ago`, tooltip: formatIso(dateIso) };
             }
             return { label: formatIso(dateIso), tooltip: formatIso(dateIso) };
         }
@@ -450,7 +408,7 @@
             <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-								<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+								<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt, uiNow)}</span>
 
                 <button
                     class="btn btn-ghost btn-sm btn-square"
@@ -504,7 +462,7 @@
                 </div>
 
                 <FilterDropdown
-                    label="Sort by Schedule"
+                    label="Sort By"
                     options={[
                         { value: "desc", label: "Recents" },
                         { value: "asc", label: "Olders" }
@@ -590,8 +548,8 @@
                         <th>Failure Attempts</th>
                         <th>Priority</th>
                         <th>Next Planned Execution</th>
-                        <th>Data Schedule</th>
-                        <th>Complete</th>
+                        <th>Schedule Date</th>
+                        <th>Finished</th>
                         <th>Worker Lane</th>
                         <th>Bucket</th>
                     </tr>

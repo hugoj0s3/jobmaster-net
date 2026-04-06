@@ -3,9 +3,11 @@
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import {
 		parseDatetimeParam,
@@ -40,11 +42,8 @@
 	let lastUpdatedAt = new Date();
 	let poller: number | undefined;
 
-	type SortCol = "name" | "cluster" | "health" | "workers" | "buckets";
-
 	const urlParamDefs = {
-		sortBy: { defaultValue: "name" as SortCol },
-		sortAsc: { defaultValue: true, ...Serializers.boolean },
+		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
 		createdAt: { defaultValue: "" as string }
@@ -53,8 +52,7 @@
 	let _initParams = readUrlParams(urlParamDefs);
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
-	let sortBy: SortCol = _initParams.sortBy;
-	let sortAsc = _initParams.sortAsc;
+	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
 
 	let filterKey = $page.url.search;
 	let lastSearch = $page.url.search;
@@ -64,8 +62,7 @@
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
-		sortBy = _initParams.sortBy;
-		sortAsc = _initParams.sortAsc;
+		sortDirection = _initParams.sortDirection;
 		selectedHealths = [];
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
@@ -73,8 +70,7 @@
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
-			sortBy,
-			sortAsc,
+			sortDirection,
 			page: pageIndex,
 			size: pageSize,
 			createdAt: datetimeToParam(filterValues, "createdAt")
@@ -86,23 +82,15 @@
 	type FilterValues = Record<string, unknown>;
 	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 
-	$: filterValues, sortBy, sortAsc, pageIndex, pageSize, syncToUrl();
+	$: filterValues, sortDirection, pageIndex, pageSize, syncToUrl();
 
-	function toggleSort(col: SortCol) {
-		if (sortBy === col) {
-			sortAsc = !sortAsc;
-		} else {
-			sortBy = col;
-			sortAsc = true;
-		}
+	function resetFilters() {
+		selectedHealths = [];
+		filterValues = {};
+		sortDirection = "desc";
 		pageIndex = 0;
 		refreshNow();
 	}
-
-	const sortIcon = (col: SortCol) => {
-		if (sortBy !== col) return "⇅";
-		return sortAsc ? "↑" : "↓";
-	};
 
 	let rows: AgentConnRow[] = [];
 
@@ -147,11 +135,6 @@
 		return "⛔";
 	};
 
-	const healthOrder: Record<Health, number> = {
-		OK: 0,
-		Offline: 1
-	};
-
 	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
 
 	$: filteredRows = rows.filter((r) => {
@@ -161,27 +144,23 @@
 	});
 
 	$: sorted = filteredRows.slice().sort((a, b) => {
-		const dir = sortAsc ? 1 : -1;
-		switch (sortBy) {
-			case "name":
-				return a.name.localeCompare(b.name) * dir;
-			case "cluster":
-				return a.cluster.localeCompare(b.cluster) * dir;
-			case "health":
-				return (healthOrder[a.health] - healthOrder[b.health]) * dir;
-			case "workers":
-				return (a.workers - b.workers) * dir;
-			case "buckets":
-				return (a.bucketsUsed - b.bucketsUsed) * dir;
-			default:
-				return 0;
-		}
+		const dir = sortDirection === "asc" ? 1 : -1;
+		const safeTime = (iso: string | undefined) => {
+			if (!iso) return Number.MIN_SAFE_INTEGER;
+			const t = new Date(iso).getTime();
+			return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+		};
+		return (safeTime(a.createdAt) - safeTime(b.createdAt)) * dir;
 	});
 
 	$: list = sorted;
 	$: totalCount = list.length;
 	$: view = list.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = view.length;
+	$: activeFiltersCount =
+		(selectedHealths.length > 0 ? 1 : 0) +
+		(filterValues?.createdAt ? 1 : 0) +
+		(sortDirection !== "desc" ? 1 : 0);
 
 	async function refreshNow() {
 		isRefreshing = true;
@@ -221,7 +200,7 @@
 			<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
 			
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -265,6 +244,20 @@
 						}}
 					/>
 
+					<FilterDropdown
+						label="Sort By"
+						options={[
+							{ value: "desc", label: "Recents" },
+							{ value: "asc", label: "Olders" }
+						]}
+						value={sortDirection}
+						on:change={(e) => {
+							sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+							pageIndex = 0;
+							refreshNow();
+						}}
+					/>
+
 					<FilterContainer
 						initialValues={filterValues}
 						onChange={(v) => {
@@ -284,6 +277,16 @@
 							]}
 						/>
 					</FilterContainer>
+
+					{#if activeFiltersCount > 0}
+						<button
+							type="button"
+							class="btn btn-sm btn-ghost"
+							on:click={resetFilters}
+						>
+							Reset filters
+						</button>
+					{/if}
 				</div>
 			{/key}
 
@@ -302,36 +305,11 @@
 				<table class="table">
 					<thead>
 					<tr class="text-base-content/70">
-						<th class="cursor-pointer select-none" on:click={() => toggleSort("name")}>
-							<div class="flex items-center gap-2">
-								<span>Agent Connection</span>
-								<span class:opacity-40={sortBy !== "name"}>{sortIcon("name")}</span>
-							</div>
-						</th>
-						<th class="cursor-pointer select-none" on:click={() => toggleSort("cluster")}>
-							<div class="flex items-center gap-2">
-								<span>Cluster</span>
-								<span class:opacity-40={sortBy !== "cluster"}>{sortIcon("cluster")}</span>
-							</div>
-						</th>
-						<th class="cursor-pointer select-none" on:click={() => toggleSort("health")}>
-							<div class="flex items-center gap-2">
-								<span>Health</span>
-								<span class:opacity-40={sortBy !== "health"}>{sortIcon("health")}</span>
-							</div>
-						</th>
-						<th class="cursor-pointer select-none text-right" on:click={() => toggleSort("workers")}>
-							<div class="flex items-center justify-end gap-2">
-								<span># Workers</span>
-								<span class:opacity-40={sortBy !== "workers"}>{sortIcon("workers")}</span>
-							</div>
-						</th>
-						<th class="cursor-pointer select-none" on:click={() => toggleSort("buckets")}>
-							<div class="flex items-center gap-2">
-								<span>Buckets</span>
-								<span class:opacity-40={sortBy !== "buckets"}>{sortIcon("buckets")}</span>
-							</div>
-						</th>
+						<th>Agent Connection</th>
+						<th>Cluster</th>
+						<th>Health</th>
+						<th class="text-right"># Workers</th>
+						<th>Buckets</th>
 					</tr>
 					</thead>
 

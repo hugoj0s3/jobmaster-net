@@ -6,6 +6,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { HostStatusUtil, type HostStatusLabel } from "$lib/helper/host-status-utils";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
@@ -49,15 +50,7 @@
 	$: memGbTotal = memTotal > 0 ? (memTotal / 1024 ** 3).toFixed(1) : null;
 
 
-	$: lastUpdated = lastUpdatedAt.toLocaleString("en-US", {
-		month: "numeric",
-		day: "numeric",
-		year: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-		second: "2-digit",
-		hour12: true
-	});
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 
 	async function refreshNow() {
@@ -203,7 +196,7 @@
 											</div>
 										</td>
 										<td class="font-mono text-sm opacity-80">{w.id ?? '—'}</td>
-										<td class="opacity-80">{w.lastHeartbeatAt ?? '—'}</td>
+										<td class="opacity-80">{DateDisplayUtil.formatRelativeOrDate(w.lastHeartbeatAt)}</td>
 										<td>
 											<span class="opacity-80">{w.parallelismFactor ?? '—'}</span>
 										</td>
@@ -229,4 +222,3 @@
 			</div>
 	</div>
 </div>
-

@@ -22,26 +22,26 @@
     let fromLocal = "";
     let toLocal = "";
     let fromDate = "";
-    let fromTime = "00:00";
+    let fromTime = "";
     let toDate = "";
-    let toTime = "23:59";
+    let toTime = "";
     let dateMode: "specific" | "relative" = "specific";
+    let lastStoreValueKey = "";
 
     function combineDateTime(date: string, time: string): string {
-        if (!date) return "";
-        return `${date}T${time || "00:00"}`;
+        if (!date || !time) return "";
+        return `${date}T${time}`;
     }
 
     function splitDateTime(local: string): { date: string; time: string } {
         if (!local) return { date: "", time: "" };
         const [d, t] = local.split("T");
-        return { date: d ?? "", time: t ?? "00:00" };
+        return { date: d ?? "", time: t ?? "" };
     }
 
     function syncFromParts() {
         fromLocal = combineDateTime(fromDate, fromTime);
         toLocal = combineDateTime(toDate, toTime);
-        syncDateTimeValue();
     }
 
     let relativeUnit: "sec" | "min" | "hour" | "day" = "min";
@@ -101,14 +101,23 @@
             relativeFromText = 0;
             relativeToText = preset.hours * 60;
         }
-        syncRelativeValue();
     }
 
     function syncDateTimeValue() {
+        const from = toIsoOrUndefined(fromLocal);
+        const to = toIsoOrUndefined(toLocal);
+        const hasFrom = typeof from === "string";
+        const hasTo = typeof to === "string";
+
+        if (!hasFrom || !hasTo) {
+            ctx.clearValue(id);
+            return;
+        }
+
         ctx.setValue(id, {
             mode: dateMode,
-            from: toIsoOrUndefined(fromLocal),
-            to: toIsoOrUndefined(toLocal)
+            from,
+            to
         });
     }
 
@@ -144,6 +153,14 @@
 
     function syncRelativeValue() {
         const range = relativeToIsoRange();
+        const hasFrom = typeof range.fromOffset === "number";
+        const hasTo = typeof range.toOffset === "number";
+
+        if (!hasFrom || !hasTo) {
+            ctx.clearValue(id);
+            return;
+        }
+
         ctx.setValue(id, {
             mode: "relative",
             unit: relativeUnit,
@@ -152,6 +169,25 @@
             from: range.from,
             to: range.to
         });
+    }
+
+    function canApplySpecificDate(): boolean {
+        const from = toIsoOrUndefined(fromLocal);
+        const to = toIsoOrUndefined(toLocal);
+        return typeof from === "string" && typeof to === "string";
+    }
+
+    function canApplyRelativeDate(): boolean {
+        const range = relativeToIsoRange();
+        return typeof range.fromOffset === "number" && typeof range.toOffset === "number";
+    }
+
+    function applyDateFilter() {
+        if (dateMode === "specific") {
+            syncDateTimeValue();
+            return;
+        }
+        syncRelativeValue();
     }
 
     function syncMultiValue() {
@@ -168,6 +204,10 @@
         if (type === "datetime") {
             fromLocal = "";
             toLocal = "";
+            fromDate = "";
+            toDate = "";
+            fromTime = "";
+            toTime = "";
             dateMode = "specific";
             relativeUnit = "min";
             relativeFromText = "";
@@ -248,8 +288,18 @@
     }
 
     // Ensure local UI reflects store when page re-renders.
+    function storeValueKey(v: unknown): string {
+        return JSON.stringify(v ?? null);
+    }
+
     $: {
         const v = get(ctx.values)[id];
+        const vKey = storeValueKey(v);
+        if (vKey === lastStoreValueKey) {
+            // Keep local edits untouched until external value changes.
+        } else {
+            lastStoreValueKey = vKey;
+
         if (type === "datetime") {
             const o = (v ?? {}) as {
                 mode?: "specific" | "relative";
@@ -278,6 +328,7 @@
 
         if (type === "single") {
             selectedOne = (v as any) ?? "";
+        }
         }
     }
 </script>
@@ -322,7 +373,6 @@
                             checked={dateMode === "specific"}
                             on:change={() => {
                                 dateMode = "specific";
-                                syncDateTimeValue();
                             }}
                         />
                         <span class="text-sm">Specific Date</span>
@@ -336,7 +386,6 @@
                             checked={dateMode === "relative"}
                             on:change={() => {
                                 dateMode = "relative";
-                                syncRelativeValue();
                             }}
                         />
                         <span class="text-sm">Relative time</span>
@@ -401,7 +450,6 @@
                             <select
                                 class="select select-bordered select-sm"
                                 bind:value={relativeUnit}
-                                on:change={() => syncRelativeValue()}
                             >
                                 <option value="sec">sec</option>
                                 <option value="min">min</option>
@@ -416,7 +464,6 @@
                                 type="number"
                                 class="input input-bordered input-sm"
                                 bind:value={relativeFromText}
-                                on:input={() => syncRelativeValue()}
                             />
                         </div>
 
@@ -426,12 +473,29 @@
                                 type="number"
                                 class="input input-bordered input-sm"
                                 bind:value={relativeToText}
-                                on:input={() => syncRelativeValue()}
                             />
                         </div>
                     </div>
                     <div class="mt-2 text-xs opacity-70">Offsets are relative to now (example: -2 to +2 min)</div>
                 {/if}
+
+                <div class="mt-4 flex items-center justify-between">
+                    <button
+                        type="button"
+                        class="btn btn-ghost btn-sm"
+                        on:click={clearMe}
+                    >
+                        Reset
+                    </button>
+                    <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        on:click={applyDateFilter}
+                        disabled={dateMode === "specific" ? !canApplySpecificDate() : !canApplyRelativeDate()}
+                    >
+                        Apply
+                    </button>
+                </div>
             </div>
         {/if}
 

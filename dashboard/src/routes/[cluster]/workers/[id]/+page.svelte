@@ -7,6 +7,7 @@
 	import { BucketStatus as BucketStatusEnum } from "$lib/api/enums";
 	import { PriorityUtil } from "$lib/helper/priority-util";
 	import { WorkerModeUtil } from "$lib/helper/worker-mode-util";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 
@@ -29,19 +30,10 @@
 	$: workerMode = WorkerModeUtil.getLabel(worker?.mode);
 	$: workerModeBadge = WorkerModeUtil.getBadgeClass(workerMode);
 
-	$: lastUpdated = lastUpdatedAt.toLocaleString("en-US", {
-		month: "numeric",
-		day: "numeric",
-		year: "numeric",
-		hour: "numeric",
-		minute: "2-digit",
-		second: "2-digit",
-		hour12: true
-	});
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 	function safeToLocaleString(d: string | null | undefined): string {
-		if (!d) return "—";
-		try { return new Date(d).toLocaleString(); } catch { return "—"; }
+		return DateDisplayUtil.formatRelativeOrDate(d);
 	}
 
 	function bucketStatusLabel(status: number | null | undefined): string {

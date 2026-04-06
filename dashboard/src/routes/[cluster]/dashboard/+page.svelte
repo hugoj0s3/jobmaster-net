@@ -4,7 +4,7 @@
     import { ApiClientUtil } from "$lib/api/api-client-util";
     import type { components } from "$lib/api/schema";
     import { BucketStatus, JobStatus as ApiJobStatus } from "$lib/api/enums";
-    import { DateTimeUtil } from "$lib/helper/datetime-util";
+    import { DateDisplayUtil } from "$lib/helper/date-display-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { SettingsStorage, type DashboardSettings } from "$lib/dashboard-settings-storage";
     import { createCopyFeedback } from "$lib/helper/clipboard-util";
@@ -157,11 +157,8 @@
         closeSettings();
     }
 
-    function executedAgo(iso: string): string {
-        const ms = uiNow.getTime() - new Date(iso).getTime();
-        const text = DateTimeUtil.formatAgeShort(ms);
-
-        return ms < 3600000 ? `${text} ago` : text;
+    function formatFinalizedAt(iso: string): string {
+        return DateDisplayUtil.formatRelativeOrDate(iso, uiNow);
     }
 
     function kpiBadgeClass(count: number, activeClass: string): string {
@@ -338,9 +335,7 @@
                         executionMode: workerModes.filter((m) => m === 1).length,
                         drainingMode: workerModes.filter((m) => m === 3).length,
                         fullMode: workerModes.filter((m) => m === 2).length,
-                        lastHeartbeatText: lastHb
-                            ? new Date(lastHb).toLocaleString()
-                            : "—"
+                        lastHeartbeatText: DateDisplayUtil.formatRelativeOrDate(lastHb, uiNow)
                     },
                     hosts: {
                         total: hostsCount,
@@ -425,7 +420,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-sm opacity-80">
-							<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+							<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt, uiNow)}</span>
                 <button
                         class="btn btn-ghost btn-sm btn-square"
                         aria-label="Refresh now"
@@ -694,7 +689,7 @@
                                             </span>
                                         </td>
                                         <td>{j.definitionId}</td>
-                                        <td class="opacity-80">{executedAgo(j.finalizedAt)} ago</td>
+                                        <td class="opacity-80">{formatFinalizedAt(j.finalizedAt)}</td>
                                         <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
                                     </tr>
                                 {/each}

@@ -6,10 +6,12 @@
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus } from "$lib/api/enums";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { createCopyFeedback } from "$lib/helper/clipboard-util";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 
@@ -46,6 +48,7 @@
 
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
+		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
 		createdAt: { defaultValue: "" as string }
@@ -62,6 +65,7 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+		sortDirection = _initParams.sortDirection;
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
@@ -78,6 +82,7 @@
 
 	let pageSize = _initParams.size;
 	let pageIndex = _initParams.page;
+	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
 
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
@@ -87,13 +92,21 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			statuses: selectedStatuses,
+			sortDirection,
 			page: pageIndex,
 			size: pageSize,
 			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
-	$: filterValues, selectedStatuses, pageIndex, pageSize, syncToUrl();
+	$: filterValues, selectedStatuses, sortDirection, pageIndex, pageSize, syncToUrl();
+
+	function resetFilters() {
+		selectedStatuses = [];
+		filterValues = {};
+		sortDirection = "desc";
+		pageIndex = 0;
+	}
 	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
@@ -106,10 +119,23 @@
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
 			if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
 			return true;
+		})
+		.sort((a, b) => {
+			const dir = sortDirection === "asc" ? 1 : -1;
+			const safeTime = (iso: string | undefined) => {
+				if (!iso) return Number.MIN_SAFE_INTEGER;
+				const t = new Date(iso).getTime();
+				return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+			};
+			return (safeTime(a.createdAt) - safeTime(b.createdAt)) * dir;
 		});
 
 	$: bucketsTotalCount = filtered.length;
 	$: paginatedBuckets = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
+	$: activeFiltersCount =
+		(selectedStatuses.length > 0 ? 1 : 0) +
+		(filterValues?.createdAt ? 1 : 0) +
+		(sortDirection !== "desc" ? 1 : 0);
 
 	let lastPageIndexForRefresh = pageIndex;
 	$: if (pageIndex !== lastPageIndexForRefresh) {
@@ -138,8 +164,7 @@
 	};
 
 	function formatDate(iso: string | undefined): string {
-		if (!iso) return "—";
-		return new Date(iso).toLocaleString();
+		return DateDisplayUtil.formatRelativeOrDate(iso);
 	}
 
 	function goToBucket(bucketId: string) {
@@ -254,7 +279,7 @@
 			<h1 class="text-3xl font-semibold tracking-tight">Buckets</h1>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -371,6 +396,19 @@
 						on:change={() => { pageIndex = 0; }}
 					/>
 
+					<FilterDropdown
+						label="Sort By"
+						options={[
+							{ value: "desc", label: "Recents" },
+							{ value: "asc", label: "Olders" }
+						]}
+						value={sortDirection}
+						on:change={(e) => {
+							sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+							pageIndex = 0;
+						}}
+					/>
+
 					<FilterContainer
 						initialValues={filterValues}
 						onChange={(v) => {
@@ -389,6 +427,16 @@
 							]}
 						/>
 					</FilterContainer>
+
+					{#if activeFiltersCount > 0}
+						<button
+							type="button"
+							class="btn btn-sm btn-ghost"
+							on:click={resetFilters}
+						>
+							Reset filters
+						</button>
+					{/if}
 				</div>
 				{/key}
 

@@ -1,6 +1,6 @@
 <script lang="ts">
     import { setContext, createEventDispatcher } from "svelte";
-    import { writable, derived } from "svelte/store";
+    import { writable } from "svelte/store";
     import {
         FILTERS_CTX_KEY,
         type FilterValue,
@@ -61,16 +61,6 @@
         emitChange(next);
     }
 
-    const appliedActiveCount = derived(values, ($values) => {
-        let count = 0;
-
-        for (const v of Object.values($values)) {
-            if (isActiveValue(v)) count++;
-        }
-
-        return count;
-    });
-
     setContext<FiltersContext>(FILTERS_CTX_KEY, {
         values,
         setValue,
@@ -82,12 +72,4 @@
 
 <div class="flex flex-wrap items-center gap-2">
     <slot />
-    {#if $appliedActiveCount > 0}
-        <button
-          class="btn btn-sm bg-transparent border border-white/10 text-white/70 hover:text-white hover:bg-white/10"
-          on:click={clearAll}
-        >
-            Reset
-        </button>
-    {/if}
 </div>

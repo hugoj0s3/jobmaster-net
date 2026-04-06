@@ -5,9 +5,11 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { WorkerModeUtil, type WorkerMode } from "$lib/helper/worker-mode-util";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
@@ -35,15 +37,7 @@
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
 
-	$: lastUpdated = lastUpdatedAt.toLocaleString('en-US', {
-		month: 'numeric',
-		day: 'numeric',
-		year: 'numeric',
-		hour: 'numeric',
-		minute: '2-digit',
-		second: '2-digit',
-		hour12: true
-	});
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 	$: onlineCount = rows.filter((r) => r.status === "Online").length;
 	$: offlineCount = rows.filter((r) => r.status === "Offline").length;
@@ -52,16 +46,14 @@
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		modes: { defaultValue: [] as string[], ...Serializers.stringArray },
-		sortBy: { defaultValue: "Host" as "Host" },
-		asc: { defaultValue: true, ...Serializers.boolean },
+		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
 		lastHeartbeat: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
-	let sortBy: "Host" = _initParams.sortBy;
-	let asc = _initParams.asc;
+	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
@@ -74,8 +66,7 @@
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
-		sortBy = _initParams.sortBy;
-		asc = _initParams.asc;
+		sortDirection = _initParams.sortDirection;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 		selectedModes = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
 		filterValues = parseDatetimeParam(_initParams.lastHeartbeat, "lastHeartbeat");
@@ -92,15 +83,22 @@
 		writeUrlParams(urlParamDefs, {
 			statuses: selectedStatuses,
 			modes: selectedModes,
-			sortBy,
-			asc,
+			sortDirection,
 			page: pageIndex,
 			size: pageSize,
 			lastHeartbeat: datetimeToParam(filterValues, "lastHeartbeat")
 		});
 	}
 
-	$: filterValues, selectedStatuses, selectedModes, sortBy, asc, pageIndex, pageSize, syncToUrl();
+	$: filterValues, selectedStatuses, selectedModes, sortDirection, pageIndex, pageSize, syncToUrl();
+
+	function resetFilters() {
+		selectedStatuses = [];
+		selectedModes = [];
+		filterValues = {};
+		sortDirection = "desc";
+		pageIndex = 0;
+	}
 
 	function mapWorkerToRow(w: any, hostsMap: Map<string, ApiHostModel>): WorkerRow {
 		const isAlive = w.isAlive === true;
@@ -186,14 +184,23 @@
 			return true;
 		})
 		.sort((a, b) => {
-			const dir = asc ? 1 : -1;
-			const cmpStr = (x: string, y: string) => x.localeCompare(y) * dir;
-			return cmpStr(a.name, b.name);
+			const dir = sortDirection === "asc" ? 1 : -1;
+			const safeTime = (iso: string | undefined) => {
+				if (!iso) return Number.MIN_SAFE_INTEGER;
+				const t = new Date(iso).getTime();
+				return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+			};
+			return (safeTime(a.lastHeartbeat) - safeTime(b.lastHeartbeat)) * dir;
 		});
 
 	$: totalCount = filteredAll.length;
 	$: filtered = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = filtered.length;
+	$: activeFiltersCount =
+		(selectedStatuses.length > 0 ? 1 : 0) +
+		(selectedModes.length > 0 ? 1 : 0) +
+		(filterValues?.lastHeartbeat ? 1 : 0) +
+		(sortDirection !== "desc" ? 1 : 0);
 
 
 	function refresh() {
@@ -298,6 +305,19 @@
 					on:change={() => { pageIndex = 0; }}
 				/>
 
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "desc", label: "Recents" },
+						{ value: "asc", label: "Olders" }
+					]}
+					value={sortDirection}
+					on:change={(e) => {
+						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						pageIndex = 0;
+					}}
+				/>
+
 				<FilterContainer
 					initialValues={filterValues}
 					onChange={(v) => {
@@ -316,6 +336,16 @@
 						]}
 					/>
 				</FilterContainer>
+
+				{#if activeFiltersCount > 0}
+					<button
+						type="button"
+						class="btn btn-sm btn-ghost"
+						on:click={resetFilters}
+					>
+						Reset filters
+					</button>
+				{/if}
 			</div>
 			{/key}
 
@@ -331,18 +361,6 @@
 
 		<section class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body gap-4">
-				<div class="flex items-center justify-end gap-4">
-					<div class="join">
-						<button
-							class="btn btn-bordered join-item"
-							on:click={() => (asc = !asc)}
-							title="Toggle sort direction"
-						>
-							Sort: Host {asc ? "A→Z" : "Z→A"}
-						</button>
-					</div>
-				</div>
-
 				<div class="overflow-x-auto">
 					<table class="table">
 						<thead>
@@ -376,7 +394,7 @@
 
 								<td class="text-base-content/70">{r.lane}</td>
 
-								<td class="text-base-content/70">{r.lastHeartbeat ?? "—"}</td>
+								<td class="text-base-content/70">{DateDisplayUtil.formatRelativeOrDate(r.lastHeartbeat)}</td>
 							</tr>
 						{/each}
 

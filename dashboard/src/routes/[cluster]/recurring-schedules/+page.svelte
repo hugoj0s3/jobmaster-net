@@ -6,11 +6,13 @@
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { RecurringSchedulesStatusUtil, type RecurringScheduleStatusLabel } from "$lib/helper/recurring-schedules-status-util";
 	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { RecurrenceExpressionTypeId } from "$lib/api/enums";
 	import { RecurrenceExpressionUtil } from '$lib/helper/recurrence-expression-util';
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { goto } from '$app/navigation';
 	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
@@ -42,6 +44,7 @@
 	const urlParamDefs = {
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
+		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
 		createdAt: { defaultValue: "" as string }
 	};
 
@@ -55,6 +58,7 @@
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
+		sortDirection = _initParams.sortDirection;
 		selectedStatuses = [];
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
@@ -68,6 +72,7 @@
 	const clusterId = () => $page.params.cluster;
 
 	let selectedStatuses: string[] = [];
+	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
 
 	type FilterValues = Record<string, unknown>;
 	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
@@ -87,11 +92,19 @@
 		writeUrlParams(urlParamDefs, {
 			page: pageIndex,
 			size: pageSize,
+			sortDirection,
 			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
-	$: filterValues, pageIndex, pageSize, syncToUrl();
+	$: filterValues, sortDirection, pageIndex, pageSize, syncToUrl();
+
+	function resetFilters() {
+		selectedStatuses = [];
+		filterValues = {};
+		sortDirection = "desc";
+		pageIndex = 0;
+	}
 
 	$: totalCount = filtered.length;
 
@@ -101,7 +114,21 @@
 		if (pageIndex < 0) pageIndex = 0;
 	}
 
-	$: paged = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
+	$: sorted = filtered.slice().sort((a, b) => {
+		const dir = sortDirection === "asc" ? 1 : -1;
+		const safeTime = (iso: string | undefined) => {
+			if (!iso) return Number.MIN_SAFE_INTEGER;
+			const t = new Date(iso).getTime();
+			return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+		};
+		return (safeTime(a.createdAtRaw) - safeTime(b.createdAtRaw)) * dir;
+	});
+
+	$: paged = sorted.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
+	$: activeFiltersCount =
+		(selectedStatuses.length > 0 ? 1 : 0) +
+		(filterValues?.createdAt ? 1 : 0) +
+		(sortDirection !== "desc" ? 1 : 0);
 
 	function stringifyMetadata(meta: Record<string, unknown> | null | undefined): Record<string, string> {
 		if (!meta) return {};
@@ -158,31 +185,12 @@
 
 	function formatNextRun(nextRun?: string): string {
 		if (!nextRun) return "—";
-		const diff = new Date(nextRun).getTime() - Date.now();
-		if (diff < 0) return "Overdue";
-
-		const minutes = Math.floor(diff / 60000);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `In ${days} day${days > 1 ? "s" : ""}`;
-		if (hours > 0) return `In ${hours} hour${hours > 1 ? "s" : ""}`;
-		if (minutes > 0) return `In ${minutes} min`;
-		return "In < 1 min";
+		return DateDisplayUtil.formatRelativeOrDate(nextRun);
 	}
 
 	function formatTimeAgo(timestamp?: string): string {
 		if (!timestamp) return "Never";
-		const diff = Date.now() - new Date(timestamp).getTime();
-
-		const minutes = Math.floor(diff / 60000);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-		if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-		if (minutes > 0) return `${minutes} min ago`;
-		return "Just now";
+		return DateDisplayUtil.formatRelativeOrDate(timestamp);
 	}
 
 	function navigateToDetail(scheduleId: string) {
@@ -290,7 +298,7 @@
 			</div>
 
 			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {lastUpdatedAt.toLocaleString()}</span>
+				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
 				<button
 					class="btn btn-ghost btn-sm btn-square"
 					aria-label="Refresh now"
@@ -329,6 +337,19 @@
 					on:change={() => { pageIndex = 0; }}
 				/>
 
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "desc", label: "Recents" },
+						{ value: "asc", label: "Olders" }
+					]}
+					value={sortDirection}
+					on:change={(e) => {
+						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						pageIndex = 0;
+					}}
+				/>
+
 
 				<FilterContainer
 					initialValues={filterValues}
@@ -347,6 +368,16 @@
 						]}
 					/>
 				</FilterContainer>
+
+				{#if activeFiltersCount > 0}
+					<button
+						type="button"
+						class="btn btn-sm btn-ghost"
+						on:click={resetFilters}
+					>
+						Reset filters
+					</button>
+				{/if}
 			</div>
 			{/key}
 

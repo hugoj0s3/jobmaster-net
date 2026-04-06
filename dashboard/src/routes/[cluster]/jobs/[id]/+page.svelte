@@ -3,7 +3,7 @@
 	import { page } from "$app/stores";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
-	import { DateTimeUtil } from "$lib/helper/datetime-util";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
 	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
@@ -68,12 +68,7 @@
 	}
 
 	function formatDateTime(iso: string | null | undefined): string {
-		if (!iso) return "—";
-		try {
-			return new Date(iso).toLocaleString();
-		} catch {
-			return "—";
-		}
+		return DateDisplayUtil.formatRelativeOrDate(iso);
 	}
 
 	function formatDuration(startIso: string | null | undefined, endIso: string | null | undefined): string {
@@ -103,7 +98,7 @@
 		});
 	}
 
-	$: lastUpdated = lastUpdatedAt.toLocaleString();
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 	async function refreshNow() {
 		isLoading = true;

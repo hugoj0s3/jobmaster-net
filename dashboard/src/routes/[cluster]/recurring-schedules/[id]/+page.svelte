@@ -10,6 +10,7 @@
 		type RecurringScheduleStatusLabel
 	} from '$lib/helper/recurring-schedules-status-util';
 	import { RecurrenceExpressionUtil } from '$lib/helper/recurrence-expression-util';
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 	import { copyText, createCopyFeedback } from "$lib/helper/clipboard-util";
 
@@ -34,31 +35,12 @@
 
 	function formatNextRun(nextRun?: string): string {
 		if (!nextRun) return "—";
-		const diff = new Date(nextRun).getTime() - Date.now();
-		if (diff < 0) return "Overdue";
-
-		const minutes = Math.floor(diff / 60000);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `In ${days} day${days > 1 ? "s" : ""}`;
-		if (hours > 0) return `In ${hours} hour${hours > 1 ? "s" : ""}`;
-		if (minutes > 0) return `In ${minutes} min`;
-		return "In < 1 min";
+		return DateDisplayUtil.formatRelativeOrDate(nextRun);
 	}
 
 	function formatTimeAgo(timestamp?: string): string {
 		if (!timestamp) return "Never";
-		const diff = Date.now() - new Date(timestamp).getTime();
-
-		const minutes = Math.floor(diff / 60000);
-		const hours = Math.floor(minutes / 60);
-		const days = Math.floor(hours / 24);
-
-		if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
-		if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
-		if (minutes > 0) return `${minutes} min ago`;
-		return "Just now";
+		return DateDisplayUtil.formatRelativeOrDate(timestamp);
 	}
 
 	function getScheduleStatus(): RecurringScheduleStatusLabel {
@@ -171,8 +153,7 @@
 	}
 
 	function formatJobDateTime(timestamp?: string): string {
-		if (!timestamp) return "—";
-		return new Date(timestamp).toLocaleString();
+		return DateDisplayUtil.formatDateTime(timestamp);
 	}
 
 	function formatJobTimeAgo(timestamp?: string): string {
