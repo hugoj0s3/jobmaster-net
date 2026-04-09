@@ -2,6 +2,8 @@ namespace JobMaster.Sdk.Abstractions;
 
 internal class OperationLimiter
 {
+    private const int AcquireTimeoutMs = 1500;
+
     public int? Capacity { get; }
     private readonly SemaphoreSlim? semaphore;
 
@@ -14,20 +16,19 @@ internal class OperationLimiter
             semaphore = new SemaphoreSlim(capacity.Value, capacity.Value);
         }
     }
-    
+
     public T Exec<T>(Func<T> func)
     {
         if (semaphore == null) return func();
 
-        semaphore.Wait();
-
+        var acquired = semaphore.Wait(AcquireTimeoutMs);
         try
         {
             return func();
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
@@ -35,15 +36,14 @@ internal class OperationLimiter
     {
         if (semaphore == null) { func(); return; }
 
-        semaphore.Wait();
-
+        var acquired = semaphore.Wait(AcquireTimeoutMs);
         try
         {
             func();
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
@@ -51,55 +51,44 @@ internal class OperationLimiter
     {
         if (semaphore == null) return await func();
 
-        await semaphore.WaitAsync();
-
+        var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
         try
         {
             return await func();
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
     public async Task ExecAsync(Func<Task> func)
     {
-        if (semaphore == null)
-        {
-            await func();
-            return;
-        }
+        if (semaphore == null) { await func(); return; }
 
-        await semaphore.WaitAsync();
-
+        var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
         try
         {
             await func();
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 
     public async Task ExecValueTaskAsync(Func<ValueTask> func)
     {
-        if (semaphore == null)
-        {
-            await func();
-            return;
-        }
+        if (semaphore == null) { await func(); return; }
 
-        await semaphore.WaitAsync();
-
+        var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
         try
         {
             await func();
         }
         finally
         {
-            semaphore.Release();
+            if (acquired) semaphore.Release();
         }
     }
 }

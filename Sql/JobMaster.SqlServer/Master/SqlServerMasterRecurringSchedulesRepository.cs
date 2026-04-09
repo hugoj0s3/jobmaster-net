@@ -94,8 +94,10 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
 
             var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
             var records = LinearListToDomain(linearRows);
+            var result = records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+
             tx.Commit();
-            return records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+            return result;
         }
         catch
         {
@@ -217,4 +219,5 @@ ON target.{cClusterId} = src.{cClusterId} AND target.{cId} = src.{cId}
 WHEN MATCHED AND target.{cVersion} = @ExpectedVersion THEN UPDATE SET {UpdateSetClause()}
 WHEN NOT MATCHED THEN INSERT ({cols}) VALUES ({vals});";
     }
+    
 }

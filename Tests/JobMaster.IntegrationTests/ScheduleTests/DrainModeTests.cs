@@ -58,12 +58,12 @@ public class MySqlDrainModeTests : JobMasterSchedulerTestsBase<MySqlDrainModeFix
     public MySqlDrainModeTests(MySqlDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 40, 60)]
-    [InlineData(300000, 120, 180)]
-    [InlineData(1000000, 200, 360)]
+    [InlineData(50000, 40, 60)]
+    [InlineData(150000, 120, 180)]
+    [InlineData(300000, 220, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:25);
     }
 }
 

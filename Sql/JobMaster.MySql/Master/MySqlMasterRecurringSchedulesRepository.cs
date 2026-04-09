@@ -44,7 +44,8 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
             var cClusterId = Col(x => x.ClusterId);
             var cLastPlanCoverageUntil = Col(x => x.LastPlanCoverageUntil);
 
-            var unlockedGuard = $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+            var unlockedGuard =
+                $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
             var defaultOrderByClause = $" ORDER BY s.{cLastPlanCoverageUntil} DESC";
             var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "s", defaultOrderByClause);
 
@@ -56,42 +57,61 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
 
             var selectCols = SelectProjection("s", "e", "v");
 
-            var sqlText = $@"
+            // Step 1: claim rows atomically using FOR UPDATE SKIP LOCKED
+            // Avoids UPDATE JOIN lock contention under concurrent workers
+            var claimSql = $@"
+SELECT s.{cId}
+FROM {t} s
+{whereSql} AND {unlockedGuard}
+{orderBy}
+{offsetClause}
+FOR UPDATE SKIP LOCKED;";
+
+            var args = new Dictionary<string, object?>();
+            foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
+            args["ClusterId"] = ClusterConnConfig.ClusterId;
+            args["LockNowUtc"] = nowUtcWithSkew;
+            args["PartitionLockId"] = partitionLockId;
+            args["LockExpiresAt"] = expiresAtUtcKind;
+
+            var claimedIds = (await conn.QueryAsync<Guid>(claimSql, args, tx)).ToList();
+
+            if (claimedIds.Count == 0)
+            {
+                tx.Commit();
+                return new List<RecurringScheduleRawModel>();
+            }
+
+            // Step 2: update only the claimed ids
+            var inClause = sql.InClauseFor(cId, "@ClaimedIds");
+            var updateSql = $@"
 UPDATE {t} s
-JOIN (
-    SELECT s.{cId} AS id
-    FROM {t} s
-    {whereSql} AND {unlockedGuard}
-    {orderBy}
-    {offsetClause}
-) c ON c.id = s.{cId}
 SET s.{Col(x => x.PartitionLockId)} = @PartitionLockId,
     s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
     s.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
 WHERE s.{cClusterId} = @ClusterId
-  AND {unlockedGuard};
+  AND {inClause};";
 
+            args["ClaimedIds"] = claimedIds;
+            await conn.ExecuteAsync(updateSql, args, tx);
+
+            // Step 3: fetch the updated rows with metadata
+            var inClauseWithAlias = sql.InClauseFor($"s.{cId}", "@ClaimedIds");
+            var fetchSql = $@"
 SELECT {selectCols}
 FROM {t} s
 LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
 LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 WHERE s.{cClusterId} = @ClusterId
-  AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
-  AND s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
-{orderBy}
-{offsetClause};";
+  AND {inClauseWithAlias}
+{orderBy};";
 
-            var args = new Dictionary<string, object?>();
-            foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
-            args["ClusterId"] = ClusterConnConfig.ClusterId;
-            args["PartitionLockId"] = partitionLockId;
-            args["LockExpiresAt"] = expiresAtUtcKind;
-            args["LockNowUtc"] = nowUtcWithSkew;
-
-            var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
+            var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(fetchSql, args, tx)).ToList();
             var records = LinearListToDomain(linearRows);
+            var result = records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+
             tx.Commit();
-            return records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+            return result;
         }
         catch
         {
@@ -99,5 +119,5 @@ WHERE s.{cClusterId} = @ClusterId
             throw;
         }
     }
-
+    
 }

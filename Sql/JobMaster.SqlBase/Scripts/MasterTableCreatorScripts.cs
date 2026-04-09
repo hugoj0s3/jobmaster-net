@@ -352,6 +352,9 @@ internal static class MasterTableCreatorScripts
         var entryIdGuidCol = sqlGenerator.ColumnNameFor<SqlGenericRecordEntry>(x => x.EntryIdGuid);
         var entryIdGuidType = sqlGenerator.ColumnTypeFor<SqlGenericRecordEntry>(x => x.EntryIdGuid, nullable: true);
        
+        var isReadyCol = sqlGenerator.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady);
+        var isReadyType = sqlGenerator.ColumnTypeFor<SqlGenericRecordEntry>(x => x.IsReady, nullable: false);
+       
         var columns = new List<string>();
         columns.Add($"{recordIdCol} {recordIdType} PRIMARY KEY");
         columns.Add($"{clusterIdCol} {clusterIdType} ");
@@ -362,6 +365,7 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{createdAtCol} {createdAtType}");
         columns.Add($"{expiresAtCol} {expiresAtType}");
         columns.Add($"{entryIdGuidCol} {entryIdGuidType}");
+        columns.Add($"{isReadyCol} {isReadyType} DEFAULT 0");
        
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)} );";
         
@@ -374,6 +378,7 @@ internal static class MasterTableCreatorScripts
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_expires_at", (expiresAtCol, false, (int?)null)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_created_at", (createdAtCol, false, (int?)null)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_entry_id_guid", (entryIdGuidCol, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_is_ready", (isReadyCol, false, (int?)null)));
         var uniqueIdxName = sqlGenerator.NormalizeIdentifierForDb($"idx_{tableName}_unique");
         indexScripts.Add($"CREATE UNIQUE INDEX {uniqueIdxName} ON {tableName} ({clusterIdCol}, {groupIdCol}, {entryIdCol});");
         

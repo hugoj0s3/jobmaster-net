@@ -140,6 +140,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             await this.masterGenericRecordRepository.GetAsync(MasterGenericRecordGroupIds.Bucket, model.Id);
         if (bucketGenericRecord is null)
             return;
+        
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
 
         var genericRecord = GenericRecordEntry.Create(
             ClusterConnConfig.ClusterId, 
@@ -147,9 +150,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             model.Id, 
             model);
         await masterGenericRecordRepository.UpdateAsync(genericRecord);
-        
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
     }
     
     public BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
@@ -242,13 +242,15 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                         Value = (int)BucketStatus.Active,
                     }
                 },
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
+                ReadIsolationLevel = ReadIsolationLevel.Consistent,
             };
 
             var records = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
             
-            availableBuckets = records.Select(x => x.ToObject<BucketModel>()).ToList();
-            availableBuckets = availableBuckets.Where(x => !string.IsNullOrEmpty(x.AgentWorkerId)).ToList();
+            availableBuckets = records
+                .Select(x => x.ToObject<BucketModel>())
+                .Where(x => !string.IsNullOrEmpty(x?.AgentWorkerId))
+                .ToList()!;
 
             jobMasterMemoryCache.Set(cacheKeys.BucketsAvailableForJobs(), availableBuckets);
         }
@@ -264,6 +266,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         string? workerLane)
     {
         return availableBuckets
+            .Where(b => !string.IsNullOrWhiteSpace(b?.AgentConnectionId?.IdValue))
             .Where(b => !jobPriority.HasValue || b.Priority == jobPriority)
             .Where(b => string.Equals(b.WorkerLane ?? string.Empty, workerLane ?? string.Empty, StringComparison.OrdinalIgnoreCase))
             .Where(b => ClusterConnConfig.TryGetAgentConnectionConfig(b.AgentConnectionId.IdValue) != null)
@@ -284,6 +287,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         }
 
         var lastQueriedAt = lastAvailableBucketQueriedResult.CreatedAt;
+        
         var hasChangesAfter = this.masterChangesSentinelService.HasChangesAfter(sentinelKey, lastQueriedAt, allowedDiscrepancy: allowedDiscrepancy);
 
         if (!hasChangesAfter)

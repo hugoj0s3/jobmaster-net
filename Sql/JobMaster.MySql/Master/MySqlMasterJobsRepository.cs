@@ -40,7 +40,8 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
             var cClusterId = Col(x => x.ClusterId);
             var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
 
-            var unlockedGuard = $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+            var unlockedGuard =
+                $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
             var defaultOrderByClause = $" ORDER BY j.{cNextPlanExecutionAt} ASC";
             var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
 
@@ -52,40 +53,59 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
             var selectCols = SelectProjection();
 
-            var sqlText = $@"
-UPDATE {t} j
-JOIN (
-    SELECT j.{cId} AS id
-    FROM {t} j
-    {whereSql} AND {unlockedGuard}
-    {orderBy}
-    {offsetClause}
-) c ON c.id = j.{cId}
-SET j.{Col(x => x.PartitionLockId)} = @PartitionLockId,
-    j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    j.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE j.{cClusterId} = @ClusterId
-  AND {unlockedGuard};
-
-SELECT {selectCols}
+            // Step 1: claim rows atomically using FOR UPDATE SKIP LOCKED
+            // This avoids the UPDATE JOIN pattern which causes lock contention and timeouts
+            // under concurrent workers. SKIP LOCKED means competing workers skip already-locked rows
+            // instead of waiting, eliminating the timeout.
+            var claimSql = $@"
+SELECT j.{cId}
 FROM {t} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-WHERE j.{cClusterId} = @ClusterId
-  AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
-  AND j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
+{whereSql} AND {unlockedGuard}
 {orderBy}
-{offsetClause};";
+{offsetClause}
+FOR UPDATE SKIP LOCKED;";
 
             var args = new Dictionary<string, object?>();
             foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
             args["ClusterId"] = ClusterConnConfig.ClusterId;
+            args["LockNowUtc"] = nowUtcWithSkew;
             args["PartitionLockId"] = partitionLockId;
             args["LockExpiresAt"] = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
-            args["LockNowUtc"] = nowUtcWithSkew;
             args["GroupId"] = MasterGenericRecordGroupIds.JobMetadata;
 
-            var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
+            var claimedIds = (await conn.QueryAsync<Guid>(claimSql, args, tx)).ToList();
+
+            if (claimedIds.Count == 0)
+            {
+                tx.Commit();
+                return new List<JobRawModel>();
+            }
+
+            // Step 2: update only the claimed ids
+            var inClause = sql.InClauseFor(cId, "@ClaimedIds");
+            var updateSql = $@"
+UPDATE {t} j
+SET j.{Col(x => x.PartitionLockId)} = @PartitionLockId,
+    j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    j.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE j.{cClusterId} = @ClusterId
+  AND {inClause};";
+
+            args["ClaimedIds"] = claimedIds;
+            await conn.ExecuteAsync(updateSql, args, tx);
+
+            // Step 3: fetch the updated rows with metadata
+            var inClauseWithAlias = sql.InClauseFor($"j.{cId}", "@ClaimedIds");
+            var fetchSql = $@"
+SELECT {selectCols}
+FROM {t} j
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE j.{cClusterId} = @ClusterId
+  AND {inClauseWithAlias}
+{orderBy};";
+
+            var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(fetchSql, args, tx)).ToList();
             var records = LinearListRecord(linearRows);
             var result = records.Select(JobRawModel.RecoverFromDb).ToList();
 
@@ -107,6 +127,8 @@ WHERE j.{cClusterId} = @ClusterId
             return mysqlEx.Number == 1062
                    || mysqlEx.ErrorCode == MySqlErrorCode.DuplicateKeyEntry;
         }
+
         return false; // no inner recursion to avoid false positives
     }
+    
 }

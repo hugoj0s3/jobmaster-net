@@ -53,7 +53,6 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
             }
 
             var selectCols = SelectProjection();
-
             var sqlText = $@"
 DECLARE @lockedIds TABLE (id uniqueidentifier NOT NULL);
 
@@ -102,6 +101,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             throw;
         }
     }
+    
 
     public override void Upsert(JobRawModel jobRaw)
     {
@@ -215,7 +215,7 @@ ON target.{cClusterId} = src.{cClusterId} AND target.{cId} = src.{cId}
 WHEN MATCHED AND target.{cVersion} = @ExpectedVersion THEN UPDATE SET {UpdateSetClause()}
 WHEN NOT MATCHED THEN INSERT ({cols}) VALUES ({vals});";
     }
-
+    
     protected override bool IsDupeViolation(Guid jobId, Exception ex)
     {
         return ex is SqlException sqlEx && sqlEx.Number == 2627;

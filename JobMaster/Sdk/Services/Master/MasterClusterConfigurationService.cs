@@ -70,9 +70,9 @@ internal class MasterClusterConfigurationService : JobMasterClusterAwareComponen
 
     public void Save(ClusterConfigurationModel clusterConfiguration)
     {
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.GetMasterConfiguration(), DateTime.UtcNow);
         var record = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.ClusterConfiguration, ClusterConnConfig.ClusterId, clusterConfiguration);
         repository.Upsert(record);
-        masterChangesSentinelService.NotifyChanges(sentinelKeys.GetMasterConfiguration(), DateTime.UtcNow);
     }
 
     public bool IsSaved()

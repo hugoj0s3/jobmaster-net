@@ -52,14 +52,6 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         {
             var t = TableName();
             var rec = JobRawModel.ToPersistence(jobRaw);
-            
-            // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-            
-            var (cols, vals) = InsertColumnsAndParams();
-            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
-            conn.Execute(sqlText, rec, trans);
-
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -69,6 +61,13 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
                 conn.Execute(insertValuesSql, paramRows, trans);
             }
+            
+            // Generate initial version for new job
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            
+            var (cols, vals) = InsertColumnsAndParams();
+            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
+            conn.Execute(sqlText, rec, trans);
 
             trans.Commit();
             
@@ -95,14 +94,6 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         {
             var t = TableName();
             var rec = JobRawModel.ToPersistence(jobRaw);
-            
-            // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-            
-            var (cols, vals) = InsertColumnsAndParams();
-            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
-            await conn.ExecuteAsync(sqlText, rec, trans);
-
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -112,6 +103,14 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
                 var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
                 await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
             }
+            
+            // Generate initial version for new job
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            
+            var (cols, vals) = InsertColumnsAndParams();
+            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
+            await conn.ExecuteAsync(sqlText, rec, trans);
+            
 
             trans.Commit();
             
