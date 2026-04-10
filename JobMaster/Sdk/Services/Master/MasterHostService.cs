@@ -109,7 +109,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         var genericRecord = 
             GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, host.Id, host); 
         
-        await masterGenericRecordRepository.UpdateAsync(genericRecord);
+        await masterGenericRecordRepository.UpsertAsync(genericRecord);
         
         masterHeartbeatService.Heartbeat(ResourceHeartbeatType.Host, hostId);
     }

@@ -93,65 +93,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         return LinearListToDomain(result);
     }
 
-    public virtual void Upsert(GenericRecordEntry recordEntry)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            var rowsAffected = conn.Execute(sqlText, args, transaction);
-            if (rowsAffected == 0)
-            {
-                (sqlText, args) = BuildInsertEntrySql(sqlEntry);
-                conn.Execute(sqlText, args, transaction);
-            }
-
-            // Replace values: clear and insert fresh to reflect current payload
-            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            InsertEntryValues(conn, transaction, sqlEntry);
-
-            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
-
-    public virtual async Task UpsertAsync(GenericRecordEntry recordEntry)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            var rowsAffected = await conn.ExecuteAsync(sqlText, args, transaction);
-            if (rowsAffected == 0)
-            {
-                (sqlText, args) = BuildInsertEntrySql(sqlEntry);
-                await conn.ExecuteAsync(sqlText, args, transaction);
-            }
-            
-            // Replace values: clear and insert fresh to reflect current payload
-            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            await InsertEntryValuesAsync(conn, transaction, sqlEntry);
-
-            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-
-            transaction.Commit();
-        } 
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
+    
 
     public void Insert(GenericRecordEntry recordEntry)
     {
@@ -193,52 +135,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
     }
 
-    public void Update(GenericRecordEntry recordEntry)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            
-            conn.Execute(sqlText, args, transaction);
-            // replace values
-            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            InsertEntryValues(conn, transaction, sqlEntry);
-            
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
-
-    public async Task UpdateAsync(GenericRecordEntry recordEntry)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            
-            await conn.ExecuteAsync(sqlText, args, transaction);
-            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            await InsertEntryValuesAsync(conn, transaction, sqlEntry);
-            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-
-    }
+    public abstract void Upsert(GenericRecordEntry recordEntry);
+    public abstract Task UpsertAsync(GenericRecordEntry recordEntry);
 
     public void Delete(string groupId, string id)
     {

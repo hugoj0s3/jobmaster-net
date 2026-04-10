@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
@@ -76,7 +77,7 @@ WITH candidates AS (
 )
 SELECT {selectCols}
 FROM locked s
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId}
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 {orderBy};";
 
@@ -86,6 +87,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             args["PartitionLockId"] = partitionLockId;
             args["LockExpiresAt"] = expiresAtUtcKind;
             args["LockNowUtc"] = nowUtcWithSkew;
+            args["GroupId"] = MasterGenericRecordGroupIds.RecurringScheduleMetadata;
 
             var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args, tx)).ToList();
             var records = LinearListToDomain(linearRows);
@@ -105,11 +107,27 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = TableName();
             var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
             rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
 
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
+                conn.Execute(BuildMetadataEntryUpsertSql(), entryArgs, trans);
+
+                if (sqlEntry.Values.Count > 0)
+                {
+                    var valueRows = BuildMetadataValueRows(sqlEntry);
+                    conn.Execute(BuildMetadataValuesUpsertSql(), valueRows, trans);
+                }
+
+                conn.Execute(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.RecurringScheduleMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            var t = TableName();
             var dp = new DynamicParameters(rec);
             dp.Add("ExpectedVersion", expectedVersion);
             var rowsAffected = conn.Execute(BuildUpsertSql(), dp, trans);
@@ -121,21 +139,6 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
                     new { rec.ClusterId, rec.Id }, trans);
                 if (exists)
                     throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
-            }
-
-            if (rec.Metadata is not null)
-            {
-                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-                var (updateEntrySql, entryParams) = genericUtil.BuildUpdateEntrySql(sqlEntry);
-                if (conn.Execute(updateEntrySql, entryParams, trans) == 0)
-                {
-                    var (insertEntrySql, insertEntryParams) = genericUtil.BuildInsertEntrySql(sqlEntry);
-                    conn.Execute(insertEntrySql, insertEntryParams, trans);
-                }
-                var deleteValuesSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
-                conn.Execute(deleteValuesSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-                conn.Execute(insertValuesSql, paramRows, trans);
             }
 
             trans.Commit();
@@ -154,11 +157,27 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = TableName();
             var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
             rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
 
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
+                await conn.ExecuteAsync(BuildMetadataEntryUpsertSql(), entryArgs, trans);
+
+                if (sqlEntry.Values.Count > 0)
+                {
+                    var valueRows = BuildMetadataValueRows(sqlEntry);
+                    await conn.ExecuteAsync(BuildMetadataValuesUpsertSql(), valueRows, trans);
+                }
+
+                await conn.ExecuteAsync(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.RecurringScheduleMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            var t = TableName();
             var dp = new DynamicParameters(rec);
             dp.Add("ExpectedVersion", expectedVersion);
             var rowsAffected = await conn.ExecuteAsync(BuildUpsertSql(), dp, trans);
@@ -172,21 +191,6 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
                     throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
             }
 
-            if (rec.Metadata is not null)
-            {
-                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-                var (updateEntrySql, entryParams) = genericUtil.BuildUpdateEntrySql(sqlEntry);
-                if (await conn.ExecuteAsync(updateEntrySql, entryParams, trans) == 0)
-                {
-                    var (insertEntrySql, insertEntryParams) = genericUtil.BuildInsertEntrySql(sqlEntry);
-                    await conn.ExecuteAsync(insertEntrySql, insertEntryParams, trans);
-                }
-                var deleteValuesSql = genericUtil.BuildDeleteValuesSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
-                await conn.ExecuteAsync(deleteValuesSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-                await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
-            }
-
             trans.Commit();
             scheduleRaw.SetVersion(rec.Version);
         }
@@ -195,6 +199,77 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             trans.SafeRollback();
             throw;
         }
+    }
+
+    private string BuildMetadataEntryUpsertSql()
+    {
+        var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
+        var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
+        return $@"
+INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
+ON CONFLICT (record_unique_id) DO UPDATE SET
+    subject_type = EXCLUDED.subject_type,
+    subject_id = EXCLUDED.subject_id,
+    expires_at = EXCLUDED.expires_at;";
+    }
+
+    private string BuildMetadataValuesUpsertSql()
+    {
+        var vt = genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
+        var cRecordId = genericUtil.ColVal(x => x.RecordUniqueId);
+        var cKeyName = genericUtil.ColVal(x => x.KeyName);
+        var cValueText = genericUtil.ColVal(x => x.ValueText);
+        var cValueBinary = genericUtil.ColVal(x => x.ValueBinary);
+        var cValueInt64 = genericUtil.ColVal(x => x.ValueInt64);
+        var cValueBool = genericUtil.ColVal(x => x.ValueBool);
+        var cValueDecimal = genericUtil.ColVal(x => x.ValueDecimal);
+        var cValueDateTime = genericUtil.ColVal(x => x.ValueDateTime);
+        var cValueGuid = genericUtil.ColVal(x => x.ValueGuid);
+
+        return $@"
+INSERT INTO {vt} ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
+VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid)
+ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
+    {cValueText} = EXCLUDED.{cValueText},
+    {cValueBinary} = EXCLUDED.{cValueBinary},
+    {cValueInt64} = EXCLUDED.{cValueInt64},
+    {cValueBool} = EXCLUDED.{cValueBool},
+    {cValueDecimal} = EXCLUDED.{cValueDecimal},
+    {cValueDateTime} = EXCLUDED.{cValueDateTime},
+    {cValueGuid} = EXCLUDED.{cValueGuid};";
+    }
+
+    private static Dictionary<string, object?> BuildMetadataEntryArgs(SqlGenericRecordEntry sqlEntry)
+    {
+        return new Dictionary<string, object?>
+        {
+            { "RecordUniqueId", sqlEntry.RecordUniqueId },
+            { "ClusterId", sqlEntry.ClusterId },
+            { "GroupId", sqlEntry.GroupId },
+            { "EntryId", sqlEntry.EntryId },
+            { "EntryIdGuid", sqlEntry.EntryIdGuid },
+            { "SubjectType", sqlEntry.SubjectType },
+            { "SubjectId", sqlEntry.SubjectId },
+            { "CreatedAt", sqlEntry.CreatedAt },
+            { "ExpiresAt", sqlEntry.ExpiresAt }
+        };
+    }
+
+    private static IEnumerable<object> BuildMetadataValueRows(SqlGenericRecordEntry sqlEntry)
+    {
+        return sqlEntry.Values.Select(v => new
+        {
+            RecordUniqueId = sqlEntry.RecordUniqueId,
+            KeyName = v.KeyName,
+            ValueText = v.ValueText,
+            ValueBinary = v.ValueBinary,
+            ValueInt64 = v.ValueInt64,
+            ValueBoolean = v.ValueBool,
+            ValueDecimal = v.ValueDecimal,
+            ValueDateTime = v.ValueDateTime,
+            ValueGuid = v.ValueGuid
+        });
     }
 
     private string BuildUpsertSql()

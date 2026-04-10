@@ -128,7 +128,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             MasterGenericRecordGroupIds.Bucket,
             model.Id, 
             model);
-        masterGenericRecordRepository.Update(genericRecord);
+        masterGenericRecordRepository.Upsert(genericRecord);
 
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
@@ -149,7 +149,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             MasterGenericRecordGroupIds.Bucket,
             model.Id, 
             model);
-        await masterGenericRecordRepository.UpdateAsync(genericRecord);
+        await masterGenericRecordRepository.UpsertAsync(genericRecord);
     }
     
     public BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)

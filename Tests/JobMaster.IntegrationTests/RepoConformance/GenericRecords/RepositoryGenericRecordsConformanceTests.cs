@@ -78,7 +78,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["dt"] = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
         };
 
-        await Fixture.MasterGenericRecords.UpdateAsync(record);
+        await Fixture.MasterGenericRecords.UpsertAsync(record);
 
         var fromDb = await Fixture.MasterGenericRecords.GetAsync(groupId, entryId, includeExpired: true);
         Assert.NotNull(fromDb);

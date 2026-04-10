@@ -146,7 +146,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             StopGracePeriod = wokder.StopGracePeriod,
         };
        
-        await masterGenericRecordRepository.UpdateAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
+        await masterGenericRecordRepository.UpsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
         NotifyChanges();
     }
 

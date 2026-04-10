@@ -31,6 +31,7 @@ internal static class JobMasterConstants
     public static readonly TimeSpan DurationToLockRecords = TimeSpan.FromMinutes(5);
 
     public static readonly TimeSpan ClockSkewPadding = TimeSpan.FromSeconds(15);
+    public static readonly TimeSpan SentinelNotifyPadding = TimeSpan.FromSeconds(1);
     
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(10);
 

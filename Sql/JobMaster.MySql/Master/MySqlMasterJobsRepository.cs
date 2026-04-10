@@ -2,8 +2,10 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Dapper;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
@@ -22,7 +24,8 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
     public override string MasterRepoTypeId => MySqlRepositoryConstants.RepositoryTypeId;
 
-    public override async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
+    public override async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria,
+        int partitionLockId, DateTime expiresAtUtc)
     {
         if (partitionLockId <= 0) throw new ArgumentException("partitionLockId must be > 0", nameof(partitionLockId));
         if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
@@ -45,25 +48,11 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
             var defaultOrderByClause = $" ORDER BY j.{cNextPlanExecutionAt} ASC";
             var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
 
-            var offsetClause = string.Empty;
+            var limitClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
             {
-                offsetClause = "\n" + sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset);
+                limitClause = "\n" + sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset);
             }
-
-            var selectCols = SelectProjection();
-
-            // Step 1: claim rows atomically using FOR UPDATE SKIP LOCKED
-            // This avoids the UPDATE JOIN pattern which causes lock contention and timeouts
-            // under concurrent workers. SKIP LOCKED means competing workers skip already-locked rows
-            // instead of waiting, eliminating the timeout.
-            var claimSql = $@"
-SELECT j.{cId}
-FROM {t} j
-{whereSql} AND {unlockedGuard}
-{orderBy}
-{offsetClause}
-FOR UPDATE SKIP LOCKED;";
 
             var args = new Dictionary<string, object?>();
             foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
@@ -73,36 +62,34 @@ FOR UPDATE SKIP LOCKED;";
             args["LockExpiresAt"] = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
             args["GroupId"] = MasterGenericRecordGroupIds.JobMetadata;
 
-            var claimedIds = (await conn.QueryAsync<Guid>(claimSql, args, tx)).ToList();
-
-            if (claimedIds.Count == 0)
-            {
-                tx.Commit();
-                return new List<JobRawModel>();
-            }
-
-            // Step 2: update only the claimed ids
-            var inClause = sql.InClauseFor(cId, "@ClaimedIds");
+            // Step 1: atomically claim rows via UPDATE ... ORDER BY ... LIMIT
             var updateSql = $@"
 UPDATE {t} j
 SET j.{Col(x => x.PartitionLockId)} = @PartitionLockId,
     j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
     j.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE j.{cClusterId} = @ClusterId
-  AND {inClause};";
+{whereSql} AND {unlockedGuard}
+{orderBy}
+{limitClause};";
 
-            args["ClaimedIds"] = claimedIds;
-            await conn.ExecuteAsync(updateSql, args, tx);
+            var rowsAffected = await conn.ExecuteAsync(updateSql, args, tx);
 
-            // Step 3: fetch the updated rows with metadata
-            var inClauseWithAlias = sql.InClauseFor($"j.{cId}", "@ClaimedIds");
+            if (rowsAffected == 0)
+            {
+                tx.Commit();
+                return new List<JobRawModel>();
+            }
+
+            // Step 2: fetch claimed rows with metadata
+            var selectCols = SelectProjection();
             var fetchSql = $@"
 SELECT {selectCols}
 FROM {t} j
 LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
 LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 WHERE j.{cClusterId} = @ClusterId
-  AND {inClauseWithAlias}
+  AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
+  AND j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
 {orderBy};";
 
             var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(fetchSql, args, tx)).ToList();
@@ -119,16 +106,209 @@ WHERE j.{cClusterId} = @ClusterId
         }
     }
 
+    public override void Upsert(JobRawModel jobRaw)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
+
+                conn.Execute(BuildMetadataEntryUpsertSql(), entryArgs, trans);
+
+                if (sqlEntry.Values.Count > 0)
+                {
+                    var valueRows = BuildMetadataValueRows(sqlEntry);
+                    conn.Execute(BuildMetadataValuesUpsertSql(), valueRows, trans);
+                }
+
+                conn.Execute(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.JobMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = conn.Execute(BuildJobUpsertSql(), dp, trans);
+
+            // MySQL ON DUPLICATE KEY UPDATE rowsAffected:
+            // 1 = inserted (new job, no conflict possible)
+            // 2 = updated
+            // 0 = no-op (values identical) or IF() prevented version update (conflict)
+            if (rowsAffected != 1)
+            {
+                var t = TableName();
+                var currentVersion = conn.ExecuteScalar<string>(
+                    $"SELECT {Col(x => x.Version)} FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+
+                if (currentVersion != rec.Version)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public override async Task UpsertAsync(JobRawModel jobRaw)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
+
+                await conn.ExecuteAsync(BuildMetadataEntryUpsertSql(), entryArgs, trans);
+
+                if (sqlEntry.Values.Count > 0)
+                {
+                    var valueRows = BuildMetadataValueRows(sqlEntry);
+                    await conn.ExecuteAsync(BuildMetadataValuesUpsertSql(), valueRows, trans);
+                }
+
+                await conn.ExecuteAsync(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.JobMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = await conn.ExecuteAsync(BuildJobUpsertSql(), dp, trans);
+
+            // MySQL ON DUPLICATE KEY UPDATE rowsAffected:
+            // 1 = inserted (new job, no conflict possible)
+            // 2 = updated
+            // 0 = no-op (values identical) or IF() prevented version update (conflict)
+            if (rowsAffected != 1)
+            {
+                var t = TableName();
+                var currentVersion = await conn.ExecuteScalarAsync<string>(
+                    $"SELECT {Col(x => x.Version)} FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+
+                if (currentVersion != rec.Version)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    private string BuildMetadataEntryUpsertSql()
+    {
+        var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata);
+        var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
+        return $@"
+INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0)
+ON DUPLICATE KEY UPDATE
+    subject_type = VALUES(subject_type),
+    subject_id = VALUES(subject_id),
+    expires_at = VALUES(expires_at);";
+    }
+
+    private string BuildMetadataValuesUpsertSql()
+    {
+        var vt = genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata);
+        var cRecordId = genericUtil.ColVal(x => x.RecordUniqueId);
+        var cKeyName = genericUtil.ColVal(x => x.KeyName);
+        var cValueText = genericUtil.ColVal(x => x.ValueText);
+        var cValueBinary = genericUtil.ColVal(x => x.ValueBinary);
+        var cValueInt64 = genericUtil.ColVal(x => x.ValueInt64);
+        var cValueBool = genericUtil.ColVal(x => x.ValueBool);
+        var cValueDecimal = genericUtil.ColVal(x => x.ValueDecimal);
+        var cValueDateTime = genericUtil.ColVal(x => x.ValueDateTime);
+        var cValueGuid = genericUtil.ColVal(x => x.ValueGuid);
+
+        return $@"
+INSERT INTO {vt} ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
+VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid)
+ON DUPLICATE KEY UPDATE
+    {cValueText} = VALUES({cValueText}),
+    {cValueBinary} = VALUES({cValueBinary}),
+    {cValueInt64} = VALUES({cValueInt64}),
+    {cValueBool} = VALUES({cValueBool}),
+    {cValueDecimal} = VALUES({cValueDecimal}),
+    {cValueDateTime} = VALUES({cValueDateTime}),
+    {cValueGuid} = VALUES({cValueGuid});";
+    }
+
+    private string BuildJobUpsertSql()
+    {
+        var t = TableName();
+        var (cols, vals) = InsertColumnsAndParams();
+        var cVersion = Col(x => x.Version);
+        return $@"
+INSERT INTO {t} ({cols}) VALUES ({vals})
+ON DUPLICATE KEY UPDATE
+    {UpdateSetClauseWithoutVersion()},
+    {cVersion} = IF({cVersion} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {cVersion} IS NULL), @Version, {cVersion});";
+    }
+
+    private static Dictionary<string, object?> BuildMetadataEntryArgs(SqlGenericRecordEntry sqlEntry)
+    {
+        return new Dictionary<string, object?>
+        {
+            { "RecordUniqueId", sqlEntry.RecordUniqueId },
+            { "ClusterId", sqlEntry.ClusterId },
+            { "GroupId", sqlEntry.GroupId },
+            { "EntryId", sqlEntry.EntryId },
+            { "EntryIdGuid", sqlEntry.EntryIdGuid },
+            { "SubjectType", sqlEntry.SubjectType },
+            { "SubjectId", sqlEntry.SubjectId },
+            { "CreatedAt", sqlEntry.CreatedAt },
+            { "ExpiresAt", sqlEntry.ExpiresAt }
+        };
+    }
+
+    private static IEnumerable<object> BuildMetadataValueRows(SqlGenericRecordEntry sqlEntry)
+    {
+        return sqlEntry.Values.Select(v => new
+        {
+            RecordUniqueId = sqlEntry.RecordUniqueId,
+            KeyName = v.KeyName,
+            ValueText = v.ValueText,
+            ValueBinary = v.ValueBinary,
+            ValueInt64 = v.ValueInt64,
+            ValueBoolean = v.ValueBool,
+            ValueDecimal = v.ValueDecimal,
+            ValueDateTime = v.ValueDateTime,
+            ValueGuid = v.ValueGuid
+        });
+    }
+    
     protected override bool IsDupeViolation(Guid jobId, Exception ex)
     {
         if (ex is MySqlException mysqlEx)
         {
-            // Strict: only treat canonical ER_DUP_ENTRY as duplication
             return mysqlEx.Number == 1062
                    || mysqlEx.ErrorCode == MySqlErrorCode.DuplicateKeyEntry;
         }
 
-        return false; // no inner recursion to avoid false positives
+        return false;
     }
-    
 }

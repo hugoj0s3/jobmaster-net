@@ -64,7 +64,7 @@ internal class MasterChangesSentinelService : JobMasterClusterAwareComponent, IM
 
     public void NotifyChanges(string sentinelKey)
     {
-        this.NotifyChanges(sentinelKey, DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding));
+        this.NotifyChanges(sentinelKey, DateTime.UtcNow.Add(JobMasterConstants.SentinelNotifyPadding));
     }
     
     public void NotifyChanges(string sentinelKey, DateTime lastUpdate)
