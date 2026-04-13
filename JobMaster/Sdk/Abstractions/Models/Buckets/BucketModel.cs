@@ -28,12 +28,14 @@ internal class BucketModel : JobMasterBaseModel
     public DateTime CreatedAt { get; internal set; }
     public BucketColor Color { get; internal set; }
     
+    public BucketType BucketType { get; internal set; } = BucketType.Standard;
+
+    
     public string? WorkerLane { get; internal set; }
     
     public DateTime LastStatusChangeAt { get; internal set; }
     
     public DateTime? DeletesAt { get; internal set; }
-
 
     public override bool IsValid()
     {

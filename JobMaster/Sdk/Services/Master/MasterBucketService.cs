@@ -90,7 +90,11 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketId));
     }
 
-    public async Task<BucketModel> CreateAsync(AgentConnectionId agentConnectionId, string workerId, JobMasterPriority priority)
+    public async Task<BucketModel> CreateAsync(
+        AgentConnectionId agentConnectionId, 
+        string workerId, 
+        JobMasterPriority priority,
+        BucketType type = BucketType.Standard)
     {
         var worker = await this.masterAgentWorkersService.GetWorkerAsync(workerId);
         var agentConfiguration = ClusterConnConfig.GetAgentConnectionConfig(agentConnectionId.IdValue);
@@ -105,14 +109,15 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             priority, 
             worker!.Name, 
             worker?.WorkerLane, 
-            agentConfiguration.RepositoryTypeId);
+            agentConfiguration.RepositoryTypeId,
+            type);
+        
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketModel.Id));
 
         var genericRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Bucket, bucketModel.Id, bucketModel);
         await masterGenericRecordRepository.InsertAsync(genericRecord);
         await this.masterAgentsDispatcherService.CreateBucketAsync(agentConnectionId, bucketModel.Id);
-
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketModel.Id));
 
         return bucketModel;
     }
@@ -240,7 +245,13 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                         Key = nameof(BucketModel.Status),
                         Operation = GenericFilterOperation.Eq,
                         Value = (int)BucketStatus.Active,
-                    }
+                    },
+                    // new()
+                    // {
+                    //     Key = nameof(BucketModel.BucketType),
+                    //     Operation = GenericFilterOperation.Neq,
+                    //     Value = (int)BucketType.Fallback,
+                    // },
                 },
                 ReadIsolationLevel = ReadIsolationLevel.Consistent,
             };
@@ -250,6 +261,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             availableBuckets = records
                 .Select(x => x.ToObject<BucketModel>())
                 .Where(x => !string.IsNullOrEmpty(x?.AgentWorkerId))
+                .Where(x => x?.BucketType != BucketType.Fallback)
                 .ToList()!;
 
             jobMasterMemoryCache.Set(cacheKeys.BucketsAvailableForJobs(), availableBuckets);
@@ -306,7 +318,8 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         JobMasterPriority priority,
         string workerName,  
         string? workerLane, 
-        string repositoryTypeId)
+        string repositoryTypeId,
+        BucketType type)
     {
         var bucketModel = new BucketModel(ClusterConnConfig.ClusterId)
         {
@@ -319,9 +332,17 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             Color = JobMasterRandomUtil.GetEnum<BucketColor>(),
             WorkerLane = workerLane,
             RepositoryTypeId = repositoryTypeId,
+            BucketType = type,
         };
-
-        bucketModel.Name = $"{workerName}:{priority}:bucket-";
+        if (type == BucketType.Fallback)
+        {
+            bucketModel.Name = $"{workerName}:fallback:bucket-";
+        }
+        else
+        {
+            bucketModel.Name = $"{workerName}:{priority}:bucket-";
+        }
+        
         var seq = Seq.AddOrUpdate(bucketModel.Name, 0, (key, oldVal) => oldVal + 1);
         bucketModel.Name += seq;
         

@@ -353,7 +353,122 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
         }
     }
 
-    public abstract Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    public virtual async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId,
+        DateTime expiresAtUtc)
+    {
+        if (partitionLockId <= 0) throw new ArgumentException("partitionLockId must be > 0", nameof(partitionLockId));
+        if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
+
+        var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
+        var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+        
+        var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+        using var conn1 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        var jobIds = await QueryIdsToLockAsync(queryCriteria, unlockedGuard, nowUtcWithSkew, conn1);
+        if (jobIds.Count == 0)
+        {
+            return new List<JobRawModel>();
+        }
+        
+        using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var trans = conn2.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var t = TableName();
+            var inIds = sql.InClauseFor(Col(x => x.Id), "@JobIds");
+
+            var updateSql = $@"
+UPDATE {t}
+SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
+    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE {Col(x => x.ClusterId)} = @ClusterId
+  AND {inIds}
+  AND {unlockedGuard}
+  ;";
+
+            await conn2.ExecuteAsync(updateSql, new
+            {
+                PartitionLockId = partitionLockId,
+                LockExpiresAt = expiresAtUtcKind,
+                LockNowUtc = nowUtcWithSkew,
+                ClusterId = ClusterConnConfig.ClusterId,
+                JobIds = jobIds
+            }, trans);
+
+            trans.Commit();
+            
+            using var conn3 = await connManager.OpenAsync(
+                this.connString, 
+                additionalConnConfig,
+                ReadIsolationLevel.Consistent);
+            return await QueryLockedJobsAsync(jobIds, partitionLockId, conn3);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    private async Task<IList<JobRawModel>> QueryLockedJobsAsync(
+        IList<Guid> jobIds, 
+        int partitionLockId, 
+        IDbConnection cnn2)
+    {
+        var lockCriteria = new JobQueryCriteria
+        {
+            JobIds = jobIds,
+            ReadIsolationLevel = ReadIsolationLevel.Consistent,
+        };
+        
+        var (sqlText, args) = BuildQuerySql(lockCriteria, partitionLockId, true);
+        var linearRows = (await cnn2.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var rows = LinearListRecord(linearRows);
+        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+    }
+
+    protected virtual async Task<IList<Guid>> QueryIdsToLockAsync(
+        JobQueryCriteria queryCriteria, 
+        string unlockedGuardSql, 
+        DateTime nowUtcWithSkew,
+        IDbConnection conn)
+    {
+        if (queryCriteria.CountLimit < 0) 
+            throw new ArgumentOutOfRangeException(nameof(queryCriteria.CountLimit), queryCriteria.CountLimit, "CountLimit must be >= 0");
+        if (queryCriteria.Offset < 0) 
+            throw new ArgumentOutOfRangeException(nameof(queryCriteria.Offset), queryCriteria.Offset, "Offset must be >= 0");
+        
+        var (whereSql, args) = BuildWhere(queryCriteria);
+        args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
+        args.Add("LockNowUtc", nowUtcWithSkew);
+        
+        var sqlText = BuildQueryIdsToLockSql(queryCriteria, whereSql, unlockedGuardSql);
+        
+        return (await conn.QueryAsync<Guid>(sqlText, args)).ToList();
+    }
+    
+    protected virtual string BuildQueryIdsToLockSql(JobQueryCriteria queryCriteria, string whereSql, string unlockedGuardSql)
+    {
+        var sb = new StringBuilder();
+        var sqlText = $@"
+SELECT {Col(x => x.Id)} 
+FROM {TableName()} j 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+{whereSql} and
+{unlockedGuardSql}
+";
+        sb.Append(sqlText);
+        sb.Append('\n');
+
+        // ORDER BY must come before OFFSET/FETCH.
+        var defaultOrderByClause = $" ORDER BY j.{Col(x => x.NextPlanExecutionAt)} ASC";
+        var order = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
+        sb.Append(order);
+        sb.Append('\n');
+        sb.Append(sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset));
+        return sb.ToString();
+    }
 
     protected abstract bool IsDupeViolation(Guid jobId, Exception ex);
 
@@ -392,7 +507,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
     }
 
 
-    private (string, object) BuildQuerySql(JobQueryCriteria c)
+    private (string, object) BuildQuerySql(JobQueryCriteria c, int? partitionLockId = null, bool? isLocked = false)
     {
         var t = TableName();
         var selectCols = SelectProjection();
@@ -405,7 +520,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         if (c.Offset < 0) 
             throw new ArgumentOutOfRangeException(nameof(c.Offset), c.Offset, "Offset must be >= 0");
         
-        var (whereSql, args) = BuildWhere(c);
+        var (whereSql, args) = BuildWhere(c, partitionLockId, isLocked);
 
         var concatedArgs = args.Concat(new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.JobMetadata } })
             .ToDictionary(x => x.Key, x => x.Value);
@@ -437,11 +552,21 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return (queryTextNoPaging, concatedArgsNoPaging);
     }
 
-    protected (string whereSql, Dictionary<string, object?> args) BuildWhere(JobQueryCriteria c)
+    protected (string whereSql, Dictionary<string, object?> args) BuildWhere(
+        JobQueryCriteria c, 
+        int? partitionLockId = null, 
+        bool? isLocked = false)
     {
         var where = new List<string> { $"j.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();
         args.Add("ClusterId", ClusterConnConfig.ClusterId);
+
+        if (c.JobIds is { Count: > 0 })
+        {
+            var inClause = sql.InClauseFor(Col(x => x.Id), "@JobIds");
+            where.Add(inClause);
+            args.Add("JobIds", c.JobIds.ToArray());
+        }
 
         if (c.Status.HasValue)
         {
@@ -488,19 +613,19 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("ProcessDeadlineTo", c.ProcessDeadlineTo.Value);
         }
 
-        if (c.IsLocked.HasValue)
+        if (isLocked.HasValue)
         {
-            where.Add(c.IsLocked.Value
+            where.Add(isLocked.Value
                 ? $"(j.{Col(x => x.PartitionLockId)} IS NOT NULL AND j.{Col(x => x.PartitionLockExpiresAt)} > @NowUtc)"
                 : $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @NowUtcWithSkewPadding)");
             args.Add("NowUtc", DateTime.UtcNow);
             args.Add("NowUtcWithSkewPadding", JobMasterConstants.NowUtcWithSkewTolerance());
         }
 
-        if (c.PartitionLockId.HasValue)
+        if (partitionLockId.HasValue)
         {
             where.Add($"j.{Col(x => x.PartitionLockId)} = @PartitionLockId");
-            args.Add("PartitionLockId", c.PartitionLockId.Value);
+            args.Add("PartitionLockId", partitionLockId.Value);
         }
 
         if (c.TriggerSourceTypes is { Count: > 0 })

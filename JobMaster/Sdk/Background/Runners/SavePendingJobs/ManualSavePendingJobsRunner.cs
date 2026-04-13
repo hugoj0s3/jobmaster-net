@@ -122,6 +122,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                     // If re-queueing fails, we catch it so the loop continues for other jobs.
                     try 
                     {
+                        job.AssignToBucket(bucket);
                         await agentJobsDispatcherService.AddSavePendingJobAsync(job);
                         pendingTracker.TryRemove(job.Id, out _);
                     }

@@ -420,6 +420,26 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     public override async Task OnStopAsync()
     {
         await base.OnStopAsync();
+        await StopConsumptionTask();
+    }
+    
+    public override async Task OnErrorAsync(Exception ex, CancellationToken ct)
+    {
+        await base.OnErrorAsync(ex, ct);
+        await StopConsumptionTask();
+    }
+
+
+    protected void LogCriticalOrError(string message, Exception? ex = null)
+    {
+        if (LostRisk())
+            this.logger.Critical(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+        else
+            this.logger.Error(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+    }
+    
+    private async Task StopConsumptionTask()
+    {
         this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogSubjectType.Bucket, BucketId);
 
         if (consumptionTask != null)
@@ -448,15 +468,6 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
 
         hasInitialized = false;
-    }
-
-
-    protected void LogCriticalOrError(string message, Exception? ex = null)
-    {
-        if (LostRisk())
-            this.logger.Critical(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
-        else
-            this.logger.Error(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
     }
 
     // Hooks

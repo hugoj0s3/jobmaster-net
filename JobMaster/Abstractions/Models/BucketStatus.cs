@@ -12,3 +12,9 @@ public enum BucketStatus
     
     ReadyToDelete = 6, // Ready to be deleted. all jobs are completed or drained. just waiting for deletion confirmation.
 }
+
+public enum BucketType
+{
+    Standard = 1,   // normal distributed bucket
+    Fallback  
+}

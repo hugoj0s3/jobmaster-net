@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Background.ScanPlans;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.Sdk.Utils;
@@ -27,6 +28,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private ScanPlanResult? lastScanPlanResult;
     
     private readonly JobMasterLockKeys lockKeys;
+
+    private IJobsExecutionEngine? fallBackJobsExecutionEngine;
+    private FallbackBucketPulseRunner? fallbackPulseRunner;
+    private BucketModel? fallbackBucket;
+    private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
+    private readonly Dictionary<(string? lane, JobMasterPriority priority), DateTime> bucketAssignFirstFailure = new();
     
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(5);
     
@@ -64,7 +71,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             CountLimit = BackgroundAgentWorker.TransferBatchSize,
             Status = JobMasterJobStatus.OnMaster,
             NextPlanExecutionAtTo = utcNow.Add(transientThreshold),
-            IsLocked = false,
             Offset = 0,
             SortBy = new SortByCriteria()
             {
@@ -126,32 +132,40 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             var bucket = await GetBucketAvailableForJobAsync(job);
             if (bucket is null)
             {
-                if (job.ScheduledAt <= DateTime.UtcNow.AddMinutes(-10))
+                var bucketKey = (job.WorkerLane, job.Priority);
+                if (!bucketAssignFirstFailure.TryGetValue(bucketKey, out var firstFailure))
                 {
-                    var isRetrying = job.TryRetry();
+                    firstFailure = DateTime.UtcNow;
+                    bucketAssignFirstFailure[bucketKey] = firstFailure;
+                }
+
+                if (DateTime.UtcNow - firstFailure >= JobMasterConstants.NoBucketFallbackThreshold)
+                {
+                    logger.Warn($"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). ", JobMasterLogSubjectType.Job, job.Id);
+
+                    var fallbackEngine = await GetFallbackJobsExecutionEngineAsync();
+                    job.AssignToBucket(this.fallbackBucket!);
                     await masterJobsService.UpsertAsync(job);
-                    if (isRetrying)
+
+                    var result = await fallbackEngine.TryOnBoardingJobAsync(job);
+                    if (result == OnBoardingResult.Accepted)
                     {
-                        logger.Error($"No available bucket found for job {job.Id}. " +
-                                        $"Retrying {job.NumberOfFailures}/{job.MaxNumberOfRetries}", JobMasterLogSubjectType.Job, job.Id);
-                    }
-                    else
-                    {
-                        logger.Critical($"No available bucket found for job {job.Id}. Marked as failed",
-                            JobMasterLogSubjectType.Job, job.Id);
+                        continue;
                     }
                 }
                 else
                 {
-                    job.DelayNextExecutionPlan(TimeSpan.FromMinutes(2.5));
+                    job.DelayNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold.Add(TimeSpan.FromMinutes(1)));
                     await masterJobsService.UpsertAsync(job);
-                    logger.Warn($"No available bucket found for job {job.Id}. Retrying in 2.5 mins", JobMasterLogSubjectType.Job, job.Id);
+                    logger.Warn($"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Retrying in 2.5 mins", JobMasterLogSubjectType.Job, job.Id);
                 }
-                
+
                 masterJobsService.ReleasePartitionLock(job.Id);
                 continue;
             }
-            
+
+            bucketAssignFirstFailure.Remove((job.WorkerLane, job.Priority));
+
             if (!jobIdByBucketModel.TryGetValue(job.Id, out _)) 
             {
                 jobIdByBucketModel.Add(job.Id, bucket!);
@@ -205,5 +219,79 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             JobMasterConstants.BucketFastAllowDiscrepancy,
             job.Priority,
             job.WorkerLane);
+    }
+    
+    private async Task<IJobsExecutionEngine> GetFallbackJobsExecutionEngineAsync()
+    {
+        if (fallBackJobsExecutionEngine != null)
+        {
+            return fallBackJobsExecutionEngine;
+        }
+
+        await fallbackCreationLock.WaitAsync();
+        try
+        {
+            if (fallBackJobsExecutionEngine != null)
+            {
+                return fallBackJobsExecutionEngine;
+            }
+
+            this.logger.Critical(
+                $"Fallback bucket activated: no standard bucket could be assigned for over {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes} minutes. " +
+                "This usually means no bucket matches the required lane/priority, or all agents are offline. " +
+                "A temporary local bucket will be used to prevent job starvation. Review your worker lanes, priority configuration, and agent health.",
+                JobMasterLogSubjectType.AgentWorker,
+                BackgroundAgentWorker.AgentWorkerId);
+
+            var bucket = await this.masterBucketsService.CreateAsync(
+                BackgroundAgentWorker.AgentConnectionId,
+                BackgroundAgentWorker.AgentWorkerId,
+                JobMasterPriority.VeryLow,
+                BucketType.Fallback);
+
+            fallBackJobsExecutionEngine =
+                new JobsExecutionEngine(this.BackgroundAgentWorker, bucket.Id, JobMasterPriority.VeryLow);
+            this.fallbackBucket = bucket;
+
+            fallbackPulseRunner = new FallbackBucketPulseRunner(this.BackgroundAgentWorker, fallBackJobsExecutionEngine);
+            await fallbackPulseRunner.StartAsync();
+
+            return fallBackJobsExecutionEngine;
+        }
+        finally
+        {
+            fallbackCreationLock.Release();
+        }
+    }
+
+    public override async Task OnStopAsync()
+    {
+        await base.OnStopAsync();
+        await HandleFallbackBucketAndFlushJobs();
+    }
+    
+    public override async Task OnErrorAsync(Exception ex, CancellationToken ct)
+    {
+        await base.OnErrorAsync(ex, ct);
+        if (fallBackJobsExecutionEngine != null)
+            await fallBackJobsExecutionEngine.FlushToMasterAsync();
+    }
+
+    private async Task HandleFallbackBucketAndFlushJobs()
+    {
+        if (!string.IsNullOrEmpty(this.fallbackBucket?.Id))
+        {
+            await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostIfNotDrainingAsync(this.fallbackBucket.Id);
+        }
+        
+        if (fallbackPulseRunner != null)
+        {
+            await fallbackPulseRunner.StopAsync();
+        }
+
+        if (fallBackJobsExecutionEngine != null)
+        {
+            await fallBackJobsExecutionEngine.FlushToMasterAsync();
+        }
     }
 }

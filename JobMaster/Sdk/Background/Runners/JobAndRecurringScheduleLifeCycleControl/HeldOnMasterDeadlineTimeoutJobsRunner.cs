@@ -73,7 +73,6 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
         {
             CountLimit = BackgroundAgentWorker.TransferBatchSize,
             ProcessDeadlineTo = utcNow.AddSeconds(-30),
-            IsLocked = false,
             Offset = 0,
             SortBy = new SortByCriteria()
             {

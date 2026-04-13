@@ -272,7 +272,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                         dynParams.Add($"SubjectId_{i}", e.SubjectId);
                         dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
                         dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
-                        dynParams.Add($"IsReady_{i}", 0); // Always 0 initially in bulk
+                        dynParams.Add($"IsReady_{i}", false); // Always false initially in bulk
                     }
 
                     await conn.ExecuteAsync(AppendSqlTag(sb.ToString(), "BulkInsert.InsertEntries", batch[0].GroupId), dynParams, transaction);

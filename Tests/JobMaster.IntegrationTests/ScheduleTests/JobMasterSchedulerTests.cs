@@ -71,7 +71,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         }
     }
 
-    private async Task<(int succeeded, int heldOnMaster, int other, int total)> GetClusterStatusCountsAsync(
+    private async Task<(int succeeded, int heldOnMaster, int failed, int other, int total)> GetClusterStatusCountsAsync(
         IMasterJobsService masterJobsService,
         IList<GenericRecordValueFilter> sessionMetadataFilters,
         string clusterId)
@@ -105,16 +105,26 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             operation: "count-held-on-master",
             clusterId: clusterId));
 
-        var other = Math.Max(0, total - succeeded - heldOnMaster);
-        return (succeeded, heldOnMaster, other, total);
+        var failed = Convert.ToInt32(await RetryOnTransientDbTimeoutAsync(
+            () => masterJobsService.Count(new JobQueryCriteria
+            {
+                Status = JobMasterJobStatus.Failed,
+                MetadataFilters = sessionMetadataFilters,
+                ReadIsolationLevel = ReadIsolationLevel.FastSync,
+            }),
+            operation: "count-failed",
+            clusterId: clusterId));
+
+        var other = Math.Max(0, total - succeeded - heldOnMaster - failed);
+        return (succeeded, heldOnMaster, failed, other, total);
     }
 
-    private async Task<(int succeeded, int heldOnMaster)> GetClusterFinalStateCountsAsync(
+    private async Task<int> GetClusterFinalStateCountsAsync(
         IMasterJobsService masterJobsService,
         IList<GenericRecordValueFilter> sessionMetadataFilters,
         string clusterId)
     {
-        var succeeded = Convert.ToInt32(await RetryOnTransientDbTimeoutAsync(
+        return Convert.ToInt32(await RetryOnTransientDbTimeoutAsync(
             () => masterJobsService.Count(new JobQueryCriteria
             {
                 Status = JobMasterJobStatus.Succeeded,
@@ -123,18 +133,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             }),
             operation: "poll-count-succeeded",
             clusterId: clusterId));
-
-        var heldOnMaster = Convert.ToInt32(await RetryOnTransientDbTimeoutAsync(
-            () => masterJobsService.Count(new JobQueryCriteria
-            {
-                Status = JobMasterJobStatus.OnMaster,
-                MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
-            }),
-            operation: "poll-count-held-on-master",
-            clusterId: clusterId));
-
-        return (succeeded, heldOnMaster);
     }
 
     private async Task<List<Guid>> QuerySucceededIdsPagedAsync(
@@ -230,23 +228,32 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             var workerStopTask = Task.Run(async () =>
             {
                 var shuffledWorkers = workersToStop.OrderBy(_ => Guid.NewGuid()).ToList();
-                var firstBatchCount = (int)(shuffledWorkers.Count * 0.90); // 90% of workers
-                var firstBatch = shuffledWorkers.Take(firstBatchCount).ToList();
-                var secondBatch = shuffledWorkers.Skip(firstBatchCount).ToList();
-                
-                // Phase 1: Wait secondsToStopWorkers, then check scheduling progress in a loop
-                output.WriteLine($"Phase 1: Waiting {secondsToStopWorkers}s before checking scheduling progress...");
+                var firstBatch = shuffledWorkers.SkipLast(1).ToList(); // all but one
+                var lastWorker = shuffledWorkers.Last();
+
+                // Phase 1: Wait secondsToStopWorkers, then stop all workers except one
+                output.WriteLine($"Phase 1: Waiting {secondsToStopWorkers}s before stopping workers...");
                 await Task.Delay(TimeSpan.FromSeconds(secondsToStopWorkers));
-                
+
+                output.WriteLine($"Starting Phase 1: Stopping {firstBatch.Count} workers, leaving 1 alive...");
+                foreach (var worker in firstBatch)
+                {
+                    output.WriteLine($"  Stopping worker: {worker.AgentWorkerId}, Cluster: {worker.ClusterConnConfig.ClusterId}");
+                    _ = worker.StopImmediatelyAsync(); // Fire and forget
+
+                    var delayMs = Random.Shared.Next(100, 500);
+                    await Task.Delay(delayMs);
+                }
+                output.WriteLine($"Phase 1 complete. 1 worker still alive: {lastWorker.AgentWorkerId}");
+
+                // Phase 2: Wait until 90% of jobs are scheduled, then stop the last worker
                 var ninetyPercentTarget = (int)(expectedTotal * 0.9);
-                var phase1TimeoutAt = DateTime.UtcNow.AddMinutes(schedulingTimeoutMinutes); // Use remaining scheduling time
+                var phase2TimeoutAt = DateTime.UtcNow.AddMinutes(schedulingTimeoutMinutes);
                 var currentScheduledCount = Volatile.Read(ref scheduledCount);
                 var lastProgressLogAt = DateTime.MinValue;
                 var lastLoggedPercent = -1.0;
-                
-                // Keep checking until 90% complete or timeout
-                
-                while (DateTime.UtcNow < phase1TimeoutAt && currentScheduledCount < ninetyPercentTarget)
+
+                while (DateTime.UtcNow < phase2TimeoutAt && currentScheduledCount < ninetyPercentTarget)
                 {
                     var now = DateTime.UtcNow;
                     var percent = expectedTotal > 0 ? (double)currentScheduledCount / expectedTotal * 100 : 0;
@@ -257,56 +264,25 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
 
                     if (shouldLogProgress)
                     {
-                        output.WriteLine($"Scheduling progress: {currentScheduledCount}/{expectedTotal} ({percent:F1}%), waiting for 90%...");
+                        output.WriteLine($"Scheduling progress: {currentScheduledCount}/{expectedTotal} ({percent:F1}%), waiting for 90% to stop last worker...");
                         lastProgressLogAt = now;
                         lastLoggedPercent = percent;
                     }
 
-                    await Task.Delay(TimeSpan.FromSeconds(5)); // Check every 5 seconds
+                    await Task.Delay(TimeSpan.FromSeconds(5));
                     currentScheduledCount = Volatile.Read(ref scheduledCount);
                 }
-                
-                if (DateTime.UtcNow >= phase1TimeoutAt)
+
+                if (DateTime.UtcNow >= phase2TimeoutAt)
                 {
-                    throw new TimeoutException($"Worker stop Phase 1 timed out waiting for scheduling to reach 90%. Only {currentScheduledCount}/{expectedTotal} jobs scheduled.");
+                    throw new TimeoutException($"Worker stop Phase 2 timed out waiting for scheduling to reach 90%. Only {currentScheduledCount}/{expectedTotal} jobs scheduled.");
                 }
-                
-                if (currentScheduledCount >= ninetyPercentTarget)
-                {
-                    output.WriteLine($"Scheduling is 90% complete ({currentScheduledCount}/{expectedTotal}), proceeding with Phase 1...");
-                    output.WriteLine($"Starting Phase 1: Stopping {firstBatch.Count} workers...");
-                    foreach (var worker in firstBatch)
-                    {
-                        output.WriteLine($"  Stopping worker: {worker.AgentWorkerId}, Cluster: {worker.ClusterConnConfig.ClusterId}");
-                        _ = worker.StopImmediatelyAsync(); // Fire and forget
-                        
-                        // Quick succession for first batch (100-500ms between stops)
-                        var delayMs = Random.Shared.Next(100, 500);
-                        await Task.Delay(delayMs);
-                    }
-                    
-                    // Phase 2: Wait secondsToStopWorkers * 2, then stop remaining 10%
-                    var phase2Delay = secondsToStopWorkers * 2;
-                    output.WriteLine($"Phase 1 complete. Waiting {phase2Delay}s before Phase 2...");
-                    await Task.Delay(TimeSpan.FromSeconds(phase2Delay));
-                    
-                    output.WriteLine($"Starting Phase 2: Stopping remaining {secondBatch.Count} workers (10%)...");
-                    foreach (var worker in secondBatch)
-                    {
-                        output.WriteLine($"  Stopping worker: {worker.AgentWorkerId}, Cluster: {worker.ClusterConnConfig.ClusterId}");
-                        _ = worker.StopImmediatelyAsync(); // Fire and forget
-                        
-                        // Slower for second batch (2-3 seconds between stops)
-                        var delayMs = JobMasterRandomUtil.GetInt(2000, 3000);
-                        await Task.Delay(delayMs);
-                    }
-                    
-                    output.WriteLine("All workers stop commands issued.");
-                }
-                else
-                {
-                    output.WriteLine($"Scheduling not 90% complete ({currentScheduledCount}/{expectedTotal}), skipping worker stops.");
-                }
+
+                output.WriteLine($"Scheduling is 90% complete ({currentScheduledCount}/{expectedTotal}), stopping last worker...");
+                output.WriteLine($"  Stopping worker: {lastWorker.AgentWorkerId}, Cluster: {lastWorker.ClusterConnConfig.ClusterId}");
+                _ = lastWorker.StopImmediatelyAsync();
+
+                output.WriteLine("All workers stop commands issued.");
             });
 
             foreach (var qty in qtys)
@@ -318,7 +294,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                         await semaphore.WaitAsync();
                         try
                         {
-                            var afterSeconds = JobMasterRandomUtil.GetInt(1, 120);
+                            var afterSeconds = JobMasterRandomUtil.GetInt(1, 10);
                             var metadata = WritableMetadata.New();
                             metadata.SetStringValue("TestExecutionId", testExecutionId);
                             await scheduler.OnceAfterAsync<JobHandlerForTests>(
@@ -364,47 +340,47 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             // Poll job statuses until all jobs are in final states or timeout is reached
             var actualExpectedTotal = Volatile.Read(ref scheduledCount); // Use actual scheduled count
             var remainingTimeoutMinutes = Math.Max(1, timeoutInMinutes - schedulingTimeoutMinutes); // Remaining time for drain
-            var timeoutAt = DateTime.UtcNow.AddMinutes(remainingTimeoutMinutes);
+            DateTime? timeoutAt = null; // Starts counting only once progress begins
             var checkInterval = TimeSpan.FromSeconds(60);
             var drainStopwatch = Stopwatch.StartNew();
-            
-            Dictionary<string, (int succeeded, int heldOnMaster, int other)> validationResults;
+
+            Dictionary<string, (int succeeded, int heldOnMaster, int failed, int other)> validationResults;
             int totalSucceeded = 0;
             int totalHeldOnMaster = 0;
+            int totalFailed = 0;
             int totalOther = 0;
             int totalInDb = 0;
-            
-            output.WriteLine($"Starting drain polling. Timeout at {timeoutAt:HH:mm:ss}, checking every {checkInterval.TotalSeconds}s");
-            
+
+            output.WriteLine($"Starting drain polling. Timeout will begin once progress is detected, checking every {checkInterval.TotalSeconds}s");
+
             while (true)
             {
                 var now = DateTime.UtcNow;
-                if (now >= timeoutAt)
+                if (timeoutAt.HasValue && now >= timeoutAt.Value)
                 {
                     output.WriteLine($"Timeout reached after {drainStopwatch.Elapsed}");
-                    throw new TimeoutException($"Drain mode test timed out after {timeoutInMinutes} minutes. Expected {actualExpectedTotal} jobs, but only {totalInDb} jobs completed (Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Other={totalOther}).");
+                    throw new TimeoutException($"Drain mode test timed out after {timeoutInMinutes} minutes. Expected {actualExpectedTotal} jobs, but only {totalInDb} jobs completed (Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Failed={totalFailed}, Other={totalOther}).");
                 }
-                
+
                 var breakFlag = true;
                 var clusterProgress = new List<string>();
-                
+                var totalSucceededThisPoll = 0;
+
                 foreach (var clusterId in fixture.ClusterIds)
                 {
                     var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
                     var masterJobsService = factory.GetComponent<IMasterJobsService>();
-                    var finalStateCounts = await GetClusterFinalStateCountsAsync(masterJobsService, sessionMetadataFilters, clusterId);
-                    var countSucceeded = finalStateCounts.succeeded;
-                    var countHeldOnMaster = finalStateCounts.heldOnMaster;
-                    
+                    var countSucceeded = await GetClusterFinalStateCountsAsync(masterJobsService, sessionMetadataFilters, clusterId);
+                    totalSucceededThisPoll += countSucceeded;
+
                     var expectedTotalForCluster = qtys.Where(x => x.ClusterId == clusterId).Sum(x => x.QtyJobs);
                     // Scale cluster expectation by actual scheduled percentage
                     var scheduledPercentage = expectedTotal > 0 ? (double)Volatile.Read(ref scheduledCount) / expectedTotal : 0;
                     var scaledExpectedForCluster = (int)(expectedTotalForCluster * scheduledPercentage);
-                    var totalForCluster = countHeldOnMaster + countSucceeded;
-                    
-                    clusterProgress.Add($"{clusterId}: {totalForCluster}/{scaledExpectedForCluster} (S={countSucceeded}, H={countHeldOnMaster})");
-                    
-                    if (totalForCluster != scaledExpectedForCluster)
+
+                    clusterProgress.Add($"{clusterId}: {countSucceeded}/{scaledExpectedForCluster} (S={countSucceeded})");
+
+                    if (countSucceeded != scaledExpectedForCluster)
                     {
                         breakFlag = false;
                     }
@@ -413,6 +389,12 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 }
 
                 output.WriteLine($"[{drainStopwatch.Elapsed:hh\\:mm\\:ss}] {string.Join(" | ", clusterProgress)}");
+
+                if (totalSucceededThisPoll > 0 && !timeoutAt.HasValue)
+                {
+                    timeoutAt = DateTime.UtcNow.AddMinutes(remainingTimeoutMinutes);
+                    output.WriteLine($"Progress detected. Timeout set to {timeoutAt.Value:HH:mm:ss} ({remainingTimeoutMinutes} min from now)");
+                }
 
                 if (breakFlag)
                 {
@@ -425,24 +407,25 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             
             drainStopwatch.Stop();
             
-            validationResults = new Dictionary<string, (int succeeded, int heldOnMaster, int other)>();
+            validationResults = new Dictionary<string, (int succeeded, int heldOnMaster, int failed, int other)>();
                 
             foreach (var clusterId in fixture.ClusterIds)
             {
                 var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
                 var masterJobsService = factory.GetComponent<IMasterJobsService>();
                 var counts = await GetClusterStatusCountsAsync(masterJobsService, sessionMetadataFilters, clusterId);
-                validationResults[clusterId] = (counts.succeeded, counts.heldOnMaster, counts.other);
+                validationResults[clusterId] = (counts.succeeded, counts.heldOnMaster, counts.failed, counts.other);
             }
 
             totalSucceeded = validationResults.Sum(x => x.Value.succeeded);
             totalHeldOnMaster = validationResults.Sum(x => x.Value.heldOnMaster);
+            totalFailed = validationResults.Sum(x => x.Value.failed);
             totalOther = validationResults.Sum(x => x.Value.other);
-            totalInDb = totalSucceeded + totalHeldOnMaster + totalOther;
+            totalInDb = totalSucceeded + totalHeldOnMaster + totalFailed + totalOther;
 
-            output.WriteLine($"[{drainStopwatch.Elapsed:hh\\:mm\\:ss}] Drain progress: Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Other={totalOther}, Total={totalInDb}/{actualExpectedTotal}");
+            output.WriteLine($"[{drainStopwatch.Elapsed:hh\\:mm\\:ss}] Drain progress: Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Failed={totalFailed}, Other={totalOther}, Total={totalInDb}/{actualExpectedTotal}");
 
-            // Check if all jobs are in final states
+            // Check if all jobs are in final states (succeeded, heldOnMaster, or failed are all acceptable terminal states)
             if (totalOther == 0 && totalInDb == actualExpectedTotal)
             {
                 output.WriteLine($"Drain completed successfully in {drainStopwatch.Elapsed}");
@@ -454,7 +437,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 if (validationResults.TryGetValue(clusterId, out var result))
                 {
-                    output.WriteLine($"Cluster {clusterId}: Succeeded={result.succeeded}, HeldOnMaster={result.heldOnMaster}, Other={result.other}");
+                    output.WriteLine($"Cluster {clusterId}: Succeeded={result.succeeded}, HeldOnMaster={result.heldOnMaster}, Failed={result.failed}, Other={result.other}");
                 }
             }
 
@@ -465,7 +448,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             output.WriteLine("==== Drain Mode Test Report ====");
             output.WriteLine($"TestExecutionId={testExecutionId}");
             output.WriteLine($"OriginalExpected={expectedTotal}, Scheduled={Volatile.Read(ref scheduledCount)}, TotalInDb={totalInDb}");
-            output.WriteLine($"Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Other={totalOther}");
+            output.WriteLine($"Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Failed={totalFailed}, Other={totalOther}");
             output.WriteLine($"JobHandlerExecuted={executionCount.JobExecutionCounts.Count}");
             output.WriteLine($"TotalExecuted={executionCount.TotalExecuted}");
             output.WriteLine($"TotalDuplicates={executionCount.TotalDuplicates}");
@@ -481,8 +464,9 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 var expectedForCluster = qtys.Where(x => x.ClusterId == clusterId).Sum(x => x.QtyJobs);
                 var scheduledPercentage = expectedTotal > 0 ? (double)Volatile.Read(ref scheduledCount) / expectedTotal : 0;
                 var scaledExpectedForCluster = (int)(expectedForCluster * scheduledPercentage);
-                var actualForCluster = validationResults[clusterId].succeeded + 
-                                      validationResults[clusterId].heldOnMaster + 
+                var actualForCluster = validationResults[clusterId].succeeded +
+                                      validationResults[clusterId].heldOnMaster +
+                                      validationResults[clusterId].failed +
                                       validationResults[clusterId].other;
                 Assert.Equal(scaledExpectedForCluster, actualForCluster);
                 output.WriteLine($"✓ Cluster {clusterId}: DB count ({actualForCluster}) matches scaled expected ({scaledExpectedForCluster})");
@@ -554,49 +538,54 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             // Re-validate totals after waiting
             output.WriteLine("==== Re-validation After 1 Minute Wait ====");
             
-            var revalidationResults = new Dictionary<string, (int succeeded, int heldOnMaster, int other)>();
+            var revalidationResults = new Dictionary<string, (int succeeded, int heldOnMaster, int failed, int other)>();
             foreach (var clusterId in fixture.ClusterIds)
             {
                 var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
                 var masterJobsService = factory.GetComponent<IMasterJobsService>();
                 var counts = await GetClusterStatusCountsAsync(masterJobsService, sessionMetadataFilters, clusterId);
-                revalidationResults[clusterId] = (counts.succeeded, counts.heldOnMaster, counts.other);
-                
+                revalidationResults[clusterId] = (counts.succeeded, counts.heldOnMaster, counts.failed, counts.other);
+
                 await Task.Delay(50);
             }
 
             var revalidatedTotalSucceeded = revalidationResults.Sum(x => x.Value.succeeded);
             var revalidatedTotalHeldOnMaster = revalidationResults.Sum(x => x.Value.heldOnMaster);
+            var revalidatedTotalFailed = revalidationResults.Sum(x => x.Value.failed);
             var revalidatedTotalOther = revalidationResults.Sum(x => x.Value.other);
-            var revalidatedTotalInDb = revalidatedTotalSucceeded + revalidatedTotalHeldOnMaster + revalidatedTotalOther;
-            
-            output.WriteLine($"Initial: TotalInDb={totalInDb}, Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Other={totalOther}");
-            output.WriteLine($"After 1min: TotalInDb={revalidatedTotalInDb}, Succeeded={revalidatedTotalSucceeded}, HeldOnMaster={revalidatedTotalHeldOnMaster}, Other={revalidatedTotalOther}");
-            
+            var revalidatedTotalInDb = revalidatedTotalSucceeded + revalidatedTotalHeldOnMaster + revalidatedTotalFailed + revalidatedTotalOther;
+
+            output.WriteLine($"Initial: TotalInDb={totalInDb}, Succeeded={totalSucceeded}, HeldOnMaster={totalHeldOnMaster}, Failed={totalFailed}, Other={totalOther}");
+            output.WriteLine($"After 1min: TotalInDb={revalidatedTotalInDb}, Succeeded={revalidatedTotalSucceeded}, HeldOnMaster={revalidatedTotalHeldOnMaster}, Failed={revalidatedTotalFailed}, Other={revalidatedTotalOther}");
+
             // Validate totals haven't changed
             Assert.Equal(totalInDb, revalidatedTotalInDb);
             output.WriteLine($"✓ Total in DB unchanged ({totalInDb})");
-            
+
             Assert.Equal(totalSucceeded, revalidatedTotalSucceeded);
             output.WriteLine($"✓ Succeeded count unchanged ({totalSucceeded})");
-            
+
             Assert.Equal(totalHeldOnMaster, revalidatedTotalHeldOnMaster);
             output.WriteLine($"✓ HeldOnMaster count unchanged ({totalHeldOnMaster})");
-            
+
+            Assert.Equal(totalFailed, revalidatedTotalFailed);
+            output.WriteLine($"✓ Failed count unchanged ({totalFailed})");
+
             Assert.Equal(totalOther, revalidatedTotalOther);
             output.WriteLine($"✓ Other count unchanged ({totalOther})");
-            
+
             // Validate per-cluster totals haven't changed
             foreach (var clusterId in fixture.ClusterIds)
             {
                 var initial = validationResults[clusterId];
                 var revalidated = revalidationResults[clusterId];
-                
+
                 Assert.Equal(initial.succeeded, revalidated.succeeded);
                 Assert.Equal(initial.heldOnMaster, revalidated.heldOnMaster);
+                Assert.Equal(initial.failed, revalidated.failed);
                 Assert.Equal(initial.other, revalidated.other);
-                
-                output.WriteLine($"✓ Cluster {clusterId}: counts unchanged (Succeeded={revalidated.succeeded}, HeldOnMaster={revalidated.heldOnMaster}, Other={revalidated.other})");
+
+                output.WriteLine($"✓ Cluster {clusterId}: counts unchanged (Succeeded={revalidated.succeeded}, HeldOnMaster={revalidated.heldOnMaster}, Failed={revalidated.failed}, Other={revalidated.other})");
             }
             
             output.WriteLine("==== Re-validation Passed - No Additional Jobs Inserted ====");

@@ -2,7 +2,7 @@ namespace JobMaster.Sdk.Abstractions;
 
 internal class OperationLimiter
 {
-    private const int AcquireTimeoutMs = 1500;
+    private const int AcquireTimeoutMs = 10000;
 
     public int? Capacity { get; }
     private readonly SemaphoreSlim? semaphore;

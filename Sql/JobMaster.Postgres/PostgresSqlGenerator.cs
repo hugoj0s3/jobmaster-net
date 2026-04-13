@@ -64,6 +64,8 @@ internal class PostgresSqlGenerator : SqlGenerator
         return PostgresRepositoryConstants.CaseInsensitiveCollation;
     }
 
+    public override string GetDbBool(bool value) => value ? "true" : "false";
+
     public override string RepositoryTypeId => PostgresRepositoryConstants.RepositoryTypeId;
     protected override IDictionary<Type, string> TypeToSqlTypeMap => new Dictionary<Type, string>
     {

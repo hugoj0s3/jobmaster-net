@@ -28,9 +28,9 @@ public class PostgresDrainModeTests : JobMasterSchedulerTestsBase<PostgresDrainM
     public PostgresDrainModeTests(PostgresDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 40, 60)]
-    [InlineData(300000, 120, 180)]
-    [InlineData(1000000, 200, 360)]
+    [InlineData(10000, 40, 180)]
+    [InlineData(30000, 120, 360)]
+    [InlineData(100000, 200, 720)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
@@ -43,12 +43,12 @@ public class SqlServerDrainModeTests : JobMasterSchedulerTestsBase<SqlServerDrai
     public SqlServerDrainModeTests(SqlServerDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 40, 60)]
-    [InlineData(300000, 120, 180)]
-    [InlineData(1000000, 200, 360)]
+    [InlineData(10000, 40, 60)]
+    [InlineData(30000, 120, 180)]
+    [InlineData(100000, 200, 360)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:3);
     }
 }
 

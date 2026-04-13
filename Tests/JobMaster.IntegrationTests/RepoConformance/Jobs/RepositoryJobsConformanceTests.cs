@@ -283,60 +283,6 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Query_ShouldSupport_IsLocked_Filter_True_And_False()
-    {
-        var def = "defLocked-" + Guid.NewGuid();
-        var now = DateTime.UtcNow;
-
-        var locked = NewJob(jobDefinitionId: def);
-        locked.PartitionLockId = 1;
-        locked.PartitionLockExpiresAt = now.AddMinutes(30);
-
-        var unlocked = NewJob(jobDefinitionId: def);
-        unlocked.PartitionLockId = null;
-        unlocked.PartitionLockExpiresAt = null;
-
-        var expired = NewJob(jobDefinitionId: def);
-        expired.PartitionLockId = 2;
-        expired.PartitionLockExpiresAt = now.AddMinutes(-30);
-
-        await Fixture.MasterJobs.AddAsync(locked);
-        await Fixture.MasterJobs.AddAsync(unlocked);
-        await Fixture.MasterJobs.AddAsync(expired);
-
-        var cLocked = new JobQueryCriteria { JobDefinitionId = def, IsLocked = true, CountLimit = 100 };
-        var lockedResult = await Fixture.MasterJobs.QueryAsync(cLocked);
-        Assert.Contains(lockedResult, j => j.Id == locked.Id);
-        Assert.DoesNotContain(lockedResult, j => j.Id == unlocked.Id);
-        Assert.DoesNotContain(lockedResult, j => j.Id == expired.Id);
-
-        var cUnlocked = new JobQueryCriteria { JobDefinitionId = def, IsLocked = false, CountLimit = 100 };
-        var unlockedResult = await Fixture.MasterJobs.QueryAsync(cUnlocked);
-        Assert.Contains(unlockedResult, j => j.Id == unlocked.Id);
-        Assert.Contains(unlockedResult, j => j.Id == expired.Id);
-        Assert.DoesNotContain(unlockedResult, j => j.Id == locked.Id);
-    }
-
-    [Fact]
-    public async Task Query_ShouldSupport_PartitionLockId_Filter()
-    {
-        var def = "defLockId-" + Guid.NewGuid();
-        var a = NewJob(jobDefinitionId: def);
-        a.PartitionLockId = 10;
-        var b = NewJob(jobDefinitionId: def);
-        b.PartitionLockId = 11;
-
-        await Fixture.MasterJobs.AddAsync(a);
-        await Fixture.MasterJobs.AddAsync(b);
-
-        var c = new JobQueryCriteria { JobDefinitionId = def, PartitionLockId = 11, CountLimit = 100 };
-        var queried = await Fixture.MasterJobs.QueryAsync(c);
-
-        Assert.Contains(queried, j => j.Id == b.Id);
-        Assert.DoesNotContain(queried, j => j.Id == a.Id);
-    }
-
-    [Fact]
     public async Task Query_ShouldSupport_WorkerLane_Filter()
     {
         var def = "defLane-" + Guid.NewGuid();

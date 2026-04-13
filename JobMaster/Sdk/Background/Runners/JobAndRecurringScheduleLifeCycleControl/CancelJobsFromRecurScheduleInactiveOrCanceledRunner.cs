@@ -126,7 +126,6 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             },
             // Only cancel jobs scheduled 5 minutes later. the job on fly will be cancelled by the JobExecutionEngine.
             NextPlanExecutionAtFrom = DateTime.UtcNow.AddMinutes(5),
-            IsLocked = false,
             Offset = 0,
             SortBy = new SortByCriteria()
             {

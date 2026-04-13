@@ -382,7 +382,7 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{createdAtCol} {createdAtType}");
         columns.Add($"{expiresAtCol} {expiresAtType}");
         columns.Add($"{entryIdGuidCol} {entryIdGuidType}");
-        columns.Add($"{isReadyCol} {isReadyType} DEFAULT 0");
+        columns.Add($"{isReadyCol} {isReadyType} DEFAULT {sqlGenerator.GetDbBool(false)}");
        
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)} );";
         

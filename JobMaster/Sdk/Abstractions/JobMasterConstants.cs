@@ -52,6 +52,8 @@ internal static class JobMasterConstants
     /// </summary>
     public static readonly TimeSpan MinDelayWhenOnboardingBusy = TimeSpan.FromSeconds(15);
 
+    public static readonly TimeSpan NoBucketFallbackThreshold = TimeSpan.FromMinutes(2.5);
+
     public static DateTime NowUtcWithSkewTolerance()
     {
         return DateTime.UtcNow.Add(-ClockSkewPadding);

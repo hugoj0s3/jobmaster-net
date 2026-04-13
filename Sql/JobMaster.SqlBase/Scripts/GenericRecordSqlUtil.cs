@@ -73,7 +73,7 @@ internal class GenericRecordSqlUtil
         if (criteria.ExpiresAtTo.HasValue)
             where.Add($"{cExpiresAt} <= @ExpiresAtTo");
         
-        where.Add($"{sql.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady)} = 1");
+        where.Add($"{sql.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady)} = {sql.GetDbBool(true)}");
     }
     
     public (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
@@ -86,7 +86,7 @@ internal class GenericRecordSqlUtil
         var sql = $@"
 {baseSelectSql}
 where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
-  and {t}.{cIsReady} = 1
+  and {t}.{cIsReady} = {this.sql.GetDbBool(true)}
 ";
         if (!includeExpired)
         {
@@ -557,7 +557,7 @@ WHERE {cRecordId} = @RecordUniqueId;");
             {"SubjectId", entry.SubjectId},
             {"CreatedAt", entry.CreatedAt},
             {"ExpiresAt", entry.ExpiresAt},
-            {"IsReady", entry.IsReady ? 1 : 0}
+            {"IsReady", entry.IsReady}
         };
 
         var sb = new StringBuilder($"INSERT INTO {t} ({cols}) ");
@@ -669,7 +669,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         var t = EntryTable(groupId);
         var cRecordId = Col(x => x.RecordUniqueId);
         var cIsReady = ColSqlEntry(x => x.IsReady);
-        return $"UPDATE {t} SET {cIsReady} = 1 WHERE {cRecordId} = @RecordUniqueId;";
+        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {cRecordId} = @RecordUniqueId;";
     }
 
     public string BuildSetReadyMultipleSql(string groupId, string idsParamName = "@RecordUniqueIds")
@@ -678,7 +678,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         var cRecordId = Col(x => x.RecordUniqueId);
         var cIsReady = ColSqlEntry(x => x.IsReady);
         var inClause = sql.InClauseFor(cRecordId, idsParamName);
-        return $"UPDATE {t} SET {cIsReady} = 1 WHERE {inClause};";
+        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {inClause};";
     }
     
     public IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)

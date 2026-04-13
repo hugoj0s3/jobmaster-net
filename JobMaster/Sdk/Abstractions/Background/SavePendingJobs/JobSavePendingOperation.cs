@@ -49,9 +49,13 @@ internal class JobSavePendingOperation
         }
         catch
         {
+            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
             try
             {
+                var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+                job.AssignToBucket(bucket!);
                 await agentJobsDispatcherService.AddSavePendingJobAsync(job);
+                return SaveDrainResultCode.Failed;
             }
             catch (Exception e)
             {
@@ -59,8 +63,6 @@ internal class JobSavePendingOperation
                 return SaveDrainResultCode.Failed;
             }
         }
-
-        return SaveDrainResultCode.Failed;
     }
     
     public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainAsync(JobRawModel job)
@@ -105,6 +107,7 @@ internal class JobSavePendingOperation
     
     public async Task<AddSavePendingResult> AddSavePendingJobAsync(JobRawModel jobRaw, DateTime cutOffDate)
     {
+        
         // Insert-first flow to avoid extra read; duplicate key maps to AlreadyExists
         if (jobRaw.GetSafeNextPlanExecutionAt() > cutOffDate)
         {
@@ -129,6 +132,14 @@ internal class JobSavePendingOperation
 
         var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         var engine = backgroundAgentWorker.GetEngine(bucketId);
+        
+        logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
+                     $"IsOnBoarding={jobRaw.IsOnBoarding()} " +
+                     $"EngineAvailable={engine is not null} " +
+                     $"BucketStatus={currentBucket?.Status} " +
+                     $"OnBoardingAvailability={engine?.OnBoardingControl.CountAvailability()} " +
+                     $"NextPlanAt={jobRaw.NextPlanExecutionAt:O} " +
+                     $"CutOffDate={cutOffDate:O}");
         
         // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
         if (engine is not null && 
