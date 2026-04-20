@@ -64,7 +64,7 @@ internal class JobRawModel : JobMasterBaseModel
     public DateTime CreatedAt { get; internal set; } = DateTime.UtcNow;
     
     [JsonInclude]
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
     
     [JsonInclude]
     public DateTime? PartitionLockExpiresAt { get; internal set; }
@@ -226,6 +226,12 @@ internal class JobRawModel : JobMasterBaseModel
     {
         var baseDate = ScheduledAt > DateTime.UtcNow ? ScheduledAt : DateTime.UtcNow;
         NextPlanExecutionAt = baseDate.Add(delay);
+    }
+
+    public void AdvanceNextExecutionPlan(TimeSpan advance)
+    {
+        var advanced = GetSafeNextPlanExecutionAt() - advance;
+        NextPlanExecutionAt = advanced > ScheduledAt ? advanced : ScheduledAt;
     }
     
     public bool TryRetry()

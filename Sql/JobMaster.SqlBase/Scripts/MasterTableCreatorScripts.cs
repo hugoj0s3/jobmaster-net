@@ -257,7 +257,7 @@ internal static class MasterTableCreatorScripts
         var sourceIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockId);
-        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
+        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockExpiresAt);
         var partitionLockExpiresAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);

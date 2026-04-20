@@ -38,7 +38,7 @@ internal class JobPersistenceRecord
     public DateTime CreatedAt { get; set; }
     public Guid? SourceId { get; set; }
 
-    public int? PartitionLockId { get; set; }
+    public Guid? PartitionLockId { get; set; }
     public DateTime? PartitionLockExpiresAt { get; set; }
 
     public DateTime? ProcessDeadline { get; set; }

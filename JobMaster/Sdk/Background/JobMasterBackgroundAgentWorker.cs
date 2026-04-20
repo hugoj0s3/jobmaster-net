@@ -340,7 +340,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             await saveJobsRunner.StartAsync();
         
             var jobsExecutionRunner = this.BucketRunnersFactory.NewJobsExecutionRunner(this, AgentConnectionId);
-            jobsExecutionRunner.DefineBucketId(bucketModel.Id, bucketModel.Priority);
+            jobsExecutionRunner.DefineBucketId(bucketModel.Id, bucketModel.BucketType, bucketModel.Priority);
             await jobsExecutionRunner.StartAsync();
         
             var saveRecurringScheduleRunner = this.BucketRunnersFactory.NewSaveRecurringSchedulerRunner(this, AgentConnectionId);

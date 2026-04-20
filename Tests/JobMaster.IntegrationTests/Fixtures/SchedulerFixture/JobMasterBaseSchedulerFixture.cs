@@ -272,17 +272,23 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
 
                     if (IsDrainingModeTest)
                     {
-                        var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        drainModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Drain)
-                            .TransferBatchSize(1000)
-                            .SkipWarmUpTime();
+                        for (int i = 0; i < 3; i++)
+                        {
+                            var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            drainModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Drain)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                         
-                        var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        coordinatorModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Coordinator)
-                            .TransferBatchSize(1000)
-                            .SkipWarmUpTime();
+                        for (int i = 0; i < 5; i++)
+                        {
+                            var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            coordinatorModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Coordinator)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                     }
                 }
 

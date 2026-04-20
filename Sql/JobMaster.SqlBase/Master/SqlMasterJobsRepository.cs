@@ -210,8 +210,8 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         
         var (whereSql, args) = BuildWhere(queryCriteria);
         args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
-        
-        var sqlText = BuildQueryIdsSql(queryCriteria, whereSql);
+        var sqlText = 
+            BuildQueryIdsSql(whereSql, true, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
 
         return conn.Query<Guid>(sqlText, args).ToList();
     }
@@ -227,7 +227,8 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         
         var (whereSql, args) = BuildWhere(queryCriteria);
         args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
-        var sqlText = BuildQueryIdsSql(queryCriteria, whereSql);
+        var sqlText = 
+            BuildQueryIdsSql(whereSql, true, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
         
         return (await conn.QueryAsync<Guid>(sqlText, args)).ToList();
     }
@@ -353,56 +354,47 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
         }
     }
 
-    public virtual async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId,
+    public virtual async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId,
         DateTime expiresAtUtc)
     {
-        if (partitionLockId <= 0) throw new ArgumentException("partitionLockId must be > 0", nameof(partitionLockId));
+        if (partitionLockId == Guid.Empty) throw new ArgumentException("partitionLockId must be a valid GUID", nameof(partitionLockId));
         if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
 
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
         var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
         
         var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-        using var conn1 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
-        var jobIds = await QueryIdsToLockAsync(queryCriteria, unlockedGuard, nowUtcWithSkew, conn1);
-        if (jobIds.Count == 0)
-        {
-            return new List<JobRawModel>();
-        }
-        
-        using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
-        using var trans = conn2.BeginTransaction(IsolationLevel.ReadCommitted);
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
             var t = TableName();
-            var inIds = sql.InClauseFor(Col(x => x.Id), "@JobIds");
-
+            var (whereSql, args) = BuildWhere(queryCriteria);
+            var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
+            var queryIdsSql = 
+                BuildQueryIdsSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
             var updateSql = $@"
-UPDATE {t}
+UPDATE {t} {UpdateToLockTableHint}
 SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
     {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
     {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE {Col(x => x.ClusterId)} = @ClusterId
-  AND {inIds}
+where {Col(x => x.Id)} in ({queryIdsSql})
   AND {unlockedGuard}
   ;";
+            var args2 = new Dictionary<string, object?>(args);
+            args2.Add("LockNowUtc", nowUtcWithSkew);
+            args2.Add("LockExpiresAt", expiresAtUtcKind);
+            args2.Add("PartitionLockId", partitionLockId);
 
-            await conn2.ExecuteAsync(updateSql, new
-            {
-                PartitionLockId = partitionLockId,
-                LockExpiresAt = expiresAtUtcKind,
-                LockNowUtc = nowUtcWithSkew,
-                ClusterId = ClusterConnConfig.ClusterId,
-                JobIds = jobIds
-            }, trans);
+            var rowsAffected = await conn.ExecuteAsync(updateSql, args2, trans);
 
             trans.Commit();
             
-            using var conn3 = await connManager.OpenAsync(
-                this.connString, 
-                additionalConnConfig,
-                ReadIsolationLevel.Consistent);
-            return await QueryLockedJobsAsync(jobIds, partitionLockId, conn3);
+            if (rowsAffected == 0) return new List<JobRawModel>();
+
+            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+            return await QueryLockedJobsAsync(partitionLockId, nowUtcWithSkew, conn2);
         }
         catch
         {
@@ -412,64 +404,43 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
     }
 
     private async Task<IList<JobRawModel>> QueryLockedJobsAsync(
-        IList<Guid> jobIds, 
-        int partitionLockId, 
+        Guid partitionLockId,
+        DateTime nowUtcWithSkew,
         IDbConnection cnn2)
     {
-        var lockCriteria = new JobQueryCriteria
+        var selectCols = SelectProjection();
+        var t = TableName();
+        var cClusterId = Col(x => x.ClusterId);
+        var cPartitionLockId = Col(x => x.PartitionLockId);
+        var cPartitionLockExpiresAt = Col(x => x.PartitionLockExpiresAt);
+
+        var sqlText = $@"
+SELECT {selectCols} 
+FROM {t} j
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e 
+    ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} 
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v 
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+WHERE j.{cClusterId} = @ClusterId
+  AND j.{cPartitionLockId} = @PartitionLockId 
+  AND j.{cPartitionLockExpiresAt} > @NowUtcWithSkew";
+
+        var args = new Dictionary<string, object?>
         {
-            JobIds = jobIds,
-            ReadIsolationLevel = ReadIsolationLevel.Consistent,
+            { "GroupId", MasterGenericRecordGroupIds.JobMetadata },
+            { "ClusterId", ClusterConnConfig.ClusterId },
+            { "PartitionLockId", partitionLockId },
+            { "NowUtcWithSkew", nowUtcWithSkew }
         };
-        
-        var (sqlText, args) = BuildQuerySql(lockCriteria, partitionLockId, true);
+
         var linearRows = (await cnn2.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
         return rows.Select(JobRawModel.RecoverFromDb).ToList();
     }
-
-    protected virtual async Task<IList<Guid>> QueryIdsToLockAsync(
-        JobQueryCriteria queryCriteria, 
-        string unlockedGuardSql, 
-        DateTime nowUtcWithSkew,
-        IDbConnection conn)
-    {
-        if (queryCriteria.CountLimit < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.CountLimit), queryCriteria.CountLimit, "CountLimit must be >= 0");
-        if (queryCriteria.Offset < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.Offset), queryCriteria.Offset, "Offset must be >= 0");
-        
-        var (whereSql, args) = BuildWhere(queryCriteria);
-        args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
-        args.Add("LockNowUtc", nowUtcWithSkew);
-        
-        var sqlText = BuildQueryIdsToLockSql(queryCriteria, whereSql, unlockedGuardSql);
-        
-        return (await conn.QueryAsync<Guid>(sqlText, args)).ToList();
-    }
     
-    protected virtual string BuildQueryIdsToLockSql(JobQueryCriteria queryCriteria, string whereSql, string unlockedGuardSql)
-    {
-        var sb = new StringBuilder();
-        var sqlText = $@"
-SELECT {Col(x => x.Id)} 
-FROM {TableName()} j 
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-{whereSql} and
-{unlockedGuardSql}
-";
-        sb.Append(sqlText);
-        sb.Append('\n');
-
-        // ORDER BY must come before OFFSET/FETCH.
-        var defaultOrderByClause = $" ORDER BY j.{Col(x => x.NextPlanExecutionAt)} ASC";
-        var order = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
-        sb.Append(order);
-        sb.Append('\n');
-        sb.Append(sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset));
-        return sb.ToString();
-    }
-
+    protected virtual string UpdateToLockTableHint => string.Empty;
+    
     protected abstract bool IsDupeViolation(Guid jobId, Exception ex);
 
     // SQL builders
@@ -488,21 +459,37 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return (sqlText, args);
     }
     
-    private string BuildQueryIdsSql(JobQueryCriteria queryCriteria, string whereSql)
+    protected virtual string BuildQueryIdsSql( 
+        string whereSql, 
+        bool needsMetadataJoin,
+        int countLimit,
+        int offset,
+        SortByCriteria? sortByCriteria
+        )
     {
+        var metadataJoin = string.Empty;
+        if (needsMetadataJoin)
+        {
+            metadataJoin =
+                @$"
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON 
+    e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and 
+    e.{Col(x => x.GroupId)} = @GroupId ";
+        }
+            
         var sb = new StringBuilder();
         var sqlText = $@"
 SELECT {Col(x => x.Id)} 
-FROM {TableName()} j 
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+FROM {TableName()} j
+{metadataJoin}
 {whereSql}";
         sb.Append(sqlText);
-        var sortBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", $" ORDER BY j.{Col(x => x.NextPlanExecutionAt)} ASC");
+        var sortBy = SqlOrderByUtil.BuildOrderByClause(sortByCriteria, "j", $" ORDER BY j.{Col(x => x.NextPlanExecutionAt)} ASC");
         
         sb.Append(sortBy);
         
         sb.Append('\n');
-        sb.Append(sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset));
+        sb.Append(sql.OffsetQueryFor(countLimit, offset));
         return sb.ToString();
     }
 

@@ -222,7 +222,7 @@ internal class JobSavePendingOperation
         {
             logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
             
-            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(jobRaw);
+            var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
             
             return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: selectedBucket.Id, publishedMessageId: publishedMessageId);
         }

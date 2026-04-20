@@ -339,7 +339,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
 
             // Poll job statuses until all jobs are in final states or timeout is reached
             var actualExpectedTotal = Volatile.Read(ref scheduledCount); // Use actual scheduled count
-            var remainingTimeoutMinutes = Math.Max(1, timeoutInMinutes - schedulingTimeoutMinutes); // Remaining time for drain
+            var remainingTimeoutMinutes = Math.Max(1, timeoutInMinutes - (int)Math.Ceiling(schedulingStopwatch.Elapsed.TotalMinutes)); // Remaining time for drain
             DateTime? timeoutAt = null; // Starts counting only once progress begins
             var checkInterval = TimeSpan.FromSeconds(60);
             var drainStopwatch = Stopwatch.StartNew();

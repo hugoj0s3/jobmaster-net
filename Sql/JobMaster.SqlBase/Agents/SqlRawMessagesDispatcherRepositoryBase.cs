@@ -209,7 +209,7 @@ WHERE {colBucket} = @Bucket";
         }
     }
     
-    public virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    public virtual async Task<IList<JobMasterRawMessage>> DispatchMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {
         const int maxAttempts = 3;
         const int retryDelayMs = 100;

@@ -18,7 +18,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository = null!;
     private JobMasterLockKeys jobMasterLockKeys = null!;
-    private readonly OperationLimiter operationLimiter;
+    private readonly OperationThrottler operationThrottler;
 
     public MasterRecurringSchedulesService(
         IMasterDistributedLockerService masterDistributedLockerService,
@@ -31,22 +31,22 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         this.masterRecurringSchedulesRepository = masterRecurringSchedulesRepository;
 
         jobMasterLockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
-        operationLimiter = runtime.GetOperationLimiterForCluster(clusterConnConfig.ClusterId);
+        operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnConfig.ClusterId);
     }
 
     public Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
     {
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
     }
 
     public void Upsert(RecurringScheduleRawModel scheduleRaw)
     {
-        operationLimiter.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
+        operationThrottler.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
     }
 
     public void UpsertStatic(StaticRecurringScheduleDefinition definition)
     {
-        operationLimiter.Exec(() =>
+        operationThrottler.Exec(() =>
         {
             var rawModel = masterRecurringSchedulesRepository.GetByStaticId(definition.Id);
             if (rawModel == null)
@@ -81,7 +81,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
 
     public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria)
     {
-        return operationLimiter.Exec(() => masterRecurringSchedulesRepository.Query(queryCriteria));
+        return operationThrottler.Exec(() => masterRecurringSchedulesRepository.Query(queryCriteria));
     }
 
     public void BulkUpdateStaticDefinitionLastEnsured(IList<string> staticDefinitionIds, DateTime ensuredAt)
@@ -91,23 +91,23 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
             return;
         }
         
-        operationLimiter.Exec(() => { masterRecurringSchedulesRepository.BulkUpdateStaticDefinitionLastEnsuredByStaticIds(staticDefinitionIds, ensuredAt); return true; });
+        operationThrottler.Exec(() => { masterRecurringSchedulesRepository.BulkUpdateStaticDefinitionLastEnsuredByStaticIds(staticDefinitionIds, ensuredAt); return true; });
     }
 
     public Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria)
     {
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.QueryAsync(queryCriteria));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.QueryAsync(queryCriteria));
     }
 
     public async Task<IList<Guid>> QueryIdsAsync(RecurringScheduleQueryCriteria queryCriteria)
     {
-        var rows = await operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.QueryAsync(queryCriteria));
+        var rows = await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.QueryAsync(queryCriteria));
         return rows.Select(x => x.Id).ToList();
     }
 
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
     {
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
     }
 
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, int partitionLockId, DateTime expiresAtUtc)
@@ -119,26 +119,26 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
             IsLocked = false,
             CountLimit = ids.Count,
         };
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc));
     }
 
     public Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
     {
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.InactivateStaticDefinitionsOlderThanAsync(cutoff));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.InactivateStaticDefinitionsOlderThanAsync(cutoff));
     }
 
     public long Count(RecurringScheduleQueryCriteria queryCriteria)
     {
-        return operationLimiter.Exec(() => masterRecurringSchedulesRepository.Count(queryCriteria));
+        return operationThrottler.Exec(() => masterRecurringSchedulesRepository.Count(queryCriteria));
     }
 
     public RecurringScheduleRawModel? Get(Guid recurringScheduleId)
     {
-        return operationLimiter.Exec(() => masterRecurringSchedulesRepository.Get(recurringScheduleId));
+        return operationThrottler.Exec(() => masterRecurringSchedulesRepository.Get(recurringScheduleId));
     }
 
     public Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId)
     {
-        return operationLimiter.ExecAsync(() => masterRecurringSchedulesRepository.GetAsync(recurringScheduleId));
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.GetAsync(recurringScheduleId));
     }
 }

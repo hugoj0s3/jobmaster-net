@@ -7,6 +7,6 @@ namespace JobMaster.Sdk.Abstractions.Background.Runners;
 /// </summary>
 internal interface IJobsExecutionRunner : IBucketAwareRunner
 {
-    void DefineBucketId(string bucketId, JobMasterPriority priority);
+    void DefineBucketId(string bucketId, BucketType bucketType, JobMasterPriority priority);
     JobMasterPriority Priority { get; }
 }

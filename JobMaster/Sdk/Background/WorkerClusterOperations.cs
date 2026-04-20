@@ -94,7 +94,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
             }
             
-            await agentJobsDispatcherService.AddToProcessingAsync(jobRaw);
+            await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
         }
         catch (Exception ex)
         {
@@ -197,7 +197,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
        
        await MarkBucketAsLostAsync(bucket);
     }
-    
+
+    public async Task MarkBucketAsReadyToDeleteAsync(string bucketId)
+    {
+        var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket is null)
+        {
+            return;
+        }
+       
+        bucket.ReadyToDelete();
+        await masterBucketsService.UpdateAsync(bucket);
+    }
+
     public void MarkBucketAsLost(BucketModel bucket)
     {
         var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.MarkBucketAsLostLock(bucket.Id), TimeSpan.FromSeconds(10));

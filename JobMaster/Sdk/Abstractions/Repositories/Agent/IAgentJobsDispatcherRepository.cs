@@ -7,20 +7,20 @@ namespace JobMaster.Sdk.Abstractions.Repositories.Agent;
 
 internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareComponent
 {
-    string PushToSaving(RecurringScheduleRawModel recurringScheduleRaw);
-    Task<string> PushToSavingAsync(RecurringScheduleRawModel recurringScheduleRaw);
+    string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw);
+    Task<string> PushForSavingAsync(RecurringScheduleRawModel recurringScheduleRaw);
     
     string PushSavePendingJob(JobRawModel jobRaw);
     Task<string> PushSavePendingJobAsync(JobRawModel jobRaw);
     
     Task<IList<string>> BulkPushSavePendingJobAsync(string bucketId, IList<JobRawModel> jobRaw);
     
-    string PushToProcessing(JobRawModel jobRaw);
-    Task<string> PushToProcessingAsync(JobRawModel jobRaw);
+    string PushForProcessing(JobRawModel jobRaw);
+    Task<string> PushForProcessingAsync(JobRawModel jobRaw);
     
-    Task<IList<JobRawModel>> DequeueToProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
+    Task<IList<JobRawModel>> DispatchForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
     
-    Task<IList<JobRawModel>> DequeueSavePendingJobsAsync(string bucketId, int numberOfJobs);
+    Task<IList<JobRawModel>> DispatchSavePendingJobsAsync(string bucketId, int numberOfJobs);
     
     Task<IList<RecurringScheduleRawModel>> DequeueSavePendingRecurAsync(string bucketId, int numberOfJobs);
     Task<bool> HasJobsAsync(string bucketId);

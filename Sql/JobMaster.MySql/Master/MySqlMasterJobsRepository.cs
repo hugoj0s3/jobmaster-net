@@ -24,88 +24,6 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
     public override string MasterRepoTypeId => MySqlRepositoryConstants.RepositoryTypeId;
 
-    public override async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria,
-        int partitionLockId, DateTime expiresAtUtc)
-    {
-        if (partitionLockId <= 0) throw new ArgumentException("partitionLockId must be > 0", nameof(partitionLockId));
-        if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
-
-        var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
-
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
-        using var tx = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
-        try
-        {
-            var (whereSql, whereArgs) = BuildWhere(queryCriteria);
-            var t = TableName();
-
-            var cId = Col(x => x.Id);
-            var cClusterId = Col(x => x.ClusterId);
-            var cNextPlanExecutionAt = Col(x => x.NextPlanExecutionAt);
-
-            var unlockedGuard =
-                $"(j.{Col(x => x.PartitionLockId)} IS NULL OR j.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var defaultOrderByClause = $" ORDER BY j.{cNextPlanExecutionAt} ASC";
-            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "j", defaultOrderByClause);
-
-            var limitClause = string.Empty;
-            if (queryCriteria.CountLimit > 0)
-            {
-                limitClause = "\n" + sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset);
-            }
-
-            var args = new Dictionary<string, object?>();
-            foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
-            args["ClusterId"] = ClusterConnConfig.ClusterId;
-            args["LockNowUtc"] = nowUtcWithSkew;
-            args["PartitionLockId"] = partitionLockId;
-            args["LockExpiresAt"] = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
-            args["GroupId"] = MasterGenericRecordGroupIds.JobMetadata;
-
-            // Step 1: atomically claim rows via UPDATE ... ORDER BY ... LIMIT
-            var updateSql = $@"
-UPDATE {t} j
-SET j.{Col(x => x.PartitionLockId)} = @PartitionLockId,
-    j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    j.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
-{whereSql} AND {unlockedGuard}
-{orderBy}
-{limitClause};";
-
-            var rowsAffected = await conn.ExecuteAsync(updateSql, args, tx);
-
-            if (rowsAffected == 0)
-            {
-                tx.Commit();
-                return new List<JobRawModel>();
-            }
-
-            // Step 2: fetch claimed rows with metadata
-            var selectCols = SelectProjection();
-            var fetchSql = $@"
-SELECT {selectCols}
-FROM {t} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-WHERE j.{cClusterId} = @ClusterId
-  AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
-  AND j.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
-{orderBy};";
-
-            var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(fetchSql, args, tx)).ToList();
-            var records = LinearListRecord(linearRows);
-            var result = records.Select(JobRawModel.RecoverFromDb).ToList();
-
-            tx.Commit();
-            return result;
-        }
-        catch
-        {
-            tx.SafeRollback();
-            throw;
-        }
-    }
-
     public override void Upsert(JobRawModel jobRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -217,6 +135,20 @@ WHERE j.{cClusterId} = @ClusterId
             throw;
         }
     }
+    
+    protected override string BuildQueryIdsSql(
+        string whereSql,
+        bool needsMetadataJoin,
+        int countLimit,
+        int offset,
+        SortByCriteria? sortByCriteria)
+    {
+        var baseSql = base.BuildQueryIdsSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
+    
+        // MySQL doesn't support LIMIT inside IN subqueries directly.
+        // Wrapping in a derived table is the standard workaround.
+        return $"SELECT {Col(x => x.Id)} FROM ({baseSql}) AS _candidates";
+    }
 
     private string BuildMetadataEntryUpsertSql()
     {
@@ -300,7 +232,7 @@ ON DUPLICATE KEY UPDATE
             ValueGuid = v.ValueGuid
         });
     }
-    
+
     protected override bool IsDupeViolation(Guid jobId, Exception ex)
     {
         if (ex is MySqlException mysqlEx)

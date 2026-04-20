@@ -112,7 +112,7 @@ internal class BucketModel : JobMasterBaseModel
             return false;
         }
         
-        if (Status != BucketStatus.Draining)
+        if (Status != BucketStatus.Draining && BucketType != BucketType.Fallback)
         {
             return false;
         }

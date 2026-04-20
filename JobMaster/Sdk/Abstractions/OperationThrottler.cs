@@ -1,16 +1,18 @@
 namespace JobMaster.Sdk.Abstractions;
 
-internal class OperationLimiter
+internal class OperationThrottler
 {
-    private const int AcquireTimeoutMs = 10000;
+    private const int DefaultAcquireTimeoutMs = 10000;
 
     public int? Capacity { get; }
     private readonly SemaphoreSlim? semaphore;
+    
+    public int AcquireTimeoutMs { get; }
 
-    public OperationLimiter(int? capacity)
+    public OperationThrottler(int? capacity, int acquireTimeoutMs = DefaultAcquireTimeoutMs)
     {
         Capacity = capacity;
-
+        AcquireTimeoutMs = acquireTimeoutMs;
         if (capacity.HasValue && capacity.Value > 0)
         {
             semaphore = new SemaphoreSlim(capacity.Value, capacity.Value);

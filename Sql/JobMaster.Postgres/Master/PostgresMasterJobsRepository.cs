@@ -125,7 +125,14 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
             throw;
         }
     }
-    
+
+    protected override string BuildQueryIdsSql(string whereSql, bool needsMetadataJoin, int countLimit, int offset,
+        SortByCriteria? sortByCriteria)
+    {
+        var baseSql = base.BuildQueryIdsSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
+        return baseSql + " FOR UPDATE SKIP LOCKED";
+    }
+
     protected override bool IsDupeViolation(Guid jobId, Exception ex)
     {
         return ex is PostgresException pgEx && pgEx.SqlState == "23505";

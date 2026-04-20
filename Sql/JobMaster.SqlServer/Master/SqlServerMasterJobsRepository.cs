@@ -126,6 +126,8 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
         }
     }
 
+    protected override string UpdateToLockTableHint => "WITH (UPDLOCK, READPAST)";
+
     private string BuildMetadataEntryUpsertSql()
     {
         var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata);

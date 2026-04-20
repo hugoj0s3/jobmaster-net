@@ -9,6 +9,7 @@ public interface IAgentWorkerSelector
     IAgentWorkerSelector WorkerLane(string workerLane);
     IAgentWorkerSelector TransferBatchSize(int batchSize);
     IAgentWorkerSelector BucketBufferSize(int bufferSize);
+    IAgentWorkerSelector BucketBufferLeadTime(TimeSpan bucketDuration);
     IAgentWorkerSelector BucketQtyConfig(JobMasterPriority priority, int qty);
     IAgentWorkerSelector SetWorkerMode(AgentWorkerMode mode);
     IAgentWorkerSelector SkipWarmUpTime();

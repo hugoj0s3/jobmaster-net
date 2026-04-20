@@ -108,7 +108,7 @@ public class AgentJobsDispatcherServiceTests
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
         repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
         repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
-        repo.Setup(x => x.PushToProcessingAsync(It.IsAny<JobRawModel>()))
+        repo.Setup(x => x.PushForProcessingAsync(It.IsAny<JobRawModel>()))
             .ReturnsAsync("job-id-2");
 
         var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
@@ -130,7 +130,7 @@ public class AgentJobsDispatcherServiceTests
 
         job.AssignToBucket(new BucketModel(clusterId) { Id = bucketId, AgentConnectionId = agentConnId, AgentWorkerId = workerId, HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId(clusterId, "testhost") });
 
-        await sut.AddToProcessingAsync(job);
+        await sut.AddForProcessingAsync(job);
 
         job.Status.Should().Be(JobMasterJobStatus.InBucket);
         job.BucketId.Should().Be(bucketId);
@@ -138,7 +138,7 @@ public class AgentJobsDispatcherServiceTests
         job.AgentConnectionId.Should().NotBeNull();
         job.AgentConnectionId!.IdValue.Should().Be(agentConnId.IdValue);
 
-        repo.Verify(x => x.PushToProcessingAsync(It.Is<JobRawModel>(j => j.Id == job.Id && j.BucketId == bucketId)), Times.Once);
+        repo.Verify(x => x.PushForProcessingAsync(It.Is<JobRawModel>(j => j.Id == job.Id && j.BucketId == bucketId)), Times.Once);
         factory.Verify(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue)), Times.Once);
     }
 

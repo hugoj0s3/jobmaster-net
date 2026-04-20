@@ -21,14 +21,14 @@ internal sealed class FakeRuntime : IJobMasterRuntime
     public Task StartAsync(IServiceProvider serviceProvider) => throw new NotSupportedException();
     public Task StopImmediatelyAsync() => Task.CompletedTask;
 
-    public OperationLimiter GetOperationLimiterForCluster(string clusterId)
+    public OperationThrottler GetOperationLimiterForCluster(string clusterId)
     {
-        return new OperationLimiter(null);
+        return new OperationThrottler(null);
     }
 
-    public OperationLimiter GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
+    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
     {
-        return new OperationLimiter(int.MaxValue);
+        return new OperationThrottler(int.MaxValue);
     }
 
     public int CountWorkersForCluster(string clusterId) => 1;

@@ -16,7 +16,7 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
     
-    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc);
     
     Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria);
     long Count(JobQueryCriteria queryCriteria);

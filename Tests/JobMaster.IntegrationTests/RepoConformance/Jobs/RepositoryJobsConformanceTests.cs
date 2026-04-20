@@ -36,7 +36,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.MaxNumberOfRetries = 7;
         job.Timeout = TimeSpan.FromSeconds(123);
         job.SourceId = Guid.NewGuid();
-        job.PartitionLockId = 42;
+        job.PartitionLockId = Guid.NewGuid();
         job.PartitionLockExpiresAt = now.AddMinutes(30);
         job.ProcessDeadline = now.AddMinutes(20);
         job.ProcessStartedAt = now.AddMinutes(-2);
@@ -74,7 +74,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.MaxNumberOfRetries = 9;
         updated.Timeout = TimeSpan.FromSeconds(77);
         updated.SourceId = Guid.NewGuid();
-        updated.PartitionLockId = 11;
+        updated.PartitionLockId = Guid.NewGuid();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(15);
         updated.ProcessDeadline = DateTime.UtcNow.AddMinutes(5);
         updated.ProcessStartedAt = DateTime.UtcNow.AddMinutes(-10);
@@ -650,7 +650,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(j2);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var lockId = 100;
+        var lockId = Guid.NewGuid();
         var expiresAt = now.AddMinutes(30);
 
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, lockId, expiresAt);
@@ -674,7 +674,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var now = DateTime.UtcNow;
 
         var locked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
-        locked.PartitionLockId = 50;
+        locked.PartitionLockId = Guid.NewGuid();
         locked.PartitionLockExpiresAt = now.AddMinutes(30);
 
         var unlocked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(2));
@@ -684,12 +684,13 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(locked);
         await Fixture.MasterJobs.AddAsync(unlocked);
 
+        var partitionLockId = Guid.NewGuid();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 200, now.AddMinutes(30));
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
         Assert.Equal(unlocked.Id, acquired[0].Id);
-        Assert.Equal(200, acquired[0].PartitionLockId);
+        Assert.Equal(partitionLockId, acquired[0].PartitionLockId);
     }
 
     [Fact]
@@ -697,19 +698,21 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     {
         var def = "defAcquireExpired-" + Guid.NewGuid();
         var now = DateTime.UtcNow;
+        var partitionLockIdExpired = Guid.NewGuid();
 
         var expiredLock = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
-        expiredLock.PartitionLockId = 50;
+        expiredLock.PartitionLockId = partitionLockIdExpired;
         expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
 
         await Fixture.MasterJobs.AddAsync(expiredLock);
-
+        
+        var partitionLockId = Guid.NewGuid();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 300, now.AddMinutes(30));
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
         Assert.Equal(expiredLock.Id, acquired[0].Id);
-        Assert.Equal(300, acquired[0].PartitionLockId);
+        Assert.Equal(partitionLockId, acquired[0].PartitionLockId);
     }
 
     [Fact]
@@ -724,11 +727,12 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(j2);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-
-        var first = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 400, now.AddMinutes(30));
+        var partitionLockId1 = Guid.NewGuid();
+        var first = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId1, now.AddMinutes(30));
         Assert.Equal(2, first.Count);
 
-        var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 401, now.AddMinutes(30));
+        var partitionLockId2 = Guid.NewGuid();
+        var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId2, now.AddMinutes(30));
         Assert.Empty(second);
     }
 
@@ -745,8 +749,9 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(match);
         await Fixture.MasterJobs.AddAsync(noMatch);
 
+        var partitionLockId = Guid.NewGuid();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 500, now.AddMinutes(30));
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
         Assert.Equal(match.Id, acquired[0].Id);
@@ -764,8 +769,9 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var beforeAcquire = await Fixture.MasterJobs.GetAsync(job.Id);
         var originalVersion = beforeAcquire!.Version;
 
+        var partitionLockId = Guid.NewGuid();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 600, now.AddMinutes(30));
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
         Assert.False(string.IsNullOrEmpty(acquired[0].Version));
@@ -777,6 +783,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     {
         var def = "defAcquireLimit-" + Guid.NewGuid();
         var now = DateTime.UtcNow;
+        var partitionLockId1 = Guid.NewGuid();
+        var partitionLockId2 = Guid.NewGuid();
 
         for (var i = 0; i < 5; i++)
         {
@@ -785,15 +793,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         }
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 2 };
-        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 700, now.AddMinutes(30));
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId1, now.AddMinutes(30));
 
         Assert.Equal(2, acquired.Count);
-        Assert.All(acquired, j => Assert.Equal(700, j.PartitionLockId));
+        Assert.All(acquired, j => Assert.Equal(partitionLockId1, j.PartitionLockId));
 
         // Remaining 3 should still be acquirable
-        var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, 701, now.AddMinutes(30));
+        var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId2, now.AddMinutes(30));
         Assert.Equal(2, second.Count);
-        Assert.All(second, j => Assert.Equal(701, j.PartitionLockId));
+        Assert.All(second, j => Assert.Equal(partitionLockId2, j.PartitionLockId));
 
         // Overlapping IDs should be empty
         var firstIds = acquired.Select(x => x.Id).ToHashSet();

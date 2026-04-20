@@ -16,7 +16,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
 {
     private IMasterJobsRepository masterJobsRepository = null!;
     private IJobMasterLogger logger = null!;
-    private OperationLimiter operationLimiter;
+    private OperationThrottler operationThrottler;
 
     public MasterJobsService(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
@@ -26,12 +26,12 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     {
         this.masterJobsRepository = masterJobsRepository;
         this.logger = logger;
-        this.operationLimiter = runtime.GetOperationLimiterForCluster(clusterConnectionConfig.ClusterId);
+        this.operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnectionConfig.ClusterId);
     }
 
     public async Task AddAsync(JobRawModel jobRaw)
     {
-        await operationLimiter.ExecAsync(async () =>
+        await operationThrottler.ExecAsync(async () =>
         {
             try
             {
@@ -55,7 +55,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
 
     public void Add(JobRawModel jobRaw)
     {
-        operationLimiter.Exec(() =>
+        operationThrottler.Exec(() =>
         {
             try
             {
@@ -77,7 +77,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     {
         try
         {
-            await operationLimiter.ExecAsync(() => DoUpsertAsync(jobRaw));
+            await operationThrottler.ExecAsync(() => DoUpsertAsync(jobRaw));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -90,7 +90,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     {
         try
         {
-            operationLimiter.Exec(() => DoUpsert(jobRaw));
+            operationThrottler.Exec(() => DoUpsert(jobRaw));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -99,49 +99,53 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         }
     }
     
-    public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
+    // Less concurrent for acquire operations is better for performance only 1 per 2000ms.
+    // Specially for SQL dbs
+    private OperationThrottler acquireOperationThrottler = new (1, 2000);
+    public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
-        return await operationLimiter.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+        var partitionLockId = Guid.NewGuid();
+        return await acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
     }
 
     public void ReleasePartitionLock(Guid jobId)
     {
-        operationLimiter.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId));
+        operationThrottler.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId));
     }
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
-        return operationLimiter.Exec(() => masterJobsRepository.Query(queryCriteria));
+        return operationThrottler.Exec(() => masterJobsRepository.Query(queryCriteria));
     }
     
     public IList<Guid> QueryIds(JobQueryCriteria queryCriteria)
     {
-        return operationLimiter.Exec(() => masterJobsRepository.QueryIds(queryCriteria));
+        return operationThrottler.Exec(() => masterJobsRepository.QueryIds(queryCriteria));
     }
 
     public Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
-        return operationLimiter.ExecAsync(() => masterJobsRepository.QueryAsync(queryCriteria));
+        return operationThrottler.ExecAsync(() => masterJobsRepository.QueryAsync(queryCriteria));
     }
 
     public Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria)
     {
-        return operationLimiter.ExecAsync(() => masterJobsRepository.QueryIdsAsync(queryCriteria));
+        return operationThrottler.ExecAsync(() => masterJobsRepository.QueryIdsAsync(queryCriteria));
     }
 
     public long Count(JobQueryCriteria queryCriteria)
     {
-        return operationLimiter.Exec(() => masterJobsRepository.Count(queryCriteria));
+        return operationThrottler.Exec(() => masterJobsRepository.Count(queryCriteria));
     }
 
     public JobRawModel? Get(Guid jobId)
     {
-        return operationLimiter.Exec(() => masterJobsRepository.Get(jobId));
+        return operationThrottler.Exec(() => masterJobsRepository.Get(jobId));
     }
 
     public Task<JobRawModel?> GetAsync(Guid jobId)
     {
-        return operationLimiter.ExecAsync(() => masterJobsRepository.GetAsync(jobId));
+        return operationThrottler.ExecAsync(() => masterJobsRepository.GetAsync(jobId));
     }
 
     public bool CheckVersion(Guid jobId, string? expectedVersion)
@@ -151,7 +155,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             return false;
         }
         
-        var job = operationLimiter.Exec(() => masterJobsRepository.Get(jobId));
+        var job = operationThrottler.Exec(() => masterJobsRepository.Get(jobId));
         if (job == null)
         {
             return false;
@@ -167,7 +171,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             return false;
         }
         
-        var job = await operationLimiter.ExecAsync(() => masterJobsRepository.GetAsync(jobId));
+        var job = await operationThrottler.ExecAsync(() => masterJobsRepository.GetAsync(jobId));
         if (job == null)
         {
             return false;
@@ -183,7 +187,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             return;
         }
         
-        operationLimiter.Exec(() => { masterJobsRepository.BulkUpdateStatus(jobIds, status, agentConnectionId, agentWorkerId, bucketId, negateStatuses); return true; });
+        operationThrottler.Exec(() => { masterJobsRepository.BulkUpdateStatus(jobIds, status, agentConnectionId, agentWorkerId, bucketId, negateStatuses); return true; });
     }
 
     private void DoUpsert(JobRawModel jobRaw) => masterJobsRepository.Upsert(jobRaw);

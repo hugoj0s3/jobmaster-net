@@ -54,7 +54,7 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
             var offsetClause = string.Empty;
             if (queryCriteria.CountLimit > 0)
             {
-                offsetClause = "\n" + sql.OffsetQueryFor(queryCriteria.CountLimit, queryCriteria.Offset);
+                offsetClause = $"\nLIMIT {queryCriteria.CountLimit}";
             }
 
             var selectCols = SelectProjection("s", "e", "v");

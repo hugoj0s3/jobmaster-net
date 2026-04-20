@@ -105,7 +105,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         
         if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
         {
-            return new ManualJobsExecutionRunner(backgroundAgentWorker);
+            return ManualJobsExecutionRunner.Create(backgroundAgentWorker);
         }
         
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)?.TryGetAgentConnectionConfig(agentConnectionId.IdValue);

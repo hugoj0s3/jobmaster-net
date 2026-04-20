@@ -19,6 +19,7 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task MarkBucketAsLostAsync(BucketModel bucket);
     Task MarkBucketAsLostAsync(string bucketId);
     Task MarkBucketAsLostIfNotDrainingAsync(string bucketId);
+    Task MarkBucketAsReadyToDeleteAsync(string bucketId);
     void MarkBucketAsLost(BucketModel bucket);
     Task<int> CountActiveCoordinatorWorkersAsync();
     Task<int> CountWorkersAsync();
