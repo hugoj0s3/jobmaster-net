@@ -3,7 +3,6 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Extensions;
-using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Agent;
@@ -16,26 +15,32 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
     private DateTime lastOnBoardingRunAtUtc = DateTime.MinValue;
     private IJobsExecutionEngine? jobExecutionEngine;
     
-    private IWorkerClusterOperations clusterOperations = null!;
-    private IMasterBucketsService masterBucketsService = null!;
-    public IJobsOnboardingSource JobsOnboardingSource { get; private set; } = null!;
+    private readonly IWorkerClusterOperations clusterOperations;
+    private readonly IMasterBucketsService masterBucketsService;
+    public IJobsOnboardingSource JobsOnboardingSource { get; }
 
     public override TimeSpan SucceedInterval => TimeSpan.FromMilliseconds(250);
     
-    private ManualJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    private ManualJobsExecutionRunner(
+        IJobMasterBackgroundAgentWorker backgroundAgentWorker,
+        IJobsOnboardingSource jobsOnboardingSource,
+        IJobsExecutionEngine? jobExecutionEngine) : base(backgroundAgentWorker)
     {
+        this.JobsOnboardingSource = jobsOnboardingSource ?? throw new ArgumentNullException(nameof(jobsOnboardingSource));
+        this.jobExecutionEngine = jobExecutionEngine;
+        this.clusterOperations = backgroundAgentWorker.WorkerClusterOperations;
+        this.masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
     }
 
     internal static ManualJobsExecutionRunner Create(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
+        IJobsOnboardingSource jobsOnboardingSource,
         IJobsExecutionEngine? jobExecutionEngine = null)
     {
-        var runner = new ManualJobsExecutionRunner(backgroundAgentWorker);
-        runner.clusterOperations = backgroundAgentWorker.WorkerClusterOperations;
-        runner.masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
-        runner.jobExecutionEngine = jobExecutionEngine;
-        
-        return runner;
+        return new ManualJobsExecutionRunner(
+            backgroundAgentWorker,
+            jobsOnboardingSource,
+            jobExecutionEngine);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -119,45 +124,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         }
     }
 
-    public void DefineBucketId(string bucketId, BucketType bucketType, JobMasterPriority priority)
-    {
-        if (string.IsNullOrEmpty(bucketId))
-        {
-            throw new ArgumentNullException(nameof(bucketId));
-        }
-
-        if (!string.IsNullOrEmpty(BucketId))
-        {
-            throw new InvalidOperationException("BucketId is already defined.");
-        }
-
-        switch (bucketType)
-        {
-            case BucketType.Fallback:
-            {
-                var fallbackCapacity = this.BackgroundAgentWorker.BucketBufferSize;
-                if (fallbackCapacity <= 0)
-                {
-                    fallbackCapacity = new WorkerDefinition().BucketBufferSize; // default bucket buffer size
-                }
-                
-                this.JobsOnboardingSource = new FallbackBucketJobsOnboardingSource(fallbackCapacity);
-                break;
-            }
-            default:
-            {
-                var agentJobsDispatcherService =
-                    this.BackgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
-                this.JobsOnboardingSource = new StandardBucketJobsOnboardingSource(agentJobsDispatcherService, BackgroundAgentWorker.AgentConnectionId, bucketId);
-                break;
-            }
-        }
-         
-        BucketId = bucketId;
-        Priority = priority;
-    }
-
-    public JobMasterPriority Priority { get; protected set; }
+    public JobMasterPriority Priority { get; private set; }
     
     public override async Task OnStopAsync()
     {
@@ -168,5 +135,12 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         
         await jobExecutionEngine.FlushToMasterAsync();
     }
+    
+    public void DefineBucketId(string bucketId, JobMasterPriority priority)
+    {
+        this.BucketId = bucketId;
+        this.Priority = priority;
+        
+        logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogSubjectType.Bucket, bucketId);
+    }
 }
-

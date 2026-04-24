@@ -6,23 +6,14 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 internal sealed class FallbackBucketJobsOnboardingSource : IJobsOnboardingSource
 {
     private readonly List<JobRawModel> queue = new();
-    private readonly int capacity;
     private readonly object objLock = new();
 
-    public FallbackBucketJobsOnboardingSource(int capacity)
-    {
-        this.capacity = capacity;
-    }
-
-    public Task<bool> PushAsync(JobRawModel job)
+    public Task PushAsync(JobRawModel job)
     {
         lock (objLock)
         {
-            if (queue.Count >= capacity)
-                return Task.FromResult(false);
-
             queue.Add(job);
-            return Task.FromResult(true);
+            return Task.CompletedTask;
         }
     }
 

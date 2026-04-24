@@ -5,11 +5,13 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Background.Runners.DrainRunners;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Background.Runners.SavePendingJobs;
 using JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Sdk.Background.Runners;
 
@@ -99,22 +101,31 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
 
     public IJobsExecutionRunner NewJobsExecutionRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
-        AgentConnectionId agentConnectionId)
+        AgentConnectionId agentConnectionId,
+        string bucketId,
+        JobMasterPriority priority)
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
-        
+        IJobsExecutionRunner jobsExecutionRunner;
         if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
         {
-            return ManualJobsExecutionRunner.Create(backgroundAgentWorker);
+            var dispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
+            var standardSource = new StandardBucketJobsOnboardingSource(dispatcherService, agentConnectionId, bucketId);
+            jobsExecutionRunner = ManualJobsExecutionRunner.Create(backgroundAgentWorker, standardSource);
+        }
+        else
+        { 
+            var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)?.TryGetAgentConnectionConfig(agentConnectionId.IdValue);
+            if (agentCnnConfig is null)
+            {
+                throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
+            }
+        
+            jobsExecutionRunner = this.AwareComponentFactory.GetBucketAwareRunner<IJobsExecutionRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+
         }
         
-        var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)?.TryGetAgentConnectionConfig(agentConnectionId.IdValue);
-        if (agentCnnConfig is null)
-        {
-            throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
-        }
-        
-        var jobsExecutionRunner = this.AwareComponentFactory.GetBucketAwareRunner<IJobsExecutionRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        jobsExecutionRunner.DefineBucketId(bucketId, priority);
         return jobsExecutionRunner;
     }
     

@@ -329,7 +329,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             // Add to BucketsCreatedOnRuntime immediately so GetOrCreateEngine can validate
             foreach (var bucket in createdBuckets)
             {
-                this.BucketsCreatedOnRuntime.Add(bucket);
+                this.RegisterRuntimeBucket(bucket);
             }
         }
 
@@ -339,8 +339,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             saveJobsRunner.DefineBucketId(bucketModel.Id);
             await saveJobsRunner.StartAsync();
         
-            var jobsExecutionRunner = this.BucketRunnersFactory.NewJobsExecutionRunner(this, AgentConnectionId);
-            jobsExecutionRunner.DefineBucketId(bucketModel.Id, bucketModel.BucketType, bucketModel.Priority);
+            var jobsExecutionRunner =
+                this.BucketRunnersFactory.NewJobsExecutionRunner(
+                    this, AgentConnectionId, bucketModel.Id, bucketModel.Priority);
             await jobsExecutionRunner.StartAsync();
         
             var saveRecurringScheduleRunner = this.BucketRunnersFactory.NewSaveRecurringSchedulerRunner(this, AgentConnectionId);
@@ -426,8 +427,26 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         {
             throw new ArgumentException("Bucket not found");
         }
-        
+
         return jobsExecutionEngineFactory.GetOrCreate(this, priority, bucketId);
+    }
+
+    public void RegisterRuntimeBucket(BucketModel bucket)
+    {
+        if (bucket is null)
+        {
+            throw new ArgumentNullException(nameof(bucket));
+        }
+
+        lock (this.mutex)
+        {
+            if (this.BucketsCreatedOnRuntime.Any(b => b.Id == bucket.Id))
+            {
+                return;
+            }
+
+            this.BucketsCreatedOnRuntime.Add(bucket);
+        }
     }
 
     public void Dispose()

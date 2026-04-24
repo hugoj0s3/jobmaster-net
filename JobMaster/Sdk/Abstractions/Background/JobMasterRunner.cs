@@ -11,7 +11,11 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 {
     private CancellationTokenSource? cts;
     private Task? taskRunner;
-    private const int MaxOfConsecutiveFails = 3;
+    private const int MaxOfConsecutiveFails = 15;
+    public int ConsecutiveFailedCount { get; private set; }
+    
+    private const int MaxOfConsecutiveToDelay = 3;
+    public int ConsecutiveFailedCountToDelay { get; private set; }
 
     protected IJobMasterBackgroundAgentWorker BackgroundAgentWorker;
     private readonly bool useSemaphore;
@@ -125,6 +129,13 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
+            if (ConsecutiveFailedCountToDelay >= MaxOfConsecutiveToDelay && !KeepAliveRunnerTypes.Contains(this.GetType()))
+            {
+                ConsecutiveFailedCountToDelay = 0;
+                await RunnerDelayUtil.DelayAsync(SucceedInterval + TimeSpan.FromSeconds(30), ct);
+                continue;
+            }
+            
             // Skip execution during worker initialization (except KeepAliveRunners)
             // This prevents deadlocks during bucket creation
             if (!BackgroundAgentWorker.IsInitialized && !KeepAliveRunnerTypes.Contains(this.GetType()))
@@ -159,10 +170,12 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 var result = await OnTickAsync(ct);
                 if (result.Status == TicketResultStatus.Failed)
                 {
+                    ConsecutiveFailedCountToDelay++;
                     ConsecutiveFailedCount++;
                 }
                 else if (result.Status == TicketResultStatus.Success && ConsecutiveFailedCount > 0)
                 {
+                    ConsecutiveFailedCountToDelay = 0;
                     ConsecutiveFailedCount = 0;
                 }
                 
@@ -287,5 +300,4 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     public abstract TimeSpan SucceedInterval { get; }
     public virtual TimeSpan WarmUpInterval => this.SucceedInterval;
-    public int ConsecutiveFailedCount { get; private set; }
 }

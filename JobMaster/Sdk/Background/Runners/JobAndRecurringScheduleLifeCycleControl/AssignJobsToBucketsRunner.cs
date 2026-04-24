@@ -31,6 +31,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private readonly JobMasterLockKeys lockKeys;
 
     private ManualJobsExecutionRunner? fallBackRunner;
+    private FallbackBucketJobsOnboardingSource? fallbackOnboardingSource;
     private BucketModel? fallbackBucket;
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
     private static readonly ConcurrentDictionary<string, DateTime> BucketAssignFirstFailure = new();
@@ -272,24 +273,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). ",
                 JobMasterLogSubjectType.Job, job.Id);
 
-            var fallbackOnboardingSource = await EnsureFallbackOnboardingSourceAsync();
+            var fallbackSource = await EnsureFallbackOnboardingSourceAsync();
             job.AdvanceNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold);
             job.AssignToBucket(this.fallbackBucket!);
-            var pushed = await fallbackOnboardingSource.PushAsync(job);
-            if (pushed)
-            {
-                await masterJobsService.UpsertAsync(job);
-                return;
-            }
-
-            logger.Critical(
-                $"Fallback bucket is at capacity. Job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}) could not be queued. " +
-                "This indicates the fallback engine is overloaded. Job will be delayed and retried.",
-                JobMasterLogSubjectType.Job, job.Id);
-            job.MarkAsHeldOnMaster();
-            job.DelayNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold.Add(TimeSpan.FromMinutes(1)));
-
             await masterJobsService.UpsertAsync(job);
+            await fallbackSource.PushAsync(job);
+            return;
         }
         else
         {
@@ -313,19 +302,19 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             job.WorkerLane);
     }
 
-    private async Task<IJobsOnboardingSource> EnsureFallbackOnboardingSourceAsync()
+    private async Task<FallbackBucketJobsOnboardingSource> EnsureFallbackOnboardingSourceAsync()
     {
-        if (fallBackRunner is not null)
+        if (fallbackOnboardingSource is not null)
         {
-            return fallBackRunner.JobsOnboardingSource;
+            return fallbackOnboardingSource;
         }
 
         await fallbackCreationLock.WaitAsync();
         try
         {
-            if (fallBackRunner is not null)
+            if (fallbackOnboardingSource is not null)
             {
-                return fallBackRunner.JobsOnboardingSource;
+                return fallbackOnboardingSource;
             }
 
             this.logger.Critical(
@@ -342,12 +331,18 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 BucketType.Fallback);
             this.fallbackBucket = bucket;
 
-            var jobExecutionEngine = new JobsExecutionEngine(this.BackgroundAgentWorker, bucket.Id, JobMasterPriority.Critical);
-            fallBackRunner = ManualJobsExecutionRunner.Create(this.BackgroundAgentWorker, jobExecutionEngine);
-            fallBackRunner.DefineBucketId(bucket.Id, BucketType.Fallback, JobMasterPriority.Critical);
+            // Register the fallback bucket so GetOrCreateEngine can validate it on the runner's first tick.
+            BackgroundAgentWorker.RegisterRuntimeBucket(bucket);
+
+            var source = new FallbackBucketJobsOnboardingSource();
+            fallBackRunner = ManualJobsExecutionRunner.Create(
+                this.BackgroundAgentWorker,
+                source);
+            fallBackRunner.DefineBucketId(bucket.Id, JobMasterPriority.Critical);
+            fallbackOnboardingSource = source;
             await fallBackRunner.StartAsync();
 
-            return fallBackRunner.JobsOnboardingSource;
+            return fallbackOnboardingSource;
         }
         finally
         {

@@ -85,7 +85,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
     protected override Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct) => Task.FromResult(true);
 
-    public void DefineBucketId(string bucketId, BucketType bucketType, JobMasterPriority priority)
+    public void DefineBucketId(string bucketId, JobMasterPriority priority)
     {
         this.DefineBucketId(bucketId);
         this.Priority = priority;
