@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
@@ -130,7 +131,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.ClusterServices.AddSingleton<IBucketSelectorAlgorithm, RandomBucketSelectorAlgorithm>();
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
-        
+        clusterServiceRegistration.ClusterServices.AddSingleton<DefaultKnownExceptionIdentifierStrategy>();
+        clusterServiceRegistration.ClusterServices.AddSingleton<IKnownExceptionIdentifier, JobMasterKnownExceptionIdentifier>();
+
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobsService, MasterJobsService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterChangesSentinelService, MasterChangesSentinelService>();

@@ -1,9 +1,11 @@
 using JobMaster.Sdk;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlServer.Agents;
+using JobMaster.SqlServer.Exceptions;
 using JobMaster.SqlServer.Master;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,6 +25,7 @@ internal static class SqlServerIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, SqlServerMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, SqlServerMasterJobsRepository>();
         registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, SqlServerMasterRecurringSchedulesRepository>();
+        registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, SqlServerKnownExceptionIdentifierStrategy>();
     }
 
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
