@@ -12,7 +12,9 @@ internal interface IJobMasterRunner
     TimeSpan SucceedInterval { get; }
     
     TimeSpan WarmUpInterval { get; }
-
+    
+    TimeSpan FailedInterval { get; }
+    
     int ConsecutiveFailedCount { get; }
     
     Task StartAsync();

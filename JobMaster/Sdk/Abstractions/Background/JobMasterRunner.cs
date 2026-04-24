@@ -132,7 +132,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             if (ConsecutiveFailedCountToDelay >= MaxOfConsecutiveToDelay && !KeepAliveRunnerTypes.Contains(this.GetType()))
             {
                 ConsecutiveFailedCountToDelay = 0;
-                await RunnerDelayUtil.DelayAsync(SucceedInterval + TimeSpan.FromSeconds(30), ct);
+                await RunnerDelayUtil.DelayAsync(this.FailedInterval + TimeSpan.FromSeconds(30), ct);
                 continue;
             }
             
@@ -202,7 +202,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 ConsecutiveFailedCount++;
                 await OnErrorAsync(ex, ct);
 
-                plannedDelay = OnTickResult.Failed(this).Delay;
+                plannedDelay = this.FailedInterval;
                 plannedEarlyReleaseChance = 0.0;
 
                 logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
@@ -300,4 +300,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     public abstract TimeSpan SucceedInterval { get; }
     public virtual TimeSpan WarmUpInterval => this.SucceedInterval;
+
+    public virtual TimeSpan FailedInterval => OnTickResult.Failed(this).Delay;
 }

@@ -57,8 +57,8 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
             // MySQL ON DUPLICATE KEY UPDATE rowsAffected:
             // 1 = inserted (new job, no conflict possible)
-            // 2 = updated
-            // 0 = no-op (values identical) or IF() prevented version update (conflict)
+            // 2 = updated (version matched; all columns and Version were rewritten)
+            // 0 = version mismatch: every column is IF()-guarded, so nothing changed (true no-op)
             if (rowsAffected != 1)
             {
                 var t = TableName();
@@ -113,8 +113,8 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 
             // MySQL ON DUPLICATE KEY UPDATE rowsAffected:
             // 1 = inserted (new job, no conflict possible)
-            // 2 = updated
-            // 0 = no-op (values identical) or IF() prevented version update (conflict)
+            // 2 = updated (version matched; all columns and Version were rewritten)
+            // 0 = version mismatch: every column is IF()-guarded, so nothing changed (true no-op)
             if (rowsAffected != 1)
             {
                 var t = TableName();
@@ -144,10 +144,15 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
         SortByCriteria? sortByCriteria)
     {
         var baseSql = base.BuildQueryIdsSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
-    
+
         // MySQL doesn't support LIMIT inside IN subqueries directly.
         // Wrapping in a derived table is the standard workaround.
-        return $"SELECT {Col(x => x.Id)} FROM ({baseSql}) AS _candidates";
+        // FOR UPDATE SKIP LOCKED inside the derived table gives the same race-free
+        // candidate selection Postgres gets. Without it, concurrent workers can
+        // SELECT the same candidate IDs and race on the UPDATE, leaving losers
+        // with a silently smaller result set and causing downstream version
+        // conflicts in fallback bucket assignment. Requires MySQL 8.0.1+.
+        return $"SELECT {Col(x => x.Id)} FROM ({baseSql} FOR UPDATE SKIP LOCKED) AS _candidates";
     }
 
     private string BuildMetadataEntryUpsertSql()
@@ -194,11 +199,50 @@ ON DUPLICATE KEY UPDATE
         var t = TableName();
         var (cols, vals) = InsertColumnsAndParams();
         var cVersion = Col(x => x.Version);
+
+        // MySQL note:
+        // UpdateSetClauseWithoutVersion() writes every non-version column unconditionally
+        // (just "col = @col"). If we only guard the Version column with IF(), a conflicting
+        // upsert still overwrites Status, BucketId, PartitionLockId, etc. with stale values
+        // while leaving Version untouched - and rowsAffected ends up 2 (not 0), because
+        // those unguarded columns did change. That makes the conflict partially persist:
+        // e.g. Status=InBucket + BucketId=<fallback> get written even though the caller
+        // then throws JobMasterVersionConflictException and never pushes the job to the
+        // fallback onboarding source. The job becomes orphaned in the fallback bucket.
+        //
+        // Fix: wrap every column assignment in the same IF() guard. On a version mismatch
+        // no column changes, rowsAffected = 0, the check block below catches it and we
+        // throw cleanly with the DB row fully unmodified.
+        var versionMatch = $"({cVersion} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {cVersion} IS NULL))";
+        var guardedSetClause = BuildGuardedUpdateSetClauseWithoutVersion(versionMatch);
+
         return $@"
 INSERT INTO {t} ({cols}) VALUES ({vals})
 ON DUPLICATE KEY UPDATE
-    {UpdateSetClauseWithoutVersion()},
-    {cVersion} = IF({cVersion} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {cVersion} IS NULL), @Version, {cVersion});";
+    {guardedSetClause},
+    {cVersion} = IF({versionMatch}, @Version, {cVersion});";
+    }
+
+    /// <summary>
+    /// Wraps each "col = @param" pair returned by <see cref="SqlMasterJobsRepository.UpdateSetClauseWithoutVersion"/>
+    /// in <c>IF(versionMatch, @param, col)</c> so the upsert becomes atomic w.r.t. the optimistic
+    /// concurrency check: either every column is written (including Version) or none is.
+    /// </summary>
+    private string BuildGuardedUpdateSetClauseWithoutVersion(string versionMatch)
+    {
+        var baseClause = UpdateSetClauseWithoutVersion();
+        var parts = baseClause.Split(new[] { ", " }, StringSplitOptions.None);
+        var guarded = parts.Select(p =>
+        {
+            var eqIdx = p.IndexOf(" = ", StringComparison.Ordinal);
+            if (eqIdx < 0)
+                throw new InvalidOperationException(
+                    $"Unexpected UpdateSetClauseWithoutVersion entry format: '{p}'. Expected 'col = @param'.");
+            var col = p.Substring(0, eqIdx);
+            var val = p.Substring(eqIdx + 3);
+            return $"{col} = IF({versionMatch}, {val}, {col})";
+        });
+        return string.Join(", ", guarded);
     }
 
     private static Dictionary<string, object?> BuildMetadataEntryArgs(SqlGenericRecordEntry sqlEntry)
