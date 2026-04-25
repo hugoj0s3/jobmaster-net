@@ -422,10 +422,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         await base.OnStopAsync();
         await StopConsumptionTask();
     }
-    
-    public override async Task OnErrorAsync(Exception ex, CancellationToken ct)
+
+    public override async Task OnTerminateFailureAsync(Exception lastException)
     {
-        await base.OnErrorAsync(ex, ct);
+        await base.OnTerminateFailureAsync(lastException);
         await StopConsumptionTask();
     }
 
