@@ -132,7 +132,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
         clusterServiceRegistration.ClusterServices.AddSingleton<DefaultKnownExceptionIdentifierStrategy>();
-        clusterServiceRegistration.ClusterServices.AddSingleton<IKnownExceptionIdentifier, JobMasterKnownExceptionIdentifier>();
+        clusterServiceRegistration.AddJobMasterComponent<IKnownExceptionIdentifier, JobMasterKnownExceptionIdentifier>();
 
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobsService, MasterJobsService>();

@@ -15,7 +15,7 @@ internal interface IJobMasterRunner
     
     TimeSpan FailedInterval { get; }
     
-    int ConsecutiveFailedCount { get; }
+    double ConsecutiveFailedCount { get; }
     
     Task StartAsync();
     
