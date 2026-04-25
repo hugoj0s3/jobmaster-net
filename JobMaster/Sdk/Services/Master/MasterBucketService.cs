@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
@@ -29,7 +31,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     private IMasterAgentWorkersService masterAgentWorkersService = null!;
     private IAgentJobsDispatcherService masterAgentsDispatcherService = null!;
     private IMasterClusterConfigurationService masterClusterConfigurationService = null!;
-    private IJobMasterLogger logger = null!;
+    private IKnownExceptionIdentifier knownExceptionIdentifier = null!;
 
     private readonly IJobMasterInMemoryCache jobMasterMemoryCache;
     private JobMasterInMemoryKeys cacheKeys = null!;
@@ -47,6 +49,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         IMasterAgentWorkersService masterAgentWorkersService,
         IAgentJobsDispatcherService masterAgentsDispatcherService,
         IMasterClusterConfigurationService masterClusterConfigurationService,
+        IKnownExceptionIdentifier knownExceptionIdentifier,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.bucketSelectorAlgorithm = bucketSelectorAlgorithm;
@@ -57,11 +60,15 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         this.masterAgentWorkersService = masterAgentWorkersService;
         this.masterAgentsDispatcherService = masterAgentsDispatcherService;
         this.masterClusterConfigurationService = masterClusterConfigurationService;
-
+        this.logger = logger;
 
         cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
         sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
+        
+        this.retryDeadlockPolicy =
+            new RetryDeadlockPolicy(knownExceptionIdentifier,
+                TimeSpan.FromMilliseconds(250), 3);
     }
 
     public async Task DestroyAsync(string bucketId)
@@ -156,7 +163,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             model);
         await masterGenericRecordRepository.UpsertAsync(genericRecord);
     }
-    
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly IJobMasterLogger logger;
+
     public BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
         return SelectBucketForJob(allowedDiscrepancy, jobPriority, workerLane);
@@ -166,25 +175,44 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     {
         return Task.FromResult(SelectBucketForJob(allowedDiscrepancy, jobPriority, workerLane));
     }
-
+    
     public BucketModel? Get(string id, TimeSpan? allowedDiscrepancy)
+    {
+        var bucketFromCache = GetBucketFromCache(id, allowedDiscrepancy);
+        if (bucketFromCache is not null)
+        {
+            return bucketFromCache;
+        }
+
+        var cacheKey = cacheKeys.Bucket(id);
+        var cacheItem = this.retryDeadlockPolicy.Exec(() => jobMasterMemoryCache.GetOrSet(
+            cacheKey,
+            () => masterGenericRecordRepository.Get(MasterGenericRecordGroupIds.Bucket, id)?.ToObject<BucketModel>(),
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
+
+        return cacheItem.Value;
+    }
+
+    private BucketModel? GetBucketFromCache(string id, TimeSpan? allowedDiscrepancy)
     {
         var cacheKey = cacheKeys.Bucket(id);
         var sentinelKey = sentinelKeys.Bucket(id);
-        var bucketFromCache = jobMasterMemoryCache.Get<BucketModel>(cacheKey);
-        if (bucketFromCache?.Value is not null &&
-            !masterChangesSentinelService.HasChangesAfter(sentinelKey, bucketFromCache.CreatedAt, allowedDiscrepancy))
+
+        var cached = jobMasterMemoryCache.Get<BucketModel>(cacheKey);
+        if (cached?.Value is null)
         {
-            return bucketFromCache?.Value;
+            return null;
         }
 
-        var bucket = masterGenericRecordRepository.Get(MasterGenericRecordGroupIds.Bucket, id)?.ToObject<BucketModel>();
-        if (bucket != null)
+        var hasChangesAfter = masterChangesSentinelService.HasChangesAfter(sentinelKey, cached.CreatedAt, allowedDiscrepancy);
+        if (!hasChangesAfter)
         {
-            jobMasterMemoryCache.Set(cacheKey, bucket);
+            return cached.Value;
         }
 
-        return bucket;
+        jobMasterMemoryCache.Remove(cacheKey);
+        return null;
     }
 
     public async Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null)
@@ -230,7 +258,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         var count = masterGenericRecordRepository.Count(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
         return count;
     }
-
+    
     private BucketModel? SelectBucketForJob(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
         var availableBuckets = GetBucketsAvailableFromCache(allowedDiscrepancy);
@@ -255,20 +283,32 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                 },
                 ReadIsolationLevel = ReadIsolationLevel.Consistent,
             };
-
-            var records = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
+           
+            var cacheKey = cacheKeys.BucketsAvailableForJobs();
+            var cacheItem = this.retryDeadlockPolicy.Exec(() => jobMasterMemoryCache.GetOrSet(
+                cacheKey,
+                () => GetAvailableBucketFromDb(criteria),
+                valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+                durationToExpire: TimeSpan.FromMinutes(5)));
             
-            availableBuckets = records
-                .Select(x => x.ToObject<BucketModel>())
-                .Where(x => !string.IsNullOrEmpty(x?.AgentWorkerId))
-                .Where(x => x?.BucketType != BucketType.Fallback)
-                .ToList()!;
-
-            jobMasterMemoryCache.Set(cacheKeys.BucketsAvailableForJobs(), availableBuckets);
+            availableBuckets = cacheItem.Value;
         }
 
-        var applicableBuckets = FilterApplicableBuckets(availableBuckets, jobPriority, workerLane);
+        var applicableBuckets = FilterApplicableBuckets(availableBuckets!, jobPriority, workerLane);
         return bucketSelectorAlgorithm.Select(applicableBuckets);
+    }
+
+    private List<BucketModel> GetAvailableBucketFromDb(GenericRecordQueryCriteria criteria)
+    {
+        var records = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
+        List<BucketModel> result = records
+            .Select(x => x.ToObject<BucketModel>())
+            .Where(x => !string.IsNullOrEmpty(x?.AgentWorkerId))
+            .Where(x => !string.IsNullOrEmpty(x?.AgentConnectionId?.IdValue))
+            .Where(x => x?.Status == BucketStatus.Active)
+            .Where(x => x?.BucketType != BucketType.Fallback)
+            .ToList()!;
+        return result;
     }
 
 
@@ -307,6 +347,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             return lastAvailableBucketQueriedResult.Value;
         }
 
+        jobMasterMemoryCache.Remove(cacheKey);
         return null;
     }
 

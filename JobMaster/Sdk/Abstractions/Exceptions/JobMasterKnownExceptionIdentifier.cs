@@ -19,7 +19,7 @@ internal class JobMasterKnownExceptionIdentifier : IKnownExceptionIdentifier
         this.defaultStrategy = defaultStrategy;
     }
 
-    public JobMasterKnownExceptionId? Identify(string repoType, Exception ex)
+    public JobMasterKnownExceptionId? Identify(Exception ex)
     {
         switch (ex)
         {
@@ -29,7 +29,7 @@ internal class JobMasterKnownExceptionIdentifier : IKnownExceptionIdentifier
                 return JobMasterKnownExceptionId.VersionConflict;
         }
 
-        if (byRepoType.TryGetValue(repoType, out var strategy))
+        if (byRepoType.TryGetValue(ClusterConnConfig.RepositoryTypeId, out var strategy))
         {
             return strategy.Identify(ex);
         }

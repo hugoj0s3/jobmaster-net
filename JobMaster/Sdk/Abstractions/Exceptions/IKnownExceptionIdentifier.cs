@@ -4,5 +4,5 @@ namespace JobMaster.Sdk.Abstractions.Exceptions;
 
 internal interface IKnownExceptionIdentifier : IJobMasterClusterAwareComponent
 {
-    JobMasterKnownExceptionId? Identify(string repoType, Exception ex);
+    JobMasterKnownExceptionId? Identify(Exception ex);
 }

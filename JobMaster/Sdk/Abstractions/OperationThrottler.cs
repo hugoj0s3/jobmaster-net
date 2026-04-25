@@ -78,19 +78,4 @@ internal class OperationThrottler
             if (acquired) semaphore.Release();
         }
     }
-
-    public async Task ExecValueTaskAsync(Func<ValueTask> func)
-    {
-        if (semaphore == null) { await func(); return; }
-
-        var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
-        try
-        {
-            await func();
-        }
-        finally
-        {
-            if (acquired) semaphore.Release();
-        }
-    }
 }

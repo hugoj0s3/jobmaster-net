@@ -296,8 +296,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     private double CalcFailureWeight(Exception ex)
     {
-        var repoType = BackgroundAgentWorker.ClusterConnConfig.RepositoryTypeId;
-        var knownId = knownExceptionIdentifier.Identify(repoType, ex);
+        var knownId = knownExceptionIdentifier.Identify(ex);
         return knownId switch
         {
             JobMasterKnownExceptionId.Deadlock => 0.25,
