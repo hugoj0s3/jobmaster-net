@@ -13,12 +13,10 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
 
     void ReleasePartitionLock(Guid jobId);
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
-    IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
     
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc);
     
-    Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria);
     long Count(JobQueryCriteria queryCriteria);
     bool CheckVersion(Guid jobId, string? version);
     Task<bool> CheckVersionAsync(Guid jobId, string? version);

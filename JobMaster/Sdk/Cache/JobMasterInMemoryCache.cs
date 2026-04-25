@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Utils.Extensions;
 
-namespace JobMaster.Sdk.LocalCache;
+namespace JobMaster.Sdk.Cache;
 
 internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
 {

@@ -202,40 +202,6 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         return conn.ExecuteScalar<long>(sqlText, args);
     }
 
-    public IList<Guid> QueryIds(JobQueryCriteria queryCriteria)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        
-        if (queryCriteria.CountLimit < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.CountLimit), queryCriteria.CountLimit, "CountLimit must be >= 0");
-        if (queryCriteria.Offset < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.Offset), queryCriteria.Offset, "Offset must be >= 0");
-        
-        var (whereSql, args) = BuildWhere(queryCriteria);
-        args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
-        var sqlText = 
-            BuildQueryIdsSql(whereSql, true, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
-
-        return conn.Query<Guid>(sqlText, args).ToList();
-    }
-    
-    public async Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-       
-        if (queryCriteria.CountLimit < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.CountLimit), queryCriteria.CountLimit, "CountLimit must be >= 0");
-        if (queryCriteria.Offset < 0) 
-            throw new ArgumentOutOfRangeException(nameof(queryCriteria.Offset), queryCriteria.Offset, "Offset must be >= 0");
-        
-        var (whereSql, args) = BuildWhere(queryCriteria);
-        args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
-        var sqlText = 
-            BuildQueryIdsSql(whereSql, true, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
-        
-        return (await conn.QueryAsync<Guid>(sqlText, args)).ToList();
-    }
-
     public void ReleasePartitionLock(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -246,9 +212,10 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
             {Col(x => x.PartitionLockId)} = NULL, 
             {Col(x => x.PartitionLockExpiresAt)} = NULL,
             {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-        WHERE {Col(x => x.Id)} = @JobId";
+        WHERE {Col(x => x.ClusterId)} = @ClusterId and  
+            {Col(x => x.Id)} = @JobId";
 
-        conn.Execute(sqlText, new { JobId = jobId });
+        conn.Execute(sqlText, new { ClusterId = this.ClusterConnConfig.ClusterId, JobId = jobId });
     }
 
     public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null)
@@ -376,7 +343,7 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
             var (whereSql, args) = BuildWhere(queryCriteria);
             var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
             var queryIdsSql = 
-                BuildQueryIdsSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
+                BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
             var updateSql = $@"
 UPDATE {t} {UpdateToLockTableHint}
 SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
@@ -465,7 +432,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return (sqlText, args);
     }
     
-    protected virtual string BuildQueryIdsSql( 
+    protected virtual string BuildQueryIdsToLockSql( 
         string whereSql, 
         bool needsMetadataJoin,
         int countLimit,

@@ -147,7 +147,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         while (true)
         {
             var page = await RetryOnTransientDbTimeoutAsync(
-                () => masterJobsService.QueryIds(new JobQueryCriteria
+                () => masterJobsService.Query(new JobQueryCriteria
                 {
                     Status = JobMasterJobStatus.Succeeded,
                     MetadataFilters = sessionMetadataFilters,
@@ -160,7 +160,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
 
             if (page.Count == 0) break;
 
-            result.AddRange(page);
+            result.AddRange(page.Select(j => j.Id));
             offset += page.Count;
 
             if (page.Count < pageSize) break;

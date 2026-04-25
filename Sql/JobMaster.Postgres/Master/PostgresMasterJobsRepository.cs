@@ -126,10 +126,10 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
         }
     }
 
-    protected override string BuildQueryIdsSql(string whereSql, bool needsMetadataJoin, int countLimit, int offset,
+    protected override string BuildQueryIdsToLockSql(string whereSql, bool needsMetadataJoin, int countLimit, int offset,
         SortByCriteria? sortByCriteria)
     {
-        var baseSql = base.BuildQueryIdsSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
+        var baseSql = base.BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
         return baseSql + " FOR UPDATE SKIP LOCKED";
     }
 

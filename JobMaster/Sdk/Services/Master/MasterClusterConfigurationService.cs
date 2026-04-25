@@ -1,4 +1,6 @@
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
@@ -6,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Services.Master;
@@ -17,15 +20,18 @@ internal class MasterClusterConfigurationService : JobMasterClusterAwareComponen
     private readonly IJobMasterLogger logger;
 
     private readonly IJobMasterInMemoryCache cache;
-    
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly SentinelCachedReader sentinelCachedReader;
+
     private JobMasterSentinelKeys sentinelKeys = null!;
     private JobMasterInMemoryKeys cacheKeys = null!;
-    
+
     public MasterClusterConfigurationService(
-        JobMasterClusterConnectionConfig clusterConnConfig, 
+        JobMasterClusterConnectionConfig clusterConnConfig,
         IJobMasterInMemoryCache cache,
         IMasterGenericRecordRepository repository,
         IMasterChangesSentinelService masterChangesSentinelService,
+        IKnownExceptionIdentifier knownExceptionIdentifier,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.cache = cache;
@@ -35,37 +41,39 @@ internal class MasterClusterConfigurationService : JobMasterClusterAwareComponen
 
         sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
         cacheKeys = new JobMasterInMemoryKeys(ClusterConnConfig.ClusterId);
+
+        this.retryDeadlockPolicy =
+            new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+
+        this.sentinelCachedReader =
+            new SentinelCachedReader(cache, masterChangesSentinelService);
     }
 
     public ClusterConfigurationModel? Get()
     {
-        var sentinelKey = sentinelKeys.GetMasterConfiguration();
-        var cachedConfig = cache.Get<ClusterConfigurationModel>(cacheKeys.MasterConfiguration());
-        
-        if (cachedConfig?.Value != null &&
-            !masterChangesSentinelService.HasChangesAfter(sentinelKey, cachedConfig.CreatedAt, TimeSpan.FromMinutes(5)))
-        {
-            return cachedConfig.Value;
-        }
-        
-        logger.Debug($"MasterClusterConfigurationService.Get() - Configuration not cached or changed after {sentinelKey}");
-        
-        return GetFromRepo();
+        return retryDeadlockPolicy.Exec(() => sentinelCachedReader.GetOrFetch(
+            cacheKey: cacheKeys.MasterConfiguration(),
+            sentinelKey: sentinelKeys.GetMasterConfiguration(),
+            factory: FetchFromRepo,
+            allowedDiscrepancy: JobMasterConstants.ClusterConfigurationAllowDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
     }
 
-    public ClusterConfigurationModel? GetNoAche()
+    public ClusterConfigurationModel? GetFresh()
     {
-        return GetFromRepo();
-    }
-
-    private ClusterConfigurationModel? GetFromRepo()
-    {
-        var configurationRecord = repository.Get(MasterGenericRecordGroupIds.ClusterConfiguration, ClusterConnConfig.ClusterId);
-        var configurationModel = configurationRecord?.ToObject<ClusterConfigurationModel>() ?? new ClusterConfigurationModel(ClusterConnConfig.ClusterId);
-        
-        // Use the cache key consistently (Get uses cacheKeys.MasterConfiguration())
+        // Bypass the sentinel check but still warm the cache so subsequent Get() calls
+        // don't double-fetch.
+        var configurationModel = retryDeadlockPolicy.Exec(FetchFromRepo);
         cache.Set(cacheKeys.MasterConfiguration(), configurationModel);
         return configurationModel;
+    }
+
+    private ClusterConfigurationModel FetchFromRepo()
+    {
+        var configurationRecord = repository.Get(MasterGenericRecordGroupIds.ClusterConfiguration, ClusterConnConfig.ClusterId);
+        return configurationRecord?.ToObject<ClusterConfigurationModel>()
+               ?? new ClusterConfigurationModel(ClusterConnConfig.ClusterId);
     }
 
     public void Save(ClusterConfigurationModel clusterConfiguration)

@@ -134,46 +134,6 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Query_And_Count_And_QueryIds_ShouldBeConsistent()
-    {
-        var baseTime = DateTime.UtcNow;
-
-        var defA = "defA-" + Guid.NewGuid();
-        var defB = "defB-" + Guid.NewGuid();
-
-        var j1 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_1");
-        var j2 = NewJob(jobDefinitionId: defA, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(2), workerLane: "LANE_2");
-        var j3 = NewJob(jobDefinitionId: defB, status: JobMasterJobStatus.Succeeded, scheduledAt: baseTime.AddMinutes(3), workerLane: "LANE_1");
-
-        await Fixture.MasterJobs.AddAsync(j1);
-        await Fixture.MasterJobs.AddAsync(j2);
-        await Fixture.MasterJobs.AddAsync(j3);
-
-        var criteria = new JobQueryCriteria
-        {
-            Status = JobMasterJobStatus.OnMaster,
-            JobDefinitionId = defA,
-            NextPlanExecutionAtFrom = baseTime.AddSeconds(30),
-            NextPlanExecutionAtTo = baseTime.AddMinutes(2).AddSeconds(30),
-            WorkerLane = null,
-            CountLimit = 100,
-            Offset = 0
-        };
-
-        var queried = await Fixture.MasterJobs.QueryAsync(criteria);
-        var count = Fixture.MasterJobs.Count(criteria);
-        var ids = await Fixture.MasterJobs.QueryIdsAsync(criteria);
-
-        Assert.Equal(count, queried.Count);
-        Assert.Equal(queried.Count, ids.Count);
-
-        var queriedIds = queried.Select(x => x.Id).OrderBy(x => x).ToList();
-        var idsSorted = ids.OrderBy(x => x).ToList();
-
-        Assert.Equal(queriedIds, idsSorted);
-    }
-
-    [Fact]
     public async Task Query_ShouldSupport_Status_Filter()
     {
         var def = "defStatus-" + Guid.NewGuid();

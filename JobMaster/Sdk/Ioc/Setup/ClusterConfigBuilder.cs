@@ -18,7 +18,6 @@ using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.BucketSelector;
 using JobMaster.Sdk.Ioc.Setup.Selectors;
-using JobMaster.Sdk.LocalCache;
 using JobMaster.Sdk.Repositories;
 using JobMaster.Sdk.Services;
 using JobMaster.Sdk.Services.Agents;
@@ -26,6 +25,7 @@ using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;

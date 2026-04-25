@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
@@ -27,6 +28,7 @@ public class MasterAgentWorkersServiceTests
         var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
         var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
         var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
@@ -37,6 +39,7 @@ public class MasterAgentWorkersServiceTests
             sentinel.Object,
             heartbeat.Object,
             repo.Object,
+            knownEx.Object,
             hostService.Object,
             randomFriendlyNameService.Object);
 
@@ -58,6 +61,7 @@ public class MasterAgentWorkersServiceTests
         var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
         var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Strict);
         var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
@@ -84,6 +88,7 @@ public class MasterAgentWorkersServiceTests
             sentinel.Object,
             heartbeat.Object,
             repo.Object,
+            knownEx.Object,
             hostService.Object,
             new RandomFriendlyNameService(clusterConfig));
 
@@ -117,6 +122,7 @@ public class MasterAgentWorkersServiceTests
         var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
         var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
         var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
@@ -130,6 +136,7 @@ public class MasterAgentWorkersServiceTests
             sentinel.Object,
             heartbeat.Object,
             repo.Object,
+            knownEx.Object,
             hostService.Object,
             randomFriendlyNameService.Object);
 
@@ -149,6 +156,7 @@ public class MasterAgentWorkersServiceTests
         var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
         var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
         var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
@@ -186,6 +194,7 @@ public class MasterAgentWorkersServiceTests
             sentinel.Object,
             heartbeat.Object,
             repo.Object,
+            knownEx.Object,
             hostService.Object,
             randomFriendlyNameService.Object);
         var act = () => sut.DeleteWorker(workerId);

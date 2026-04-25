@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models;
@@ -10,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
@@ -30,13 +32,17 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
     private JobMasterSentinelKeys sentinelKeys = null!;
     private HostId? hostId;
 
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly SentinelCachedReader sentinelCachedReader;
+
     public MasterAgentWorkersService(
-        JobMasterClusterConnectionConfig clusterConnectionConfig, 
+        JobMasterClusterConnectionConfig clusterConnectionConfig,
         IJobMasterInMemoryCache jobMasterInMemoryCache,
         IMasterClusterConfigurationService masterClusterConfigurationService,
         IMasterChangesSentinelService masterChangesSentinelService,
         IMasterHeartbeatService masterHeartbeatService,
         IMasterGenericRecordRepository masterGenericRecordRepository,
+        IKnownExceptionIdentifier knownExceptionIdentifier,
         IMasterHostService masterHostService,
         IRandomFriendlyNameService randomFriendlyNameService) : base(clusterConnectionConfig)
     {
@@ -50,6 +56,12 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
 
         cacheKeys = new JobMasterInMemoryKeys(clusterConnectionConfig.ClusterId);
         sentinelKeys = new JobMasterSentinelKeys(clusterConnectionConfig.ClusterId);
+
+        this.retryDeadlockPolicy =
+            new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+
+        this.sentinelCachedReader =
+            new SentinelCachedReader(jobMasterInMemoryCache, masterChangesSentinelService);
     }
     
     public IList<AgentWorkerModel> QueryWorkers(string? agentConnectionId = null, bool useCache = true)
@@ -152,44 +164,54 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
 
     private IList<AgentWorkerRecord> GetAllAgentWorkers(bool useCache = true)
     {
-        var cacheKey = cacheKeys.AllAgentsWorkers();
-        var sentinelKey = sentinelKeys.AgentsAndWorkers();
-
-        var inCacheValue = jobMasterInMemoryCache.Get<IList<AgentWorkerRecord>>(cacheKey);
-        if (inCacheValue == null ||
-            inCacheValue.Value == null ||
-            masterChangesSentinelService.HasChangesAfter(sentinelKey, inCacheValue.CreatedAt) ||
-            !useCache)
+        if (!useCache)
         {
-            var allWorkerRecords = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.AgentWorker);
-            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList();
-
-            jobMasterInMemoryCache.Set(cacheKey, allAgentWorkers);
-            return allAgentWorkers;
+            // Bypass the sentinel check but still warm the cache so subsequent cached
+            // reads don't double-fetch.
+            var fresh = retryDeadlockPolicy.Exec(FetchAllAgentWorkers);
+            jobMasterInMemoryCache.Set(cacheKeys.AllAgentsWorkers(), fresh);
+            return fresh;
         }
 
-        return inCacheValue.Value;
+        return retryDeadlockPolicy.Exec(() => sentinelCachedReader.GetOrFetch(
+            cacheKey: cacheKeys.AllAgentsWorkers(),
+            sentinelKey: sentinelKeys.AgentsAndWorkers(),
+            factory: FetchAllAgentWorkers,
+            allowedDiscrepancy: JobMasterConstants.AgentWorkersAllowDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
     }
 
     private async Task<IList<AgentWorkerRecord>> GetAllAgentWorkersAsync(bool useCache = true)
     {
-        var cacheKey = cacheKeys.AllAgentsWorkers();
-        var sentinelKey = sentinelKeys.AgentsAndWorkers();
-
-        var inCacheValue = jobMasterInMemoryCache.Get<IList<AgentWorkerRecord>>(cacheKey);
-        if (inCacheValue == null ||
-            inCacheValue.Value == null ||
-            masterChangesSentinelService.HasChangesAfter(sentinelKey, inCacheValue.CreatedAt) ||
-            !useCache)
+        if (!useCache)
         {
-            var allWorkerRecords = await this.masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.AgentWorker);
-            var allAgentWorkers = allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList<AgentWorkerRecord>();
-
-            jobMasterInMemoryCache.Set(cacheKey, allAgentWorkers);
-            return allAgentWorkers;
+            // Bypass the sentinel check but still warm the cache so subsequent cached
+            // reads don't double-fetch.
+            var fresh = await retryDeadlockPolicy.ExecAsync(FetchAllAgentWorkersAsync);
+            jobMasterInMemoryCache.Set(cacheKeys.AllAgentsWorkers(), fresh);
+            return fresh;
         }
 
-        return inCacheValue.Value;
+        return await retryDeadlockPolicy.ExecAsync(() => sentinelCachedReader.GetOrFetchAsync(
+            cacheKey: cacheKeys.AllAgentsWorkers(),
+            sentinelKey: sentinelKeys.AgentsAndWorkers(),
+            factory: FetchAllAgentWorkersAsync,
+            allowedDiscrepancy: JobMasterConstants.AgentWorkersAllowDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
+    }
+
+    private IList<AgentWorkerRecord> FetchAllAgentWorkers()
+    {
+        var allWorkerRecords = masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.AgentWorker);
+        return allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList();
+    }
+
+    private async Task<IList<AgentWorkerRecord>> FetchAllAgentWorkersAsync()
+    {
+        var allWorkerRecords = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.AgentWorker);
+        return allWorkerRecords.Select(x => x.ToObject<AgentWorkerRecord>()).ToList();
     }
     
     private AgentWorkerModel? ToModel(AgentWorkerRecord? worker)

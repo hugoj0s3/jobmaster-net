@@ -5,11 +5,13 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
+using System.Data;
 
 namespace JobMaster.MySql.Master;
 
@@ -136,14 +138,150 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
         }
     }
     
-    protected override string BuildQueryIdsSql(
+    public override async Task<IList<JobRawModel>> AcquireAndFetchAsync(
+        JobQueryCriteria queryCriteria,
+        Guid partitionLockId,
+        DateTime expiresAtUtc)
+    {
+        if (partitionLockId == Guid.Empty) throw new ArgumentException("partitionLockId must be a valid GUID", nameof(partitionLockId));
+        if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
+
+        var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
+        var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+        var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var (whereSql, args) = BuildWhere(queryCriteria);
+            var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
+
+            // Step 1: Execute the id SELECT directly on the connection.
+            // FOR UPDATE SKIP LOCKED acquires exclusive row locks and returns only
+            // rows that are actually acquirable — no subquery inside the UPDATE.
+            var selectIdsSql = BuildQueryIdsToLockSql(
+                whereSql, needsMetadataJoin,
+                queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
+
+            var selectIdsArgs = new Dictionary<string, object?>(args);
+            selectIdsArgs["LockNowUtc"] = nowUtcWithSkew;
+            if (needsMetadataJoin)
+                selectIdsArgs["GroupId"] = MasterGenericRecordGroupIds.JobMetadata;
+
+            var ids = (await conn.QueryAsync<Guid>(selectIdsSql, selectIdsArgs, trans)).ToList();
+
+            if (ids.Count == 0)
+            {
+                trans.Commit();
+                return new List<JobRawModel>();
+            }
+
+            // Step 2: Point-UPDATE using the explicit ID list.
+            // The FOR UPDATE locks from step 1 guarantee no other transaction can
+            // touch these rows — no nested subquery needed in the UPDATE.
+            var t = TableName();
+            var inClause = sql.InClauseFor(Col(x => x.Id), "@Ids");
+            var updateSql = $@"
+UPDATE {t}
+SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
+    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE {Col(x => x.ClusterId)} = @ClusterId
+  AND {inClause}
+  AND {unlockedGuard};";
+
+            var updateArgs = new Dictionary<string, object?>
+            {
+                { "ClusterId", ClusterConnConfig.ClusterId },
+                { "Ids", ids },
+                { "PartitionLockId", partitionLockId },
+                { "LockExpiresAt", expiresAtUtcKind },
+                { "LockNowUtc", nowUtcWithSkew }
+            };
+
+            await conn.ExecuteAsync(updateSql, updateArgs, trans);
+
+            // Step 3: Fetch full records on the same connection and transaction.
+            // Filters by partition_lock_id so only rows the UPDATE actually locked
+            // are returned — driver-agnostic partial lock detection.
+            var jobs = await FetchJobsByPartitionLockAsync(ids, partitionLockId, nowUtcWithSkew, conn, trans);
+
+            // Partial guard: if fewer rows came back than we locked, something
+            // unexpected happened. Roll back cleanly instead of returning a short
+            // batch that triggers the fallback cascade downstream.
+            if (jobs.Count != ids.Count)
+            {
+                trans.SafeRollback();
+                return new List<JobRawModel>();
+            }
+
+            trans.Commit();
+            return jobs;
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    private async Task<IList<JobRawModel>> FetchJobsByPartitionLockAsync(
+        List<Guid> ids,
+        Guid partitionLockId,
+        DateTime nowUtcWithSkew,
+        System.Data.IDbConnection conn,
+        System.Data.IDbTransaction trans)
+    {
+        var selectCols = SelectProjection();
+        var t = TableName();
+        var inClause = sql.InClauseFor($"j.{Col(x => x.Id)}", "@Ids");
+
+        var sqlText = $@"
+SELECT {selectCols}
+FROM {t} j
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e
+    ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)}
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE j.{Col(x => x.ClusterId)} = @ClusterId
+  AND {inClause}
+  AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
+  AND j.{Col(x => x.PartitionLockExpiresAt)} > @NowUtcWithSkew";
+
+        var fetchArgs = new Dictionary<string, object?>
+        {
+            { "GroupId", MasterGenericRecordGroupIds.JobMetadata },
+            { "ClusterId", ClusterConnConfig.ClusterId },
+            { "Ids", ids },
+            { "PartitionLockId", partitionLockId },
+            { "NowUtcWithSkew", nowUtcWithSkew }
+        };
+
+        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
+        var rows = LinearListRecord(linearRows);
+        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+    }
+
+    protected override string BuildQueryIdsToLockSql(
         string whereSql,
         bool needsMetadataJoin,
         int countLimit,
         int offset,
         SortByCriteria? sortByCriteria)
     {
-        var baseSql = base.BuildQueryIdsSql(whereSql, needsMetadataJoin, countLimit, offset, sortByCriteria);
+        // Push the application-level partition lock guard into the inner WHERE
+        // so LIMIT applies only to rows that are actually acquirable.
+        // Without this, already-locked rows can fill the LIMIT count and the outer
+        // UPDATE silently discards them, producing a batch smaller than countLimit
+        // and acquiring unnecessary DB row locks.
+        // @LockNowUtc is provided by AcquireAndFetchAsync's parameter dictionary.
+        var unlockedFilter = $" AND ({Col(x => x.PartitionLockId)} IS NULL " +
+                             $"OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+        var whereWithUnlocked = whereSql + unlockedFilter;
+
+        var baseSql = base.BuildQueryIdsToLockSql(whereWithUnlocked, needsMetadataJoin, countLimit, offset, sortByCriteria);
 
         // MySQL doesn't support LIMIT inside IN subqueries directly.
         // Wrapping in a derived table is the standard workaround.

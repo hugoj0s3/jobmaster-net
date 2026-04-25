@@ -16,17 +16,21 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
 {
     private IMasterJobsRepository masterJobsRepository = null!;
     private IJobMasterLogger logger = null!;
+    private readonly IKnownExceptionIdentifier exceptionIdentifier;
     private OperationThrottler operationThrottler;
 
     public MasterJobsService(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IMasterJobsRepository masterJobsRepository,
         IJobMasterLogger logger,
-        IJobMasterRuntime runtime) : base(clusterConnectionConfig)
+        IJobMasterRuntime runtime,
+        IKnownExceptionIdentifier exceptionIdentifier) : base(clusterConnectionConfig)
     {
         this.masterJobsRepository = masterJobsRepository;
         this.logger = logger;
+        this.exceptionIdentifier = exceptionIdentifier;
         this.operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnectionConfig.ClusterId);
+        this.retryDeadlockPolicy = new RetryDeadlockPolicy(this.exceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
     }
 
     public async Task AddAsync(JobRawModel jobRaw)
@@ -99,40 +103,32 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         }
     }
     
-    // Less concurrent for acquire operations is better for performance only 1 per 2000ms.
-    // Specially for SQL dbs
-    private OperationThrottler acquireOperationThrottler = new (1, 2000);
+    // Less concurrent for acquire operations is better for performance only 1 per 5000ms.
+    private OperationThrottler acquireOperationThrottler = new (1, 5000);
+    private RetryDeadlockPolicy retryDeadlockPolicy;
+    private IMasterJobsService masterJobsServiceImplementation;
+
     public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
         var partitionLockId = Guid.NewGuid();
-        return await acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+        return await retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
     public void ReleasePartitionLock(Guid jobId)
     {
-        operationThrottler.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId));
+        retryDeadlockPolicy.Exec(() => acquireOperationThrottler.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId)));
     }
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Query(queryCriteria));
     }
-    
-    public IList<Guid> QueryIds(JobQueryCriteria queryCriteria)
-    {
-        return operationThrottler.Exec(() => masterJobsRepository.QueryIds(queryCriteria));
-    }
 
     public Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.ExecAsync(() => masterJobsRepository.QueryAsync(queryCriteria));
     }
-
-    public Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria)
-    {
-        return operationThrottler.ExecAsync(() => masterJobsRepository.QueryIdsAsync(queryCriteria));
-    }
-
+    
     public long Count(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Count(queryCriteria));

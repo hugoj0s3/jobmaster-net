@@ -86,7 +86,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
 
                 var agentConnectionId = new AgentConnectionId(agentConfig.Id);
-                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId);
+                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
                 
                 var footprintResolver = agentComponentFactory.GetFootprintResolver(agentConfig.Id);
                 var footprint = await footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentConfig.Id);
@@ -109,7 +109,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             var workerDefinitions = clusterDefinition.Workers;
           
-            var modelToSave = masterConfigService.GetNoAche() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
+            var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount = clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
@@ -252,7 +252,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
 
-            var existingClusterConfig = masterConfigService.GetNoAche();
+            var existingClusterConfig = masterConfigService.GetFresh();
             var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
             
             if (clusterDefinition.IanaTimeZoneId != null && existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())

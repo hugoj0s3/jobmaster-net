@@ -1,10 +1,13 @@
 using System.Diagnostics;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 using System.Runtime;
@@ -25,6 +28,8 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
     private readonly JobMasterInMemoryKeys cacheKeys;
     private readonly JobMasterSentinelKeys sentinelKeys;
     private readonly IJobMasterInMemoryCache jobMasterInMemoryCache;
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly SentinelCachedReader sentinelCachedReader;
 
     public MasterHostService(
         JobMasterClusterConnectionConfig clusterConnConfig,
@@ -32,6 +37,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         IMasterHeartbeatService masterHeartbeatService,
         IJobMasterInMemoryCache jobMasterInMemoryCache,
         IMasterChangesSentinelService masterChangesSentinelService,
+        IKnownExceptionIdentifier knownExceptionIdentifier,
         IHostStatsProvider hostStatsProvider) : base(clusterConnConfig)
     {
         this.masterGenericRecordRepository = masterGenericRecordRepository;
@@ -42,6 +48,12 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
 
         cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
         sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
+
+        this.retryDeadlockPolicy =
+            new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+
+        this.sentinelCachedReader =
+            new SentinelCachedReader(jobMasterInMemoryCache, masterChangesSentinelService);
     }
 
     public async Task<IList<HostModel>> QueryAllAsync()
@@ -106,11 +118,13 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         host.MemoryUsedBytes = hostStats.MemoryUsedBytes;
         host.StatisticsAt = hostStats.StatisticsAt;
         
-        var genericRecord = 
-            GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, host.Id, host); 
-        
+        var genericRecord =
+            GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, host.Id, host);
+
         await masterGenericRecordRepository.UpsertAsync(genericRecord);
-        
+
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
+
         masterHeartbeatService.Heartbeat(ResourceHeartbeatType.Host, hostId);
     }
 
@@ -120,26 +134,25 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         {
             await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.Host, hostId);
         }
+
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
     }
 
     private async Task<IList<HostRecord>> QueryAllRecordsAsync()
     {
-        var cacheKey = cacheKeys.AllHosts();
-        var sentinelKey = sentinelKeys.Hosts();
+        return await retryDeadlockPolicy.ExecAsync(() => sentinelCachedReader.GetOrFetchAsync(
+            cacheKey: cacheKeys.AllHosts(),
+            sentinelKey: sentinelKeys.Hosts(),
+            factory: FetchAllHostRecordsAsync,
+            allowedDiscrepancy: JobMasterConstants.HostsAllowDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
+    }
 
-        var inCacheValue = jobMasterInMemoryCache.Get<IList<HostRecord>>(cacheKey);
-        if (inCacheValue == null ||
-            inCacheValue.Value == null ||
-            masterChangesSentinelService.HasChangesAfter(sentinelKey, inCacheValue.CreatedAt, allowedDiscrepancy: TimeSpan.FromSeconds(10)))
-        {
-            var allHostRecords = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.Host);
-            var allHosts = allHostRecords.Select(x => x.ToObject<HostRecord>()).ToList();
-
-            jobMasterInMemoryCache.Set(cacheKey, allHosts);
-            return allHosts;
-        }
-
-        return inCacheValue.Value;
+    private async Task<IList<HostRecord>> FetchAllHostRecordsAsync()
+    {
+        var allHostRecords = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.Host);
+        return allHostRecords.Select(x => x.ToObject<HostRecord>()).ToList();
     }
     
     private async Task<HostStatsInfo> CaptureStatsAsync(HostId hostId, Process? process = null)
