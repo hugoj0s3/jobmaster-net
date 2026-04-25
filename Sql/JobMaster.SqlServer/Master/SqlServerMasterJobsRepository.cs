@@ -10,7 +10,6 @@ using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
-using Microsoft.Data.SqlClient;
 
 namespace JobMaster.SqlServer.Master;
 
@@ -18,7 +17,8 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
 {
     public SqlServerMasterJobsRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connectionManager) : base(clusterConnectionConfig, connectionManager)
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 
@@ -239,8 +239,4 @@ END";
         });
     }
 
-    protected override bool IsDupeViolation(Guid jobId, Exception ex)
-    {
-        return ex is SqlException sqlEx && sqlEx.Number == 2627;
-    }
 }

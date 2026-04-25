@@ -10,7 +10,6 @@ using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
-using MySqlConnector;
 
 namespace JobMaster.MySql.Master;
 
@@ -18,7 +17,8 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
 {
     public MySqlMasterJobsRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connectionManager) : base(clusterConnectionConfig, connectionManager)
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 
@@ -277,14 +277,4 @@ ON DUPLICATE KEY UPDATE
         });
     }
 
-    protected override bool IsDupeViolation(Guid jobId, Exception ex)
-    {
-        if (ex is MySqlException mysqlEx)
-        {
-            return mysqlEx.Number == 1062
-                   || mysqlEx.ErrorCode == MySqlErrorCode.DuplicateKeyEntry;
-        }
-
-        return false;
-    }
 }

@@ -10,15 +10,15 @@ using JobMaster.SqlBase;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
-using Npgsql;
 
 namespace JobMaster.Postgres.Master;
 
 internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
 {
     public PostgresMasterJobsRepository(JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connectionManager) :
-        base(clusterConnectionConfig, connectionManager)
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) :
+        base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 
@@ -133,10 +133,6 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
         return baseSql + " FOR UPDATE SKIP LOCKED";
     }
 
-    protected override bool IsDupeViolation(Guid jobId, Exception ex)
-    {
-        return ex is PostgresException pgEx && pgEx.SqlState == "23505";
-    }
 
     private string BuildJobUpsertSql()
     {

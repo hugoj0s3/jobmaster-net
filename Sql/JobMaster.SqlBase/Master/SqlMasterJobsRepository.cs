@@ -31,12 +31,15 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
     protected string connString = string.Empty;
     protected JobMasterConfigDictionary additionalConnConfig = null!;
     protected GenericRecordSqlUtil genericUtil = null!;
+    protected readonly IKnownExceptionIdentifier knownExceptionIdentifier;
 
     protected SqlMasterJobsRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connManager) : base(clusterConnectionConfig)
+        IDbConnectionManager connManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnectionConfig)
     {
         this.connManager = connManager;
+        this.knownExceptionIdentifier = knownExceptionIdentifier;
         sql = SqlGeneratorFactory.Get(this.MasterRepoTypeId);
         connString = clusterConnectionConfig.ConnectionString;
         additionalConnConfig = clusterConnectionConfig.AdditionalConnConfig;
@@ -441,7 +444,10 @@ WHERE j.{cClusterId} = @ClusterId
     
     protected virtual string UpdateToLockTableHint => string.Empty;
     
-    protected abstract bool IsDupeViolation(Guid jobId, Exception ex);
+    protected virtual bool IsDupeViolation(Guid jobId, Exception ex)
+    {
+        return knownExceptionIdentifier.Identify(MasterRepoTypeId, ex) == JobMasterKnownExceptionId.DuplicateKey;
+    }
 
     // SQL builders
     private (string, object) BuildGetSql(Guid jobId)
