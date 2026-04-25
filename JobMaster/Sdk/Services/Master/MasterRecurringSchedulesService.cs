@@ -3,8 +3,10 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -19,29 +21,52 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     private IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository = null!;
     private JobMasterLockKeys jobMasterLockKeys = null!;
     private readonly OperationThrottler operationThrottler;
+    private readonly IJobMasterLogger logger;
+    private readonly IKnownExceptionIdentifier exceptionIdentifier;
 
     public MasterRecurringSchedulesService(
         IMasterDistributedLockerService masterDistributedLockerService,
         JobMasterClusterConnectionConfig clusterConnConfig,
         IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository,
-        IJobMasterRuntime runtime)
+        IJobMasterRuntime runtime,
+        IJobMasterLogger logger,
+        IKnownExceptionIdentifier exceptionIdentifier)
         : base(clusterConnConfig)
     {
         this.masterDistributedLockerService = masterDistributedLockerService;
         this.masterRecurringSchedulesRepository = masterRecurringSchedulesRepository;
+        this.logger = logger;
+        this.exceptionIdentifier = exceptionIdentifier;
 
         jobMasterLockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
         operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnConfig.ClusterId);
+        retryDeadlockPolicy = new RetryDeadlockPolicy(this.exceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
     }
 
-    public Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    public async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
     {
-        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
+        try
+        {
+            await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
+        }
+        catch (JobMasterVersionConflictException e)
+        {
+            this.logger.Error("RecurringSchedule version conflict", JobMasterLogSubjectType.RecurringSchedule, scheduleRaw.Id, e);
+            throw;
+        }
     }
 
     public void Upsert(RecurringScheduleRawModel scheduleRaw)
     {
-        operationThrottler.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
+        try
+        {
+            operationThrottler.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
+        }
+        catch (JobMasterVersionConflictException e)
+        {
+            this.logger.Error("RecurringSchedule version conflict", JobMasterLogSubjectType.RecurringSchedule, scheduleRaw.Id, e);
+            throw;
+        }
     }
 
     public void UpsertStatic(StaticRecurringScheduleDefinition definition)
@@ -105,9 +130,12 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         return rows.Select(x => x.Id).ToList();
     }
 
+    private readonly OperationThrottler acquireOperationThrottler = new(1, 5000);
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
     {
-        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+        return retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, int partitionLockId, DateTime expiresAtUtc)
@@ -119,7 +147,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
             IsLocked = false,
             CountLimit = ids.Count,
         };
-        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc));
+        return retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc)));
     }
 
     public Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
