@@ -74,7 +74,7 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
     public string? AgentWorkerId { get; internal set; }
     
     [JsonInclude]
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
     
     [JsonInclude]
     public HostId? HostId { get; internal set; }

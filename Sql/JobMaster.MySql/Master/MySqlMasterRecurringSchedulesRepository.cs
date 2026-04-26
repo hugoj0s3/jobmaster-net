@@ -26,10 +26,10 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
 
     public override async Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(
         RecurringScheduleQueryCriteria queryCriteria,
-        int partitionLockId,
+        Guid partitionLockId,
         DateTime expiresAtUtc)
     {
-        if (partitionLockId <= 0) throw new ArgumentException("partitionLockId must be > 0", nameof(partitionLockId));
+        if (partitionLockId == Guid.Empty) throw new ArgumentException("partitionLockId must be a valid GUID", nameof(partitionLockId));
         if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
 
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();

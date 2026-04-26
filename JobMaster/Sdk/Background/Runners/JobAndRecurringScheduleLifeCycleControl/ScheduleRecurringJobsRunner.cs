@@ -76,18 +76,18 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
         }
         recurringScheduleQueryCriteria.CountLimit = lastScanPlanResult.BatchSize;
         
-        var lockId = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
-        
-        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockId), durationToLock.Add(TimeSpan.FromMinutes(1)));
+        var lockSlot = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
+
+        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockSlot), durationToLock.Add(TimeSpan.FromMinutes(1)));
         if (lockToken == null)
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, lockId, utcNow.Add(durationToLock));
+        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, utcNow.Add(durationToLock));
         if (recurringSchedules.Count <= 0)
         {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
         
@@ -106,7 +106,7 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
             await recurringSchedulePlanner.ScheduleNextJobsAsync(recurringSchedule);
         }
         
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
         
         return OnTickResult.Success(lastScanPlanResult.Interval);
     }

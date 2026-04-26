@@ -20,7 +20,7 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     
     RecurringScheduleRawModel? GetByStaticId(string staticId);
 
-    Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
     
     long Count(RecurringScheduleQueryCriteria queryCriteria);
 

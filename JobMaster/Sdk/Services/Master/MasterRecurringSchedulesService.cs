@@ -133,13 +133,15 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     private readonly OperationThrottler acquireOperationThrottler = new(1, 5000);
     private readonly RetryDeadlockPolicy retryDeadlockPolicy;
     
-    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc)
+    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
+        var partitionLockId = Guid.NewGuid();
         return retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
-    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, int partitionLockId, DateTime expiresAtUtc)
+    public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, DateTime expiresAtUtc)
     {
+        var partitionLockId = Guid.NewGuid();
         var criteria = new RecurringScheduleQueryCriteria
         {
             Ids = ids,

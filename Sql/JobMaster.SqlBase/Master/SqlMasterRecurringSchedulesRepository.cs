@@ -39,7 +39,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         genericUtil = new GenericRecordSqlUtil(sql, additionalConnConfig, ClusterConnConfig.ClusterId);
     }
 
-    public abstract Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    public abstract Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
 
     public void Add(RecurringScheduleRawModel scheduleRaw)
     {

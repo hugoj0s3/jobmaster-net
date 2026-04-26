@@ -34,7 +34,7 @@ internal class RecurringSchedulePersistenceRecord
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
 
-    public int? PartitionLockId { get; set; }
+    public Guid? PartitionLockId { get; set; }
     public string? HostId { get; set; }
     public string? HostDisplayName { get; set; }
     public DateTime? PartitionLockExpiresAt { get; set; }
