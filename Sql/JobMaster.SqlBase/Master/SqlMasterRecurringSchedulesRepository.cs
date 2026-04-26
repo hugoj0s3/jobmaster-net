@@ -39,7 +39,58 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         genericUtil = new GenericRecordSqlUtil(sql, additionalConnConfig, ClusterConnConfig.ClusterId);
     }
 
-    public abstract Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
+    public virtual async Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(
+        RecurringScheduleQueryCriteria queryCriteria,
+        Guid partitionLockId,
+        DateTime expiresAtUtc)
+    {
+        if (partitionLockId == Guid.Empty) throw new ArgumentException("partitionLockId must be a valid GUID", nameof(partitionLockId));
+        if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
+
+        var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
+        var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+
+        var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var t = TableName();
+            var (whereSql, args) = BuildWhere(queryCriteria);
+            var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
+            var queryIdsSql = BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
+
+            var updateSql = $@"
+UPDATE {t} {UpdateToLockTableHint}
+SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
+    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE {Col(x => x.Id)} IN ({queryIdsSql})
+  AND {unlockedGuard};";
+
+            var args2 = new Dictionary<string, object?>(args);
+            args2["LockNowUtc"] = nowUtcWithSkew;
+            args2["LockExpiresAt"] = expiresAtUtcKind;
+            args2["PartitionLockId"] = partitionLockId;
+            if (needsMetadataJoin)
+                args2["GroupId"] = MasterGenericRecordGroupIds.RecurringScheduleMetadata;
+
+            var rowsAffected = await conn.ExecuteAsync(updateSql, args2, trans);
+
+            trans.Commit();
+
+            if (rowsAffected == 0) return new List<RecurringScheduleRawModel>();
+
+            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+            return await QueryLockedSchedulesAsync(partitionLockId, nowUtcWithSkew, conn2);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
 
     public void Add(RecurringScheduleRawModel scheduleRaw)
     {
@@ -333,6 +384,73 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
             tx.SafeRollback();
             throw;
         }
+    }
+
+    protected virtual string UpdateToLockTableHint => string.Empty;
+
+    protected virtual string BuildQueryIdsToLockSql(
+        string whereSql,
+        bool needsMetadataJoin,
+        int countLimit,
+        int offset,
+        SortByCriteria? sortByCriteria)
+    {
+        var metadataJoin = string.Empty;
+        if (needsMetadataJoin)
+        {
+            metadataJoin = $@"
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON
+    e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} AND
+    e.{Col(x => x.GroupId)} = @GroupId ";
+        }
+
+        var sb = new StringBuilder();
+        sb.Append($@"
+SELECT {Col(x => x.Id)}
+FROM {TableName()} s
+{metadataJoin}
+{whereSql}");
+        var sortBy = SqlOrderByUtil.BuildOrderByClause(sortByCriteria, "s", $" ORDER BY s.{Col(x => x.LastPlanCoverageUntil)} DESC");
+        sb.Append(sortBy);
+        sb.Append('\n');
+        sb.Append(sql.OffsetQueryFor(countLimit, offset));
+        return sb.ToString();
+    }
+
+    private async Task<IList<RecurringScheduleRawModel>> QueryLockedSchedulesAsync(
+        Guid partitionLockId,
+        DateTime nowUtcWithSkew,
+        IDbConnection conn2)
+    {
+        var selectCols = SelectProjection();
+        var t = TableName();
+        var cClusterId = Col(x => x.ClusterId);
+        var cPartitionLockId = Col(x => x.PartitionLockId);
+        var cPartitionLockExpiresAt = Col(x => x.PartitionLockExpiresAt);
+
+        var sqlText = $@"
+SELECT {selectCols}
+FROM {t} s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e
+    ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)}
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE s.{cClusterId} = @ClusterId
+  AND s.{cPartitionLockId} = @PartitionLockId
+  AND s.{cPartitionLockExpiresAt} > @NowUtcWithSkew";
+
+        var args = new Dictionary<string, object?>
+        {
+            { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata },
+            { "ClusterId", ClusterConnConfig.ClusterId },
+            { "PartitionLockId", partitionLockId },
+            { "NowUtcWithSkew", nowUtcWithSkew }
+        };
+
+        var linearRows = (await conn2.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var rows = LinearListToDomain(linearRows);
+        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
     }
 
     // SQL builders

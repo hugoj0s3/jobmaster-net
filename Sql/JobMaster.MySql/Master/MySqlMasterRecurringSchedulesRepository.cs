@@ -34,80 +34,142 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
 
         var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
         var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+        var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
-        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var (whereSql, whereArgs) = BuildWhere(queryCriteria);
-            var t = TableName();
+            var (whereSql, args) = BuildWhere(queryCriteria);
+            var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
 
-            var cId = Col(x => x.Id);
-            var cClusterId = Col(x => x.ClusterId);
-            var cLastPlanCoverageUntil = Col(x => x.LastPlanCoverageUntil);
+            // Step 1: SELECT candidate IDs with FOR UPDATE SKIP LOCKED.
+            // Rows are locked at SELECT time — the subsequent UPDATE uses the explicit
+            // ID list, avoiding a nested subquery that MySQL cannot execute under LIMIT.
+            var selectIdsSql = BuildQueryIdsToLockSql(
+                whereSql, needsMetadataJoin,
+                queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
 
-            var unlockedGuard =
-                $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
-            var defaultOrderByClause = $" ORDER BY s.{cLastPlanCoverageUntil} DESC";
-            var orderBy = SqlOrderByUtil.BuildOrderByClause(queryCriteria.SortBy, "s", defaultOrderByClause);
+            var selectIdsArgs = new Dictionary<string, object?>(args);
+            selectIdsArgs["LockNowUtc"] = nowUtcWithSkew;
+            if (needsMetadataJoin)
+                selectIdsArgs["GroupId"] = MasterGenericRecordGroupIds.RecurringScheduleMetadata;
 
-            var offsetClause = string.Empty;
-            if (queryCriteria.CountLimit > 0)
+            var ids = (await conn.QueryAsync<Guid>(selectIdsSql, selectIdsArgs, trans)).ToList();
+
+            if (ids.Count == 0)
             {
-                offsetClause = $"\nLIMIT {queryCriteria.CountLimit}";
-            }
-
-            var selectCols = SelectProjection("s", "e", "v");
-
-            var args = new Dictionary<string, object?>();
-            foreach (var kv in whereArgs) args[kv.Key] = kv.Value;
-            args["ClusterId"] = ClusterConnConfig.ClusterId;
-            args["LockNowUtc"] = nowUtcWithSkew;
-            args["PartitionLockId"] = partitionLockId;
-            args["LockExpiresAt"] = expiresAtUtcKind;
-            args["GroupId"] = MasterGenericRecordGroupIds.RecurringScheduleMetadata;
-
-            // Step 1: atomically claim rows via UPDATE ... ORDER BY ... LIMIT
-            var updateSql = $@"
-UPDATE {t} s
-SET s.{Col(x => x.PartitionLockId)} = @PartitionLockId,
-    s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    s.{Col(x => x.Version)} = {sql.GenerateVersionSql()}
-{whereSql} AND {unlockedGuard}
-{orderBy}
-{offsetClause};";
-
-            var rowsAffected = await conn.ExecuteAsync(updateSql, args, tx);
-
-            if (rowsAffected == 0)
-            {
-                tx.Commit();
+                trans.Commit();
                 return new List<RecurringScheduleRawModel>();
             }
 
-            // Step 2: fetch claimed rows with metadata
-            var fetchSql = $@"
-SELECT {selectCols}
-FROM {t} s
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
-WHERE s.{cClusterId} = @ClusterId
-  AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
-  AND s.{Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt
-{orderBy};";
+            // Step 2: Point-UPDATE using the explicit ID list.
+            // FOR UPDATE locks from step 1 guarantee no competing transaction can
+            // modify these rows between the SELECT and this UPDATE.
+            var t = TableName();
+            var inClause = sql.InClauseFor(Col(x => x.Id), "@Ids");
+            var updateSql = $@"
+UPDATE {t}
+SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
+    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE {Col(x => x.ClusterId)} = @ClusterId
+  AND {inClause}
+  AND {unlockedGuard};";
 
-            var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(fetchSql, args, tx)).ToList();
-            var records = LinearListToDomain(linearRows);
-            var result = records.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+            var updateArgs = new Dictionary<string, object?>
+            {
+                { "ClusterId", ClusterConnConfig.ClusterId },
+                { "Ids", ids },
+                { "PartitionLockId", partitionLockId },
+                { "LockExpiresAt", expiresAtUtcKind },
+                { "LockNowUtc", nowUtcWithSkew }
+            };
 
-            tx.Commit();
-            return result;
+            await conn.ExecuteAsync(updateSql, updateArgs, trans);
+
+            // Step 3: Fetch full records on the same connection and transaction,
+            // filtered by partitionLockId to confirm each row was actually locked.
+            var schedules = await FetchSchedulesByPartitionLockAsync(ids, partitionLockId, nowUtcWithSkew, conn, trans);
+
+            // Partial guard: fewer rows returned than locked means something unexpected
+            // happened. Roll back rather than returning a short batch.
+            if (schedules.Count != ids.Count)
+            {
+                trans.SafeRollback();
+                return new List<RecurringScheduleRawModel>();
+            }
+
+            trans.Commit();
+            return schedules;
         }
         catch
         {
-            tx.SafeRollback();
+            trans.SafeRollback();
             throw;
         }
+    }
+
+    private async Task<IList<RecurringScheduleRawModel>> FetchSchedulesByPartitionLockAsync(
+        List<Guid> ids,
+        Guid partitionLockId,
+        DateTime nowUtcWithSkew,
+        IDbConnection conn,
+        IDbTransaction trans)
+    {
+        var selectCols = SelectProjection();
+        var t = TableName();
+        var inClause = sql.InClauseFor($"s.{Col(x => x.Id)}", "@Ids");
+
+        var sqlText = $@"
+SELECT {selectCols}
+FROM {t} s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e
+    ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)}
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE s.{Col(x => x.ClusterId)} = @ClusterId
+  AND {inClause}
+  AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
+  AND s.{Col(x => x.PartitionLockExpiresAt)} > @NowUtcWithSkew";
+
+        var fetchArgs = new Dictionary<string, object?>
+        {
+            { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata },
+            { "ClusterId", ClusterConnConfig.ClusterId },
+            { "Ids", ids },
+            { "PartitionLockId", partitionLockId },
+            { "NowUtcWithSkew", nowUtcWithSkew }
+        };
+
+        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
+        var rows = LinearListToDomain(linearRows);
+        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+    }
+
+    protected override string BuildQueryIdsToLockSql(
+        string whereSql,
+        bool needsMetadataJoin,
+        int countLimit,
+        int offset,
+        SortByCriteria? sortByCriteria)
+    {
+        // Push the unlocked guard into the inner WHERE so LIMIT applies only to
+        // rows that are actually acquirable. Without this, already-locked rows
+        // consume LIMIT slots and the batch comes back smaller than expected.
+        // @LockNowUtc is provided by AcquireAndFetchAsync's selectIdsArgs.
+        var unlockedFilter = $" AND ({Col(x => x.PartitionLockId)} IS NULL " +
+                             $"OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+        var whereWithUnlocked = whereSql + unlockedFilter;
+
+        var baseSql = base.BuildQueryIdsToLockSql(whereWithUnlocked, needsMetadataJoin, countLimit, offset, sortByCriteria);
+
+        // MySQL does not allow LIMIT inside an IN subquery directly.
+        // Wrapping in a derived table is the standard workaround.
+        // FOR UPDATE SKIP LOCKED inside the derived table gives race-free candidate
+        // selection — competing workers skip already-locked rows at SELECT time.
+        return $"SELECT {Col(x => x.Id)} FROM ({baseSql} FOR UPDATE SKIP LOCKED) AS _candidates";
     }
 
     public override void Upsert(RecurringScheduleRawModel scheduleRaw)
