@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -31,7 +32,7 @@ public class MasterRecurringSchedulesServiceTests
 
         repo.Setup(x => x.UpsertAsync(raw)).Returns(Task.CompletedTask);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         await sut.UpsertAsync(raw);
 
@@ -60,7 +61,7 @@ public class MasterRecurringSchedulesServiceTests
 
         repo.Setup(x => x.Upsert(raw));
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.Upsert(raw);
 
@@ -77,7 +78,7 @@ public class MasterRecurringSchedulesServiceTests
         var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
         var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.BulkUpdateStaticDefinitionLastEnsured(new List<string>(), DateTime.UtcNow);
 

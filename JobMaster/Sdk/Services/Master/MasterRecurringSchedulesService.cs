@@ -23,6 +23,9 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     private readonly OperationThrottler operationThrottler;
     private readonly IJobMasterLogger logger;
     private readonly IKnownExceptionIdentifier exceptionIdentifier;
+    
+    private readonly OperationThrottler acquireOperationThrottler = new(1, 5000);
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
 
     public MasterRecurringSchedulesService(
         IMasterDistributedLockerService masterDistributedLockerService,
@@ -129,9 +132,6 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         var rows = await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.QueryAsync(queryCriteria));
         return rows.Select(x => x.Id).ToList();
     }
-
-    private readonly OperationThrottler acquireOperationThrottler = new(1, 5000);
-    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
     
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {

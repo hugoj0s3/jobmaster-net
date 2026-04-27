@@ -18,6 +18,10 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     private IJobMasterLogger logger = null!;
     private readonly IKnownExceptionIdentifier exceptionIdentifier;
     private OperationThrottler operationThrottler;
+    
+    // Less concurrent for acquire operations is better for performance only 1 per 5000ms.
+    private OperationThrottler acquireOperationThrottler = new (1, 5000);
+    private RetryDeadlockPolicy retryDeadlockPolicy;
 
     public MasterJobsService(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
@@ -102,11 +106,6 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             throw;
         }
     }
-    
-    // Less concurrent for acquire operations is better for performance only 1 per 5000ms.
-    private OperationThrottler acquireOperationThrottler = new (1, 5000);
-    private RetryDeadlockPolicy retryDeadlockPolicy;
-    private IMasterJobsService masterJobsServiceImplementation;
 
     public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
