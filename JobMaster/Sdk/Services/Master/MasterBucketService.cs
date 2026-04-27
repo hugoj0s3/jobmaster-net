@@ -32,7 +32,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     private IMasterAgentWorkersService masterAgentWorkersService = null!;
     private IAgentJobsDispatcherService masterAgentsDispatcherService = null!;
     private IMasterClusterConfigurationService masterClusterConfigurationService = null!;
-    private IKnownExceptionIdentifier knownExceptionIdentifier = null!;
 
     private readonly IJobMasterInMemoryCache jobMasterMemoryCache;
     private JobMasterInMemoryKeys cacheKeys = null!;

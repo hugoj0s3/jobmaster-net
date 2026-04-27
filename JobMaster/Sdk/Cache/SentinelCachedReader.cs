@@ -98,7 +98,7 @@ internal class SentinelCachedReader
             valueFactoryLockDuration: valueFactoryLockDuration,
             durationToExpire: durationToExpire);
 
-        return cacheItem.Value;
+        return cacheItem.Value!;
     }
 
     /// <summary>
@@ -130,7 +130,7 @@ internal class SentinelCachedReader
             valueFactoryLockDuration: valueFactoryLockDuration,
             durationToExpire: durationToExpire);
 
-        return cacheItem.Value;
+        return cacheItem.Value!;
     }
 
     /// <summary>
@@ -149,7 +149,7 @@ internal class SentinelCachedReader
 
         if (!sentinelService.HasChangesAfter(sentinelKey, cached.CreatedAt, allowedDiscrepancy))
         {
-            return (true, cached.Value);
+            return (true, cached.Value!);
         }
 
         cache.Remove(cacheKey);

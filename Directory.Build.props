@@ -11,5 +11,8 @@
     <!-- true  = ProjectReference (development, IDE rename/refactor works) -->
     <!-- false = PackageReference (pack / publish / CI) -->
     <UseProjectRefs Condition="'$(UseProjectRefs)' == ''">true</UseProjectRefs>
+
+    <!-- Suppress NU1801: local NuGet source may not exist in fresh checkouts -->
+    <NoWarn>$(NoWarn);NU1801</NoWarn>
   </PropertyGroup>
 </Project>

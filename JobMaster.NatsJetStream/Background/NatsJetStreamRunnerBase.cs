@@ -420,13 +420,13 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     public override async Task OnStopAsync()
     {
         await base.OnStopAsync();
-        await StopConsumptionTask();
+        await StopConsumptionTaskAsync();
     }
 
     public override async Task OnTerminateFailureAsync(Exception lastException)
     {
         await base.OnTerminateFailureAsync(lastException);
-        await StopConsumptionTask();
+        await StopConsumptionTaskAsync();
     }
 
 
@@ -438,7 +438,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             this.logger.Error(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
     }
     
-    private async Task StopConsumptionTask()
+    private async Task StopConsumptionTaskAsync()
     {
         this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogSubjectType.Bucket, BucketId);
 

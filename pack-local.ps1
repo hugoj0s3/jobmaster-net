@@ -1,0 +1,20 @@
+$ErrorActionPreference = "Stop"
+ 
+$OutputDir = "./nupkgs"
+ 
+if (Test-Path $OutputDir) {
+    Remove-Item -Recurse -Force $OutputDir
+}
+New-Item -ItemType Directory -Path $OutputDir | Out-Null
+ 
+dotnet pack JobMaster/JobMaster.csproj                                   -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack JobMaster.Api/JobMaster.Api.csproj                           -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj       -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack Sql/JobMaster.SqlBase/JobMaster.SqlBase.csproj               -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack Sql/JobMaster.Postgres/JobMaster.Postgres.csproj             -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack Sql/JobMaster.MySql/JobMaster.MySql.csproj                   -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack Sql/JobMaster.SqlServer/JobMaster.SqlServer.csproj           -c Release -p:UseProjectRefs=false -o $OutputDir
+ 
+Write-Host ""
+Write-Host "Packages generated in $OutputDir`:"
+Get-ChildItem "$OutputDir\*.nupkg" | Select-Object -ExpandProperty Name
