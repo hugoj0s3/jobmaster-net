@@ -67,7 +67,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
         return results;
     }
 
-    public Task<IList<JobMasterRawMessage>> DispatchMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    public Task<IList<JobMasterRawMessage>> PullMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {
         throw new NotSupportedException();
     }

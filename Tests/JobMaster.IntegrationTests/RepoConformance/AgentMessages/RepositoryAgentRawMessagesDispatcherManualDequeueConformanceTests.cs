@@ -36,7 +36,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
 
             Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
 
-            var msgs = await Fixture.AgentMessages.DispatchMessagesAsync(bucket, 10);
+            var msgs = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10);
             Assert.Single(msgs);
 
             var m = msgs[0];
@@ -66,7 +66,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", baseTime.AddSeconds(1), "c1");
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":3}", baseTime.AddSeconds(3), "c3");
 
-            var msgs = await Fixture.AgentMessages.DispatchMessagesAsync(bucket, 10);
+            var msgs = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10);
             Assert.Equal(3, msgs.Count);
 
             Assert.Equal("c1", msgs[0].CorrelationId);
@@ -94,13 +94,13 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"t\":\"past\"}", now.AddMinutes(-1), "past");
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"t\":\"future\"}", now.AddMinutes(10), "future");
 
-            var msgs = await Fixture.AgentMessages.DispatchMessagesAsync(bucket, 10, referenceTimeTo: now);
+            var msgs = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10, referenceTimeTo: now);
             Assert.Single(msgs);
             Assert.Equal("past", msgs[0].CorrelationId);
 
             Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
 
-            var remaining = await Fixture.AgentMessages.DispatchMessagesAsync(bucket, 10);
+            var remaining = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10);
             Assert.Single(remaining);
             Assert.Equal("future", remaining[0].CorrelationId);
 
@@ -132,7 +132,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
 
             Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
 
-            var dequeued = await Fixture.AgentMessages.DispatchMessagesAsync(bucket, 10);
+            var dequeued = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10);
             Assert.Equal(3, dequeued.Count);
 
             Assert.Equal(new[] { "b1", "b2", "b3" }, dequeued.Select(x => x.CorrelationId).ToArray());

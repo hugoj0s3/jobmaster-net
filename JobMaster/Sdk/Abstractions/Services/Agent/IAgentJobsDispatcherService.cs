@@ -19,11 +19,11 @@ internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
     
     Task<string> AddForProcessingAsync(JobRawModel jobRaw);
     
-    Task<IList<JobRawModel>> DispatchForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo);
+    Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo);
     
-    Task<IList<JobRawModel>> DispatchSavePendingJobsAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs);
+    Task<IList<JobRawModel>> PullSavePendingJobsAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs);
     
-    Task<IList<RecurringScheduleRawModel>> DequeueSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs);
+    Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs);
     
     Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId);
     

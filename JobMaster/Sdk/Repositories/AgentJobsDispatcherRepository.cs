@@ -135,7 +135,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         return await savePendingRepository.BulkPushMessageAsync(fullBucketAddressId, messages);
     }
     
-    public async Task<IList<RecurringScheduleRawModel>> DequeueSavePendingRecurAsync(string bucketId, int numberOfJobs)
+    public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(string bucketId, int numberOfJobs)
     {
         if (IsAutoDequeueForSaving)
         {
@@ -143,7 +143,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         }
 
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
-        var messages = await savePendingRepository.DispatchMessagesAsync(fullBucketAddressId, numberOfJobs);
+        var messages = await savePendingRepository.PullMessagesAsync(fullBucketAddressId, numberOfJobs);
 
         var results = new List<RecurringScheduleRawModel>();
         foreach (var message in messages)
@@ -168,7 +168,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
     /// <param name="bucketId">The bucket ID</param>
     /// <param name="numberOfJobs">Number of jobs to dequeue</param>
     /// <returns>List of dequeued job records</returns>
-    public async Task<IList<JobRawModel>> DispatchSavePendingJobsAsync(string bucketId, int numberOfJobs)
+    public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs)
     {
         if (IsAutoDequeueForSaving)
         {
@@ -176,7 +176,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         }
 
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(bucketId);
-        var messages = await savePendingRepository.DispatchMessagesAsync(fullBucketAddressId, numberOfJobs);
+        var messages = await savePendingRepository.PullMessagesAsync(fullBucketAddressId, numberOfJobs);
 
         var results = new List<JobRawModel>();
         foreach (var message in messages)
@@ -200,7 +200,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
 
     public bool IsAutoDequeueForSaving => savePendingRepository.IsAutoDequeue;
     
-    public async Task<IList<JobRawModel>> DispatchForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo)
+    public async Task<IList<JobRawModel>> PullForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo)
     {
         if (IsAutoDequeueForProcessing)
         {
@@ -208,7 +208,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         }
 
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobProcessingBucketAddress(bucketId);
-        var messages = await processingRepository.DispatchMessagesAsync(fullBucketAddressId, numberOfJobs, scheduleTo);
+        var messages = await processingRepository.PullMessagesAsync(fullBucketAddressId, numberOfJobs, scheduleTo);
 
         var results = new List<JobRawModel>();
         foreach (var message in messages)

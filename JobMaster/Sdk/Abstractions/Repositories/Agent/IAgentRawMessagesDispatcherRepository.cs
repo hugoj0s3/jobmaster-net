@@ -9,7 +9,7 @@ internal interface IAgentRawMessagesDispatcherRepository : IJobMasterClusterAwar
     string PushMessage(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId);
     Task<string> PushMessageAsync(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId);
     Task<IList<string>> BulkPushMessageAsync(string fullBucketAddressId, IList<(string payload, DateTime referenceTime, string correlationId)> messages);
-    Task<IList<JobMasterRawMessage>> DispatchMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null);
+    Task<IList<JobMasterRawMessage>> PullMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null);
     Task<bool> HasJobsAsync(string fullBucketAddressId);
     
     Task CreateBucketAsync(string fullBucketAddressId);

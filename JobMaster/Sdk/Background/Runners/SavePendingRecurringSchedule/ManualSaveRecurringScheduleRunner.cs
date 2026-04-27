@@ -47,7 +47,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
         }
 
         // 1. Dequeue batch
-        var recurringSchedules = await agentJobsDispatcherService.DequeueSavePendingRecurAsync(
+        var recurringSchedules = await agentJobsDispatcherService.PullSavePendingRecurAsync(
             BackgroundAgentWorker.AgentConnectionId, 
             BucketId!, 
             BackgroundAgentWorker.BucketBufferSize);

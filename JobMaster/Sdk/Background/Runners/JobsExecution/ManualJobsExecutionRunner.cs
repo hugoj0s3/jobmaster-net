@@ -95,7 +95,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         }
         
         var jobs = 
-            await JobsOnboardingSource.TakeAsync(
+            await JobsOnboardingSource.PullAsync(
                 countAvailability, 
                 DateTime.UtcNow.Add(BackgroundAgentWorker.BucketBufferLeadTime));
         

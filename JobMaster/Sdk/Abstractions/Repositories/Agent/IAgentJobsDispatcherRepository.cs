@@ -18,11 +18,11 @@ internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareCompon
     string PushForProcessing(JobRawModel jobRaw);
     Task<string> PushForProcessingAsync(JobRawModel jobRaw);
     
-    Task<IList<JobRawModel>> DispatchForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
+    Task<IList<JobRawModel>> PullForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
     
-    Task<IList<JobRawModel>> DispatchSavePendingJobsAsync(string bucketId, int numberOfJobs);
+    Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs);
     
-    Task<IList<RecurringScheduleRawModel>> DequeueSavePendingRecurAsync(string bucketId, int numberOfJobs);
+    Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(string bucketId, int numberOfJobs);
     Task<bool> HasJobsAsync(string bucketId);
     
     Task CreateBucketAsync(string bucketId);

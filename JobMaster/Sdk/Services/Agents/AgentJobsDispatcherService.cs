@@ -119,28 +119,28 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         return await throttler.ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
     }
 
-    public async Task<IList<JobRawModel>> DispatchForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId,
+    public async Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId,
         int numberOfJobs, DateTime? scheduleTo)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
         var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.DispatchForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
+        return await throttler.ExecAsync(() => repository.PullForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
     }
 
-    public async Task<IList<JobRawModel>> DispatchSavePendingJobsAsync(AgentConnectionId agentConnectionId,
+    public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(AgentConnectionId agentConnectionId,
         string bucketId, int numberOfJobs)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
         var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.DispatchSavePendingJobsAsync(bucketId, numberOfJobs));
+        return await throttler.ExecAsync(() => repository.PullSavePendingJobsAsync(bucketId, numberOfJobs));
     }
 
-    public async Task<IList<RecurringScheduleRawModel>> DequeueSavePendingRecurAsync(
+    public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(
         AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
         var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.DequeueSavePendingRecurAsync(bucketId, numberOfJobs));
+        return await throttler.ExecAsync(() => repository.PullSavePendingRecurAsync(bucketId, numberOfJobs));
     }
 
     public async Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
