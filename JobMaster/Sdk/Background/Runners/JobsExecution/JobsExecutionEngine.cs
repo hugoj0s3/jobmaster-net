@@ -194,7 +194,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 job.MarkAsHeldOnMaster();
                 await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 logger.Warn($"OnBoarding Pruning: Failed to persist job {job.Id} after deadline expiry.", JobMasterLogSubjectType.Job, job.Id);
             }
