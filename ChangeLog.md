@@ -42,6 +42,7 @@
   - `OriginalScheduledAt` → `ScheduledAt`
   - `SucceedExecutedAt` → `FinalizedAt` (now also set on failure and cancellation)
   - `ProcessingStartedAt` → `ProcessStartedAt`
+  -  `PartitionLockId (int)` -> `PartitionLockId (guid)`
   - **Migration Scripts** in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
     - ⚠️ **Alpha Notice**: Not fully tested. Recommended approach: let
       JobMaster create a fresh database. Only use migration scripts if you
@@ -56,12 +57,13 @@
   - [PostgreSQL](migrations/0.0.6-alpha/generic-tables-family-migration-postgres.sql)
   - [SQL Server](migrations/0.0.6-alpha/generic-tables-family-migration-sqlserver.sql)
   - [MySQL](migrations/0.0.6-alpha/generic-tables-family-migration-mysql.sql)
+- 
 
 ### Fixes
 - Fix pagination bug for SQL providers
 - Create fallback bucket when no buckets were configured to the jobs.
 - Implement better fail policy for the Runners
-- Reduce the concurrency of the AcquireAndFetchAsync method and introduce debug policys.
+- Reduce the concurrency of the AcquireAndFetchAsync method and introduce debug policies.
 - Rename `DequeueMessageAsync` to `PullMessageAsync`
 - Remove keep-alive connection from `DequeueMessageAsync` to prevent
   connection contention during message dequeue
