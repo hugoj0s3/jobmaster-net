@@ -32,6 +32,7 @@
 - **Separate TransferBatchSize, BucketBufferSize and introduce BucketBufferLeadTime**
 
 - **Pagination and sorting for all API endpoints**
+- ** 
 
 ### Changes
 
@@ -58,7 +59,10 @@
 
 ### Fixes
 - Fix pagination bug for SQL providers
-- Fix missing rollbacks on failed SQL transactions
+- Create fallback bucket when no buckets were configured to the jobs.
+- Implement better fail policy for the Runners
+- Reduce the concurrency of the AcquireAndFetchAsync method and introduce debug policys.
+- Rename `DequeueMessageAsync` to `PullMessageAsync`
 - Remove keep-alive connection from `DequeueMessageAsync` to prevent
   connection contention during message dequeue
 - Add retry mechanism for `DequeueMessageAsync`
