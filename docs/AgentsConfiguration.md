@@ -17,6 +17,23 @@ The agent connection name (e.g., Postgres-1) is the unique identifier used to bi
 
 **Immutability**: Once established and jobs are processed, this name must never be changed.
 
+### Connection Protection
+
+By default, JobMaster guards against accidental misconfiguration by enabling connection protection on every Agent Connection.
+
+```csharp
+config.AddAgentConnectionConfig("Postgres-1")
+    .UsePostgresForAgent(connectionString)
+    .ProtectConnectionChanges(true); // default — can be omitted
+```
+
+**What it does:**
+
+- **Startup guard:** If the connection's stored footprint differs from the current configuration (e.g. the connection string was silently changed to point at a different database), JobMaster will refuse to start and throw an exception. With `false`, it logs a warning and continues.
+- **Runtime alert:** If a protected connection goes silent (no heartbeat for more than 10 minutes) while it still owns active buckets, a **Critical** log is emitted warning that jobs may be lost if the connection is not restored.
+
+Set to `false` only in development or when intentionally migrating to a new database instance and losing in-flight jobs is acceptable. For production, leave this at its default and follow the [Safe Migration Strategy](#safe-migration-strategy) instead.
+
 ## Safe Migration Strategy
 If you need to migrate to a different agent type (e.g., moving from Postgres to NATS JetStream) or move to a new database instance, follow this protocol to ensure no jobs are lost:
 

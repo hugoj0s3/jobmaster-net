@@ -29,7 +29,12 @@
   - **Benefits**: Better query performance, easier maintenance, and isolation
     of high-volume transient data (logs, heartbeats) from stable config data
 
-- **Separate TransferBatchSize, BucketBufferSize and introduce BucketBufferLeadTime**
+- **Split BatchSize into TransferBatchSize, BucketBufferSize, and BucketBufferLeadTime**
+  - `BatchSize` has been removed. Its responsibilities are now split across three dedicated settings:
+  - **`TransferBatchSize`** — number of jobs pulled per DB round-trip when the Coordinator transfers jobs from the Master DB into Agent Buckets and during other bulk operations. Default: `1000` (standalone: `250`).
+  - **`BucketBufferSize`** — maximum number of jobs held in memory per bucket while awaiting execution. When the buffer is full, excess deliveries are bounced back to the Master with a short delay. Default: `250`.
+  - **`BucketBufferLeadTime`** — how far ahead in time the worker pre-loads jobs into the in-memory buffer. Must be between `250ms` and `30s`. Default: `30s`.
+  - See [WorkersConfiguration](docs/WorkersConfiguration.md) for sizing guidance.
 
 - **Pagination and sorting for all API endpoints**
 - ** 
