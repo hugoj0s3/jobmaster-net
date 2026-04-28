@@ -32,14 +32,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private DateTime? taskCreatedAt = null;
     private DateTime? lastMessageReceivedAt = null;
 
-    private int processCycleCount = 0;
     private int totalMessagesProcessed = 0;
     private TaskStatus? lastReportedTaskStatus = null;
 
     private AgentConnectionId agentConnectionId = null!;
     private INatsJSConsumer? consumer;
     
-    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> processingMessages = new();
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> lockMessages = new();
+    private readonly HashSet<(string MessageId, DateTime UnlockAt)> messagesToUnlock = new();
 
     protected NatsJetStreamRunnerBase(IJobMasterBackgroundAgentWorker backgroundAgentWorker)  : base(backgroundAgentWorker)
     {
@@ -165,6 +165,18 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             }
         }
 
+        // Unlock messages whose redelivery retention window has expired
+        lock (messagesToUnlock)
+        {
+            var now = DateTime.UtcNow;
+            messagesToUnlock.RemoveWhere(x =>
+            {
+                if (x.UnlockAt > now) return false;
+                lockMessages.TryRemove(x.MessageId, out _);
+                return true;
+            });
+        }
+
         await OnTickAfterSetupAsync(ct);
 
         return OnTickResult.Success(this);
@@ -182,7 +194,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             var opts = new NatsJSConsumeOpts
             {
-                MaxMsgs = 
+                MaxMsgs =
                     (int)(NatsJetStreamConstants.CalcMaxAckPending(BackgroundAgentWorker.BucketBufferSize) * 0.75)
             };
 
@@ -223,24 +235,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     }
 
                     await ProcessMessageAsync(msg, ct).ConfigureAwait(false);
-                    var successDelay = DelayAfterProcessPayload();
-                    if (successDelay > TimeSpan.Zero)
-                    {
-                        await Task.Delay(successDelay, ct).ConfigureAwait(false);
-                    }
                 }
                 finally
                 {
-                    Interlocked.Increment(ref processCycleCount);
                     Interlocked.Increment(ref totalMessagesProcessed);
-                    if (processCycleCount >= BackgroundAgentWorker.BucketBufferSize)
-                    {
-                        Interlocked.Exchange(ref processCycleCount, 0);
-                        await Task.Delay(LongDelayAfterBufferSize(), ct).ConfigureAwait(false);
-                    }
-
-                    var jitter = JobMasterRandomUtil.GetInt(0, 50);
-                    await Task.Delay(jitter, ct).ConfigureAwait(false);
                 }
             }
             
@@ -258,12 +256,6 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         var bucketModel = this.masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         agentConnectionId = bucketModel!.AgentConnectionId;
     }
-
-    protected virtual TimeSpan DelayAfterProcessPayload() => TimeSpan.FromMilliseconds(250);
-
-    protected virtual TimeSpan DelayAfterProcessPayloadFails() => TimeSpan.FromSeconds(2);
-
-    protected virtual TimeSpan LongDelayAfterBufferSize() => TimeSpan.FromSeconds(2.5);
 
     protected virtual Task OnTickAfterSetupAsync(CancellationToken ct) => Task.CompletedTask;
 
@@ -345,18 +337,18 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
 
         // In-memory duplicate detection: if already processing this message, NAK it
-        if (!processingMessages.TryAdd(messageId!, 0))
+        if (!lockMessages.TryAdd(messageId!, 0))
         {
             bool shouldAck = false;
             shouldAck = await ShouldAckAfterLockAsync(payload, ct).ConfigureAwait(false);
-            
+
             if (shouldAck)
             {
                 await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
                 logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
                 return;
             }
-            
+
             await ackGuard.TryNakAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
             logger.Debug($"{GetRunnerDescription()} message already being processed, NAK'd. MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
             return;
@@ -403,9 +395,20 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         finally
         {
-            // Remove from processing tracking
-            processingMessages.TryRemove(messageId!, out _);
-            
+            if (ackGuard.Outcome == AckOutcome.Ack)
+            {
+                // Keep locked for the redelivery window — OnTickAsync will clean up
+                lock (messagesToUnlock)
+                {
+                    messagesToUnlock.Add((messageId!, DateTime.UtcNow.AddMinutes(5)));
+                }
+            }
+            else
+            {
+                // NAK/Terminate — remove immediately so redelivery is processed normally
+                lockMessages.TryRemove(messageId!, out _);
+            }
+
             if (sw != null)
             {
                 sw.Stop();
@@ -415,7 +418,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
     }
 
-    public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(10);
+    public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(1);
 
     public override async Task OnStopAsync()
     {

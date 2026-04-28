@@ -329,6 +329,43 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task Query_Neq_ShouldInclude_RecordsWithoutTheKey()
+    {
+        // Regression test: Neq must return records that don't have the filtered key at all,
+        // not just records that have the key set to a different value. The bug was that the
+        // old EXISTS clause required the key row to exist, so key-less records were silently
+        // excluded and the filter returned zero rows.
+        var groupId = "GR_Neq_MissingKey_" + Guid.NewGuid().ToString("N");
+        var subjectType = "NeqMissingKey";
+
+        // has "type" = 1
+        var withType1 = NewEntry(groupId, "withType1_" + Guid.NewGuid().ToString("N"));
+        withType1.SubjectType = subjectType;
+        withType1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 1L };
+
+        // has "type" = 2  (the value we filter out)
+        var withType2 = NewEntry(groupId, "withType2_" + Guid.NewGuid().ToString("N"));
+        withType2.SubjectType = subjectType;
+        withType2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 2L };
+
+        // has no "type" key at all — must be included by Neq
+        var withoutType = NewEntry(groupId, "withoutType_" + Guid.NewGuid().ToString("N"));
+        withoutType.SubjectType = subjectType;
+        withoutType.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["other"] = "x" };
+
+        await Fixture.MasterGenericRecords.InsertAsync(withType1);
+        await Fixture.MasterGenericRecords.InsertAsync(withType2);
+        await Fixture.MasterGenericRecords.InsertAsync(withoutType);
+
+        // Neq 2: should return withType1 (type=1) and withoutType (no type key), NOT withType2
+        await AssertGenericFilter(
+            groupId,
+            subjectType,
+            new GenericRecordValueFilter { Key = "type", Operation = GenericFilterOperation.Neq, Value = 2L },
+            withType1.EntryId, withoutType.EntryId);
+    }
+
+    [Fact]
     public async Task BulkInsert_ShouldInsertMultipleRecords()
     {
         var groupId = "GenericRecordTestGroup_Bulk";

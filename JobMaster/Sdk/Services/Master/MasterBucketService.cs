@@ -248,12 +248,12 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                     Operation = GenericFilterOperation.Eq,
                     Value = (int)BucketStatus.Active,
                 },
-                // new()
-                // {
-                //     Key = nameof(BucketModel.BucketType),
-                //     Operation = GenericFilterOperation.Neq,
-                //     Value = (int)BucketType.Fallback,
-                // },
+                new()
+                {
+                    Key = nameof(BucketModel.BucketType),
+                    Operation = GenericFilterOperation.Neq,
+                    Value = (int)BucketType.Fallback,
+                },
             },
             ReadIsolationLevel = ReadIsolationLevel.Consistent,
         };
@@ -265,7 +265,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             allowedDiscrepancy: allowedDiscrepancy,
             valueFactoryLockDuration: TimeSpan.FromSeconds(2),
             durationToExpire: TimeSpan.FromMinutes(5)));
-
+        
         var applicableBuckets = FilterApplicableBuckets(availableBuckets, jobPriority, workerLane);
         return bucketSelectorAlgorithm.Select(applicableBuckets);
     }

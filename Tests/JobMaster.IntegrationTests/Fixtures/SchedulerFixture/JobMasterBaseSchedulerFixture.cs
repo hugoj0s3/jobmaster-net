@@ -262,7 +262,8 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .TransferBatchSize(1000);
+                            .TransferBatchSize(1000)
+                            .BucketBufferSize(1000);
 
                         if (IsDrainingModeTest)
                         {

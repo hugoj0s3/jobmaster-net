@@ -170,7 +170,7 @@ internal class JobSavePendingOperation
                     logger.Debug("Short-circuit accepted", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId, null);
                 }
-            
+
                 if (result == OnBoardingResult.MovedToMaster)
                 {
                     return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
@@ -214,8 +214,15 @@ internal class JobSavePendingOperation
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
             return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
+        }
+        catch (Exception e)
+        {
+            logger.Error("Failed to insert job; holding on master", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            jobRaw.MarkAsHeldOnMaster();
+            await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
+            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
         }
         
         try

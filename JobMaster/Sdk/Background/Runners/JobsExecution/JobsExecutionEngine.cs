@@ -182,6 +182,24 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             logger.Debug($"OnBoarding Count: {OnBoardingControl.Count()}", JobMasterLogSubjectType.Bucket, BucketId);
         }
         
+        // Prune expired items regardless of TaskQueue state — frees OnBoardingControl capacity
+        // even when shouldSkip=true (TaskQueue full). Without this, items past their ProcessDeadline
+        // can clog the buffer indefinitely, blocking all new jobs from entering.
+        var expiredJobs = OnBoardingControl.PruneDeadlinedItems();
+        foreach (var job in expiredJobs)
+        {
+            try
+            {
+                logger.Debug($"OnBoarding Pruning: Job {job.Id} removed from memory due to deadline.", JobMasterLogSubjectType.Job, job.Id);
+                job.MarkAsHeldOnMaster();
+                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+            }
+            catch (Exception ex)
+            {
+                logger.Warn($"OnBoarding Pruning: Failed to persist job {job.Id} after deadline expiry.", JobMasterLogSubjectType.Job, job.Id);
+            }
+        }
+
         if (shouldSkip)
         {
             return;
@@ -197,24 +215,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 {
                     continue;
                 }
-                
+
                 job.MarkAsHeldOnMaster();
                 await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
             }
         }
-        
-        var expiredJobs = OnBoardingControl.PruneDeadlinedItems();
-        foreach (var job in expiredJobs)
-        {
-            logger.Debug($"OnBoarding Pruning: Job {job.Id} removed from memory due to deadline.", JobMasterLogSubjectType.Job, job.Id);
-            
-            if (job.CanHeldOnMasterExceedDeadline())
-            {
-                job.MarkAsHeldOnMaster();
-                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-            }
-        }
-        
+
         if (bucket?.Status != BucketStatus.Active)
         {
             return;

@@ -58,7 +58,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         if (onBoardingResult == OnBoardingResult.TooEarly)
         {
             // Scheduling guard: avoid onboarding too early
-            if (payload.NextPlanExecutionAt > utcNow + NatsJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
+            if (payload.GetSafeNextPlanExecutionAt() > utcNow + NatsJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
@@ -68,8 +68,12 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
             var target = payload.GetSafeNextPlanExecutionAt() - BackgroundAgentWorker.BucketBufferLeadTime;
             var delay = target > utcNow ? target - utcNow : TimeSpan.Zero;
-            var jitter = TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(5, 50));
-            
+            // Only add jitter when there is a real delay, to spread out redeliveries.
+            // For immediate jobs (delay == Zero) jitter would just waste time.
+            var jitter = delay > TimeSpan.Zero
+                ? TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(5, 50))
+                : TimeSpan.Zero;
+
             await ackGuard.TryNakAsync(delay + jitter);
             
             logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
@@ -109,6 +113,4 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
     public JobMasterPriority Priority { get; internal set; }
 
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(1);
-    protected override TimeSpan LongDelayAfterBufferSize() => TimeSpan.FromMilliseconds(10);
-    protected override TimeSpan DelayAfterProcessPayload() => TimeSpan.Zero;
 }

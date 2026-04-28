@@ -59,9 +59,4 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
         return exists is not null;
     }
     
-    protected override TimeSpan DelayAfterProcessPayload() => 
-        this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(25) : TimeSpan.FromMilliseconds(125);
-    
-    protected override TimeSpan LongDelayAfterBufferSize() => 
-        this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(125) : TimeSpan.FromMilliseconds(500);
 }
