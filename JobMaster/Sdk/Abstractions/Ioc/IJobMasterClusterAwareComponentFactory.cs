@@ -18,6 +18,8 @@ internal interface IJobMasterClusterAwareComponentFactory
     
     IAgentJobsDispatcherRepository GetRepositoryDispatcher(string agentRepoTypeId);
 
+    IAgentFootprintResolver GetFootprintResolver(string agentRepoTypeId);
+
     public TBucketAwareRunner GetBucketAwareRunner<TBucketAwareRunner>(
         string agentRepoTypeId,
         IJobMasterBackgroundAgentWorker backgroundWorker)

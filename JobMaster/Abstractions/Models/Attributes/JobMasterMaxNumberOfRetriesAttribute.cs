@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Abstractions;
+
 namespace JobMaster.Abstractions.Models.Attributes;
 
 [AttributeUsage(AttributeTargets.Class)]
@@ -5,9 +7,9 @@ public class JobMasterMaxNumberOfRetriesAttribute : Attribute
 {
     public JobMasterMaxNumberOfRetriesAttribute(int maxNumberOfRetries)
     {
-        if (maxNumberOfRetries > 10)
+        if (maxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
         {
-            throw new ArgumentException("MaxNumberOfRetries must be less than or equal to 10.");
+            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
         }
         MaxNumberOfRetries = maxNumberOfRetries;
     }

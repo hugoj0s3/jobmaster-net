@@ -62,20 +62,38 @@ internal static class JobMasterStringUtils
         var sb = new StringBuilder(value.Length);
         foreach (var c in value)
         {
-            if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == ':') sb.Append(c);
-            // map common separators/spaces to '-'
-            else if (char.IsWhiteSpace(c)  || c == '/' || c == '\\') sb.Append('-');
-            // else drop
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.' || c == ':')
+            {
+                sb.Append(c);
+            } 
+            else if (char.IsWhiteSpace(c) || c == '/' || c == '\\')
+            {
+                sb.Append('-');
+            }
         }
 
         var s = sb.ToString();
 
         // Collapse double hyphens/underscores
-        while (s.Contains("--")) s = s.Replace("--", "-");
-        while (s.Contains("__")) s = s.Replace("__", "_");
+        while (s.Contains("--"))
+        {
+            s = s.Replace("--", "-");
+        }
 
-        while (s.Contains("::")) s = s.Replace("::", ":");
-        while (s.Contains("..")) s = s.Replace("..", ".");
+        while (s.Contains("__"))
+        {
+            s = s.Replace("__", "_");
+        }
+
+        while (s.Contains("::"))
+        {
+            s = s.Replace("::", ":");
+        }
+
+        while (s.Contains(".."))
+        {
+            s = s.Replace("..", ".");
+        }
 
         // Trim edge separators
         s = s.Trim('-', '_', ':', '.');
@@ -91,33 +109,105 @@ internal static class JobMasterStringUtils
 
     public static string SanitizeForSegment(string value, int maxLen = 50)
     {
-        if (string.IsNullOrWhiteSpace(value)) return "x";
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "x";
+        }
 
         // Allow only letters, digits, '_' and '-'
         var sb = new StringBuilder(value.Length);
         foreach (var c in value)
         {
-            if (char.IsLetterOrDigit(c) || c == '_' || c == '-') sb.Append(c);
-            // map common separators/spaces to '-'
-            else if (char.IsWhiteSpace(c) || c == '.' || c == ':' || c == '/' || c == '\\') sb.Append('-');
-            // else drop
+            if (char.IsLetterOrDigit(c) || c == '_' || c == '-')
+            {
+                sb.Append(c);
+            }
+            else if (char.IsWhiteSpace(c) || c == '.' || c == ':' || c == '/' || c == '\\')
+            {
+                sb.Append('-');
+            }
         }
 
         var s = sb.ToString();
 
         // Collapse double hyphens/underscores
-        while (s.Contains("--")) s = s.Replace("--", "-");
-        while (s.Contains("__")) s = s.Replace("__", "_");
+        while (s.Contains("--"))
+        {
+            s = s.Replace("--", "-");
+        }
+
+        while (s.Contains("__"))
+        {
+            s = s.Replace("__", "_");
+        }
 
         // Trim edge separators
         s = s.Trim('-', '_');
 
         // Fallback if empty
-        if (s.Length == 0) s = "x";
+        if (s.Length == 0)
+        {
+            s = "x";
+        }
 
         // Enforce max length
-        if (s.Length > maxLen) s = s.Substring(0, maxLen);
+        if (s.Length > maxLen)
+        {
+            s = s.Substring(0, maxLen);
+        }
 
         return s;
+    }
+
+    public static string ToSnakeCase(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+
+        var sb = new StringBuilder(value.Length + 8);
+
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+
+            if (char.IsUpper(c))
+            {
+                if (i > 0 && (char.IsLower(value[i - 1]) || char.IsDigit(value[i - 1])))
+                {
+                    sb.Append('_');
+                }
+
+                sb.Append(char.ToLowerInvariant(c));
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+
+        return sb.ToString();
+    }
+    
+    /// <summary>
+    /// Normalize id to detect duplicates
+    /// </summary>
+    /// <param name="value"></param>
+    /// <returns></returns>
+    public static string NormalizeId(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        var sb = new StringBuilder(value.Length);
+
+        foreach (var ch in value)
+        {
+            // ignore separators
+            if (ch == '.' || ch == '-' || ch == '_' || ch == ':')
+                continue;
+
+            sb.Append(char.ToUpperInvariant(ch));
+        }
+
+        return sb.ToString();
     }
 }

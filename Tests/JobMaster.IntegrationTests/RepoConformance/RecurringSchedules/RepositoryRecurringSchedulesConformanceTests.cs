@@ -2,6 +2,7 @@ using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using System.Text.Json;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
@@ -46,8 +47,10 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.AgentConnectionId = Fixture.AgentConnectionId;
         schedule.AgentWorkerId = "worker-1";
 
-        schedule.PartitionLockId = 123;
+        schedule.PartitionLockId = Guid.NewGuid();
         schedule.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
 
         schedule.CreatedAt = now;
         schedule.StartAfter = now.AddMinutes(-10);
@@ -68,7 +71,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Update_ShouldPersistChanges()
+    public async Task Upsert_ShouldPersistChanges()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-upd-" + Guid.NewGuid());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
@@ -87,8 +90,9 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.BucketId = "bucket-upd";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
         updated.AgentWorkerId = "worker-upd";
-        updated.PartitionLockId = 55;
+        updated.PartitionLockId = Guid.NewGuid();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(10);
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
         updated.StartAfter = DateTime.UtcNow.AddHours(-1);
         updated.EndBefore = DateTime.UtcNow.AddHours(5);
         updated.LastPlanCoverageUntil = DateTime.UtcNow.AddHours(3);
@@ -98,11 +102,50 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.StaticDefinitionLastEnsured = DateTime.UtcNow.AddMinutes(-1);
         updated.WorkerLane = "LANE_UPD";
 
-        await Fixture.MasterRecurringSchedules.UpdateAsync(updated);
+        await Fixture.MasterRecurringSchedules.UpsertAsync(updated);
 
         var fromDb = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(fromDb);
         AssertScheduleEquivalent(updated, fromDb!);
+    }
+
+    [Fact]
+    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
+    {
+        var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + Guid.NewGuid());
+        await Fixture.MasterRecurringSchedules.AddAsync(schedule);
+
+        // Load two separate copies to simulate concurrent upserts
+        var copyA = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
+        var copyB = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
+        Assert.NotNull(copyA);
+        Assert.NotNull(copyB);
+
+        // First upsert succeeds and advances the version
+        copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
+        await Fixture.MasterRecurringSchedules.UpsertAsync(copyA);
+
+        // Second upsert uses stale version — should throw
+        copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterRecurringSchedules.UpsertAsync(copyB));
+    }
+
+    [Fact]
+    public async Task Upsert_ShouldThrow_WhenVersionMismatch()
+    {
+        var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + Guid.NewGuid());
+        await Fixture.MasterRecurringSchedules.AddAsync(schedule);
+
+        var current = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
+        Assert.NotNull(current);
+
+        var stale = Clone(current!);
+        stale.Version = Guid.NewGuid().ToString("N");
+        stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
+
+        await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
+            Fixture.MasterRecurringSchedules.UpsertAsync(stale));
     }
 
     [Fact]
@@ -180,12 +223,15 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var def = "defLock-" + Guid.NewGuid();
         var now = DateTime.UtcNow;
 
+        var lockedLockId = Guid.NewGuid();
+        var expiredLockId = Guid.NewGuid();
+
         var locked = NewSchedule(jobDefinitionId: def);
-        locked.PartitionLockId = 1;
+        locked.PartitionLockId = lockedLockId;
         locked.PartitionLockExpiresAt = now.AddMinutes(30);
 
         var expired = NewSchedule(jobDefinitionId: def);
-        expired.PartitionLockId = 2;
+        expired.PartitionLockId = expiredLockId;
         expired.PartitionLockExpiresAt = now.AddMinutes(-30);
 
         var unlocked = NewSchedule(jobDefinitionId: def);
@@ -208,7 +254,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Contains(qUnlocked, x => x.Id == unlocked.Id);
         Assert.DoesNotContain(qUnlocked, x => x.Id == locked.Id);
 
-        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = 2, CountLimit = 100 };
+        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = expiredLockId, CountLimit = 100 };
         var qLockId = await Fixture.MasterRecurringSchedules.QueryAsync(cLockId);
         Assert.Contains(qLockId, x => x.Id == expired.Id);
         Assert.DoesNotContain(qLockId, x => x.Id == locked.Id);
@@ -529,6 +575,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expected.HasFailedOnLastPlanExecution, actual.HasFailedOnLastPlanExecution);
         Assert.Equal(expected.IsJobCancellationPending, actual.IsJobCancellationPending);
         Assert.Equal(expected.WorkerLane, actual.WorkerLane);
+        Assert.Equal(expected.HostId?.IdValue, actual.HostId?.IdValue);
+        Assert.Equal(expected.HostId?.HostDisplayName, actual.HostId?.HostDisplayName);
     }
 
     private static RecurringScheduleRawModel Clone(RecurringScheduleRawModel s)
@@ -563,6 +611,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             IsJobCancellationPending = s.IsJobCancellationPending,
             StaticDefinitionLastEnsured = s.StaticDefinitionLastEnsured,
             WorkerLane = s.WorkerLane,
+            HostId = s.HostId,
             Version = s.Version
         };
     }

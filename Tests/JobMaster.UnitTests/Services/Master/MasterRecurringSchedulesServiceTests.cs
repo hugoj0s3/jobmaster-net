@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -11,7 +12,7 @@ namespace JobMaster.UnitTests.Services.Master;
 public class MasterRecurringSchedulesServiceTests
 {
     [Fact]
-    public async Task UpsertAsync_WhenEntityDoesNotExist_ShouldAdd_ThenUpdate()
+    public async Task UpsertAsync_ShouldDelegateToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -29,19 +30,18 @@ public class MasterRecurringSchedulesServiceTests
             CreatedAt = DateTime.UtcNow,
         };
 
-        repo.Setup(x => x.GetAsync(id)).ReturnsAsync((RecurringScheduleRawModel?)null);
-        repo.Setup(x => x.AddAsync(raw)).Returns(Task.CompletedTask);
-        repo.Setup(x => x.UpdateAsync(raw)).Returns(Task.CompletedTask);
+        repo.Setup(x => x.UpsertAsync(raw)).Returns(Task.CompletedTask);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         await sut.UpsertAsync(raw);
 
+        repo.Verify(x => x.UpsertAsync(raw), Times.Once);
         repo.VerifyAll();
     }
 
     [Fact]
-    public async Task UpsertAsync_WhenEntityExists_ShouldOnlyUpdate()
+    public void Upsert_ShouldDelegateToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -59,62 +59,14 @@ public class MasterRecurringSchedulesServiceTests
             CreatedAt = DateTime.UtcNow,
         };
 
-        repo.Setup(x => x.GetAsync(id)).ReturnsAsync(raw);
-        repo.Setup(x => x.UpdateAsync(raw)).Returns(Task.CompletedTask);
+        repo.Setup(x => x.Upsert(raw));
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
-
-        await sut.UpsertAsync(raw);
-
-        repo.Verify(x => x.AddAsync(It.IsAny<RecurringScheduleRawModel>()), Times.Never);
-        repo.VerifyAll();
-    }
-
-    [Fact]
-    public void Upsert_WhenEntityDoesNotExist_ShouldAdd_ThenUpdate()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
-        var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
-
-        var id = Guid.NewGuid();
-        var raw = new RecurringScheduleRawModel(clusterId)
-        {
-            Id = id,
-            JobDefinitionId = "job-def",
-            Expression = "* * * * *",
-            ExpressionTypeId = "cron",
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        repo.Setup(x => x.Get(id)).Returns((RecurringScheduleRawModel?)null);
-        repo.Setup(x => x.Add(raw));
-        repo.Setup(x => x.Update(raw));
-
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.Upsert(raw);
 
+        repo.Verify(x => x.Upsert(raw), Times.Once);
         repo.VerifyAll();
-    }
-
-    [Fact]
-    public void BulkUpdatePartitionLockId_WhenIdsEmpty_ShouldReturnFalse_AndNotCallRepo()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
-        var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
-
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
-
-        var result = sut.BulkUpdatePartitionLockId(new List<Guid>(), lockId: 1, expiresAt: DateTime.UtcNow);
-
-        result.Should().BeFalse();
-        repo.Verify(x => x.BulkUpdatePartitionLockId(It.IsAny<IList<Guid>>(), It.IsAny<int>(), It.IsAny<DateTime>()), Times.Never);
     }
 
     [Fact]
@@ -126,7 +78,7 @@ public class MasterRecurringSchedulesServiceTests
         var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
         var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true));
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.BulkUpdateStaticDefinitionLastEnsured(new List<string>(), DateTime.UtcNow);
 

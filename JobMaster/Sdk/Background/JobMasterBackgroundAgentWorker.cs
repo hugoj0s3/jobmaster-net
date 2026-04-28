@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners;
@@ -28,8 +29,8 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 {
     public AgentConnectionId AgentConnectionId { get; private set; } = null!;
     public string AgentWorkerId { get; private set; } = string.Empty;
+    public HostId HostId { get; private set; } = null!;
 
-    public string WorkerName { get; private set; } = string.Empty;
     public string? WorkerLane { get; private set; }
 
     public string AgentRepositoryTypeId { get; private set; } = string.Empty;
@@ -46,8 +47,11 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     
     public bool StopRequested { get; internal set; }
 
-    public int BatchSize { get; private set; } = 0;
+    public int TransferBatchSize { get; private set; } = 0;
 
+    public int BucketBufferSize { get; private set; }
+    public TimeSpan BucketBufferLeadTime { get; private set; }
+    
     public AgentWorkerMode Mode { get; private set; } = AgentWorkerMode.Full;
     
     public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
@@ -124,12 +128,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var workerName = workerDefinition.WorkerName;
         var workerLane = workerDefinition.WorkerLane;
         
-        if (string.IsNullOrEmpty(workerName))
-        {
-            throw new ArgumentException("Worker name cannot be empty");
-        }
-        
-        var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeInactive: true);
+        var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
         if (clusterConfig == null)
         {
             throw new ArgumentException($"Cluster '{clusterId}' not found");
@@ -149,20 +148,22 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         
         var agentConnectionString = clusterConfig.GetAgentConnectionConfig(agentConnName);
-        var workerId = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
+        var (workerId, hostId) = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
         {
             AgentConnectionId = new AgentConnectionId(agentConnectionId),
             AgentWorkerId = workerId,
+            HostId = hostId,
             JobMasterAgentConnectionConfig = agentConnectionString,
             AgentRepositoryTypeId = agentConnectionString.RepositoryTypeId,
             ClusterConnConfig = clusterConfig,
             ServiceProvider = serviceProvider,
-            WorkerName = workerName,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
-            BatchSize = workerDefinition.BatchSize,
+            TransferBatchSize = workerDefinition.TransferBatchSize,
+            BucketBufferSize = workerDefinition.BucketBufferSize,
+            BucketBufferLeadTime = workerDefinition.BucketBufferLeadTime,
             BucketAwareSemaphoreSlim = new SemaphoreSlim(qtyOfBuckets),
             Mode = workerDefinition.Mode,
             WorkerLane = workerLane,
@@ -191,8 +192,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     public async Task StartAsync()
     {
         logger.Info("Starting JobMasterBackgroundAgentWorker", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
-        var heartBeatRunner = new KeepAliveRunner(this);
+        var heartBeatRunner = new KeepAliveWorkerRunner(this);
         await heartBeatRunner.StartAsync();
+        
+        var agentConnectionHeartBeatRunner = new KeepAliveAgentConnectionRunner(this);
+        await agentConnectionHeartBeatRunner.StartAsync();
+        
+        var hostHeartBeatRunner = new KeepAliveHostRunner(this);
+        await hostHeartBeatRunner.StartAsync();
         
         if (this.Mode == AgentWorkerMode.Full)
         {
@@ -212,7 +219,20 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         if (this.Mode == AgentWorkerMode.Execution)
         {
-            await LoadBucketsForExecution();
+            await LoadExecutionRunners();
+        }
+
+        if (this.Mode != AgentWorkerMode.Coordinator)
+        {
+            // Runs in Full, Execution, and Drain modes — excluded from Coordinator since it never
+            // saves recurring schedules and therefore never populates the queue.
+            // Consumes the in-memory queue fed by save runners (execution and drain paths) after
+            // activating a schedule, triggering immediate next-job scheduling.
+            // Started once here rather than inside each mode's loader to avoid duplicate instances.
+            // ScheduleRecurringJobsRunner (coordinator) remains the fallback for schedules not
+            // caught by this fast path.
+            var recentlyInsertedScheduleRunner = new RecentlyInsertedScheduleRecurringJobsRunner(this);
+            await recentlyInsertedScheduleRunner.StartAsync();
         }
         
         // Mark as initialized after all buckets and runners are created
@@ -223,7 +243,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     private async Task LoadFullRunnersAsync()
     {
         // Load buckets first to avoid deadlocks with maintenance runners
-        await LoadBucketsForExecution();
+        await LoadExecutionRunners();
         
         // Then load coordination and drain runners after buckets are created
         await LoadCoordinatorRunnersAsync();
@@ -296,7 +316,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         await deleteOldLogsRunner.StartAsync();
     }
 
-    private async Task LoadBucketsForExecution()
+    private async Task LoadExecutionRunners()
     {
         var buckets = new List<BucketModel>();
         foreach (var item in this.BucketQty)
@@ -309,7 +329,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             // Add to BucketsCreatedOnRuntime immediately so GetOrCreateEngine can validate
             foreach (var bucket in createdBuckets)
             {
-                this.BucketsCreatedOnRuntime.Add(bucket);
+                this.RegisterRuntimeBucket(bucket);
             }
         }
 
@@ -319,8 +339,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             saveJobsRunner.DefineBucketId(bucketModel.Id);
             await saveJobsRunner.StartAsync();
         
-            var jobsExecutionRunner = this.BucketRunnersFactory.NewJobsExecutionRunner(this, AgentConnectionId);
-            jobsExecutionRunner.DefineBucketId(bucketModel.Id, bucketModel.Priority);
+            var jobsExecutionRunner =
+                this.BucketRunnersFactory.NewJobsExecutionRunner(
+                    this, AgentConnectionId, bucketModel.Id, bucketModel.Priority);
             await jobsExecutionRunner.StartAsync();
         
             var saveRecurringScheduleRunner = this.BucketRunnersFactory.NewSaveRecurringSchedulerRunner(this, AgentConnectionId);
@@ -406,8 +427,26 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         {
             throw new ArgumentException("Bucket not found");
         }
-        
+
         return jobsExecutionEngineFactory.GetOrCreate(this, priority, bucketId);
+    }
+
+    public void RegisterRuntimeBucket(BucketModel bucket)
+    {
+        if (bucket is null)
+        {
+            throw new ArgumentNullException(nameof(bucket));
+        }
+
+        lock (this.mutex)
+        {
+            if (this.BucketsCreatedOnRuntime.Any(b => b.Id == bucket.Id))
+            {
+                return;
+            }
+
+            this.BucketsCreatedOnRuntime.Add(bucket);
+        }
     }
 
     public void Dispose()

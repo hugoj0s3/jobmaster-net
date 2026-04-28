@@ -10,12 +10,6 @@
 
     <ItemGroup>
         <PackageReference Include="Faker.Net" Version="2.0.163" />
-<!--        <PackageReference Include="JobMaster" Version="0.0.5-alpha" />-->
-<!--        <PackageReference Include="JobMaster.Api" Version="0.0.5-alpha" />-->
-<!--        <PackageReference Include="JobMaster.MySql" Version="0.0.5-alpha" />-->
-<!--        <PackageReference Include="JobMaster.NatsJetStream" Version="0.0.5-alpha" />-->
-<!--        <PackageReference Include="JobMaster.Postgres" Version="0.0.5-alpha" />-->
-<!--        <PackageReference Include="JobMaster.SqlServer" Version="0.0.5-alpha" />-->
         <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.14"/>
         <PackageReference Include="Serilog" Version="4.2.0" />
         <PackageReference Include="Serilog.Extensions.Hosting" Version="9.0.0" />
@@ -33,7 +27,17 @@
       </Content>
     </ItemGroup>
 
-    <ItemGroup>
+    <ItemGroup Condition="'$(UseProjectRefs)' != 'true'">
+        <PackageReference Include="JobMaster" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.Api" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.MySql" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.NatsJetStream" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.Postgres" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlBase" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlServer" Version="$(JobMasterPackageVersion)" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(UseProjectRefs)' == 'true'">
       <ProjectReference Include="..\JobMaster.Api\JobMaster.Api.csproj" />
       <ProjectReference Include="..\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
       <ProjectReference Include="..\JobMaster\JobMaster.csproj" />

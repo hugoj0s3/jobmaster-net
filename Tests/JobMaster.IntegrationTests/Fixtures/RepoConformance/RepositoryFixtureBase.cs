@@ -18,5 +18,11 @@ public abstract class RepositoryFixtureBase : IAsyncLifetime
 
     internal abstract IAgentRawMessagesDispatcherRepository AgentMessages { get;set;  }
     public abstract Task InitializeAsync();
-    public abstract Task DisposeAsync();
+    public async Task DisposeAsync()
+    {
+        if (Services is IAsyncDisposable asyncDisposable)
+            await asyncDisposable.DisposeAsync();
+        else if (Services is IDisposable disposable)
+            disposable.Dispose();
+    }
 }

@@ -7,7 +7,7 @@ internal interface IMasterClusterConfigurationService : IJobMasterClusterAwareSe
 {
     ClusterConfigurationModel? Get();
     
-    ClusterConfigurationModel? GetNoAche();
+    ClusterConfigurationModel? GetFresh();
 
     void Save(ClusterConfigurationModel clusterConfiguration);
     

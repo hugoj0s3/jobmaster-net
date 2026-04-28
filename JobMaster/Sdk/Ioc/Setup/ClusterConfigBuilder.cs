@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
@@ -17,7 +18,6 @@ using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.BucketSelector;
 using JobMaster.Sdk.Ioc.Setup.Selectors;
-using JobMaster.Sdk.LocalCache;
 using JobMaster.Sdk.Repositories;
 using JobMaster.Sdk.Services;
 using JobMaster.Sdk.Services.Agents;
@@ -25,6 +25,7 @@ using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.DependencyInjection;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
@@ -86,7 +87,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             finalClusterRepoType, 
             finalClusterConnString, 
             isDefault: clusterDefinition.IsDefault, 
-            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationThrottleLimit);
+            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationLimit);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
@@ -116,7 +117,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
                 agentConnDefinition.AgentConnString ?? string.Empty, 
                 agentConnDefinition.AgentRepoType!, 
                 agentConnDefinition.AgentAdditionalConnConfig, 
-                agentConnDefinition.RuntimeDbOperationThrottleLimit);
+                agentConnDefinition.RuntimeDbOperationLimit);
         }
         
         if (clusterDefinition.IsStandalone)
@@ -130,6 +131,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.ClusterServices.AddSingleton<IBucketSelectorAlgorithm, RandomBucketSelectorAlgorithm>();
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
+        clusterServiceRegistration.ClusterServices.AddSingleton<DefaultKnownExceptionIdentifierStrategy>();
+        clusterServiceRegistration.AddJobMasterComponent<IKnownExceptionIdentifier, JobMasterKnownExceptionIdentifier>();
+
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobsService, MasterJobsService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterChangesSentinelService, MasterChangesSentinelService>();
@@ -138,16 +142,22 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IMasterClusterConfigurationService, MasterClusterConfigurationService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHeartbeatService, MasterHeartbeatService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterRecurringSchedulesService, MasterRecurringSchedulesService>();
+        clusterServiceRegistration.AddJobMasterComponent<IRecentlyInsertedRecurringScheduleQueue, RecentlyInsertedRecurringScheduleQueue>();
         clusterServiceRegistration.AddJobMasterComponent<IAgentJobsDispatcherService, AgentJobsDispatcherService>();
         clusterServiceRegistration.AddJobMasterComponent<IJobMasterSchedulerClusterAware, JobMasterSchedulerClusterAware>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
-        clusterServiceRegistration.AddJobMasterComponent<IAgentJobsDispatcherRepositoryFactory, AgentJobsDispatcherRepositoryFactory>();
+        clusterServiceRegistration.AddJobMasterComponent<IAgentComponentFactory, AgentComponentFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IRecurringSchedulePlanner, RecurringSchedulePlanner>();
         clusterServiceRegistration.AddJobMasterComponent<IJobMasterLogger, JobMasterLogger>();
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
+        clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
+        clusterServiceRegistration.AddJobMasterComponent<IHostStatsProvider, NullHostStatsProvider>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
         
-        JobMasterIocRegistrationAttribute.RegisterAllForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
+        JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
         var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
         agentRepoTypes.Add(finalClusterRepoType); // for standalone agents
@@ -157,7 +167,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             if (string.IsNullOrEmpty(agentRepoType))
                 continue;
             
-            JobMasterIocRegistrationAttribute.RegisterAllForAgent(clusterServiceRegistration, agentRepoType, finalClusterId!);
+            JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForAgent(clusterServiceRegistration, agentRepoType, finalClusterId!);
         }
         
         // Register runtime setup. get all impl and register for IJobMasterRuntimeSetup
@@ -204,6 +214,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterId(string clusterId)
     {
+        if (!JobMasterStringUtils.IsValidForSegment(clusterId, 25))
+        {
+            throw new ArgumentException($"ClusterId {clusterId} is not valid for segment. It must be between 1 and 25 characters long and contain only letters, numbers, hyphens, and underscores.");
+        }
+        
         this.clusterDefinition.ClusterId = clusterId;
         return this;
     }
@@ -250,9 +265,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
-    public IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit)
+    public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
-        this.clusterDefinition.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+        this.clusterDefinition.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
         return this;
     }
 
@@ -346,7 +361,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         {
             AgentConnectionName = agentConnectionName ?? string.Empty,
             WorkerName = workerName ?? string.Empty,
-            BatchSize = batchSize,
+            TransferBatchSize = batchSize,
         };
         clusterDefinition.Workers.Add(def);
         return new AgentWorkerSelector(this, def);
@@ -412,7 +427,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         var def = new WorkerDefinition
         {
             WorkerName = workerName ?? string.Empty,
-            BatchSize = batchSize,
+            TransferBatchSize = batchSize,
             AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
         };
         clusterDefinition.Workers.Add(def);

@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -22,7 +23,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
     private IMasterJobsService masterJobsService;
     
     public CancelJobsFromRecurScheduleInactiveOrCanceledRunner(
-        IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker, bucketAwareLifeCycle: true, useSemaphore: true)
+        IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
         masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
         masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
@@ -38,11 +39,16 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
 
         var recurringScheduleQueryCriteria = new RecurringScheduleQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             CanceledOrInactive = true,
             IsJobCancellationPending = true, 
             IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(RecurringScheduleRawModel.LastPlanCoverageUntil),
+                Ascending = false,
+            }
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -57,7 +63,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
                 count,
                 workerCount,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 transientThreshold,
                 lockerLane:3);
         }
@@ -65,20 +71,20 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         var durationToLock = JobMasterConstants.DurationToLockRecords;
         var cutOffTime = utcNow.Add(durationToLock).AddSeconds(-30);
         
-        var lockId = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
-        
-        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockId), durationToLock.Add(TimeSpan.FromMinutes(1)));
+        var lockSlot = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
+        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockSlot), durationToLock.Add(TimeSpan.FromMinutes(1)));
         if (lockToken == null)
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, lockId, utcNow.Add(durationToLock));
+        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, utcNow.Add(durationToLock));
         if (recurringSchedules.Count <= 0)
         {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
+        
         foreach (var recurringSchedule in recurringSchedules)
         {
             if (cutOffTime <= DateTime.UtcNow)
@@ -92,24 +98,39 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
                 break;
             }
 
-            await CencelJobsAsync(recurringSchedule, lockId, durationToLock, ct);
+            await CencelJobsAsync(recurringSchedule, lockSlot, durationToLock, ct);
         }
         
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
         
         return OnTickResult.Success(lastScanPlanResult.Interval);
     }
 
     private async Task CencelJobsAsync(RecurringScheduleRawModel recurringScheduleRawModel, int lockId, TimeSpan durationToLock, CancellationToken ct)
     {
+        if (distributedLockerService.IsLocked(lockKeys.RecurringSchedulePlan(recurringScheduleRawModel.Id)))
+        {
+            return;
+        }
+        
         var jobQueryCriteria = new JobQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
-            RecurringScheduleId = recurringScheduleRawModel.Id,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
+            SourceId = recurringScheduleRawModel.Id,
+            TriggerSourceTypes = new List<JobMasterTriggerSourceType>
+            {
+                recurringScheduleRawModel.RecurringScheduleType == RecurringScheduleType.Static
+                    ? JobMasterTriggerSourceType.StaticRecurring
+                    : JobMasterTriggerSourceType.DynamicRecurring
+            },
             // Only cancel jobs scheduled 5 minutes later. the job on fly will be cancelled by the JobExecutionEngine.
-            ScheduledFrom = DateTime.UtcNow.AddMinutes(5),
-            IsLocked = false,
+            NextPlanExecutionAtFrom = DateTime.UtcNow.AddMinutes(5),
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(JobRawModel.NextPlanExecutionAt),
+                Ascending = true,
+            },
         };
 
         if (ct.IsCancellationRequested)
@@ -118,7 +139,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         }
 
         var expiresAtUtc = DateTime.UtcNow.Add(durationToLock);
-        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, expiresAtUtc);
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, expiresAtUtc);
         var jobIdsToCancel = jobs
             .Where(x => !x.Status.IsFinalStatus())
             .Select(x => x.Id)
@@ -127,7 +148,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         if (jobIdsToCancel.Count <= 0)
         {
             recurringScheduleRawModel.HasCancelJobsFinish();
-            masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+            await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
             return;
         }
         
@@ -135,7 +156,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         masterJobsService.BulkUpdateStatus(jobIdsToCancel, JobMasterJobStatus.Cancelled, null, null, null, excludeStatuses: finalStatuses);
 
         recurringScheduleRawModel.HasCancelJobsFinish();
-        masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+        await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
     }
     
 

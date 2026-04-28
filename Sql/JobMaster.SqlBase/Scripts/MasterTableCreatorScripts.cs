@@ -9,10 +9,32 @@ internal static class MasterTableCreatorScripts
 {
     public static string CreateGenericRecordTablesScript(ISqlGenerator sqlGenerator, string tablePrefix = "")
     {
-       var script1 = CreateGenericRecordEntry(sqlGenerator, tablePrefix);
-       var script2 = CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix);
+       var scripts = new List<string>();
        
-       return $"{script1}\n{script2}";
+       // Default table (no suffix) - used by ClusterConfiguration
+       scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, string.Empty));
+       scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, string.Empty));
+       
+       // Family tables
+       foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+       {
+           scripts.Add(CreateGenericRecordEntry(sqlGenerator, tablePrefix, suffix));
+           scripts.Add(CreateGenericRecordEntryValueTable(sqlGenerator, tablePrefix, suffix));
+       }
+       
+       return string.Join("\n", scripts);
+    }
+
+    public static IReadOnlyList<string> AllGenericRecordTableNames(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var names = new List<string>();
+        var baseEntryName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+        names.Add(baseEntryName);
+        foreach (var suffix in GenericRecordSqlUtil.AllFamilySuffixes)
+        {
+            names.Add($"{baseEntryName}{suffix}");
+        }
+        return names;
     }
 
     public static string CreateRecurringScheduleTablesScript(ISqlGenerator sqlGenerator, string tablePrefix)
@@ -71,7 +93,7 @@ internal static class MasterTableCreatorScripts
         var agentWorkerIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
         var partitionLockIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.PartitionLockId);
-        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
+        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.PartitionLockExpiresAt);
         var partitionLockExpiresAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
@@ -106,6 +128,12 @@ internal static class MasterTableCreatorScripts
         var versionCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
 
+        var hostIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostId);
+        var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
         var columns = new List<string>
         {
             $"{clusterIdCol} {clusterIdType}",
@@ -126,6 +154,8 @@ internal static class MasterTableCreatorScripts
             $"{agentConnectionIdCol} {agentConnectionIdType}",
             $"{agentWorkerIdCol} {agentWorkerIdType}",
             $"{partitionLockIdCol} {partitionLockIdType}",
+            $"{hostIdCol} {hostIdType}",
+            $"{hostDisplayNameCol} {hostDisplayNameType}",
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{createdAtCol} {createdAtType}",
             $"{startAfterCol} {startAfterType}",
@@ -144,20 +174,28 @@ internal static class MasterTableCreatorScripts
         var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
 
         var indexes = new List<string>();
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_status", (statusCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_status_deactivated_at", (statusCol, false, (int?)null), (terminatedAtCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_job_definition_id", (jobDefinitionIdCol, false, 250)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_expression_type_id", (expressionTypeIdCol, false, 250)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_partition_lock_id", (partitionLockIdCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_last_plan_coverage_until", (lastPlanCoverageUntilCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_start_after", (startAfterCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_end_before", (endBeforeCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_created_at", (createdAtCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_partition_lock_expires_at", (partitionLockExpiresAtCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_is_job_cancellation_pending", (isJobCancellationPendingCol, false, (int?)null)));
+        // Hierarchical prefix strategy: cluster_id isolated, then cluster_id + status as base
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_id", (clusterIdCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status", (clusterIdCol, false, 250), (statusCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_partition_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_partition_lock_expires", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_last_plan", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (lastPlanCoverageUntilCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_start_after", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (startAfterCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_end_before", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (endBeforeCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_worker_lane", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (workerLaneCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_terminated_at", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (terminatedAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_cancellation_pending", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (isJobCancellationPendingCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_partition_lock", (clusterIdCol, false, 250), (partitionLockIdCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_partition_lock_expires", (clusterIdCol, false, 250), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_last_plan", (clusterIdCol, false, 250), (lastPlanCoverageUntilCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_start_after", (clusterIdCol, false, 250), (startAfterCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_end_before", (clusterIdCol, false, 250), (endBeforeCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_worker_lane", (clusterIdCol, false, 250), (workerLaneCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_terminated_at", (clusterIdCol, false, 250), (terminatedAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_job_definition_id", (clusterIdCol, false, 250), (jobDefinitionIdCol, false, 250)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_profile", (clusterIdCol, false, 250), (profileIdCol, false, 128)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_static_id", (clusterIdCol, false, 250), (staticDefinitionIdCol, false, 250)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_worker_lane", (workerLaneCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_expression_type", (clusterIdCol, false, 250), (expressionTypeIdCol, false, 250)));
 
         return $"{create}\n{string.Join("\n", indexes)}";
     }
@@ -191,11 +229,11 @@ internal static class MasterTableCreatorScripts
         var priorityCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Priority);
         var priorityType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var originalScheduledAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.OriginalScheduledAt);
-        var originalScheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
-
         var scheduledAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ScheduledAt);
         var scheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var nextPlanExecutionAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.NextPlanExecutionAt);
+        var nextPlanExecutionAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
         var dataCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MsgData);
         var dataType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
@@ -215,11 +253,11 @@ internal static class MasterTableCreatorScripts
         var createdAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.CreatedAt);
         var createdAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
-        var recurringScheduleIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.RecurringScheduleId);
-        var recurringScheduleIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
+        var sourceIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.SourceId);
+        var sourceIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockId);
-        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
+        var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
         var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockExpiresAt);
         var partitionLockExpiresAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
@@ -227,17 +265,23 @@ internal static class MasterTableCreatorScripts
         var processDeadlineCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessDeadline);
         var processDeadlineType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var processingStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessingStartedAt);
-        var processingStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var processStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessStartedAt);
+        var processStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var succeedExecutedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.SucceedExecutedAt);
-        var succeedExecutedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var finalizedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.FinalizedAt);
+        var finalizedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
         
         var workerLaneCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.WorkerLane);
         var workerLaneType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
         
         var versionCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
+        
+        var hostIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostId);
+        var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
         var columns = new List<string>
         {
@@ -249,22 +293,24 @@ internal static class MasterTableCreatorScripts
             $"{agentConnectionIdCol} {agentConnectionIdType}",
             $"{agentWorkerIdCol} {agentWorkerIdType}",
             $"{priorityCol} {priorityType}",
-            $"{originalScheduledAtCol} {originalScheduledAtType}",
             $"{scheduledAtCol} {scheduledAtType}",
+            $"{nextPlanExecutionAtCol} {nextPlanExecutionAtType}",
             $"{dataCol} {dataType}",
             $"{statusCol} {statusType}",
             $"{numberOfFailuresCol} {numberOfFailuresType}",
             $"{timeoutTicksCol} {timeoutTicksType}",
             $"{maxRetriesCol} {maxRetriesType}",
             $"{createdAtCol} {createdAtType}",
-            $"{recurringScheduleIdCol} {recurringScheduleIdType}",
+            $"{sourceIdCol} {sourceIdType}",
             $"{partitionLockIdCol} {partitionLockIdType}",
             $"{partitionLockExpiresAtCol} {partitionLockExpiresAtType}",
             $"{processDeadlineCol} {processDeadlineType}",
-            $"{processingStartedAtCol} {processingStartedAtType}",
-            $"{succeedExecutedAtCol} {succeedExecutedAtType}",
+            $"{processStartedAtCol} {processStartedAtType}",
+            $"{finalizedAtCol} {finalizedAtType}",
             $"{workerLaneCol} {workerLaneType}",
-            $"{versionCol} {versionType}"
+            $"{versionCol} {versionType}",
+            $"{hostIdCol} {hostIdType}",
+            $"{hostDisplayNameCol} {hostDisplayNameType}"
         };
 
         var pk = $" CONSTRAINT pk_{tableName}job PRIMARY KEY ({clusterIdCol}, {idCol})";
@@ -272,19 +318,29 @@ internal static class MasterTableCreatorScripts
         var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
 
         var indexes = new List<string>();
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_scheduled_at", (scheduledAtCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_status", (statusCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_process_deadline", (processDeadlineCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_partition_lock_id", (partitionLockIdCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_worker_lane", (workerLaneCol, false, (int?)null)));
-        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_recurring_schedule_id", (recurringScheduleIdCol, false, (int?)null)));
+        // Hierarchical prefix strategy: cluster_id isolated, then cluster_id + status as base
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_id", (clusterIdCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status", (clusterIdCol, false, 250), (statusCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_next_plan", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (nextPlanExecutionAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_process_deadline", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (processDeadlineCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_partition_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_partition_lock_expires", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_worker_lane", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (workerLaneCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_next_plan", (clusterIdCol, false, 250), (nextPlanExecutionAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_process_deadline", (clusterIdCol, false, 250), (processDeadlineCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_partition_lock", (clusterIdCol, false, 250), (partitionLockIdCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_partition_lock_expires", (clusterIdCol, false, 250), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_worker_lane", (clusterIdCol, false, 250), (workerLaneCol, false, (int?)null)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_job_definition", (clusterIdCol, false, 250), (jobDefinitionIdIdCol, false, 250)));
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_source_id", (clusterIdCol, false, 250), (sourceIdCol, false, (int?)null)));
 
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
-       var tableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var baseTableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
+       var tableName = string.IsNullOrEmpty(familySuffix) ? baseTableName : $"{baseTableName}{familySuffix}";
        
         var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
         var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -313,6 +369,9 @@ internal static class MasterTableCreatorScripts
         var entryIdGuidCol = sqlGenerator.ColumnNameFor<SqlGenericRecordEntry>(x => x.EntryIdGuid);
         var entryIdGuidType = sqlGenerator.ColumnTypeFor<SqlGenericRecordEntry>(x => x.EntryIdGuid, nullable: true);
        
+        var isReadyCol = sqlGenerator.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady);
+        var isReadyType = sqlGenerator.ColumnTypeFor<SqlGenericRecordEntry>(x => x.IsReady, nullable: false);
+       
         var columns = new List<string>();
         columns.Add($"{recordIdCol} {recordIdType} PRIMARY KEY");
         columns.Add($"{clusterIdCol} {clusterIdType} ");
@@ -323,18 +382,21 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{createdAtCol} {createdAtType}");
         columns.Add($"{expiresAtCol} {expiresAtType}");
         columns.Add($"{entryIdGuidCol} {entryIdGuidType}");
+        columns.Add($"{isReadyCol} {isReadyType} DEFAULT {sqlGenerator.GetDbBool(false)}");
        
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)} );";
         
         var indexScripts = new List<string>();
+        // Hierarchical prefix strategy: each index extends the base (cluster_id + group_id + is_ready)
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_id", (clusterIdCol, false, 100)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_group_id", (groupIdCol, false, 100)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_entry_id", (entryIdCol, false, 250)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_subject_type", (subjectTypeCol, false, 100)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_subject_id", (subjectIdCol, false, 250)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_expires_at", (expiresAtCol, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_created_at", (createdAtCol, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_entry_id_guid", (entryIdGuidCol, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group", (clusterIdCol, false, 100), (groupIdCol, false, 100)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_entry", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (entryIdCol, false, 250)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_subject_type", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (subjectTypeCol, false, 100)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_subject_id", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (subjectIdCol, false, 250)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_expires_at", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (expiresAtCol, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_created_at", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (createdAtCol, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_entry_guid", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (entryIdGuidCol, false, (int?)null)));
         var uniqueIdxName = sqlGenerator.NormalizeIdentifierForDb($"idx_{tableName}_unique");
         indexScripts.Add($"CREATE UNIQUE INDEX {uniqueIdxName} ON {tableName} ({clusterIdCol}, {groupIdCol}, {entryIdCol});");
         
@@ -377,11 +439,12 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
-    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix)
+    private static string CreateGenericRecordEntryValueTable(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
         var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
        
-         var tableName = $"{prefix}generic_record_entry_value";
+         var baseValueTableName = $"{prefix}generic_record_entry_value";
+         var tableName = string.IsNullOrEmpty(familySuffix) ? baseValueTableName : $"{baseValueTableName}{familySuffix}";
 
          var recordIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.RecordUniqueId);
          var recordIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.RecordUniqueId, length: 450, nullable: false);
@@ -421,28 +484,31 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{valueDateTime} {valueDateTimeType}");
         columns.Add($"{valueGuid} {valueGuidType}");
         
-        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value");
-        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value");
+        var sfx = string.IsNullOrEmpty(familySuffix) ? "" : familySuffix;
+        var primaryKeyName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tablePrefix}generic_record_entry_value{sfx}");
+        var foreignKeyName = sqlGenerator.NormalizeIdentifierForDb($"fk_{tablePrefix}generic_record_entry_value{sfx}");
         var primaryKey = $" CONSTRAINT {primaryKeyName} PRIMARY KEY ({recordIdCol}, {keyNameCol})";
-        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)} ({recordIdCol})";
+        var entryTableName = string.IsNullOrEmpty(familySuffix) ? sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix) : $"{sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix)}{familySuffix}";
+        var foreignKey = $" CONSTRAINT {foreignKeyName} FOREIGN KEY ({recordIdCol}) REFERENCES {entryTableName} ({recordIdCol})";
         var createTableScript = $"CREATE TABLE {tableName} ({string.Join(", \n", columns)}, \n {primaryKey},\n {foreignKey}); \n";
         
         var indexScripts = new List<string>();
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_text", (keyNameCol, false, 250), (valueTextCol, true, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_binary", (keyNameCol, false, 250), (valueBinaryCol, true, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_int64", (keyNameCol, false, 250), (valueInt64, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_bool", (keyNameCol, false, 250), (valueBool, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_decimal", (keyNameCol, false, 250), (valueDecimal, false, (int?)null)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_value_datetime", (keyNameCol, false, 250), (valueDateTime, false, (int?)null)));
+        var indexPrefix = $"idx_{tableName}";
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_text", (keyNameCol, false, 250), (valueTextCol, true, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_binary", (keyNameCol, false, 250), (valueBinaryCol, true, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_int64", (keyNameCol, false, 250), (valueInt64, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_bool", (keyNameCol, false, 250), (valueBool, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_decimal", (keyNameCol, false, 250), (valueDecimal, false, (int?)null)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_value_datetime", (keyNameCol, false, 250), (valueDateTime, false, (int?)null)));
 
         // Composite indexes for common EXISTS filters:
         //   ... WHERE v2.record_unique_id = e.record_unique_id AND v2.key_name = @Key AND v2.value_* = @Value
         // KeyName + Value + RecordUniqueId supports filtering + join without scanning.
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_int64_record", (keyNameCol, false, 250), (valueInt64, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_bool_record", (keyNameCol, false, 250), (valueBool, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_decimal_record", (keyNameCol, false, 250), (valueDecimal, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_datetime_record", (keyNameCol, false, 250), (valueDateTime, false, (int?)null), (recordIdCol, false, 450)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tablePrefix}generic_record_entry_value_key_guid_record", (keyNameCol, false, 250), (valueGuid, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_int64_record", (keyNameCol, false, 250), (valueInt64, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_bool_record", (keyNameCol, false, 250), (valueBool, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_decimal_record", (keyNameCol, false, 250), (valueDecimal, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_datetime_record", (keyNameCol, false, 250), (valueDateTime, false, (int?)null), (recordIdCol, false, 450)));
+        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"{indexPrefix}_key_guid_record", (keyNameCol, false, 250), (valueGuid, false, (int?)null), (recordIdCol, false, 450)));
 
         createTableScript = $"{createTableScript}\n{string.Join("\n", indexScripts)}";
 

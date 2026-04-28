@@ -25,7 +25,7 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         ClusterServices = new ServiceCollection();
         this.mainServices = mainServices;
         
-        ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeInactive: true));
+        ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true));
         ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
         ClusterServices.AddSingleton<IJobMasterRuntime>(BootstrapBlueprintDefinitions.JobMasterRuntime!);
     }
@@ -58,6 +58,12 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         where TService : class, IJobMasterClusterAwareComponent
     {
         ClusterServices.AddSingleton(factory);
+    }
+    
+    public void AddFootprintResolver<TFootprintResolver>(string repositoryTypeId) 
+        where TFootprintResolver : class, IAgentFootprintResolver
+    {
+        ClusterServices.AddKeyedTransient<IAgentFootprintResolver, TFootprintResolver>(ClusterServiceKeys.GetFootprintResolverKey(repositoryTypeId));
     }
     
     public void AddRepositoryDispatcher<TRepositoryDispatcher, TSavePendingRepository, TProcessingRepository>(string repositoryTypeId) 

@@ -71,10 +71,10 @@ internal class WorkerStopCoordinatorRunner : JobMasterRunner
         await base.OnStopAsync();
     }
 
-    public override async Task OnErrorAsync(Exception ex, CancellationToken ct)
+    public override async Task OnTerminateFailureAsync(Exception lastException)
     {
         await MarkAllBucketAsLostAsync();
-        await base.OnErrorAsync(ex, ct);
+        await base.OnTerminateFailureAsync(lastException);
     }
 
     private async Task MarkAllBucketAsLostAsync()

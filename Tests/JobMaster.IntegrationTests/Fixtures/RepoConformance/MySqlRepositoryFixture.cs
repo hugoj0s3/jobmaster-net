@@ -19,7 +19,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
 public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
 {
-    internal override string ClusterId { get; set; } = "ClusterForRepoTests-MySql-1";
+    internal override string ClusterId { get; set; } = "RT-MySql-1";
 
     internal override AgentConnectionId AgentConnectionId { get; set; } = null!;
 
@@ -32,10 +32,10 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
 
     internal override IAgentRawMessagesDispatcherRepository AgentMessages { get; set; } = null!;
 
-    private const string MasterTablePrefix = "JMMySqlTests_";
-    private const string AgentTablePrefix = "JMMySqlTests_";
+    private const string MasterTablePrefix = "JMMyT_";
+    private const string AgentTablePrefix = "JMMyT_";
 
-    private const string AgentConnectionName = "AgentForRepoTests-MySql-1";
+    private const string AgentConnectionName = "Agent-MySql-1";
 
     public override async Task InitializeAsync()
     {
@@ -54,8 +54,8 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
 
         var agentCnn = agentCnnList.FirstOrDefault();
 
-        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "MySql", config);
-        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "MySql", config);
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn!, "MySql", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn!, "MySql", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {
@@ -99,7 +99,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
 
         var agentConfig = JobMasterClusterConnectionConfig
-            .Get(ClusterId, includeInactive: true)
+            .Get(ClusterId, includeNotReady: true)
             .TryGetAgentConnectionConfig(AgentConnectionName);
 
         if (agentConfig == null)
@@ -136,10 +136,5 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
         {
             await conn.ExecuteAsync($"CREATE DATABASE `{dbName}` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;");
         }
-    }
-
-    public override Task DisposeAsync()
-    {
-        return Task.CompletedTask;
     }
 }

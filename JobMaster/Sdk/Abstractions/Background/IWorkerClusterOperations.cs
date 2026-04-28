@@ -10,15 +10,19 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket);
     void MarkAsHeldOnMaster(Guid jobId);
     void CancelJob(Guid jobId);
-    void Upsert(JobRawModel jobRawModel);
-    Task UpsertAsync(JobRawModel jobRawModel);
+    void Upsert(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    Task UpsertAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    
+    Task SaveJobExecutionAsync(JobExecution jobExecution);
     
     void Upsert(RecurringScheduleRawModel jobRawModel);
     Task MarkBucketAsLostAsync(BucketModel bucket);
     Task MarkBucketAsLostAsync(string bucketId);
     Task MarkBucketAsLostIfNotDrainingAsync(string bucketId);
+    Task MarkBucketAsReadyToDeleteAsync(string bucketId);
     void MarkBucketAsLost(BucketModel bucket);
     Task<int> CountActiveCoordinatorWorkersAsync();
+    Task<int> CountWorkersAsync();
     void CancelRecurringSchedule(Guid id);
     
     Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200);
@@ -27,4 +31,5 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task AddAsync(JobRawModel job);
     
     void Insert(JobRawModel job);
+    
 }

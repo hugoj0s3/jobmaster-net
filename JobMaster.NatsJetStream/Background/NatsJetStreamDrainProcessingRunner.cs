@@ -18,7 +18,7 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
     private IMasterDistributedLockerService masterDistributedLockerService;
     private JobMasterLockKeys jobmasterBaseLockKeys = null!;
     private readonly IMasterJobsService masterJobsService;
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
 
     public NatsJetStreamDrainProcessingRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -42,10 +42,10 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
     {
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
+            savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
         }
         
-        await savePendingOperation.SaveDrainProcessingAsync(job);
+        await savePendingOperation.HeldOnMasterProcessingForDrainAsync(job);
     }
 
     protected override async Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct)
@@ -54,9 +54,4 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
         return exists is not null;
     }
 
-    protected override TimeSpan DelayAfterProcessPayload() => 
-        this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromMilliseconds(250);
-    
-    protected override TimeSpan LongDelayAfterBatchSize() => 
-        this.BackgroundAgentWorker.Mode == AgentWorkerMode.Drain ? TimeSpan.FromMilliseconds(250) : TimeSpan.FromMilliseconds(1000);
 }

@@ -15,6 +15,7 @@ public class SqlGenericRecordEntry
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
     
+    public bool IsReady { get; set; }
     public IList<SqlGenericRecordEntryValue> Values { get; set; } = new List<SqlGenericRecordEntryValue>();
 }
 
@@ -43,6 +44,7 @@ public class SqlGenericRecordEntryLinearDto
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
+    public bool IsReady { get; set; }
     
     public string KeyName { get; set; } = string.Empty;
     

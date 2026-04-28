@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -9,4 +9,8 @@ public class ApiAgentWorkerCriteria
     public AgentWorkerStatus? Status { get; set; }
     public AgentWorkerMode? Mode { get; set; }
     public bool? IsAlive { get; set; }
+    
+    public int? CountLimit { get; set; }
+    public int? Offset { get; set; }
+    public ApiSortByCriteria? SortBy { get; set; }
 }

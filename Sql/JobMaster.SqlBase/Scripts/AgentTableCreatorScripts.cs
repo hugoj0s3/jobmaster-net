@@ -61,9 +61,48 @@ internal class AgentTableCreatorScripts
 
         var create = $"CREATE TABLE {tableName} ({string.Join(", ", cols)},{pk},{fk});";
 
-        // Index aligned with dequeue filter/order
-        var idx = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref", (bucketCol, false, 250), (refTimeCol, false, null));
+        // Hierarchical prefix strategy: bucket isolated, then bucket + ref_time as base
+        var idxBucket = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket", (bucketCol, false, 250));
+        var idxBucketRef = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref", (bucketCol, false, 250), (refTimeCol, false, null));
+        // Covers full ORDER BY (ref_time ASC, message_id ASC) without filesort
+        var idxBucketRefMsg = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref_msg", (bucketCol, false, 250), (refTimeCol, false, null), (msgIdCol, false, 64));
+        // Covers cleanup/stale message queries by enqueue age
+        var idxBucketEnqAt = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_enq_at", (bucketCol, false, 250), (enqAtCol, false, null));
 
-        return $"{create}\n{idx}";
+        return $"{create}\n{idxBucket}\n{idxBucketRef}\n{idxBucketRefMsg}\n{idxBucketEnqAt}";
+    }
+
+    public static string CreateAgentConnectionFootprint(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var prefix = tablePrefix == string.Empty ? string.Empty : tablePrefix;
+        var tableName = $"{prefix}agent_conn_footprint";
+
+        // Reuse cluster_id type from GenericRecordEntry for consistency
+        var clusterIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.ClusterId);
+        var clusterIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.ClusterId, length: 250, nullable: false);
+
+        var agentConnectionIdCol = "agent_connection_id";
+        var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var footprintCol = "footprint";
+        var footprintType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var lastUpdatedAtCol = "last_updated_at";
+        var lastUpdatedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var columns = new List<string>
+        {
+            $"{clusterIdCol} {clusterIdType}",
+            $"{agentConnectionIdCol} {agentConnectionIdType}",
+            $"{footprintCol} {footprintType}",
+            $"{lastUpdatedAtCol} {lastUpdatedAtType}"
+        };
+
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_conn_footprint");
+        var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {agentConnectionIdCol})";
+
+        var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
+
+        return create;
     }
 }

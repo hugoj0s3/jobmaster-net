@@ -25,7 +25,7 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
         genericRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterGenericRecordRepository>();
         locker = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
-        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.BatchSize);
+        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -54,7 +54,7 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await genericRepo.DeleteByCreatedAtAsync(MasterGenericRecordGroupIds.Log, cutoff, BackgroundAgentWorker.BatchSize);
+            var deleted = await genericRepo.DeleteByCreatedAtAsync(MasterGenericRecordGroupIds.Log, cutoff, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

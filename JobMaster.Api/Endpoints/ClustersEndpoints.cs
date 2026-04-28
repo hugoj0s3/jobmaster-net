@@ -17,7 +17,7 @@ internal static class ClustersEndpoints
 
         clusters.MapGet("/count", GetClustersCount);
         clusters.MapGet("/ids", GetClusterIds);
-        clusters.MapGet("/{clusterId}", GetClusterDetailAsync);
+        clusters.MapGet("/{clusterId}", GetClusterDetail);
 
         return group;
     }
@@ -33,11 +33,11 @@ internal static class ClustersEndpoints
         return Results.Ok(result);
     }
 
-    private static async Task<IResult> GetClusterDetailAsync(
+    private static IResult GetClusterDetail(
         [FromRoute] string clusterId,
         CancellationToken ct)
     {
-        var clusterConnConfig = JobMasterClusterConnectionConfig.TryGet(clusterId, includeInactive: true);
+        var clusterConnConfig = JobMasterClusterConnectionConfig.TryGet(clusterId, includeNotReady: true);
         if (clusterConnConfig == null)
         {
             return Results.NotFound();

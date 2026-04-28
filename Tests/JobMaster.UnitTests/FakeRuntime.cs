@@ -21,12 +21,12 @@ internal sealed class FakeRuntime : IJobMasterRuntime
     public Task StartAsync(IServiceProvider serviceProvider) => throw new NotSupportedException();
     public Task StopImmediatelyAsync() => Task.CompletedTask;
 
-    public OperationThrottler GetOperationThrottlerForCluster(string clusterId)
+    public OperationThrottler GetOperationLimiterForCluster(string clusterId)
     {
         return new OperationThrottler(null);
     }
 
-    public OperationThrottler GetOperationThrottlerForAgent(string clusterId, string agentConnectionIdOrName)
+    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
     {
         return new OperationThrottler(int.MaxValue);
     }

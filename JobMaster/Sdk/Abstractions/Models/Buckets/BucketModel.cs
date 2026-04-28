@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -18,6 +19,8 @@ internal class BucketModel : JobMasterBaseModel
     public string Id { get; internal set; } = string.Empty;
     public string Name { get; internal set; } = string.Empty;
     public AgentConnectionId AgentConnectionId { get; internal set; } = null!;
+    public HostId HostId { get; internal set; } = null!;
+    
     public string? AgentWorkerId { get; internal set; }
     public string RepositoryTypeId { get; internal set; } = string.Empty;
     public JobMasterPriority Priority { get; internal set; }
@@ -25,12 +28,14 @@ internal class BucketModel : JobMasterBaseModel
     public DateTime CreatedAt { get; internal set; }
     public BucketColor Color { get; internal set; }
     
+    public BucketType BucketType { get; internal set; } = BucketType.Standard;
+
+    
     public string? WorkerLane { get; internal set; }
     
     public DateTime LastStatusChangeAt { get; internal set; }
     
     public DateTime? DeletesAt { get; internal set; }
-
 
     public override bool IsValid()
     {
@@ -107,7 +112,7 @@ internal class BucketModel : JobMasterBaseModel
             return false;
         }
         
-        if (Status != BucketStatus.Draining)
+        if (Status != BucketStatus.Draining && BucketType != BucketType.Fallback)
         {
             return false;
         }
@@ -127,5 +132,15 @@ internal class BucketModel : JobMasterBaseModel
     public bool IsStandaloneBucket(string clusterDefinitionClusterId)
     {
         return ClusterId == clusterDefinitionClusterId && AgentConnectionId.Name == JobMasterConstants.StandaloneAgentConnName;
+    }
+
+    public bool CanAssign()
+    {
+        if (string.IsNullOrEmpty(Id) || !AgentConnectionId.IsNotNullAndValid() || string.IsNullOrEmpty(AgentWorkerId))
+        {
+            return  false;
+        }
+        
+        return true;
     }
 }

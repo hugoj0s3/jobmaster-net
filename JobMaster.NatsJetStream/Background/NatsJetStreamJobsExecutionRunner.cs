@@ -15,7 +15,7 @@ namespace JobMaster.NatsJetStream.Background;
 
 internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRawModel>, IJobsExecutionRunner
 {
-    private IJobsExecutionEngine? jobsExecutionOperation;
+    private IJobsExecutionEngine? jobsExecutionEngine;
     private readonly Stopwatch lifetimeSw = new();
     
     public NatsJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
@@ -40,13 +40,13 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
     {
         logger.Debug($"Processing payload: JobId={payload.Id}");
         
-        var now = DateTime.UtcNow;
-        if (jobsExecutionOperation is null)
+        var utcNow = DateTime.UtcNow;
+        if (jobsExecutionEngine is null)
         {
-            jobsExecutionOperation = this.BackgroundAgentWorker.GetOrCreateEngine(this.Priority, this.BucketId!);
+            jobsExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(this.Priority, this.BucketId!);
         }
         
-        var onBoardingResult = await jobsExecutionOperation.TryOnBoardingJobAsync(payload);
+        var onBoardingResult = await jobsExecutionEngine.TryOnBoardingJobAsync(payload);
         
         if (onBoardingResult == OnBoardingResult.Cancelled)
         {
@@ -58,40 +58,33 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         if (onBoardingResult == OnBoardingResult.TooEarly)
         {
             // Scheduling guard: avoid onboarding too early
-            if (payload.ScheduledAt > now + NatsJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
+            if (payload.GetSafeNextPlanExecutionAt() > utcNow + NatsJetStreamConstants.MaxThreshold.Add(JobMasterConstants.ClockSkewPadding))
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn($"{GetRunnerDescription()}: ScheduledAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
+                logger.Warn($"{GetRunnerDescription()}: NextPlanExecutionAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
                 return;
             }
+
+            var target = payload.GetSafeNextPlanExecutionAt() - BackgroundAgentWorker.BucketBufferLeadTime;
+            var delay = target > utcNow ? target - utcNow : TimeSpan.Zero;
+            // Only add jitter when there is a real delay, to spread out redeliveries.
+            // For immediate jobs (delay == Zero) jitter would just waste time.
+            var jitter = delay > TimeSpan.Zero
+                ? TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(5, 50))
+                : TimeSpan.Zero;
+
+            await ackGuard.TryNakAsync(delay + jitter);
             
-            var target = payload.ScheduledAt - JobMasterConstants.OnBoardingWindow;
-            var priorityOffset = payload.Priority switch
-            {
-                JobMasterPriority.Critical => TimeSpan.FromSeconds(5),
-                JobMasterPriority.High => TimeSpan.FromSeconds(5),
-                JobMasterPriority.Medium => TimeSpan.FromSeconds(15),
-                JobMasterPriority.Low => TimeSpan.FromSeconds(20),
-                JobMasterPriority.VeryLow => TimeSpan.FromSeconds(20),
-                _ => TimeSpan.FromSeconds(10)
-            };
-            var jitter = TimeSpan.FromSeconds(JobMasterRandomUtil.GetInt(1, 6));
-            target = target - priorityOffset - jitter;
-            
-            var delay = target > now ? target - now : TimeSpan.Zero;
-            
-            await ackGuard.TryNakAsync(delay);
-            
-            logger.Debug($"{GetRunnerDescription()}: ScheduledAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} ScheduledAt={payload.ScheduledAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
         }
     }
 
     protected override async Task OnTickAfterSetupAsync(CancellationToken ct)
     {
-        if (jobsExecutionOperation is null) return;
+        if (jobsExecutionEngine is null) return;
         
-        await jobsExecutionOperation.PulseAsync();
+        await jobsExecutionEngine.PulseAsync();
     }
 
     protected override Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct) => Task.FromResult(true);
@@ -111,14 +104,13 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
         this.logger.Info($"{GetRunnerDescription()}: Starting graceful flush of buffered jobs for {BucketId}.", JobMasterLogSubjectType.Bucket, BucketId);
 
-        if (jobsExecutionOperation is not null)
+        if (jobsExecutionEngine is not null)
         {
-            await jobsExecutionOperation.FlushToMasterAsync().ConfigureAwait(false);
+            await jobsExecutionEngine.FlushToMasterAsync().ConfigureAwait(false);
         }
     }
 
     public JobMasterPriority Priority { get; internal set; }
 
-    protected override TimeSpan LongDelayAfterBatchSize() => TimeSpan.FromMilliseconds(10);
-    protected override TimeSpan DelayAfterProcessPayload() => TimeSpan.Zero;
+    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(1);
 }

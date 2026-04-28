@@ -53,7 +53,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
 
     private int failedSavedCountConsecutive = 0;
     
-    private SavePendingOperation? savePendingOperation;
+    private JobSavePendingOperation? savePendingOperation;
 
     public ManualSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -73,7 +73,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
 
         if (savePendingOperation is null)
         {
-            savePendingOperation = new SavePendingOperation(BackgroundAgentWorker, BucketId!);
+            savePendingOperation = new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
         }
         
         var bucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
@@ -82,7 +82,8 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
             return OnTickResult.Skipped(this);
         }
         
-        var jobs = await agentJobsDispatcherService.DequeueSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BatchSize);
+        var jobs = await agentJobsDispatcherService
+            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (jobs.Count <= 0)
         {
@@ -121,6 +122,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                     // If re-queueing fails, we catch it so the loop continues for other jobs.
                     try 
                     {
+                        job.AssignToBucket(bucket);
                         await agentJobsDispatcherService.AddSavePendingJobAsync(job);
                         pendingTracker.TryRemove(job.Id, out _);
                     }

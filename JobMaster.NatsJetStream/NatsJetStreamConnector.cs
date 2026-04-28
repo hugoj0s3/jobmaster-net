@@ -18,7 +18,6 @@ internal sealed class NatsJetStreamConnector
     : System.IDisposable
 #endif
 {
-    
     private sealed class Entry
     {
         public NatsConnection Nats { get; set; } = null!;
@@ -45,8 +44,8 @@ internal sealed class NatsJetStreamConnector
     public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId)
         => Instance.GetOrCreateConsumerInternalAsync(config, fullBucketAddressId);
     
-    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, CancellationToken ct)
-        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, ct);
+    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, CancellationToken ct)
+        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, ct);
 
 #if NET8_0_OR_GREATER
     public static ValueTask DisposeAllAsync() => Instance.DisposeAsync();
@@ -77,7 +76,7 @@ internal sealed class NatsJetStreamConnector
             NatsTlsOpts? tlsOpts = config.AdditionalConnConfig.TryGetValue<NatsTlsOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey);
 
             // Build options (TLS/auth customizations can be added later)
-            var url = config.ConnectionString;
+            var url = NormalizeNatsUrl(config.ConnectionString);
             var clientName = NatsJetStreamUtils.GetStreamName(config.Id);
             var streamNameInit = NatsJetStreamUtils.GetStreamName(config.Id);
 
@@ -149,7 +148,8 @@ internal sealed class NatsJetStreamConnector
     private async ValueTask<INatsJSConsumer> CreateOrUpdateConsumerInternalAsync(
         JobMasterAgentConnectionConfig config, 
         string fullBucketAddressId,
-        int? actualBatchSize = null,
+        int? bufferSize = null,
+        TimeSpan? bucketBufferLeadTime = null,
         CancellationToken ct = default)
     {
         // Ensure connection and stream are available
@@ -164,12 +164,12 @@ internal sealed class NatsJetStreamConnector
         }
 
         // Serialize create/update GLOBALLY to avoid parallel API calls across entries; try once and proceed regardless
-        var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15));
+        var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15), ct);
 
         try
         {
             // Also serialize per-entry to limit contention inside an agent; try once and proceed regardless
-            var gotEntry = await entry.Lock.WaitAsync(TimeSpan.FromSeconds(10));
+            var gotEntry = await entry.Lock.WaitAsync(TimeSpan.FromSeconds(10), ct);
 
             try
             {
@@ -181,22 +181,26 @@ internal sealed class NatsJetStreamConnector
 
                 // 2. Handle the missing CancellationToken (for Repository/Dispatcher calls)
                 // We create a local 10s timeout to ensure the boot process doesn't hang if NATS is unreachable.
-                using var cts = ct == default ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
+                using var cts = ct == CancellationToken.None ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
                 var token = cts?.Token ?? ct;
 
                 var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
                 var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
 
-                actualBatchSize ??= new WorkerDefinition().BatchSize; // Get default batch size if not specified.
-
+                bufferSize ??= new WorkerDefinition().BucketBufferSize; // Get default buffer size if not specified.
+                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value);
+                
+                bucketBufferLeadTime ??= new WorkerDefinition().BucketBufferLeadTime;
+                var ackWait = bucketBufferLeadTime.Value + NatsJetStreamConstants.MinConsumerAckWait;
+                
                 var consumerConfig = new ConsumerConfig(consumerName)
                 {
                     FilterSubject = subject,
                     DurableName = consumerName,
                     AckPolicy = ConsumerConfigAckPolicy.Explicit,
                     DeliverPolicy = ConsumerConfigDeliverPolicy.All,
-                    MaxAckPending = actualBatchSize.Value, 
-                    AckWait = NatsJetStreamConstants.ConsumerAckWait,
+                    MaxAckPending = maxAckPending, 
+                    AckWait = ackWait,
                     MaxDeliver = NatsJetStreamConstants.MaxDeliver,
                 };
 
@@ -230,6 +234,73 @@ internal sealed class NatsJetStreamConnector
 
         return await CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId);
     } 
+    
+    private static string NormalizeNatsUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            throw new ArgumentException("NATS connection string is null or empty.", nameof(url));
+        }
+
+        var trimmed = url!.Trim();
+
+        // Common when values come from JSON/env and end up with surrounding quotes
+        trimmed = trimmed.Trim('"', '\'', ' ', '\t', '\r', '\n');
+
+        var sepIdx = trimmed.IndexOfAny(new[] { ';', '\n', '\r' });
+        if (sepIdx > 0)
+        {
+            trimmed = trimmed[..sepIdx];
+        }
+
+        trimmed = trimmed.Trim();
+
+        if (Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) && !string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return trimmed;
+        }
+
+        // Auto-fix a very common configuration pitfall: password contains '@'.
+        // In URI syntax, '@' separates userinfo from host, so it must be percent-encoded inside the password.
+        // Example:
+        //   nats://user:MyP@ss@localhost:4222  ->  nats://user:MyP%40ss@localhost:4222
+        try
+        {
+            if (trimmed.StartsWith("nats://", StringComparison.OrdinalIgnoreCase))
+            {
+                var afterScheme = trimmed["nats://".Length..];
+                var lastAt = afterScheme.LastIndexOf('@');
+                var firstAt = afterScheme.IndexOf('@');
+
+                if (firstAt >= 0)
+                {
+                    var userInfo = afterScheme[..lastAt];
+                    var hostPart = afterScheme[(lastAt + 1)..];
+
+                    var colonIdx = userInfo.IndexOf(':');
+                    if (colonIdx > 0 && colonIdx < userInfo.Length - 1)
+                    {
+                        var user = userInfo[..colonIdx];
+                        var pass = userInfo[(colonIdx + 1)..];
+                        var escapedPass = Uri.EscapeDataString(pass);
+                        var rebuilt = $"nats://{user}:{escapedPass}@{hostPart}";
+
+                        if (Uri.TryCreate(rebuilt, UriKind.Absolute, out var uri2) && !string.IsNullOrWhiteSpace(uri2.Host))
+                        {
+                            return rebuilt;
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Ignore and throw the final error below
+        }
+
+        throw new ArgumentException($"Invalid NATS URL: '{trimmed}'. Original value length: {url.Length}.", nameof(url));
+    }
+
 
 #if NET8_0_OR_GREATER
     public async ValueTask DisposeAsync()

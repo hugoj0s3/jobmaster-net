@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -70,10 +71,14 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
         
         var jobQueryCriteria = new JobQueryCriteria()
         {
-            CountLimit = BackgroundAgentWorker.BatchSize,
+            CountLimit = BackgroundAgentWorker.TransferBatchSize,
             ProcessDeadlineTo = utcNow.AddSeconds(-30),
-            IsLocked = false,
             Offset = 0,
+            SortBy = new SortByCriteria()
+            {
+                Property = nameof(JobRawModel.NextPlanExecutionAt),
+                Ascending = true,
+            }
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -88,24 +93,24 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
             lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
                 countJobs,
                 workerCount,
-                BackgroundAgentWorker.BatchSize,
+                BackgroundAgentWorker.TransferBatchSize,
                 TimeSpan.FromMinutes(2),
                 lockerLane:1);
         }
         jobQueryCriteria.CountLimit = lastScanPlanResult.BatchSize;
         
-        var lockId = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
+        var lockSlot = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
         
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.ProcessDeadlineTimeoutLock(lockId), durationToLock.Add(TimeSpan.FromMinutes(1)));
+        var lockToken = masterDistributedLockerService.TryLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), durationToLock.Add(TimeSpan.FromMinutes(1)));
         if (lockToken == null)
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, utcNow.Add(durationToLock));
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, utcNow.Add(durationToLock));
         if (jobs.Count <= 0)
         {
-            masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockId), lockToken);
+            masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
 
@@ -113,7 +118,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
         
         await MarkAsHeldOnMasterAsync(jobs, cutOffTime, ct);
         
-        masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockId), lockToken);
+        masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
         
         return OnTickResult.Success(lastScanPlanResult.Interval);
     }

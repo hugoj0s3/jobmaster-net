@@ -83,7 +83,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         );
     }
     
-    public async Task InitializeAsync()
+    public async virtual Task InitializeAsync()
     {
         Trace.Listeners.Clear();
         Trace.AutoFlush = true;
@@ -210,7 +210,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                 cfg.EnableMirrorLog((lItem) => OnLog(lItem));
 
                 var defaultAgentTablePrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
-                    ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
+                    ? ToSafeSqlIdentifier(c.MasterTablePrefix)
                     : null;
 
                 foreach (var a in c.AgentConnections)
@@ -256,28 +256,40 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                         {
                             selector.WorkerLane(w.WorkerLane);
                         }
-                            
+
                         selector.BucketQtyConfig(JobMasterPriority.VeryLow, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Low, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .WorkerBatchSize(1000)
-                            .SkipWarmUpTime();
+                            .TransferBatchSize(1000)
+                            .BucketBufferSize(1000);
+
+                        if (IsDrainingModeTest)
+                        {
+                            selector.SkipWarmUpTime();
+                        }
                     }
 
                     if (IsDrainingModeTest)
                     {
-                        var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        drainModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Drain)
-                            .WorkerBatchSize(1000)
-                            .SkipWarmUpTime();
+                        for (int i = 0; i < 3; i++)
+                        {
+                            var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            drainModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Drain)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                         
-                        var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        coordinatorModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Coordinator)
-                            .WorkerBatchSize(1000);
+                        for (int i = 0; i < 5; i++)
+                        {
+                            var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            coordinatorModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Coordinator)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                     }
                 }
 
@@ -294,7 +306,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         {
             var masterPrefix = ToSafeSqlIdentifier(c.MasterTablePrefix ?? string.Empty);
             var defaultAgentPrefix = !string.IsNullOrWhiteSpace(c.MasterTablePrefix)
-                ? ToSafeSqlIdentifier($"{c.ClusterName}{c.MasterTablePrefix}")
+                ? ToSafeSqlIdentifier(c.MasterTablePrefix)
                 : null;
 
             var masterCnn = IntegrationTestSecrets.ApplySecrets(

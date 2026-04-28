@@ -19,8 +19,6 @@ public interface IClusterConfigSelector
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId);
     public IAgentWorkerSelector AddWorker(string? workerName = null, string? agentConnectionName = null, int batchSize = 250);
     
-    public IClusterConfigSelector DebugJsonlFileLogger(string filePath, int maxBufferItems = 500, TimeSpan? flushInterval = null);
-    
     public IAgentConnectionConfigSelector AddAgentConnectionConfig(
         string agentConnectionName,
         string? repoType = null,
@@ -35,6 +33,8 @@ public interface IClusterConfigSelector
         string? repoType,
         string? cnnString,
         JobMasterConfigDictionary? additionalConnConfig);
+    
+    public IClusterConfigSelector DebugJsonlFileLogger(string filePath, int maxBufferItems = 500, TimeSpan? flushInterval = null);
 
     internal IClusterConfigSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig);
 
@@ -43,7 +43,7 @@ public interface IClusterConfigSelector
     internal IClusterConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
     internal IClusterConfigSelector AppendAdditionalConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
     
-    internal IClusterConfigSelector ClusterRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit);
+    internal IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit);
     
     internal IClusterConfigSelector ClusterRepoType(string repoType);
     internal IClusterConfigSelector ClusterConnString(string connString);

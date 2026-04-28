@@ -8,9 +8,12 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
 {
     void Add(JobRawModel jobRaw);
     Task AddAsync(JobRawModel jobRaw);
-    
-    void Update(JobRawModel jobRaw);
-    Task UpdateAsync(JobRawModel jobRaw);
+
+    void Upsert(JobRawModel jobRaw);
+    Task UpsertAsync(JobRawModel jobRaw);
+
+    bool Exists(Guid jobId);
+    Task<bool> ExistsAsync(Guid jobId);
 
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
@@ -21,18 +24,10 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     
     long Count(JobQueryCriteria queryCriteria);
     
-    IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
-    Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria);
-
-
-    [Obsolete("Use AcquireAndFetchAsync(...) instead. This method will be removed in a future release.")]
-    bool BulkUpdatePartitionLockId(IList<Guid> jobIds, int lockId, DateTime expiresAt);
     void ReleasePartitionLock(Guid jobId);
-
-    [Obsolete("Use ReleasePartitionLock(...) instead. This method will be removed in a future release.")]
-    void ClearPartitionLock(Guid jobId);
+    
     void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
 
-    Task<int> PurgeFinalByScheduledAtAsync(DateTime cutoffUtc, int limit);
-    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
+    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
 }

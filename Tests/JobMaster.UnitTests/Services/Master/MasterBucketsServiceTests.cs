@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -47,6 +48,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var act = async () => await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -90,6 +92,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var act =  async () => await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -143,6 +146,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var created = await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -193,6 +197,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         await sut.DestroyAsync("missing");
@@ -233,7 +238,7 @@ public class MasterBucketsServiceTests
         };
 
         var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
-        repo.Setup(x => x.Get(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).Returns(entry);
+        repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -245,6 +250,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         await sut.DestroyAsync(bucket.Id);
@@ -263,7 +269,8 @@ public class MasterBucketsServiceTests
         var clusterConfig = CreateClusterConfig(clusterId);
 
         var repo = NewRepoMock(clusterConfig);
-        var sentinel = NewSentinelMock(clusterConfig);
+        var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Strict);
+        sentinel.SetupGet(x => x.ClusterConnConfig).Returns(clusterConfig);
         var locker = NewLockerMock(clusterConfig);
         var workers = NewWorkersMock(clusterConfig);
         var dispatcher = NewDispatcherMock(clusterConfig);
@@ -283,11 +290,12 @@ public class MasterBucketsServiceTests
         };
 
         var cacheKey = new JobMasterInMemoryKeys(clusterId).Bucket("b1");
+        var cacheItemCreatedAt = DateTime.UtcNow;
         cache.Setup(x => x.Get<BucketModel>(cacheKey))
-            .Returns(new JobMasterInMemoryCacheItem<BucketModel>(DateTime.UtcNow, DateTime.UtcNow.AddMinutes(5), cachedBucket));
+            .Returns(new JobMasterInMemoryCacheItem<BucketModel>(cacheItemCreatedAt, DateTime.UtcNow.AddMinutes(5), cachedBucket));
 
         var sentinelKey = new JobMasterSentinelKeys(clusterId).Bucket("b1");
-        sentinel.Setup(x => x.HasChangesAfter(sentinelKey, It.IsAny<DateTime>(), It.IsAny<TimeSpan?>()))
+        sentinel.Setup(x => x.HasChangesAfter(sentinelKey, cacheItemCreatedAt, JobMasterConstants.BucketDefaultAllowDiscrepancy))
             .Returns(false);
 
         var sut = new MasterBucketsService(
@@ -300,6 +308,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var got = sut.Get("b1", JobMasterConstants.BucketDefaultAllowDiscrepancy);
@@ -307,6 +316,8 @@ public class MasterBucketsServiceTests
         got.Should().NotBeNull();
         got!.Id.Should().Be("b1");
         repo.Verify(x => x.Get(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+        sentinel.Verify(x => x.HasChangesAfter(sentinelKey, cacheItemCreatedAt, JobMasterConstants.BucketDefaultAllowDiscrepancy), Times.Once);
+        sentinel.VerifyNoOtherCalls();
     }
 
     [Fact]
@@ -386,6 +397,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var selected = sut.SelectBucket(JobMasterConstants.BucketDefaultAllowDiscrepancy, JobMasterPriority.High, "lane");
@@ -478,6 +490,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var selected = await sut.SelectBucketAsync(JobMasterConstants.BucketDefaultAllowDiscrepancy, JobMasterPriority.High, "lane");

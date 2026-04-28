@@ -5,11 +5,14 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -47,7 +50,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             throw new InvalidOperationException("JobMasterRuntime is already started");
         }
-        
+
         using var scope = serviceProvider.CreateScope();
         
         var runtimeSetups = scope.ServiceProvider.GetServices<IJobMasterRuntimeSetup>().ToList();
@@ -60,34 +63,53 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             await runtimeSetup.OnStartingAsync(scope.ServiceProvider);
         }
-
-        // Default cluster handling
-        if (JobMasterClusterConnectionConfig.Default == null)
-        {
-            if (JobMasterClusterConnectionConfig.ClusterCount == 1)
-            {
-                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs().First().ClusterId);
-            }
-            else if (JobMasterClusterConnectionConfig.ClusterCount > 1)
-            {
-                throw new InvalidOperationException("Multiple clusters configured but no default cluster defined. Mark one as default.");
-            }
-        }
+        
+        PreValidation();
 
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
-            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.FirstOrDefault(c => c.ClusterId == clusterCnnCfg.ClusterId);
-            if (clusterDefinition == null)
-            {
-                throw new InvalidOperationException("Cluster definition not found");
-            }
-            var agentDefinitions = clusterDefinition.AgentConnections;
-            var workerDefinitions = clusterDefinition.Workers;
-            
+            var agentComponentFactory = componentFactory.GetComponent<IAgentComponentFactory>();
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
+            var masterAgentConnectionService = componentFactory.GetComponent<IMasterAgentConnectionService>();
+            var logger = componentFactory.GetComponent<IJobMasterLogger>();
+            
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+            
+            var agentDefinitions = clusterDefinition.AgentConnections;
+            foreach (var agentDefinition in agentDefinitions)
+            {
+                var agentConfig = clusterCnnCfg.TryGetAgentConnectionConfig(agentDefinition.AgentConnectionName);
+                if (agentConfig == null)
+                {
+                    throw new Exception($"Agent connection {agentDefinition.AgentConnectionName} not found");
+                }
+
+                var agentConnectionId = new AgentConnectionId(agentConfig.Id);
+                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
+                
+                var footprintResolver = agentComponentFactory.GetFootprintResolver(agentConfig.Id);
+                var footprint = await footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentConfig.Id);
+                
+                if (existingConnection != null && existingConnection.Footprint != footprint)
+                {
+                    if (agentDefinition.ProtectConnectionChanges)
+                    {
+                        throw new Exception(
+                            $"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, " +
+                            $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
+                    }
+                    
+                    logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, updating...");
+                }
+                
+                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, footprint, agentDefinition.ProtectConnectionChanges);
+            }
+            
+            
+            var workerDefinitions = clusterDefinition.Workers;
           
-            var modelToSave = masterConfigService.GetNoAche() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
+            var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount = clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
@@ -101,56 +123,8 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 JsonlFileLogger.AddLogger(clusterCnnCfg.ClusterId, clusterDefinition.MirrorLogFilePath!, clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
             }
-
-            if (clusterDefinition.IanaTimeZoneId != null && modelToSave.IanaTimeZoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
-            {
-                throw new InvalidOperationException(
-                    "if you want to use agents in different regions please explicitly set the IanaTimeZoneId for the cluster. " +
-                    "The cluster IanaTimeZoneId does not match the local timezone" + 
-                    " ClusterId: " + clusterDefinition.ClusterId + ", Cluster IanaTimeZoneId: " + clusterDefinition.IanaTimeZoneId + ", Local IanaTimeZoneId: " + modelToSave.IanaTimeZoneId);
-            }
-
-            if ((modelToSave.ClusterMode == ClusterMode.Passive || modelToSave.ClusterMode == ClusterMode.Archived) && 
-                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1))) 
-            {
-                throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
-            }
             
             masterConfigService.Save(modelToSave);
-            
-            // Ensure no duplicates
-            if (agentDefinitions.GroupBy(x => x.AgentConnectionName).Any(x => x.ToList().Count > 1))
-            {
-                throw new InvalidOperationException("Duplicate agent connection names found");
-            }
-
-            if (agentDefinitions.Any(x => string.Equals(
-                    x.AgentConnectionName,
-                    JobMasterConstants.StandaloneAgentConnName,
-                    StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new InvalidOperationException($" {JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
-            }
-
-            if (clusterDefinition.IsStandalone && agentDefinitions.Any())
-            {
-                throw new InvalidOperationException("Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
-            } 
-            
-            foreach (var workerDefinition in workerDefinitions)
-            {
-                if (string.IsNullOrEmpty(workerDefinition.WorkerName))
-                {
-                    var workerName = JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 40) + "." + JobMasterIdUtil.NewNanoId();
-                    workerDefinition.WorkerName = workerName;
-                }
-            }
-            
-            // Ensure no duplicates
-            if (workerDefinitions.GroupBy(x => x.WorkerName).Any(x => x.ToList().Count > 1))
-            {
-                throw new InvalidOperationException("Duplicate worker names found");
-            }
             
             if (!clusterDefinition.IsStandalone)
             {
@@ -171,11 +145,11 @@ internal class JobMasterRuntime : IJobMasterRuntime
                         var workerDefinition = new WorkerDefinition()
                         {
                             AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
-                            WorkerName = $"{JobMasterStringUtils.SanitizeForSegment(Environment.MachineName, 25)}-StandaloneDrainer-{JobMasterIdUtil.NewNanoId()}",
+                            WorkerName = "StandaloneDrainer",
                             WorkerLane = lane,
                             Mode = AgentWorkerMode.Drain,
                             ClusterId = clusterDefinition.ClusterId!,
-                            BatchSize = 250,
+                            TransferBatchSize = 1000,
                         };
                         
                         var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
@@ -220,58 +194,175 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
         await Task.Delay(TimeSpan.FromSeconds(1));
     }
-    
-    private IDictionary<string, OperationThrottler> OperationThrottlerPerCluster { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+
+    private static void PreValidation()
+    {
+        // Default cluster handling
+        if (JobMasterClusterConnectionConfig.Default == null)
+        {
+            if (JobMasterClusterConnectionConfig.ClusterCount == 1)
+            {
+                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs().First().ClusterId);
+            }
+            else if (JobMasterClusterConnectionConfig.ClusterCount > 1)
+            {
+                throw new InvalidOperationException("Multiple clusters configured but no default cluster defined. Mark one as default.");
+            }
+        }
+        
+        var clusterDupes = JobMasterClusterConnectionConfig
+            .GetAllConfigs()
+            .GroupBy(x => JobMasterStringUtils.NormalizeId(x.ClusterId)).Where(x => x.Count() > 1)
+            .ToList();
+        
+        if (clusterDupes.Any())
+        {
+            throw new InvalidOperationException($"Multiple clusters configured with the same id. {string.Join(", ", clusterDupes.Select(x => x.Key))}");
+        }
+
+        // Validation of all clusters first.
+        foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
+        {
+            var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+            
+            if (clusterDefinition == null)
+            {
+                throw new InvalidOperationException("Cluster definition not found");
+            }
+            
+            if (string.IsNullOrWhiteSpace(clusterDefinition.ConnString) || 
+                string.IsNullOrWhiteSpace(clusterDefinition.RepoType)) 
+            {
+                throw new InvalidOperationException("Cluster definition is missing connection string or repository type");
+            }
+            
+            var agentDefinitions = clusterDefinition.AgentConnections;
+            
+            var missingCnnStringOrRepoType = agentDefinitions.Where(x =>
+                string.IsNullOrWhiteSpace(x.AgentConnString) || string.IsNullOrWhiteSpace(x.AgentRepoType)).ToList();
+            if (missingCnnStringOrRepoType.Any())
+            {
+                var agentNames = string.Join(", ", missingCnnStringOrRepoType.Select(x => x.AgentConnectionName));
+                throw new InvalidOperationException(
+                    @$"Agent connection is missing connection string or repository type. Connection: {agentNames}");
+            }
+            
+            var workerDefinitions = clusterDefinition.Workers;
+            
+            var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
+
+            var existingClusterConfig = masterConfigService.GetFresh();
+            var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
+            
+            if (clusterDefinition.IanaTimeZoneId != null && existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
+            {
+                throw new InvalidOperationException(
+                    "if you want to use agents in different regions please explicitly set the IanaTimeZoneId for the cluster. " +
+                    "The cluster IanaTimeZoneId does not match the local timezone" + 
+                    " ClusterId: " + clusterDefinition.ClusterId + ", Defined IanaTimeZoneId: " + clusterDefinition.IanaTimeZoneId + ", Existing IanaTimeZoneId Configured: " + existingTimezoneId);
+            }
+            
+            // Ensure no duplicates
+            var agentDupes = agentDefinitions
+                .GroupBy(x => JobMasterStringUtils.NormalizeId(x.AgentConnectionName))
+                .Where(x => x.ToList().Count > 1).ToList();
+            if (agentDupes.Any())
+            {
+                throw new InvalidOperationException($"Duplicate agent connection names found. {string.Join(", ", agentDupes.Select(x => x.Key))}");
+            }
+            
+            if ((clusterDefinition.ClusterMode == ClusterMode.Passive || clusterDefinition.ClusterMode == ClusterMode.Archived) && 
+                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1))) 
+            {
+                throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
+            }
+            
+            if (agentDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.StandaloneAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException($"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
+            }
+
+            if (clusterDefinition.IsStandalone && agentDefinitions.Any())
+            {
+                throw new InvalidOperationException("Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
+            } 
+            
+            
+            // Ensure no duplicates
+            var workDupes = workerDefinitions
+                .Where(x => !string.IsNullOrEmpty(x.WorkerName))
+                .GroupBy(x => JobMasterStringUtils.NormalizeId(x.WorkerName!)).Where(x => x.ToList().Count > 1)
+                .ToList();
+            if (workDupes.Any())
+            {
+                throw new InvalidOperationException($"Duplicate worker names found {string.Join(", ", workDupes.Select(x => x.Key))}");
+            }
+            
+            var distinctWorkLanes = workerDefinitions
+                .Where(x => !string.IsNullOrEmpty(x.WorkerLane))
+                .Select(x => x.WorkerLane)
+                .Distinct()
+                .ToList();
+            
+            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x!)).Where(x => x.ToList().Count > 1).ToList();
+            if (workLanesDupes.Any())
+            {
+                throw new InvalidOperationException($"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
+            }
+        }
+    }
+
+    private IDictionary<string, OperationThrottler> OperationLimiterPerCluster { get; } = new ConcurrentDictionary<string, OperationThrottler>();
     private OperationThrottler? notStartedClusterOperationThrottler;
-    public OperationThrottler GetOperationThrottlerForCluster(string clusterId)
+    public OperationThrottler GetOperationLimiterForCluster(string clusterId)
     {
         if (!Started)
         {
-            var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
             if (notStartedClusterOperationThrottler == null)
             {
-                notStartedClusterOperationThrottler = new OperationThrottler(50, logger);
+                notStartedClusterOperationThrottler = new OperationThrottler(50);
             }
             
             return notStartedClusterOperationThrottler;
         }
         
-        if (!OperationThrottlerPerCluster.TryGetValue(clusterId, out var throttler))
+        if (!OperationLimiterPerCluster.TryGetValue(clusterId, out var throttler))
         {
-            var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
-            var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeInactive: true);
-            throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationThrottleLimit, logger);
-            OperationThrottlerPerCluster[clusterId] = throttler;
+            var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
+            throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationLimit);
+            OperationLimiterPerCluster[clusterId] = throttler;
         }
         
         return throttler;
     }
     
 
-    private IDictionary<string, OperationThrottler> OperationThrottlerPerAgent { get; } = new ConcurrentDictionary<string, OperationThrottler>();
-    private OperationThrottler? notStartedAgentOperationThrottler;
-    public OperationThrottler GetOperationThrottlerForAgent(string clusterId, string agentConnectionIdOrName)
+    private IDictionary<string, OperationThrottler> OperationLimiterPerAgent { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+    private OperationThrottler? notStartedAgentOperationLimiter;
+    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
     {
         if (!Started)
         {
-            if (notStartedAgentOperationThrottler == null)
+            if (notStartedAgentOperationLimiter == null)
             {
-                var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
-                notStartedAgentOperationThrottler = new OperationThrottler(50, logger);
+                notStartedAgentOperationLimiter = new OperationThrottler(50);
             }
             
-            return notStartedAgentOperationThrottler;
+            return notStartedAgentOperationLimiter;
         }
         
         var key = clusterId + "||" + agentConnectionIdOrName;
-        if (!OperationThrottlerPerAgent.TryGetValue(key, out var throttler))
+        if (!OperationLimiterPerAgent.TryGetValue(key, out var throttler))
         {
-            var logger = JobMasterClusterAwareComponentFactories.GetFactory(clusterId).GetComponent<IJobMasterLogger>();
-            var runtimeDbOperationThrottleLimit = JobMasterClusterConnectionConfig
-                .Get(clusterId, includeInactive: true)
-                .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationThrottleLimit;
-            throttler = new OperationThrottler(runtimeDbOperationThrottleLimit, logger);
-            OperationThrottlerPerAgent[key] = throttler;
+            var runtimeDbOperationLimit = JobMasterClusterConnectionConfig
+                .Get(clusterId, includeNotReady: true)
+                .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationLimit;
+            throttler = new OperationThrottler(runtimeDbOperationLimit);
+            OperationLimiterPerAgent[key] = throttler;
         }   
         
         return throttler;

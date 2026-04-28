@@ -37,9 +37,9 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
     {
         var key = $"lock-test-{Guid.NewGuid():N}";
 
-        var token1 = Repo.TryLock(key, TimeSpan.FromSeconds(5));
+        var token1 = Repo.TryLock(key, TimeSpan.FromMinutes(1));
         Assert.False(string.IsNullOrEmpty(token1));
-
+        
         var token2 = Repo.TryLock(key, TimeSpan.FromMilliseconds(250));
         Assert.Null(token2);
 

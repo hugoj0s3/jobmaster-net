@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Serialization;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
+using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Ioc.Extensions;
@@ -19,6 +20,11 @@ public static class AddJobMasterClusterExtensions
     {
         if (services == null) throw new ArgumentNullException(nameof(services));
         if (configure == null) throw new ArgumentNullException(nameof(configure));
+
+        if (!JobMasterStringUtils.IsValidForSegment(clusterId, 25))
+        {
+            throw new ArgumentException($"ClusterId {clusterId} is not valid for segment. It must be between 1 and 25 characters long and contain only letters, numbers, hyphens, and underscores.");
+        }
 
         var builder = ClusterConfigSelectorAdvancedFactory.Create(clusterId, services);
         configure(builder);

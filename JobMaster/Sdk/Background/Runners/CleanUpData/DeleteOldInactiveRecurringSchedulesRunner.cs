@@ -24,7 +24,7 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
         schedulesRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterRecurringSchedulesRepository>();
         locker = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
-        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.BatchSize);
+        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -53,7 +53,7 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
 
         try
         {
-            var deleted = await schedulesRepo.PurgeTerminatedAsync(cutoff, BackgroundAgentWorker.BatchSize);
+            var deleted = await schedulesRepo.PurgeTerminatedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

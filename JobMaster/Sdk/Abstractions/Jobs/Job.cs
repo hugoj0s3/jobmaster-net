@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Utils;
 
@@ -14,7 +15,7 @@ internal class Job : JobMasterBaseModel
     internal Job(string clusterId) : base(clusterId)
     {
         Id = JobMasterRandomUtil.NewGuid();
-        Status = JobMasterJobStatus.SavePending;
+        Status = JobMasterJobStatus.PendingSave;
         CreatedAt = DateTime.UtcNow;
     }
 
@@ -33,9 +34,9 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
+        JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
-        Guid? recurringScheduleId = null,
+        Guid? sourceId = null,
         string? workerLane = null)
     {
         var metadataDictionary = writableMetadata?.ToDictionary() ?? new Dictionary<string, object?>();
@@ -51,15 +52,15 @@ internal class Job : JobMasterBaseModel
         {
             JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
             TriggerSourceType = triggerSourceType,
-            OriginalScheduledAt = scheduledAt ?? DateTime.UtcNow,
             ScheduledAt = scheduledAt ?? DateTime.UtcNow,
+            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
             Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
             Timeout = JobUtil.GetTimeout(jobHandlerType, timeout, masterConfig),
             MaxNumberOfRetries = JobUtil.GetMaxNumberOfRetries(jobHandlerType, maxNumberOfRetries, masterConfig),
             MsgData = data ?? MessageData.Empty,
             Metadata = new Metadata(finalMetadataAttribute),
             CreatedAt = DateTime.UtcNow,
-            RecurringScheduleId = recurringScheduleId,
+            SourceId = sourceId,
             WorkerLane = JobUtil.GetWorkerLane(jobHandlerType, workerLane)
         };
         
@@ -79,12 +80,12 @@ internal class Job : JobMasterBaseModel
             data: recurringSchedule.MsgData,
             scheduledAt: scheduleAt,
             triggerSourceType: recurringSchedule.RecurringScheduleType == RecurringScheduleType.Static
-                ? JobSchedulingTriggerSourceType.StaticRecurring
-                : JobSchedulingTriggerSourceType.DynamicRecurring,
+                ? JobMasterTriggerSourceType.StaticRecurring
+                : JobMasterTriggerSourceType.DynamicRecurring,
             priority: recurringSchedule.Priority,
             timeout: recurringSchedule.Timeout,
             maxNumberOfRetries: recurringSchedule.MaxNumberOfRetries,
-            recurringScheduleId: recurringSchedule.Id,
+            sourceId: recurringSchedule.Id,
             masterConfig: masterConfig,
             workerLane: recurringSchedule.WorkerLane);
         
@@ -103,7 +104,7 @@ internal class Job : JobMasterBaseModel
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? writableMetadata = null,
-        JobSchedulingTriggerSourceType triggerSourceType = JobSchedulingTriggerSourceType.Once,
+        JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         string? workerLane = null)
         where T : IJobHandler
@@ -124,29 +125,30 @@ internal class Job : JobMasterBaseModel
     
     public Guid Id { get; internal set; }
     public DateTime CreatedAt { get; internal set; }
-    public DateTime OriginalScheduledAt { get; internal set; }
-    public  DateTime ScheduledAt { get; internal set; }
+    public DateTime ScheduledAt { get; internal set; }
+    public  DateTime? NextPlanExecutionAt { get; internal set; }
     public  JobMasterJobStatus Status { get; internal set;}
     public  string? BucketId { get; internal set; }
     public  AgentConnectionId? AgentConnectionId { get; internal set; }
+    public  HostId? HostId { get; internal set; }
     public  JobMasterPriority Priority { get; internal set;}
     public  string? AgentWorkerId { get; internal set; }
     public  string JobDefinitionId { get; internal set; } = string.Empty;
-    public  JobSchedulingTriggerSourceType TriggerSourceType { get; internal set; }
+    public  JobMasterTriggerSourceType TriggerSourceType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     public DateTime? ProcessDeadline { get; internal set; }
 
-    public DateTime? ProcessingStartedAt { get; internal set; }
+    public DateTime? ProcessStartedAt { get; internal set; }
 
-    public DateTime? SucceedExecutedAt { get; internal set; }
+    public DateTime? FinalizedAt { get; internal set; }
     public  TimeSpan Timeout { get; internal set; }
     public  int MaxNumberOfRetries { get; internal set; }
     public IWriteableMessageData MsgData { get; internal set; } = new MessageData();
     public IWritableMetadata? Metadata { get; internal set; }
-    public Guid? RecurringScheduleId { get; internal set; }
+    public Guid? SourceId { get; internal set; }
     
     public string? WorkerLane { get; internal set; }
     

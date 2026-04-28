@@ -24,8 +24,8 @@ internal static class JobMasterParallelUtil
         ParallelOptions parallelOptions,
         Func<TSource, CancellationToken, ValueTask> body)
     {
-        // Se MaxDegreeOfParallelism for -1 (padrão), usamos int.MaxValue (sem limite)
-        // Caso contrário, respeitamos o limite configurado.
+        // If MaxDegreeOfParallelism is -1 (default), use int.MaxValue (no limit)
+        // Otherwise, respect the configured limit.
         var maxDegree = parallelOptions.MaxDegreeOfParallelism == -1 
             ? int.MaxValue 
             : parallelOptions.MaxDegreeOfParallelism;
@@ -36,25 +36,25 @@ internal static class JobMasterParallelUtil
 
         foreach (var item in source)
         {
-            // Para o loop se o token for cancelado
+            // Stop the loop if the token is cancelled
             if (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
 
-            // Espera uma vaga no semáforo antes de iniciar a próxima task
+            // Wait for a semaphore slot before starting the next task
             await semaphore.WaitAsync(cancellationToken);
 
             var task = Task.Run(async () =>
             {
                 try
                 {
-                    // Executa o corpo. O AsTask() é necessário pois o delegate retorna ValueTask
+                    // Execute the body. AsTask() is necessary because the delegate returns ValueTask
                     await body(item, cancellationToken).ConfigureAwait(false);
                 }
                 finally
                 {
-                    // Libera a vaga para o próximo item
+                    // Release the slot for the next item
                     semaphore.Release();
                 }
             }, cancellationToken);
@@ -62,7 +62,7 @@ internal static class JobMasterParallelUtil
             tasks.Add(task);
         }
 
-        // Aguarda todas as tasks terminarem e propaga exceções se houver
+        // Wait for all tasks to complete and propagate exceptions if any
         await Task.WhenAll(tasks).ConfigureAwait(false);
     }
 #endif

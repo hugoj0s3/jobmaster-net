@@ -35,9 +35,9 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         return this;
     }
 
-    public IAgentConnectionConfigSelector RuntimeDbOperationThrottleLimit(int limit)
+    public IAgentConnectionConfigSelector RuntimeDbOperationLimit(int limit)
     {
-        def.RuntimeDbOperationThrottleLimit = limit;
+        def.RuntimeDbOperationLimit = limit;
         return this;
     }
 
@@ -58,9 +58,15 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         return this;
     }
 
-    public IAgentConnectionConfigSelector AgentRuntimeDbOperationThrottleLimit(int runtimeDbOperationThrottleLimit)
+    public IAgentConnectionConfigSelector AgentRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
-        def.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+        def.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
+        return this;
+    }
+    
+    public IAgentConnectionConfigSelector ProtectConnectionChanges(bool protectConnectionChanges)
+    {
+        def.ProtectConnectionChanges = protectConnectionChanges;
         return this;
     }
 }

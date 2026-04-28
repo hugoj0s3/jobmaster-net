@@ -31,6 +31,5 @@ internal class PostgresDbConnectionManager : DbConnectionManager, IDbConnectionM
         await conn.OpenAsync();
         
         return conn;
-       
     }
 }

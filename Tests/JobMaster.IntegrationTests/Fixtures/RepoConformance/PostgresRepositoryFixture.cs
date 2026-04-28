@@ -20,7 +20,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
 public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
 {
-    internal override string ClusterId { get; set; } = "ClusterForRepoTests-Postgres-1";
+    internal override string ClusterId { get; set; } = "RT-Postgres-1";
 
     internal override AgentConnectionId AgentConnectionId { get; set; } = null!;
 
@@ -30,7 +30,6 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
     internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; } = null!;
     internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
-
     internal override IAgentRawMessagesDispatcherRepository AgentMessages { get;  set; } = null!;
 
     private const string MasterTablePrefix = "JMPostgresTests_";
@@ -55,8 +54,8 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
 
         var agentCnn = agentCnnList.FirstOrDefault();
 
-        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn, "Postgres", config);
-        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn, "Postgres", config);
+        masterCnn = IntegrationTestSecrets.ApplySecrets(masterCnn!, "Postgres", config);
+        agentCnn = IntegrationTestSecrets.ApplySecrets(agentCnn!, "Postgres", config);
 
         if (string.IsNullOrWhiteSpace(masterCnn) || string.IsNullOrWhiteSpace(agentCnn))
         {
@@ -100,7 +99,7 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
 
         var agentConfig = JobMasterClusterConnectionConfig
-            .Get(ClusterId, includeInactive: true)
+            .Get(ClusterId, includeNotReady: true)
             .TryGetAgentConnectionConfig(AgentConnectionName);
 
         if (agentConfig == null)
@@ -137,10 +136,5 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
         {
             await conn.ExecuteAsync($"CREATE DATABASE \"{dbName}\";");
         }
-    }
-
-    public override Task DisposeAsync()
-    {
-        return Task.CompletedTask;
     }
 }

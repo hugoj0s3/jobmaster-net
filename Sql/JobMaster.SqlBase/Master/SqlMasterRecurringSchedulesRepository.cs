@@ -2,6 +2,7 @@ using System.Data;
 using System.Linq.Expressions;
 using System.Text;
 using Dapper;
+using JobMaster.SqlBase.Extensions;
 using JobMaster.Sdk.Utils;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
@@ -38,163 +39,155 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         genericUtil = new GenericRecordSqlUtil(sql, additionalConnConfig, ClusterConnConfig.ClusterId);
     }
 
-    public abstract Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    public virtual async Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(
+        RecurringScheduleQueryCriteria queryCriteria,
+        Guid partitionLockId,
+        DateTime expiresAtUtc)
+    {
+        if (partitionLockId == Guid.Empty) throw new ArgumentException("partitionLockId must be a valid GUID", nameof(partitionLockId));
+        if (queryCriteria == null) throw new ArgumentNullException(nameof(queryCriteria));
+
+        var nowUtcWithSkew = JobMasterConstants.NowUtcWithSkewTolerance();
+        var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
+
+        var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var t = TableName();
+            var (whereSql, args) = BuildWhere(queryCriteria);
+            var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
+            var queryIdsSql = BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
+
+            var updateSql = $@"
+UPDATE {t} {UpdateToLockTableHint}
+SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
+    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
+    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
+WHERE {Col(x => x.Id)} IN ({queryIdsSql})
+  AND {unlockedGuard};";
+
+            var args2 = new Dictionary<string, object?>(args);
+            args2["LockNowUtc"] = nowUtcWithSkew;
+            args2["LockExpiresAt"] = expiresAtUtcKind;
+            args2["PartitionLockId"] = partitionLockId;
+            if (needsMetadataJoin)
+                args2["GroupId"] = MasterGenericRecordGroupIds.RecurringScheduleMetadata;
+
+            var rowsAffected = await conn.ExecuteAsync(updateSql, args2, trans);
+
+            trans.Commit();
+
+            if (rowsAffected == 0) return new List<RecurringScheduleRawModel>();
+
+            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+            return await QueryLockedSchedulesAsync(partitionLockId, nowUtcWithSkew, conn2);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
 
     public void Add(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        var t = TableName();
-        var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
-        
-        // Generate initial version for new recurring schedule
-        rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-        
-        var (cols, vals) = InsertColumnsAndParams();
-        var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
-        conn.Execute(sqlText, rec, trans);
-
-        if (rec.Metadata is not null)
+        try
         {
-            var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-            var (insertSql, parameters) = genericUtil.BuildInsertEntrySql(sqlEntry);
-            conn.Execute(insertSql, parameters, trans);
+            var t = TableName();
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var (insertSql, parameters) = genericUtil.BuildInsertEntrySql(sqlEntry);
+                conn.Execute(insertSql, parameters, trans);
 
-            var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-            conn.Execute(insertValuesSql, paramRows, trans);
+                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
+                conn.Execute(insertValuesSql, paramRows, trans);
+
+                conn.Execute(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.RecurringScheduleMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            // Generate initial version for new recurring schedule
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            var (cols, vals) = InsertColumnsAndParams();
+            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
+            conn.Execute(sqlText, rec, trans);
+
+            trans.Commit();
+            
+            // Update the in-memory model with the new version
+            scheduleRaw.SetVersion(rec.Version);
         }
-        
-        trans.Commit();
-        
-        // Update the in-memory model with the new version
-        scheduleRaw.SetVersion(rec.Version);
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
     }
 
     public async Task AddAsync(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        var t = TableName();
-        var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
-        
-        // Generate initial version for new recurring schedule
-        rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-        
-        var (cols, vals) = InsertColumnsAndParams();
-        var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
-        await conn.ExecuteAsync(sqlText, rec, trans);
-
-        if (rec.Metadata is not null)
+        try
         {
-            var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-            var (insertSql, parameters) = genericUtil.BuildInsertEntrySql(sqlEntry);
-            await conn.ExecuteAsync(insertSql, parameters, trans);
+            var t = TableName();
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            if (rec.Metadata is not null)
+            {
+                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
+                var (insertSql, parameters) = genericUtil.BuildInsertEntrySql(sqlEntry);
+                await conn.ExecuteAsync(insertSql, parameters, trans);
 
-            var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-            await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
+                var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
+                await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
+
+                await conn.ExecuteAsync(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.RecurringScheduleMetadata),
+                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
+            }
+
+            // Generate initial version for new recurring schedule
+            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+
+            var (cols, vals) = InsertColumnsAndParams();
+            var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
+            await conn.ExecuteAsync(sqlText, rec, trans);
+
+            trans.Commit();
+            
+            // Update the in-memory model with the new version
+            scheduleRaw.SetVersion(rec.Version);
         }
-        
-        trans.Commit();
-        
-        // Update the in-memory model with the new version
-        scheduleRaw.SetVersion(rec.Version);
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
     }
 
-    public void Update(RecurringScheduleRawModel scheduleRaw)
+    public bool Exists(Guid recurringScheduleId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        var t = TableName();
-        var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
-        var expectedVersion = rec.Version;
-        
-        // Generate new version
-        rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-        
-        var setClause = UpdateSetClause();
-        var sqlText = $"UPDATE {t} SET {setClause} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id AND ({Col(x => x.Version)} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {Col(x => x.Version)} IS NULL));";
-        
-        var rowsAffected = conn.Execute(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.Expression, rec.ExpressionTypeId, rec.JobDefinitionId, rec.StaticDefinitionId, rec.ProfileId, rec.Status, rec.RecurringScheduleType, rec.StaticDefinitionLastEnsured,
-            rec.TerminatedAt, rec.MsgData, rec.Priority, rec.MaxNumberOfRetries, rec.TimeoutTicks, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.CreatedAt, rec.StartAfter, rec.EndBefore, rec.LastPlanCoverageUntil, rec.LastExecutedPlan, rec.HasFailedOnLastPlanExecution, rec.IsJobCancellationPending, rec.WorkerLane }, trans);
-        
-        if (rowsAffected == 0)
-        {
-            trans.Rollback();
-            var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
-            if (!idExists)
-            {
-                throw new Exception("Recurring Schedule not found");
-            }
-            
-            throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
-        }
-        
-        // Update the in-memory model with the new version
-        scheduleRaw.SetVersion(rec.Version);
-
-        if (rec.Metadata is not null)
-        {
-            var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-            var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
-            conn.Execute(updateSql, parameters, trans);
-
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
-            conn.Execute(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-
-            var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-            conn.Execute(insertValuesSql, paramRows, trans);
-        }
-        
-        trans.Commit();
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return conn.ExecuteScalar<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
     }
 
-    public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
+    public async Task<bool> ExistsAsync(Guid recurringScheduleId)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        var t = TableName();
-        var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
-        var expectedVersion = rec.Version;
-        
-        // Generate new version
-        rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
-        
-        var setClause = UpdateSetClause();
-        var sqlText = $"UPDATE {t} SET {setClause} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id AND ({Col(x => x.Version)} = @ExpectedVersion OR (@ExpectedVersion IS NULL AND {Col(x => x.Version)} IS NULL));";
-        
-        var rowsAffected = await conn.ExecuteAsync(sqlText, new { rec.Version, rec.ClusterId, rec.Id, ExpectedVersion = expectedVersion, rec.Expression, rec.ExpressionTypeId, rec.JobDefinitionId, rec.StaticDefinitionId, rec.ProfileId, rec.Status, rec.RecurringScheduleType, rec.StaticDefinitionLastEnsured,
-            rec.TerminatedAt, rec.MsgData, rec.Priority, rec.MaxNumberOfRetries, rec.TimeoutTicks, rec.BucketId, rec.AgentConnectionId, rec.AgentWorkerId, rec.PartitionLockId, rec.PartitionLockExpiresAt, rec.CreatedAt, rec.StartAfter, rec.EndBefore, rec.LastPlanCoverageUntil, rec.LastExecutedPlan, rec.HasFailedOnLastPlanExecution, rec.IsJobCancellationPending, rec.WorkerLane }, trans);
-        
-        if (rowsAffected == 0)
-        {
-            trans.Rollback();
-            var idExists = conn.ExecuteScalar<bool>("SELECT 1 FROM " + TableName() + " WHERE " + Col(x => x.ClusterId) + " = @ClusterId AND " + Col(x => x.Id) + " = @Id", new { rec.ClusterId, rec.Id });
-            if (!idExists)
-            {
-                throw new Exception("Recurring Schedule not found");
-            }
-            
-            throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
-        }
-        
-        // Update the in-memory model with the new version
-        scheduleRaw.SetVersion(rec.Version);
-
-        if (rec.Metadata is not null)
-        {
-            var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-            var (updateSql, parameters) = genericUtil.BuildUpdateEntrySql(sqlEntry);
-            await conn.ExecuteAsync(updateSql, parameters, trans);
-
-            var deleteValueSql = genericUtil.BuildDeleteValuesSql();
-            await conn.ExecuteAsync(deleteValueSql, new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-
-            var (insertValuesSql, paramRows) = genericUtil.BuildInsertEntryValuesSql(sqlEntry);
-            await conn.ExecuteAsync(insertValuesSql, paramRows, trans);
-        }
-        
-        trans.Commit();
+        var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
+        return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
     }
+
+    public abstract void Upsert(RecurringScheduleRawModel scheduleRaw);
+    public abstract Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
 
     public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria)
     {
@@ -241,41 +234,6 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
     }
 
-    public bool BulkUpdatePartitionLockId(IList<Guid> recurringScheduleIds, int lockId, DateTime expiresAt)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var t = TableName();
-            var sqlText = @$"
-UPDATE {t} SET 
-    {Col(x => x.PartitionLockId)} = @LockId, 
-    {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
-    {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-WHERE {this.sql.InClauseFor(Col(x => x.Id), "@RecurringScheduleIds")} 
-    AND ({Col(x => x.PartitionLockId)} is null OR {Col(x => x.PartitionLockExpiresAt)} < @NowUtc) ";
-            
-            var rowsAffected = conn.Execute(sqlText, new { RecurringScheduleIds = recurringScheduleIds, LockId = lockId, LockExpiresAt = expiresAt, NowUtc = JobMasterConstants.NowUtcWithSkewTolerance() }, trans);
-            
-            // lock all or nothing.
-            if (rowsAffected != recurringScheduleIds.Count)
-            {
-                trans.Rollback();
-                return false;
-            }
-            
-            trans.Commit();
-            
-            return true;
-        }
-        catch (Exception)
-        {
-            trans.Rollback();
-            throw;
-        }
-    }
-
     public async Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
@@ -316,7 +274,7 @@ WHERE {cClusterId} = @ClusterId
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
     }
@@ -351,7 +309,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
         }
         catch (Exception)
         {
-            trans.Rollback();
+            trans.SafeRollback();
             throw;
         }
     }
@@ -411,10 +369,10 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
 
                 // Delete associated metadata
                 var metadataUniqueIds = idsPartition.Select(id => GenericRecordEntry.UniqueId(this.ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.RecurringScheduleMetadata, id)).ToList();
-                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql("@metadataUniqueIds");
+                var deleteMetadataValuesSql = genericUtil.BuildDeleteValuesMultipleSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataValuesSql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
 
-                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql("@metadataUniqueIds");
+                var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.RecurringScheduleMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
             }
 
@@ -423,9 +381,76 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
         }
         catch
         {
-            tx.Rollback();
+            tx.SafeRollback();
             throw;
         }
+    }
+
+    protected virtual string UpdateToLockTableHint => string.Empty;
+
+    protected virtual string BuildQueryIdsToLockSql(
+        string whereSql,
+        bool needsMetadataJoin,
+        int countLimit,
+        int offset,
+        SortByCriteria? sortByCriteria)
+    {
+        var metadataJoin = string.Empty;
+        if (needsMetadataJoin)
+        {
+            metadataJoin = $@"
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON
+    e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} AND
+    e.{Col(x => x.GroupId)} = @GroupId ";
+        }
+
+        var sb = new StringBuilder();
+        sb.Append($@"
+SELECT {Col(x => x.Id)}
+FROM {TableName()} s
+{metadataJoin}
+{whereSql}");
+        var sortBy = SqlOrderByUtil.BuildOrderByClause(sortByCriteria, "s", $" ORDER BY s.{Col(x => x.LastPlanCoverageUntil)} DESC");
+        sb.Append(sortBy);
+        sb.Append('\n');
+        sb.Append(sql.OffsetQueryFor(countLimit, offset));
+        return sb.ToString();
+    }
+
+    private async Task<IList<RecurringScheduleRawModel>> QueryLockedSchedulesAsync(
+        Guid partitionLockId,
+        DateTime nowUtcWithSkew,
+        IDbConnection conn2)
+    {
+        var selectCols = SelectProjection();
+        var t = TableName();
+        var cClusterId = Col(x => x.ClusterId);
+        var cPartitionLockId = Col(x => x.PartitionLockId);
+        var cPartitionLockExpiresAt = Col(x => x.PartitionLockExpiresAt);
+
+        var sqlText = $@"
+SELECT {selectCols}
+FROM {t} s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e
+    ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)}
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE s.{cClusterId} = @ClusterId
+  AND s.{cPartitionLockId} = @PartitionLockId
+  AND s.{cPartitionLockExpiresAt} > @NowUtcWithSkew";
+
+        var args = new Dictionary<string, object?>
+        {
+            { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata },
+            { "ClusterId", ClusterConnConfig.ClusterId },
+            { "PartitionLockId", partitionLockId },
+            { "NowUtcWithSkew", nowUtcWithSkew }
+        };
+
+        var linearRows = (await conn2.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var rows = LinearListToDomain(linearRows);
+        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
     }
 
     // SQL builders
@@ -436,8 +461,8 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
         var sqlText = $@"
 SELECT {selectCols} 
 FROM {t} s 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
         var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = id };
         return (sqlText, args);
@@ -447,21 +472,49 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId AND s.{Col(x => x.Id)} = @Id";
     {
         var t = TableName();
         var selectCols = SelectProjection("s", "e", "v");
+        
+        if (c.CountLimit < 0) 
+            throw new ArgumentOutOfRangeException(nameof(c.CountLimit), c.CountLimit, "CountLimit must be >= 0");
+        if (c.Offset < 0) 
+            throw new ArgumentOutOfRangeException(nameof(c.Offset), c.Offset, "Offset must be >= 0");
+        
         var (whereSql, args) = BuildWhere(c);
-        var order = $" s.{Col(x => x.LastPlanCoverageUntil)} DESC, s.{Col(x => x.CreatedAt)} ASC";
+        var defaultOrderByClause = $" ORDER BY s.{Col(x => x.LastPlanCoverageUntil)} DESC, s.{Col(x => x.CreatedAt)} ASC";
+        var order = SqlOrderByUtil.BuildOrderByClause(c.SortBy, "s", defaultOrderByClause);
+
+        var concatedArgs = args.Concat(new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata } })
+            .ToDictionary(x => x.Key, x => x.Value);
+
+        if (c.CountLimit > 0)
+        {
+            var offsetClause = sql.OffsetQueryFor(c.CountLimit, c.Offset);
+
+            var queryText = $@"
+WITH schedules_page AS (
+    SELECT s.*
+    FROM {t} s
+    LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    {whereSql}
+    {order}
+    {offsetClause}
+)
+SELECT {selectCols} FROM schedules_page s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+{order}";
+
+            return (queryText, concatedArgs);
+        }
+
         var sb = new StringBuilder();
         sb.Append($@"
 SELECT {selectCols} FROM {t} s
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}  
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}  
 {whereSql} 
-ORDER BY {order}");
-        if (c.CountLimit > 0)
-        {
-            sb.Append('\n');
-            sb.Append(sql.OffsetQueryFor(c.CountLimit, c.Offset));
-        }
-        return (sb.ToString(), args);
+{order}");
+
+        return (sb.ToString(), concatedArgs);
     }
 
     protected (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c)
@@ -552,13 +605,19 @@ ORDER BY {order}");
             args.Add("WorkerLane", c.WorkerLane);
         }
         
+        if (c.Ids != null && c.Ids.Count > 0)
+        {
+            where.Add(sql.InClauseFor($"s.{Col(x => x.Id)}", "@Ids"));
+            args.Add("Ids", c.Ids);
+        }
+        
         if (c.RecurringScheduleType.HasValue)
         {
             where.Add($"s.{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType");
             args.Add("RecurringScheduleType", (int)c.RecurringScheduleType.Value);
         }
         
-        var metadataFilter = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args);
+        var metadataFilter = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.RecurringScheduleMetadata);
         if (!string.IsNullOrEmpty(metadataFilter))
         {
             where.Add(metadataFilter);
@@ -596,6 +655,8 @@ ORDER BY {order}");
             $"{scheduleAlias}.{Col(x => x.AgentConnectionId)}",
             $"{scheduleAlias}.{Col(x => x.AgentWorkerId)}",
             $"{scheduleAlias}.{Col(x => x.PartitionLockId)}",
+            $"{scheduleAlias}.{Col(x => x.HostId)}",
+            $"{scheduleAlias}.{Col(x => x.HostDisplayName)}",
             $"{scheduleAlias}.{Col(x => x.PartitionLockExpiresAt)}",
             $"{scheduleAlias}.{Col(x => x.CreatedAt)}",
             $"{scheduleAlias}.{Col(x => x.StartAfter)}",
@@ -632,7 +693,7 @@ ORDER BY {order}");
             Col(x => x.JobDefinitionId), Col(x => x.StaticDefinitionId), Col(x => x.ProfileId), Col(x => x.Status), Col(x => x.RecurringScheduleType),
             Col(x => x.StaticDefinitionLastEnsured), Col(x => x.TerminatedAt), Col(x => x.MsgData), Col(x => x.Priority), Col(x => x.MaxNumberOfRetries),
             Col(x => x.TimeoutTicks), Col(x => x.BucketId), Col(x => x.AgentConnectionId), Col(x => x.AgentWorkerId),
-            Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.CreatedAt), Col(x => x.StartAfter), Col(x => x.EndBefore),
+            Col(x => x.PartitionLockId), Col(x => x.HostId), Col(x => x.HostDisplayName), Col(x => x.PartitionLockExpiresAt), Col(x => x.CreatedAt), Col(x => x.StartAfter), Col(x => x.EndBefore),
             Col(x => x.LastPlanCoverageUntil), Col(x => x.LastExecutedPlan), Col(x => x.HasFailedOnLastPlanExecution),
             Col(x => x.IsJobCancellationPending), Col(x => x.WorkerLane), Col(x => x.Version)
         };
@@ -642,7 +703,7 @@ ORDER BY {order}");
             "@JobDefinitionId","@StaticDefinitionId","@ProfileId","@Status","@RecurringScheduleType",
             "@StaticDefinitionLastEnsured","@TerminatedAt","@MsgData","@Priority","@MaxNumberOfRetries",
             "@TimeoutTicks","@BucketId","@AgentConnectionId","@AgentWorkerId",
-            "@PartitionLockId","@PartitionLockExpiresAt","@CreatedAt","@StartAfter","@EndBefore",
+            "@PartitionLockId","@HostId","@HostDisplayName","@PartitionLockExpiresAt","@CreatedAt","@StartAfter","@EndBefore",
             "@LastPlanCoverageUntil","@LastExecutedPlan","@HasFailedOnLastPlanExecution",
             "@IsJobCancellationPending", "@WorkerLane", "@Version"
         };
@@ -670,6 +731,8 @@ ORDER BY {order}");
             $"{Col(x => x.AgentConnectionId)} = @AgentConnectionId",
             $"{Col(x => x.AgentWorkerId)} = @AgentWorkerId",
             $"{Col(x => x.PartitionLockId)} = @PartitionLockId",
+            $"{Col(x => x.HostId)} = @HostId",
+            $"{Col(x => x.HostDisplayName)} = @HostDisplayName",
             $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
             $"{Col(x => x.StartAfter)} = @StartAfter",
             $"{Col(x => x.EndBefore)} = @EndBefore",
@@ -688,8 +751,8 @@ ORDER BY {order}");
         var sqlText = $@"
 SELECT * 
 FROM {t} s 
-LEFT JOIN {genericUtil.EntryTable()} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable()} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId 
   and s.{Col(x => x.ClusterId)} = @ClusterId
   and s.{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType";
@@ -759,6 +822,8 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
                 AgentConnectionId = first.AgentConnectionId,
                 AgentWorkerId = first.AgentWorkerId,
                 PartitionLockId = first.PartitionLockId,
+                HostId = first.HostId,
+                HostDisplayName = first.HostDisplayName,
                 PartitionLockExpiresAt = first.PartitionLockExpiresAt,
                 CreatedAt = first.CreatedAt,
                 StartAfter = first.StartAfter,
@@ -776,6 +841,40 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
         }
 
         return result;
+    }
+    
+    protected string UpdateSetClauseWithoutVersion()
+    {
+        return string.Join(", ", new[]
+        {
+            $"{Col(x => x.Expression)} = @Expression",
+            $"{Col(x => x.ExpressionTypeId)} = @ExpressionTypeId",
+            $"{Col(x => x.JobDefinitionId)} = @JobDefinitionId",
+            $"{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId",
+            $"{Col(x => x.ProfileId)} = @ProfileId",
+            $"{Col(x => x.Status)} = @Status",
+            $"{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType",
+            $"{Col(x => x.StaticDefinitionLastEnsured)} = @StaticDefinitionLastEnsured",
+            $"{Col(x => x.TerminatedAt)} = @TerminatedAt",
+            $"{Col(x => x.MsgData)} = @MsgData",
+            $"{Col(x => x.Priority)} = @Priority",
+            $"{Col(x => x.MaxNumberOfRetries)} = @MaxNumberOfRetries",
+            $"{Col(x => x.TimeoutTicks)} = @TimeoutTicks",
+            $"{Col(x => x.BucketId)} = @BucketId",
+            $"{Col(x => x.AgentConnectionId)} = @AgentConnectionId",
+            $"{Col(x => x.AgentWorkerId)} = @AgentWorkerId",
+            $"{Col(x => x.PartitionLockId)} = @PartitionLockId",
+            $"{Col(x => x.HostId)} = @HostId",
+            $"{Col(x => x.HostDisplayName)} = @HostDisplayName",
+            $"{Col(x => x.PartitionLockExpiresAt)} = @PartitionLockExpiresAt",
+            $"{Col(x => x.StartAfter)} = @StartAfter",
+            $"{Col(x => x.EndBefore)} = @EndBefore",
+            $"{Col(x => x.LastPlanCoverageUntil)} = @LastPlanCoverageUntil",
+            $"{Col(x => x.LastExecutedPlan)} = @LastExecutedPlan",
+            $"{Col(x => x.HasFailedOnLastPlanExecution)} = @HasFailedOnLastPlanExecution",
+            $"{Col(x => x.IsJobCancellationPending)} = @IsJobCancellationPending",
+            $"{Col(x => x.WorkerLane)} = @WorkerLane"
+        });
     }
 
     protected class RecurringSchedulePersistenceRecordLinearDto : RecurringSchedulePersistenceRecord

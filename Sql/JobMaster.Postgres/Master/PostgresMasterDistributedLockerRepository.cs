@@ -23,12 +23,7 @@ internal class PostgresMasterDistributedLockerRepository : SqlMasterDistributedL
         var newExpires = now.Add(leaseDuration);
         var token = Guid.NewGuid().ToString("N");
 
-        using var keepAliveCnn = connManager.AcquireConnection(connectionId, TimeSpan.FromMinutes(10), connString, additionalConnConfig, maxGates: 1);
-        var conn = keepAliveCnn.Connection;
-        if (conn == null)
-        {
-            throw new Exception("Failed to acquire connection.");
-        }
+        using var conn = connManager.Open(connString, additionalConnConfig);
 
         var t = TableName();
         var sqlText = $@"INSERT INTO {t} ({ColClusterId()}, {ColKey()}, {ColExpiresAt()}, {ColLockToken()})

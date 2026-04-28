@@ -1,4 +1,5 @@
 using JobMaster.Abstractions.Models;
+using JobMaster.Api.Endpoints;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
@@ -22,9 +23,16 @@ public class ApiRecurringScheduleQueryCriteria
     
     public int? CountLimit { get; set; }
     public int? Offset { get; set; }
+    public ApiSortByCriteria? SortBy { get; set; }
 
     internal RecurringScheduleQueryCriteria ToDomainCriteria()
     {
+        // Validate sort property if provided
+        if (SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property))
+        {
+            EndpointSortingUtil.ValidateSortingProperty<ApiRecurringScheduleModel>(SortBy.Property);
+        }
+
         return new RecurringScheduleQueryCriteria
         {
             Status = Status,
@@ -43,6 +51,9 @@ public class ApiRecurringScheduleQueryCriteria
             CountLimit = CountLimit ?? 25,
             Offset = Offset ?? 0,
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
+            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property) 
+                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending } 
+                : null,
         };
     }
 }

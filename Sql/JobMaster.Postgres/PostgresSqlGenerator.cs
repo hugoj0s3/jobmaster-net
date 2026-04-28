@@ -1,3 +1,4 @@
+using JobMaster.SqlBase;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.Postgres;
@@ -19,16 +20,17 @@ internal class PostgresSqlGenerator : SqlGenerator
             return base.ColumnTypeFor(type, length, isMaxLength, nullable, precision, scale);
 
         var nullableSuffix = nullable ? string.Empty : " NOT NULL";
+        var collation = $" COLLATE {this.GetCaseInsensitiveCollation()} ";
 
         // “max” => Postgres idiom is text
         if (isMaxLength)
-            return $"text{nullableSuffix}";
+            return $"text{collation}{nullableSuffix}";
 
         // If a valid length is provided, respect it; otherwise use text
         if (length.HasValue && length.Value > 0)
-            return $"varchar({length.Value}){nullableSuffix}";
+            return $"varchar({length.Value}){collation}{nullableSuffix}";
 
-        return $"text{nullableSuffix}";
+        return $"text{collation}{nullableSuffix}";
     }
 
     public override string OffsetQueryFor(int limit, int offset = 0)
@@ -56,6 +58,13 @@ internal class PostgresSqlGenerator : SqlGenerator
     {
         return "gen_random_uuid()::text";
     }
+
+    public override string GetCaseInsensitiveCollation()
+    {
+        return PostgresRepositoryConstants.CaseInsensitiveCollation;
+    }
+
+    public override string GetDbBool(bool value) => value ? "true" : "false";
 
     public override string RepositoryTypeId => PostgresRepositoryConstants.RepositoryTypeId;
     protected override IDictionary<Type, string> TypeToSqlTypeMap => new Dictionary<Type, string>

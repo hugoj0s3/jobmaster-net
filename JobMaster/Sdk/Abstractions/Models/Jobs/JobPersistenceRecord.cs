@@ -15,10 +15,13 @@ internal class JobPersistenceRecord
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
 
+    public string? HostId { get; set; }
+    public string? HostDisplayName { get; set; }
+
     public int Priority { get; set; }
 
-    public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
+    public DateTime? NextPlanExecutionAt { get; set; }
 
     public string MsgData { get; set; } = "{}";
     
@@ -33,16 +36,16 @@ internal class JobPersistenceRecord
     public int MaxNumberOfRetries { get; set; }
 
     public DateTime CreatedAt { get; set; }
-    public Guid? RecurringScheduleId { get; set; }
+    public Guid? SourceId { get; set; }
 
-    public int? PartitionLockId { get; set; }
+    public Guid? PartitionLockId { get; set; }
     public DateTime? PartitionLockExpiresAt { get; set; }
 
     public DateTime? ProcessDeadline { get; set; }
 
-    public DateTime? ProcessingStartedAt { get; set; }
+    public DateTime? ProcessStartedAt { get; set; }
 
-    public DateTime? SucceedExecutedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     
     public string? WorkerLane { get; set; }
     

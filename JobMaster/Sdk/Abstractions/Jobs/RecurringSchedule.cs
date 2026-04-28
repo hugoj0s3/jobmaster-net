@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Utils;
 
@@ -33,7 +34,8 @@ internal class RecurringSchedule : JobMasterBaseModel
     public JobMasterPriority? Priority { get; internal set; }
     public int? MaxNumberOfRetries { get; internal set; }
     public TimeSpan? Timeout { get; internal set; }
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
+    public HostId? HostId { get; internal set; }
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     public string? BucketId { get; internal set; }
     public AgentConnectionId? AgentConnectionId { get; internal set; }

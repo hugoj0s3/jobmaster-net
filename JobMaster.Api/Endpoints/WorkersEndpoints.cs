@@ -31,7 +31,7 @@ internal static class WorkersEndpoints
             return Results.NotFound();
         }
 
-        var workers = await service.QueryWorkersAsync(useCache: false);
+        var workers = await service.QueryWorkersAsync(useCache: true);
 
         if (!string.IsNullOrEmpty(criteria.WorkerLane))
             workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.Ordinal)).ToList();
@@ -44,7 +44,18 @@ internal static class WorkersEndpoints
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
             workers = workers.Where(w => string.Equals(w.AgentConnectionId.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
 
-        var result = workers.Select(ApiAgentWorker.FromDomain).ToList();
+        var apiWorkers = workers.Select(ApiAgentWorker.FromDomain).ToList();
+        
+        // Apply in-memory sorting
+        if (criteria.SortBy != null && !string.IsNullOrWhiteSpace(criteria.SortBy.Property))
+        {
+            apiWorkers = EndpointSortingUtil.ApplySorting(apiWorkers, criteria.SortBy.Property, criteria.SortBy.Ascending);
+        }
+        
+        // Apply in-memory paging
+        var offset = criteria.Offset ?? 0;
+        var limit = criteria.CountLimit ?? 25;
+        var result = apiWorkers.Skip(offset).Take(limit).ToList();
 
         return Results.Ok(result);
     }

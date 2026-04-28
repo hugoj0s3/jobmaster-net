@@ -24,7 +24,7 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
         jobsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterJobsRepository>();
         locker = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
-        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.BatchSize);
+        burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -53,7 +53,7 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await jobsRepo.PurgeFinalByScheduledAtAsync(cutoff, BackgroundAgentWorker.BatchSize);
+            var deleted = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

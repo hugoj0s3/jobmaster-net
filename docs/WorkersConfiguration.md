@@ -13,7 +13,9 @@ config.ClusterId("My-Cluster");
         .AgentConnName("Postgres-1")         // Links to an Agent connection
         .WorkerName("Payroll-Worker-01")    // Unique name for this instance
         .WorkerLane("Payroll")           // Logical isolation lane
-        .WorkerBatchSize(1000)              // Jobs to fetch per DB round-trip and also onboarding list of a bucket (30 seconds to be processed)
+        .TransferBatchSize(1000)            // Jobs pulled per DB round-trip for bucket transfers and other bulk operations
+        .BucketBufferSize(250)              // Max jobs held in memory per bucket awaiting execution
+        .BucketBufferLeadTime(TimeSpan.FromSeconds(30)) // How far ahead to look when filling the in-memory buffer (max 30s)
         .ParallelismFactor(2)               // Scaler for concurrent execution
         .SetWorkerMode(AgentWorkerMode.Full)
         .BucketQtyConfig(JobMasterPriority.Critical, 3);
@@ -127,31 +129,64 @@ With `.BucketQtyConfig()`, you define how many buckets this worker should own fo
 
 ## Throughput & Batch Optimization
 
-The `.WorkerBatchSize()` setting is a critical performance "knob" that governs how the Worker interacts with the Agent storage and how the Coordinator handles job onboarding.
-
-### 1. Database Efficiency
-Instead of querying the database for every single job, the worker pulls jobs in large "chunks."
-
-* **Reduced IOPS:** Setting this to `1000` means the worker performs **one** database round-trip to claim up to 1,000 jobs.
-* **Impact:** This drastically reduces the overhead on both your Agent and Master databases, allowing a single connection pool to handle millions of jobs without becoming a bottleneck.
-* **Memory Usage:** Note that a larger batch size increases the memory footprint of the worker, as it must hold the job metadata in its local buffer.
-
+In 0.0.6, the old single `BatchSize` setting was split into three distinct knobs, each controlling a different layer of the pipeline. Mixing them into one value led to hard trade-offs; keeping them separate lets you tune each concern independently.
 
 ---
 
-### 2. The 30-Second Processing Goal
-A key design principle of JobMaster is maintaining a tight synchronization between the database state and the in-memory execution state.
+### 1. TransferBatchSize — DB Fetch Efficiency
 
-* **Per-Bucket Onboarding:** It is important to remember that the batch size applies **per bucket**. If a worker owns multiple buckets, each bucket will maintain its own onboarding list based on this limit.
-* **The Onboarding List:** This batch size determines the maximum number of jobs that stay in local memory for processing during an onboarding window (targeting a ~30-second completion cycle).
+Controls how many jobs are pulled per database round-trip when the Coordinator moves jobs from the Master DB into Agent Buckets, and in other bulk operations (e.g. drain runners, recurring schedule scans).
 
-| Job Complexity | Recommended Batch | Reasoning |
-| :--- | :--- | :--- |
-| **Micro-Jobs** (< 1s) | `1000 - 5000` | High volume, low CPU. Maximizes throughput. |
-| **Standard** (1s - 5s) | `100 - 500` | Balanced approach for typical API or data tasks. |
-| **Heavy-Jobs** (> 30s) | `10 - 50` | Prevents too many heavy tasks from being "locked" to one worker. |
+* **Reduced IOPS:** A value of `1000` means a single query claims up to 1,000 jobs at once, dramatically reducing database round-trip overhead at high volume.
+* **Memory impact is low:** These records are transferred and released quickly; they do not stay resident in memory for their entire execution lifetime.
+* **Default:** `1000` (standalone mode: `250`)
+
+```csharp
+.TransferBatchSize(1000)
+```
+
+| Volume | Recommended | Reasoning |
+| :--- | :---: | :--- |
+| Low (< 10k jobs/day) | `100 – 250` | Smaller footprint, faster round-trips |
+| Medium | `500 – 1000` | Good balance of throughput and memory |
+| High (millions/day) | `1000 – 5000` | Minimise DB round-trips under sustained load |
+
+---
+
+### 2. BucketBufferSize — In-Memory Execution Buffer
+
+Controls the maximum number of jobs a bucket holds in memory at any one time while waiting to be executed. This is a per-bucket limit — each bucket owned by the worker maintains its own independent buffer.
+
+* **Flow control:** When the buffer is full, incoming deliveries are bounced back to the Master (`HeldOnMaster`) with a short delay and retried. This prevents unbounded memory growth under load spikes.
+* **Sizing guidance:** Match this to the throughput your worker can actually sustain within the `BucketBufferLeadTime` window. Oversizing wastes memory; undersizing causes unnecessary bouncing.
+* **Default:** `250`
+
+```csharp
+.BucketBufferSize(250)
+```
+
+| Job Complexity | Recommended | Reasoning |
+| :--- | :---: | :--- |
+| **Micro-Jobs** (< 1s) | `500 – 1000` | High throughput; buffer empties quickly |
+| **Standard** (1s – 5s) | `100 – 500` | Balanced; buffer is held for a few seconds |
+| **Heavy-Jobs** (> 30s) | `10 – 50` | Avoids locking many slow jobs to one worker |
+
+---
+
+### 3. BucketBufferLeadTime — Look-Ahead Window
+
+Controls how far ahead in time the worker pre-loads jobs into the in-memory buffer. Only jobs scheduled to run within this window are pulled from the Agent into memory.
+
+* **Range:** between `250ms` and `30s` (enforced at startup).
+* **Too short:** The buffer may run dry between fills, leaving execution slots idle.
+* **Too long:** Jobs sit in memory longer than necessary. Under heavy load, if a job cannot be executed within its deadline window it is redirected back to the Master as `HeldOnMaster` and rescheduled — adding latency before it runs.
+* **Default:** `30s`
+
+```csharp
+.BucketBufferLeadTime(TimeSpan.FromSeconds(30))
+```
 
 > [!TIP]
-> **Performance Scaling:** If your workers are sitting idle while work remains in the database, increase the `WorkerBatchSize`. If your workers are hitting memory limits or taking too long to sync, decrease the batch size to reduce the local memory footprint.
+> **Tuning together:** `BucketBufferSize` and `BucketBufferLeadTime` work as a pair. If workers are sitting idle while jobs remain in the database, increase `BucketBufferSize` or widen `BucketBufferLeadTime`. If you see high memory usage or frequent bounce-backs (`HeldOnMaster`), reduce `BucketBufferSize`. If you need to reduce DB load from bucket transfers, increase `TransferBatchSize`.
 
 See: [AgentsConfiguration](AgentsConfiguration.md)

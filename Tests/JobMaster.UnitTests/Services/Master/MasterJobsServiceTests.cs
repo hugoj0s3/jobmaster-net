@@ -2,6 +2,7 @@ using Castle.Core.Logging;
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -13,7 +14,7 @@ namespace JobMaster.UnitTests.Services.Master;
 public class MasterJobsServiceTests
 {
     [Fact]
-    public async Task UpsertAsync_WhenEntityDoesNotExist_ShouldAdd_AndNotUpdate()
+    public async Task UpsertAsync_ShouldDelegateToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -25,28 +26,27 @@ public class MasterJobsServiceTests
         {
             Id = id,
             JobDefinitionId = "job-def",
+            NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
             CreatedAt = DateTime.UtcNow,
         };
 
-        repo.Setup(x => x.GetAsync(id)).ReturnsAsync((JobRawModel?)null);
-        repo.Setup(x => x.AddAsync(raw)).Returns(Task.CompletedTask);
+        repo.Setup(x => x.UpsertAsync(raw)).Returns(Task.CompletedTask);
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         await sut.UpsertAsync(raw);
 
-        repo.Verify(x => x.UpdateAsync(It.IsAny<JobRawModel>()), Times.Never);
+        repo.Verify(x => x.UpsertAsync(raw), Times.Once);
         repo.VerifyAll();
     }
 
     [Fact]
-    public async Task UpsertAsync_WhenEntityExists_ShouldUpdate_AndNotAdd()
+    public void Upsert_ShouldDelegateToRepository()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -58,56 +58,22 @@ public class MasterJobsServiceTests
         {
             Id = id,
             JobDefinitionId = "job-def",
+            NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
             Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
+            Status = JobMasterJobStatus.OnMaster,
             Timeout = TimeSpan.FromSeconds(1),
             MaxNumberOfRetries = 0,
             CreatedAt = DateTime.UtcNow,
         };
 
-        repo.Setup(x => x.GetAsync(id)).ReturnsAsync(raw);
-        repo.Setup(x => x.UpdateAsync(raw)).Returns(Task.CompletedTask);
+        repo.Setup(x => x.Upsert(raw));
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
-
-        await sut.UpsertAsync(raw);
-
-        repo.Verify(x => x.AddAsync(It.IsAny<JobRawModel>()), Times.Never);
-        repo.VerifyAll();
-    }
-
-    [Fact]
-    public void Upsert_WhenEntityDoesNotExist_ShouldAdd_AndNotUpdate()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
-
-        var id = Guid.NewGuid();
-        var raw = new JobRawModel(clusterId)
-        {
-            Id = id,
-            JobDefinitionId = "job-def",
-            ScheduledAt = DateTime.UtcNow,
-            OriginalScheduledAt = DateTime.UtcNow,
-            Priority = JobMasterPriority.High,
-            Status = JobMasterJobStatus.HeldOnMaster,
-            Timeout = TimeSpan.FromSeconds(1),
-            MaxNumberOfRetries = 0,
-            CreatedAt = DateTime.UtcNow,
-        };
-
-        repo.Setup(x => x.Get(id)).Returns((JobRawModel?)null);
-        repo.Setup(x => x.Add(raw));
-
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.Upsert(raw);
 
-        repo.Verify(x => x.Update(It.IsAny<JobRawModel>()), Times.Never);
+        repo.Verify(x => x.Upsert(raw), Times.Once);
         repo.VerifyAll();
     }
 
@@ -119,7 +85,7 @@ public class MasterJobsServiceTests
 
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.BulkUpdateStatus(new List<Guid>(), JobMasterJobStatus.Succeeded, agentConnectionId: null, agentWorkerId: null, bucketId: null);
 

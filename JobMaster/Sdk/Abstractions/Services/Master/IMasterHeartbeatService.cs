@@ -4,7 +4,14 @@ namespace JobMaster.Sdk.Abstractions.Services.Master;
 
 internal interface IMasterHeartbeatService : IJobMasterClusterAwareService
 {
-    void Heartbeat(string agentWorkerId);
-    DateTime? GetLastHeartbeat(string agentWorkerId);
-    IDictionary<string, DateTime?> GetLastHeartbeats(IList<string> agentWorkerIds);
+    void Heartbeat(ResourceHeartbeatType type, string resourceId);
+    DateTime? GetLastHeartbeat(ResourceHeartbeatType type, string resourceId);
+    IDictionary<string, DateTime?> GetLastHeartbeats(ResourceHeartbeatType type, IList<string> resourceIds);
+}
+
+internal enum ResourceHeartbeatType
+{
+    Host = 1,
+    AgentWorker,
+    AgentConnection
 }

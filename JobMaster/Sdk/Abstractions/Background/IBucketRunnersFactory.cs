@@ -1,3 +1,4 @@
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -21,15 +22,17 @@ internal interface IBucketRunnersFactory : IJobMasterClusterAwareComponent
     IDrainSavePendingRecurringScheduleRunner NewDrainSavePendingRecurringScheduleRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId);
-    
+
     IJobsExecutionRunner NewJobsExecutionRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
-        AgentConnectionId agentConnectionId);
-    
+        AgentConnectionId agentConnectionId,
+        string bucketId,
+        JobMasterPriority priority);
+
     ISavePendingJobsRunner NewSavePendingJobsRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId);
-    
+
     ISaveRecurringSchedulerRunner NewSaveRecurringSchedulerRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         AgentConnectionId agentConnectionId);

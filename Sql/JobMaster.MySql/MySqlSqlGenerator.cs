@@ -31,18 +31,19 @@ internal class MySqlSqlGenerator : SqlGenerator
             return base.ColumnTypeFor(type, length, isMaxLength, nullable, precision, scale);
 
         var nullableSuffix = nullable ? string.Empty : " NOT NULL";
+        var collation = $" COLLATE {this.GetCaseInsensitiveCollation()} ";
 
         if (isMaxLength)
         {
-            return $"longtext{nullableSuffix}";
+            return $"longtext{collation}{nullableSuffix}";
         }
 
         if (length.HasValue && length.Value > 0)
         {
-            return $"varchar({length.Value}){nullableSuffix}";
+            return $"varchar({length.Value}){collation}{nullableSuffix}";
         }
 
-        return $"longtext{nullableSuffix}";
+        return $"longtext{collation}{nullableSuffix}";
     }
 
     public override string OffsetQueryFor(int limit, int offset = 0)
@@ -70,6 +71,11 @@ internal class MySqlSqlGenerator : SqlGenerator
     public override string GenerateVersionSql()
     {
         return "UUID()";
+    }
+
+    public override string GetCaseInsensitiveCollation()
+    {
+        return MySqlRepositoryConstants.CaseInsensitiveCollation;
     }
 
     public override string RepositoryTypeId => MySqlRepositoryConstants.RepositoryTypeId;

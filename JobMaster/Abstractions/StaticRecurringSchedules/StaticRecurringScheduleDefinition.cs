@@ -12,6 +12,7 @@ public class StaticRecurringScheduleDefinition
         string id, 
         JobMasterPriority? priority = null, 
         TimeSpan? timeout = null, 
+        int? maxNumberOfRetries = null,
         DateTime? startAfter = null, 
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null,
@@ -23,6 +24,7 @@ public class StaticRecurringScheduleDefinition
         Id = id;
         Priority = priority;
         Timeout = timeout;
+        MaxNumberOfRetries = maxNumberOfRetries;
         StartAfter = startAfter;
         EndBefore = endBefore;
         Metadata = metadata;

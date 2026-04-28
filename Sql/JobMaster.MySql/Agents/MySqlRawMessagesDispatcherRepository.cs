@@ -1,4 +1,5 @@
 using System.Data;
+using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -22,30 +23,53 @@ internal class MySqlRawMessagesDispatcherRepository : SqlRawMessagesDispatcherRe
 
     public override string AgentRepoTypeId => MySqlRepositoryConstants.RepositoryTypeId;
     
-    protected override (string Table, string ColMsgId, string ColBucket, string SelectSql) GetDequeueSelectSql(
+    protected override async Task<IList<JobMasterRawMessage>> DequeueMessagesAsyncCore(
+        IDbConnection cnn, 
+        IDbTransaction tx, 
+        string fullBucketAddressId, 
         int numberOfJobs, 
-        bool referenceTimeToHasValue)
+        DateTime? referenceTimeTo = null)
     {
-        var baseResult = base.GetDequeueSelectSql(numberOfJobs, referenceTimeToHasValue);
-        var lockedSql = baseResult.SelectSql + " FOR UPDATE SKIP LOCKED";
-        return (baseResult.Table, baseResult.ColMsgId, baseResult.ColBucket, lockedSql);
-    }
-    
-    public override async Task<IList<JobMasterRawMessage>> DequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
-    {
-        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var tx = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
-        
-        try
+        // MySQL-specific: SELECT FOR UPDATE SKIP LOCKED + DELETE (2 operations but with row-level locking)
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var colPayload = sql.ColumnNameFor<JobMasterRawMessage>(x => x.Payload);
+        var colRefTime = sql.ColumnNameFor<JobMasterRawMessage>(x => x.ReferenceTime);
+        var colCorrId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.CorrelationId);
+        var colEnqAt = sql.ColumnNameFor<JobMasterRawMessage>(x => x.EnqueuedAt);
+        var colBucket = "bucket_address_id";
+
+        var selectSql = $@"
+SELECT {colMsgId}, {colPayload}, {colRefTime}, {colCorrId}, {colEnqAt}
+FROM {table}
+WHERE {colBucket} = @Bucket";
+
+        if (referenceTimeTo.HasValue)
         {
-            var result = await DequeueMessagesAsyncCore(cnn, tx, fullBucketAddressId, numberOfJobs, referenceTimeTo);
-            tx.Commit();
-            return result;
+            selectSql += $" AND {colRefTime} <= @RefTo";
         }
-        catch
+
+        selectSql += $@"
+ORDER BY {colRefTime} ASC, {colMsgId} ASC
+LIMIT @Limit
+FOR UPDATE SKIP LOCKED;";
+
+        var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(selectSql, new
         {
-            tx.Rollback();
-            throw;
+            Bucket = fullBucketAddressId,
+            RefTo = (referenceTimeTo ?? DateTime.UtcNow).ToUniversalTime(),
+            Limit = numberOfJobs
+        }, tx);
+
+        var picked = rows.ToList();
+        var ids = picked.Select(r => r.MessageId).ToList();
+
+        if (ids.Count > 0)
+        {
+            var deleteSql = $"DELETE FROM {table} WHERE {colBucket} = @Bucket AND {sql.InClauseFor(colMsgId, "@Ids")}";
+            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = ids }, tx);
         }
+
+        return picked.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
     }
 }

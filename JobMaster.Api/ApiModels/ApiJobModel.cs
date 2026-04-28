@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -8,13 +8,15 @@ public class ApiJobModel : ApiClusterBaseModel
 {
     public string Id { get; set; } = string.Empty;
     public string JobDefinitionId { get; set; } = string.Empty;
-    public JobSchedulingTriggerSourceType TriggerSourceType { get; set; }
+    public JobMasterTriggerSourceType TriggerSourceType { get; set; }
     public string? BucketId { get; set; }
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }
+    public string? HostId { get; set; }
+    public string? HostDisplayName { get; set; } = string.Empty;
     public JobMasterPriority Priority { get; set; }
-    public DateTime OriginalScheduledAt { get; set; }
     public DateTime ScheduledAt { get; set; }
+    public DateTime? NextPlanExecutionAt { get; set; }
     public IDictionary<string, object?> MsgData { get; set; } = new Dictionary<string, object?>();
     public IDictionary<string, object?> Metadata { get; set; } = new Dictionary<string, object?>();
     public JobMasterJobStatus Status { get; set; }
@@ -22,10 +24,10 @@ public class ApiJobModel : ApiClusterBaseModel
     public TimeSpan Timeout { get; set; }
     public int MaxNumberOfRetries { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public string? RecurringScheduleId { get; set; }
+    public string? SourceId { get; set; }
     public DateTime? ProcessDeadline { get; set; }
-    public DateTime? ProcessingStartedAt { get; set; }
-    public DateTime? SucceedExecutedAt { get; set; }
+    public DateTime? ProcessStartedAt { get; set; }
+    public DateTime? FinalizedAt { get; set; }
     public string? WorkerLane { get; set; }
 
     internal static ApiJobModel FromDomain(JobRawModel jobRawModel)
@@ -45,8 +47,8 @@ public class ApiJobModel : ApiClusterBaseModel
             AgentConnectionId = job.AgentConnectionId?.IdValue,
             AgentWorkerId = job.AgentWorkerId,
             Priority = job.Priority,
-            OriginalScheduledAt = job.OriginalScheduledAt,
             ScheduledAt = job.ScheduledAt,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
             MsgData = job.MsgData.ToDictionary(),
             Metadata = job.Metadata?.ToDictionary() ?? new Dictionary<string, object?>(),
             Status = job.Status,
@@ -54,11 +56,13 @@ public class ApiJobModel : ApiClusterBaseModel
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
             CreatedAt = job.CreatedAt,
-            RecurringScheduleId = job.RecurringScheduleId.HasValue ? job.RecurringScheduleId.Value.ToBase64() : null,
+            SourceId = job.SourceId?.ToBase64(),
             ProcessDeadline = job.ProcessDeadline,
-            ProcessingStartedAt = job.ProcessingStartedAt,
-            SucceedExecutedAt = job.SucceedExecutedAt,
+            ProcessStartedAt = job.ProcessStartedAt,
+            FinalizedAt = job.FinalizedAt,
             WorkerLane = job.WorkerLane,
+            HostId = job.HostId?.IdValue,
+            HostDisplayName = job.HostId?.HostDisplayName,
         };
     }
 }

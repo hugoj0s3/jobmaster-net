@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
 
@@ -31,6 +32,7 @@ internal static class RecurringScheduleConvertUtil
             HasFailedOnLastPlanExecution = raw.HasFailedOnLastPlanExecution,
             AgentConnectionId = raw.AgentConnectionId,
             AgentWorkerId = raw.AgentWorkerId,
+            HostId = raw.HostId,
             Priority = raw.Priority,
             MaxNumberOfRetries = raw.MaxNumberOfRetries,
             Timeout = raw.Timeout,
@@ -91,6 +93,7 @@ internal static class RecurringScheduleConvertUtil
             BucketId = s.BucketId,
             AgentConnectionId = s.AgentConnectionId,
             AgentWorkerId = s.AgentWorkerId,
+            HostId = s.HostId,
             Timeout = s.Timeout,
             CreatedAt = s.CreatedAt,
             StartAfter = s.StartAfter,
@@ -138,6 +141,7 @@ internal static class RecurringScheduleConvertUtil
             AgentConnectionId = d.AgentConnectionId != null ? new AgentConnectionId(d.AgentConnectionId) : null,
             AgentWorkerId = d.AgentWorkerId,
             PartitionLockId = d.PartitionLockId,
+            HostId = d.HostId != null ? HostId.Recover(d.HostDisplayName ?? "", d.HostId) : null,
             PartitionLockExpiresAt = UtcN(d.PartitionLockExpiresAt),
             CreatedAt = Utc(d.CreatedAt),
             StartAfter = UtcN(d.StartAfter),
@@ -182,6 +186,8 @@ internal static class RecurringScheduleConvertUtil
             AgentConnectionId = m.AgentConnectionId?.IdValue,
             AgentWorkerId = m.AgentWorkerId,
             PartitionLockId = m.PartitionLockId,
+            HostId = m.HostId?.IdValue,
+            HostDisplayName = m.HostId?.HostDisplayName,
             PartitionLockExpiresAt = m.PartitionLockExpiresAt,
             CreatedAt = m.CreatedAt,
             StartAfter = m.StartAfter,

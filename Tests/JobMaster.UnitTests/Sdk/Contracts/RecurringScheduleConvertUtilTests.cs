@@ -5,6 +5,7 @@ using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
 
@@ -36,6 +37,7 @@ public class RecurringScheduleConvertUtilTests
             return name switch
             {
                 nameof(RecurringScheduleRawModel.Timeout) => nameof(RecurringSchedulePersistenceRecord.TimeoutTicks),
+                nameof(RecurringSchedulePersistenceRecord.HostDisplayName) => nameof(RecurringScheduleRawModel.HostId),
                 _ => name
             };
         }
@@ -72,7 +74,8 @@ public class RecurringScheduleConvertUtilTests
             BucketId = "bucket",
             AgentConnectionId = new AgentConnectionId("c", "a"),
             AgentWorkerId = "w",
-            PartitionLockId = 12,
+            PartitionLockId = Guid.Parse("12000000-0000-0000-0000-000000000000"),
+            HostId = new HostId("c", "host1"),
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             StartAfter = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),
@@ -107,6 +110,12 @@ public class RecurringScheduleConvertUtilTests
             if (prop.PropertyType == typeof(AgentConnectionId))
             {
                 ((AgentConnectionId?)actual)?.IdValue.Should().Be(((AgentConnectionId?)expected)?.IdValue, $"{prop.Name} should round-trip");
+                continue;
+            }
+
+            if (prop.PropertyType == typeof(HostId))
+            {
+                ((HostId?)actual)?.IdValue.Should().Be(((HostId?)expected)?.IdValue, $"{prop.Name} should round-trip");
                 continue;
             }
 
@@ -154,7 +163,9 @@ public class RecurringScheduleConvertUtilTests
             BucketId = "bucket",
             AgentConnectionId = "c:a",
             AgentWorkerId = "w",
-            PartitionLockId = 12,
+            PartitionLockId = Guid.Parse("12000000-0000-0000-0000-000000000000"),
+            HostId = "c:host1:abc123",
+            HostDisplayName = "host1",
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             StartAfter = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),

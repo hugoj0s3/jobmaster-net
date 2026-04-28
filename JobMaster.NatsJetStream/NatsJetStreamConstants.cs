@@ -21,7 +21,15 @@ internal class NatsJetStreamConstants
     public const uint MaxMsgRetriesForNoLostRisk = 3;
 
     // Centralized timing configuration
-    public static readonly TimeSpan ConsumerAckWait = JobMasterConstants.ClockSkewPadding + TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan MinConsumerAckWait = JobMasterConstants.ClockSkewPadding + TimeSpan.FromSeconds(30);
+    
+    public const int MinMaxAckPending = 100;
+
+    public static int CalcMaxAckPending(int bucketBufferSize)
+    {
+        var maxAckPending = bucketBufferSize - MinMaxAckPending;
+        return Math.Max(maxAckPending, MinMaxAckPending);
+    }
 
     // Maximum threshold beyond which scheduled jobs should be held on master instead of onboarded
     public static readonly TimeSpan MaxThreshold = TimeSpan.FromMinutes(2);

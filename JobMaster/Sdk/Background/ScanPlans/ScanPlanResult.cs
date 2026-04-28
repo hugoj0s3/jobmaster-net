@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Abstractions;
+
 namespace JobMaster.Sdk.Background.ScanPlans;
 
 internal sealed class ScanPlanResult

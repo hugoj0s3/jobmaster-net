@@ -4,6 +4,7 @@ using System.Reflection;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Utils;
 
@@ -11,14 +12,25 @@ namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 internal static class MasterGenericRecordGroupIds
 {
-    public const string Bucket = "Bucket";
     public const string ClusterConfiguration = "ClusterConfiguration";
+
+    public const string Host = "Host";
     public const string AgentWorker = "AgentWorker";
+    public const string Bucket = "Bucket";
+    public const string AgentConnection = "AgentConnection"; // Don't store connection string or any sensitive information.
+    
+    
     public const string Sentinel = "Sentinel";
     public const string AgentWorkerHeartbeat = "AgentWorkerHeartbeat";
+    public const string AgentConnectionHeartbeat = "AgentConnectionHeartbeat";
+    public const string HostHeartbeat = "HostHeartbeat";
+    
     public const string Log = "Log";
+    
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
+    
+    public const string JobExecution = "JobExecution";
 }
 
 internal class GenericRecordEntry : JobMasterBaseModel
@@ -258,7 +270,11 @@ internal class GenericRecordEntry : JobMasterBaseModel
             return dto.ToUniversalTime();
         }
 
-        if (t == typeof(Guid))     return value is Guid g ? g : Guid.Parse(value.ToString()!);
+        if (t == typeof(Guid))
+        {
+            return value is Guid g ? g : Guid.Parse(value.ToString()!);
+        }    
+            
         
 #if NET6_0_OR_GREATER
         // Optional: support DateOnly/TimeOnly if you use them
@@ -277,6 +293,11 @@ internal class GenericRecordEntry : JobMasterBaseModel
         if (t == typeof(AgentConnectionId))
         {
             return value is AgentConnectionId connId ? connId.IdValue : null;
+        }
+        
+        if (t == typeof(HostId))
+        {
+            return value is HostId hostId ? hostId.IdValue + "||" + hostId.HostDisplayName : null;
         }
         
         // Complex types → JSON string using internal serializer/options
@@ -368,6 +389,31 @@ internal class GenericRecordEntry : JobMasterBaseModel
             }
         }
 
+        if (t == typeof(HostId))
+        {
+            try
+            {
+                var value = stored?.ToString();
+                if (string.IsNullOrWhiteSpace(value))
+                    return null;
+
+                // split into at most 2 parts in case display name contains '||' defensively
+                var parts = value!.Split(["||"], 2, StringSplitOptions.None);
+                if (parts.Length != 2)
+                    return null;
+
+                var id = parts[0];
+                var displayName = parts[1];
+
+                // Use Recover helper so you keep the same rules everywhere
+                return HostId.Recover(displayName, id);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
         // try JSON for complex types using internal serializer
         if (stored is string json)
         {
@@ -393,5 +439,102 @@ internal class GenericRecordEntry : JobMasterBaseModel
         }
     }
     
-    private IDictionary<string, object?> DictionaryShallowCopy() => new Dictionary<string, object?>(Values); 
+    private IDictionary<string, object?> DictionaryShallowCopy() => new Dictionary<string, object?>(Values);
+
+    public static T? DeepClone<T>(T? value)
+    {
+        if (value is null) return default;
+
+        var runtimeType = value.GetType();
+
+        if (runtimeType.IsPrimitive || runtimeType.IsEnum) return value;
+        if (value is string or DateTime or DateTimeOffset or TimeSpan or decimal or Guid) return value;
+
+        if (runtimeType.IsArray)
+        {
+            var elementType = runtimeType.GetElementType()!;
+            var src = (Array)(object)value;
+            var dst = Array.CreateInstance(elementType, src.Length);
+            for (var i = 0; i < src.Length; i++)
+            {
+                dst.SetValue(CloneViaStorage(src.GetValue(i), elementType), i);
+            }
+            return (T)(object)dst;
+        }
+
+        if (runtimeType.IsGenericType && runtimeType.GetGenericTypeDefinition() == typeof(List<>))
+        {
+            var elementType = runtimeType.GetGenericArguments()[0];
+            var src = (System.Collections.IList)value;
+            var dst = (System.Collections.IList)Activator.CreateInstance(runtimeType, src.Count)!;
+            foreach (var item in src)
+            {
+                dst.Add(CloneViaStorage(item, elementType));
+            }
+            return (T)dst;
+        }
+
+        return (T)CloneViaStorage(value, runtimeType)!;
+    }
+
+    private static object? CloneViaStorage(object? value, Type declaredType)
+    {
+        if (value is null) return null;
+
+        var t = Nullable.GetUnderlyingType(declaredType) ?? declaredType;
+        if (t.IsPrimitive || t.IsEnum) return value;
+        if (value is string or DateTime or DateTimeOffset or TimeSpan or decimal or Guid) return value;
+
+        var actualType = value.GetType();
+        var copy = Activator.CreateInstance(actualType, nonPublic: true)
+                   ?? throw new InvalidOperationException(
+                       $"DeepCloneViaGenericEntry cannot clone {actualType.FullName}: no accessible parameterless constructor.");
+
+        var props = GetUsableProps(actualType);
+        foreach (var p in props)
+        {
+            var srcVal = p.GetValue(value);
+            var stored = ToStorageObject(srcVal, p.PropertyType);
+
+            // Mirror the storage layer's JSON step. Some FromStorageObject branches
+            // (e.g. JobMasterConfigDictionary, complex-type fallback) expect a JSON
+            // string because in production the GenericRecordEntry.Values dict is
+            // serialized to JSON when persisted. ToStorageObject returns scalars
+            // as-is, and non-scalars as dictionaries or already-serialized JSON.
+            // Re-serialize anything that isn't a scalar so FromStorageObject sees
+            // the same shape it would after a real storage round-trip.
+            if (stored is not null && !IsScalarStorageValue(stored))
+            {
+                stored = InternalJobMasterSerializer.Serialize(stored);
+            }
+
+            var restored = FromStorageObject(stored, p.PropertyType);
+            p.SetValue(copy, restored);
+        }
+
+        return copy;
+    }
+
+    private static bool IsScalarStorageValue(object value)
+    {
+        var t = value.GetType();
+        if (t.IsPrimitive || t.IsEnum) return true;
+        return value is string
+            or DateTime
+            or DateTimeOffset
+            or TimeSpan
+            or decimal
+            or Guid
+#if NET6_0_OR_GREATER
+            or DateOnly
+            or TimeOnly
+#endif
+            ;
+    }
+}
+
+internal static class GenericRecordEntryExtensions
+{
+    public static T? DeepCloneViaGenericEntry<T>(this T? value)
+        => GenericRecordEntry.DeepClone(value);
 }

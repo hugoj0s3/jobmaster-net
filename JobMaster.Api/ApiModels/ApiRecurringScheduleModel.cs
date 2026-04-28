@@ -56,6 +56,7 @@ public class ApiRecurringScheduleModel : ApiClusterBaseModel
 
     internal static ApiRecurringScheduleModel FromDomain(RecurringSchedule schedule)
     {
+        var isStaticIdle = schedule.RecurringScheduleType == RecurringScheduleType.Static && schedule.Status != RecurringScheduleStatus.Active;
         return new ApiRecurringScheduleModel
         {
             ClusterId = schedule.ClusterId,
@@ -82,7 +83,7 @@ public class ApiRecurringScheduleModel : ApiClusterBaseModel
             IsJobCancellationPending = schedule.IsJobCancellationPending,
             StaticDefinitionLastEnsured = schedule.StaticDefinitionLastEnsured,
             WorkerLane = schedule.WorkerLane,
-            IsStaticIdle = schedule.RecurringScheduleType == RecurringScheduleType.Static && schedule.Status != RecurringScheduleStatus.Active,
+            IsStaticIdle = isStaticIdle,
         };
     }
 

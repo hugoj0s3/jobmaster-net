@@ -108,7 +108,7 @@ public class AgentJobsDispatcherRepositoryTests
         public string PushMessage(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId) => throw new NotImplementedException();
         public Task<string> PushMessageAsync(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId) => throw new NotImplementedException();
         public Task<IList<string>> BulkPushMessageAsync(string fullBucketAddressId, IList<(string payload, DateTime referenceTime, string correlationId)> messages) => throw new NotImplementedException();
-        public Task<IList<JobMasterRawMessage>> DequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null) => Task.FromResult<IList<JobMasterRawMessage>>(new List<JobMasterRawMessage>());
+        public Task<IList<JobMasterRawMessage>> PullMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null) => Task.FromResult<IList<JobMasterRawMessage>>(new List<JobMasterRawMessage>());
         public bool HasJobs(string fullBucketAddressId) => false;
         public Task<bool> HasJobsAsync(string fullBucketAddressId) => Task.FromResult(false);
 

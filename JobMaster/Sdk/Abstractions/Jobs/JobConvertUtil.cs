@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Serialization;
 
@@ -23,22 +24,23 @@ internal static class JobConvertUtil
             TriggerSourceType = raw.TriggerSourceType,
             Status = raw.Status,
             Id = raw.Id,
-            OriginalScheduledAt = raw.OriginalScheduledAt,
             ScheduledAt = raw.ScheduledAt,
+            NextPlanExecutionAt = raw.NextPlanExecutionAt,
             Priority = raw.Priority,
             AgentWorkerId = raw.AgentWorkerId,
             MaxNumberOfRetries = raw.MaxNumberOfRetries,
             Timeout = raw.Timeout,
             NumberOfFailures = raw.NumberOfFailures,
             CreatedAt = raw.CreatedAt,
-            RecurringScheduleId = raw.RecurringScheduleId,
+            SourceId = raw.SourceId,
             WorkerLane = raw.WorkerLane,
             PartitionLockId = raw.PartitionLockId,
             PartitionLockExpiresAt = raw.PartitionLockExpiresAt,
             ProcessDeadline = raw.ProcessDeadline,
-            ProcessingStartedAt = raw.ProcessingStartedAt,
-            SucceedExecutedAt = raw.SucceedExecutedAt,
-            Version = raw.Version
+            ProcessStartedAt = raw.ProcessStartedAt,
+            FinalizedAt = raw.FinalizedAt,
+            Version = raw.Version,
+            HostId = raw.HostId,
         };
 
         if (!string.IsNullOrEmpty(raw.MsgData))
@@ -77,8 +79,8 @@ internal static class JobConvertUtil
             TriggerSourceType = job.TriggerSourceType,
             Status = job.Status,
             Id = job.Id,
-            OriginalScheduledAt = job.OriginalScheduledAt,
             ScheduledAt = job.ScheduledAt,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
             Priority = job.Priority,
             AgentWorkerId = job.AgentWorkerId,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
@@ -87,14 +89,15 @@ internal static class JobConvertUtil
             MsgData = InternalJobMasterSerializer.Serialize(job.MsgData.ToDictionary()),
             Metadata = job.Metadata != null ? InternalJobMasterSerializer.Serialize(job.Metadata?.ToDictionary()) : "{}",
             CreatedAt = job.CreatedAt,
-            RecurringScheduleId = job.RecurringScheduleId,
+            SourceId = job.SourceId,
             WorkerLane = job.WorkerLane,
             PartitionLockId = job.PartitionLockId,
             PartitionLockExpiresAt = job.PartitionLockExpiresAt,
             ProcessDeadline = job.ProcessDeadline,
-            ProcessingStartedAt = job.ProcessingStartedAt,
-            SucceedExecutedAt = job.SucceedExecutedAt,
+            ProcessStartedAt = job.ProcessStartedAt,
+            FinalizedAt = job.FinalizedAt,
             Version = job.Version,
+            HostId = job.HostId,
         };
     }
 
@@ -117,9 +120,9 @@ internal static class JobConvertUtil
             Priority = job.Priority,
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
-            ScheduledAt = job.OriginalScheduledAt,
+            ScheduledAt = job.ScheduledAt,
             CreatedAt = job.CreatedAt,
-            RecurringScheduleId = job.RecurringScheduleId,
+            SourceId = job.SourceId,
             Metadata = job.Metadata?.ToReadable() ?? Metadata.Empty,
             MsgData = job.MsgData.ToReadable(),
             WorkerLane = job.WorkerLane,
@@ -137,13 +140,13 @@ internal static class JobConvertUtil
         {
             Id = d.Id,
             JobDefinitionId = d.JobDefinitionId,
-            TriggerSourceType = (JobSchedulingTriggerSourceType)d.TriggerSourceType,
+            TriggerSourceType = (JobMasterTriggerSourceType)d.TriggerSourceType,
             BucketId = d.BucketId,
             AgentConnectionId = d.AgentConnectionId != null ? new AgentConnectionId(d.AgentConnectionId) : null,
             AgentWorkerId = d.AgentWorkerId,
             Priority = (JobMasterPriority)d.Priority,
-            OriginalScheduledAt = Utc(d.OriginalScheduledAt),
             ScheduledAt = Utc(d.ScheduledAt),
+            NextPlanExecutionAt = UtcN(d.NextPlanExecutionAt),
             MsgData = string.IsNullOrEmpty(d.MsgData) ? "{}" : d.MsgData,
             Metadata = d.Metadata is null ? null : InternalJobMasterSerializer.Serialize(d.Metadata?.ToReadable().ToDictionary()),
             Status = (JobMasterJobStatus)d.Status,
@@ -151,14 +154,17 @@ internal static class JobConvertUtil
             Timeout = TimeSpan.FromTicks(d.TimeoutTicks),
             MaxNumberOfRetries = d.MaxNumberOfRetries,
             CreatedAt = Utc(d.CreatedAt),
-            RecurringScheduleId = d.RecurringScheduleId,
+            SourceId = d.SourceId,
             PartitionLockId = d.PartitionLockId,
             PartitionLockExpiresAt = UtcN(d.PartitionLockExpiresAt),
             ProcessDeadline = UtcN(d.ProcessDeadline),
-            ProcessingStartedAt = UtcN(d.ProcessingStartedAt),
-            SucceedExecutedAt = UtcN(d.SucceedExecutedAt),
+            ProcessStartedAt = UtcN(d.ProcessStartedAt),
+            FinalizedAt = UtcN(d.FinalizedAt),
             WorkerLane = d.WorkerLane,
             Version = d.Version,
+            HostId = !string.IsNullOrEmpty(d.HostId) && !string.IsNullOrEmpty(d.HostDisplayName)
+                ? HostId.Recover(d.HostDisplayName!, d.HostId!)
+                : null,
         };
 
         return m;
@@ -180,8 +186,8 @@ internal static class JobConvertUtil
             AgentConnectionId = m.AgentConnectionId?.IdValue,
             AgentWorkerId = m.AgentWorkerId,
             Priority = (int)m.Priority,
-            OriginalScheduledAt = m.OriginalScheduledAt,
             ScheduledAt = m.ScheduledAt,
+            NextPlanExecutionAt = m.NextPlanExecutionAt,
             MsgData = string.IsNullOrEmpty(m.MsgData) ? "{}" : m.MsgData,
             Metadata = metadataEntry,
             Status = (int)m.Status,
@@ -189,14 +195,16 @@ internal static class JobConvertUtil
             TimeoutTicks = m.Timeout.Ticks,
             MaxNumberOfRetries = m.MaxNumberOfRetries,
             CreatedAt = m.CreatedAt,
-            RecurringScheduleId = m.RecurringScheduleId,
+            SourceId = m.SourceId,
             PartitionLockId = m.PartitionLockId,
             PartitionLockExpiresAt = m.PartitionLockExpiresAt,
             ProcessDeadline = m.ProcessDeadline,
-            ProcessingStartedAt = m.ProcessingStartedAt,
-            SucceedExecutedAt = m.SucceedExecutedAt,
+            ProcessStartedAt = m.ProcessStartedAt,
+            FinalizedAt = m.FinalizedAt,
             WorkerLane = m.WorkerLane,
-            Version = m.Version
+            Version = m.Version,
+            HostId = m.HostId?.IdValue,
+            HostDisplayName = m.HostId?.HostDisplayName,
         };
     }
 }

@@ -37,9 +37,9 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         // Set default options
         foreach (var clusterConfig in configs)
         {
-            if (!clusterConfig.RuntimeDbOperationThrottleLimit.HasValue)
+            if (!clusterConfig.RuntimeDbOperationLimit.HasValue)
             {
-                clusterConfig.SetRuntimeDbOperationThrottleLimit(DefaultDbOperationThrottleLimitForCluster);
+                clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
             }
             
             var clusterTablePrefix = 
@@ -67,12 +67,18 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var sql = SqlGeneratorFactory.Get(RepositoryTypeId);
             var tablePrefix = sql.GetTablePrefix(clusterConfig.AdditionalConnConfig);
             
-            var genericRecordTableExistsSql = sql.TableExistsSql(tablePrefix, sql.TableNameFor<GenericRecordEntry>());
-            var genericRecordTableExists = await conn.QueryFirstOrDefaultAsync<bool>(genericRecordTableExistsSql, transaction: transaction);
-            if (!genericRecordTableExists)
+            // Provision generic record family tables (default + all family suffixes)
+            var allEntryTableNames = MasterTableCreatorScripts.AllGenericRecordTableNames(sql, tablePrefix);
+            foreach (var entryTableName in allEntryTableNames)
             {
-                var genericRecordTablesScript = MasterTableCreatorScripts.CreateGenericRecordTablesScript(sql, tablePrefix);
-                await conn.ExecuteAsync(genericRecordTablesScript, transaction: transaction);
+                var tableExistsSql = sql.TableExistsSql(string.Empty, entryTableName);
+                var tableExists = await conn.QueryFirstOrDefaultAsync<bool>(tableExistsSql, transaction: transaction);
+                if (!tableExists)
+                {
+                    var genericRecordTablesScript = MasterTableCreatorScripts.CreateGenericRecordTablesScript(sql, tablePrefix);
+                    await conn.ExecuteAsync(genericRecordTablesScript, transaction: transaction);
+                    break; // All tables created at once, no need to check the rest
+                }
             }
             
             var distributedLockerTableExistsSql = sql.TableExistsSql(tablePrefix, "distributed_lock");
@@ -121,15 +127,15 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 agentConfig.AdditionalConnConfig.SetValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey, "JM_");
             }
             
-            if (!agentConfig.RuntimeDbOperationThrottleLimit.HasValue)
+            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
             {
-                agentConfig.SetRuntimeDbOperationThrottleLimit(this.DefaultDbOperationThrottleLimitForAgent);
+                agentConfig.SetRuntimeDbOperationLimit(this.DefaultDbOperationThrottleLimitForAgent);
             }
         }
 
         foreach (var agentConfig in agentConfigs)
         {
-            var clusterConfig = JobMasterClusterConnectionConfig.Get(agentConfig.ClusterId, includeInactive: true);
+            var clusterConfig = JobMasterClusterConnectionConfig.Get(agentConfig.ClusterId, includeNotReady: true);
             if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
             {
                 return;
@@ -158,6 +164,15 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             {
                 var messageTableScript = AgentTableCreatorScripts.CreateMessageDispatcherTableScript(agentSql, agentTablePrefix);
                 await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
+            }
+
+            // agent_conn_footprint
+            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_footprint");
+            var footprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(footprintTableExistsSql, transaction: agentTransaction);
+            if (!footprintTableExists)
+            {
+                var footprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFootprint(agentSql, agentTablePrefix);
+                await agentDbConnection.ExecuteAsync(footprintTableScript, transaction: agentTransaction);
             }
                 
             agentTransaction.Commit();

@@ -19,7 +19,7 @@ internal sealed class ClusterDefinition
     public string? IanaTimeZoneId { get; set; }
     public TimeSpan? TransientThreshold { get; set; }
     
-    public int? RuntimeDbOperationThrottleLimit { get; set; }
+    public int? RuntimeDbOperationLimit { get; set; }
     
     public ClusterMode? ClusterMode { get; set; }
     

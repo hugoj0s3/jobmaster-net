@@ -52,9 +52,9 @@ NatsJetStream requires a transient threshold of less than {NatsJetStreamConstant
 
         foreach (var agentConfig in natAgentConfigs)
         {
-            if (!agentConfig.RuntimeDbOperationThrottleLimit.HasValue)
+            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
             {
-                agentConfig.SetRuntimeDbOperationThrottleLimit(NatsJetStreamConstants.DefaultDbOperationThrottleLimitForAgent);
+                agentConfig.SetRuntimeDbOperationLimit(NatsJetStreamConstants.DefaultDbOperationThrottleLimitForAgent);
             }
         }
 

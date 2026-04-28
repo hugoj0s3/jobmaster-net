@@ -15,11 +15,11 @@ public class MySqlPureSchedulerTests : JobMasterSchedulerTestsBase<MySqlPureSche
     [InlineData(1000, false, 4)]
     [InlineData(1000, true, 8)]
     // 2500 jobs
-    // [InlineData(2500, false, 6)]
-    // [InlineData(2500, true, 10)]
-    // // 5000 jobs
-    // [InlineData(5000, false, 8)]
-    // [InlineData(5000, true, 12)]
+    [InlineData(2500, false, 6)]
+    [InlineData(2500, true, 10)]
+    // 5000 jobs
+    [InlineData(5000, false, 8)]
+    [InlineData(5000, true, 12)]
     public async Task SchedulerTest(int qtyJobs, bool scheduleAfter, int timeoutInMinutes)
     {
         await RunExecutionTest(qtyJobs, scheduleAfter, timeoutInMinutes);

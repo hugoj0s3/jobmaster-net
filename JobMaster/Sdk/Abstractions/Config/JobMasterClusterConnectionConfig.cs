@@ -56,11 +56,11 @@ internal class JobMasterClusterConnectionConfig
     
     public bool IsReady { get; private set; }
     
-    public int? RuntimeDbOperationThrottleLimit { get; private set; }
+    public int? RuntimeDbOperationLimit { get; private set; }
 
-    public void SetRuntimeDbOperationThrottleLimit(int? value)
+    public void SetRuntimeDbOperationLimit(int? value)
     {
-        RuntimeDbOperationThrottleLimit = value;
+        RuntimeDbOperationLimit = value;
     }
     
     public void SetMirrorLog(Action<LogItem>? mirrorLog)
@@ -108,7 +108,7 @@ internal class JobMasterClusterConnectionConfig
                 this.ConnectionString, 
                 this.RepositoryTypeId, 
                 this.AdditionalConnConfig, 
-                this.RuntimeDbOperationThrottleLimit);
+                this.RuntimeDbOperationLimit);
                 
             AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
                     
@@ -206,7 +206,7 @@ internal class JobMasterClusterConnectionConfig
 
         lock (StaticLock)
         {
-            if (TryGet(clusterId, includeInactive: true) != null)
+            if (TryGet(clusterId, includeNotReady: true) != null)
             {
                 throw new ArgumentException($"Cluster ID '{clusterId}' already exists.", nameof(clusterId));
             }
@@ -220,22 +220,22 @@ internal class JobMasterClusterConnectionConfig
                 DefaultConfig = config;
             }
             
-            config.RuntimeDbOperationThrottleLimit = runtimeDbOperationThrottleLimit;
+            config.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
             
             return config;
         }
     }
     
-    public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeInactive = false)
+    public static JobMasterClusterConnectionConfig? TryGet(string clusterId, bool includeNotReady = false)
     {
         return ClusterConfigs
-            .Where(c => includeInactive || c.IsReady)
+            .Where(c => includeNotReady || c.IsReady)
             .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
-    public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeInactive = false)
+    public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeNotReady = false)
     {
-        var config = TryGet(clusterId, includeInactive);
+        var config = TryGet(clusterId, includeNotReady);
         if (config == null)
         {
             throw new KeyNotFoundException($"Cluster config '{clusterId}' not found.");
@@ -248,7 +248,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (StaticLock)
         {
-            var config = TryGet(clusterId, includeInactive: true);
+            var config = TryGet(clusterId, includeNotReady: true);
             DefaultConfig = config ?? throw new KeyNotFoundException($"Cluster config '{clusterId}' not found or inactive.");
         }
     }
