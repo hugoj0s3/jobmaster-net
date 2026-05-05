@@ -25,7 +25,6 @@ namespace JobMaster.Sdk.Services.Master;
 
 internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBucketsService
 {
-
     private IMasterGenericRecordRepository masterGenericRecordRepository = null!;
     private IMasterChangesSentinelService masterChangesSentinelService = null!;
     private IMasterDistributedLockerService masterDistributedLockerService = null!;
@@ -34,13 +33,18 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     private IMasterClusterConfigurationService masterClusterConfigurationService = null!;
 
     private readonly IJobMasterInMemoryCache jobMasterMemoryCache;
+    private readonly IBucketSelectorAlgorithm bucketSelectorAlgorithm;
+    private readonly SentinelCachedReader sentinelCachedReader;
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly IJobMasterLogger logger;
+    private static readonly ConcurrentDictionary<string, int> Seq = new();
+
     private JobMasterInMemoryKeys cacheKeys = null!;
     private JobMasterSentinelKeys sentinelKeys = null!;
-    private readonly IBucketSelectorAlgorithm bucketSelectorAlgorithm;
     private JobMasterLockKeys lockKeys = null!;
 
     public MasterBucketsService(
-        JobMasterClusterConnectionConfig clusterConnConfig, 
+        JobMasterClusterConnectionConfig clusterConnConfig,
         IBucketSelectorAlgorithm bucketSelectorAlgorithm,
         IJobMasterInMemoryCache jobMasterMemoryCache,
         IMasterGenericRecordRepository masterGenericRecordRepository,
@@ -66,15 +70,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
 
-        this.retryDeadlockPolicy =
-            new RetryDeadlockPolicy(knownExceptionIdentifier,
-                TimeSpan.FromMilliseconds(250), 3);
-
-        this.sentinelCachedReader =
-            new SentinelCachedReader(jobMasterMemoryCache, masterChangesSentinelService);
+        this.retryDeadlockPolicy = new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+        this.sentinelCachedReader = new SentinelCachedReader(jobMasterMemoryCache, masterChangesSentinelService);
     }
-
-    private readonly SentinelCachedReader sentinelCachedReader;
 
     public async Task DestroyAsync(string bucketId)
     {
@@ -83,7 +81,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             return;
 
         var bucketModel = bucket.ToObject<BucketModel>();
-        
+
         if (bucketModel.Status != BucketStatus.ReadyToDelete)
         {
             logger.Error("Bucket is not ready to delete", JobMasterLogSubjectType.Bucket, bucketId);
@@ -95,36 +93,36 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             logger.Error("Bucket has jobs", JobMasterLogSubjectType.Bucket, bucketId);
             return;
         }
-        
+
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.AllBuckets());
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketId));
+
         await masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucketId);
         await this.masterAgentsDispatcherService.DestroyBucketAsync(bucketModel.AgentConnectionId, bucketId);
-        
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketId));
     }
 
     public async Task<BucketModel> CreateAsync(
-        AgentConnectionId agentConnectionId, 
-        string workerId, 
+        AgentConnectionId agentConnectionId,
+        string workerId,
         JobMasterPriority priority,
         BucketType type = BucketType.Standard)
     {
         var worker = await this.masterAgentWorkersService.GetWorkerAsync(workerId);
         var agentConfiguration = ClusterConnConfig.GetAgentConnectionConfig(agentConnectionId.IdValue);
 
-        // In Insert method
         ValidateAgentAndWorker(agentConnectionId, workerId, worker, agentConfiguration);
 
         var bucketModel = CreateAndValidateBucketRecord(
-            agentConnectionId, 
-            worker!.HostId, 
-            workerId, 
-            priority, 
-            worker!.Name, 
-            worker?.WorkerLane, 
+            agentConnectionId,
+            worker!.HostId,
+            workerId,
+            priority,
+            worker!.Name,
+            worker?.WorkerLane,
             agentConfiguration.RepositoryTypeId,
             type);
-        
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
+
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.AllBuckets());
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(bucketModel.Id));
 
         var genericRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Bucket, bucketModel.Id, bucketModel);
@@ -139,16 +137,16 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         var bucket = this.masterGenericRecordRepository.Get(MasterGenericRecordGroupIds.Bucket, model.Id);
         if (bucket is null)
             return;
-        
+
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.AllBuckets());
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
+
         var genericRecord = GenericRecordEntry.Create(
-            ClusterConnConfig.ClusterId, 
+            ClusterConnConfig.ClusterId,
             MasterGenericRecordGroupIds.Bucket,
-            model.Id, 
+            model.Id,
             model);
         masterGenericRecordRepository.Upsert(genericRecord);
-
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
     }
 
     public async Task UpdateAsync(BucketModel model)
@@ -157,19 +155,17 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             await this.masterGenericRecordRepository.GetAsync(MasterGenericRecordGroupIds.Bucket, model.Id);
         if (bucketGenericRecord is null)
             return;
-        
-        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.BucketsAvailableForJobs());
+
+        this.masterChangesSentinelService.NotifyChanges(sentinelKeys.AllBuckets());
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Bucket(model.Id));
 
         var genericRecord = GenericRecordEntry.Create(
-            ClusterConnConfig.ClusterId, 
+            ClusterConnConfig.ClusterId,
             MasterGenericRecordGroupIds.Bucket,
-            model.Id, 
+            model.Id,
             model);
         await masterGenericRecordRepository.UpsertAsync(genericRecord);
     }
-    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
-    private readonly IJobMasterLogger logger;
 
     public BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
@@ -180,7 +176,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
     {
         return Task.FromResult(SelectBucketForJob(allowedDiscrepancy, jobPriority, workerLane));
     }
-    
+
     public BucketModel? Get(string id, TimeSpan? allowedDiscrepancy)
     {
         return retryDeadlockPolicy.Exec(() => sentinelCachedReader.GetOrFetch(
@@ -189,7 +185,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             factory: () => masterGenericRecordRepository.Get(MasterGenericRecordGroupIds.Bucket, id)?.ToObject<BucketModel>(),
             allowedDiscrepancy: allowedDiscrepancy,
             valueFactoryLockDuration: TimeSpan.FromSeconds(2),
-            durationToExpire: TimeSpan.FromMinutes(5)));
+            durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
     public async Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null)
@@ -210,79 +206,95 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         });
     }
 
-    public async Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria)
+    public async Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria, TimeSpan? allowedDiscrepancy = null)
     {
-        var records = await masterGenericRecordRepository.
-            QueryAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
-        
+        if (allowedDiscrepancy.HasValue)
+        {
+            var all = await Task.FromResult(GetAllBucketsFromCache(allowedDiscrepancy.Value));
+            return ApplyCriteria(all, criteria);
+        }
+
+        var records = await masterGenericRecordRepository
+            .QueryAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
         return records.Select(x => x.ToObject<BucketModel>()).ToList();
     }
 
-    public IList<BucketModel> Query(MasterBucketQueryCriteria criteria)
+    public IList<BucketModel> Query(MasterBucketQueryCriteria criteria, TimeSpan? allowedDiscrepancy = null)
     {
+        if (allowedDiscrepancy.HasValue)
+        {
+            var all = GetAllBucketsFromCache(allowedDiscrepancy.Value);
+            return ApplyCriteria(all, criteria);
+        }
+
         var records = masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
         return records.Select(x => x.ToObject<BucketModel>()).ToList();
     }
 
     public async Task<int> CountAsync(MasterBucketQueryCriteria criteria)
     {
-        var count = await masterGenericRecordRepository.CountAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
-        return count;
+        return await masterGenericRecordRepository.CountAsync(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
     }
 
     public int Count(MasterBucketQueryCriteria criteria)
     {
-        var count = masterGenericRecordRepository.Count(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
-        return count;
+        return masterGenericRecordRepository.Count(MasterGenericRecordGroupIds.Bucket, ToGenericRecordQueryCriteria(criteria));
     }
-    
+
     private BucketModel? SelectBucketForJob(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null)
     {
-        var criteria = new GenericRecordQueryCriteria()
-        {
-            Filters = new List<GenericRecordValueFilter>()
-            {
-                new()
-                {
-                    Key = nameof(BucketModel.Status),
-                    Operation = GenericFilterOperation.Eq,
-                    Value = (int)BucketStatus.Active,
-                },
-                new()
-                {
-                    Key = nameof(BucketModel.BucketType),
-                    Operation = GenericFilterOperation.Neq,
-                    Value = (int)BucketType.Fallback,
-                },
-            },
-            ReadIsolationLevel = ReadIsolationLevel.Consistent,
-        };
+        var allBuckets = GetAllBucketsFromCache(allowedDiscrepancy ?? JobMasterConstants.BucketFastAllowDiscrepancy);
 
-        var availableBuckets = retryDeadlockPolicy.Exec(() => sentinelCachedReader.GetOrFetch(
-            cacheKey: cacheKeys.BucketsAvailableForJobs(),
-            sentinelKey: sentinelKeys.BucketsAvailableForJobs(),
-            factory: () => GetAvailableBucketFromDb(criteria),
-            allowedDiscrepancy: allowedDiscrepancy,
-            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
-            durationToExpire: TimeSpan.FromMinutes(5)));
-        
+        var availableBuckets = allBuckets
+            .Where(x => x.Status == BucketStatus.Active)
+            .Where(x => x.BucketType != BucketType.Fallback)
+            .Where(x => !string.IsNullOrEmpty(x.AgentWorkerId))
+            .Where(x => !string.IsNullOrEmpty(x.AgentConnectionId?.IdValue))
+            .ToList();
+
         var applicableBuckets = FilterApplicableBuckets(availableBuckets, jobPriority, workerLane);
         return bucketSelectorAlgorithm.Select(applicableBuckets);
     }
 
-    private List<BucketModel> GetAvailableBucketFromDb(GenericRecordQueryCriteria criteria)
+    private List<BucketModel> GetAllBucketsFromCache(TimeSpan allowedDiscrepancy)
     {
-        var records = this.masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, criteria);
-        List<BucketModel> result = records
-            .Select(x => x.ToObject<BucketModel>())
-            .Where(x => !string.IsNullOrEmpty(x?.AgentWorkerId))
-            .Where(x => !string.IsNullOrEmpty(x?.AgentConnectionId?.IdValue))
-            .Where(x => x?.Status == BucketStatus.Active)
-            .Where(x => x?.BucketType != BucketType.Fallback)
-            .ToList()!;
-        return result;
+        return retryDeadlockPolicy.Exec(() => sentinelCachedReader.GetOrFetch(
+            cacheKey: cacheKeys.AllBuckets(),
+            sentinelKey: sentinelKeys.AllBuckets(),
+            factory: () =>
+            {
+                var records = masterGenericRecordRepository.Query(MasterGenericRecordGroupIds.Bucket, new GenericRecordQueryCriteria());
+                return records.Select(x => x.ToObject<BucketModel>()).Where(x => x != null).ToList()!;
+            },
+            allowedDiscrepancy: allowedDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
+    private static IList<BucketModel> ApplyCriteria(IList<BucketModel> buckets, MasterBucketQueryCriteria criteria)
+    {
+        var query = buckets.AsEnumerable();
+
+        if (criteria.Status.HasValue)
+            query = query.Where(b => b.Status == criteria.Status.Value);
+
+        if (criteria.Statuses.Count > 0)
+            query = query.Where(b => criteria.Statuses.Contains(b.Status));
+
+        if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
+            query = query.Where(b => b.AgentConnectionId.IdValue == criteria.AgentConnectionId);
+
+        if (criteria.Priority.HasValue)
+            query = query.Where(b => b.Priority == criteria.Priority.Value);
+
+        if (!string.IsNullOrEmpty(criteria.AgentWorkerId))
+            query = query.Where(b => b.AgentWorkerId == criteria.AgentWorkerId);
+
+        if (!string.IsNullOrEmpty(criteria.WorkerLane))
+            query = query.Where(b => b.WorkerLane == criteria.WorkerLane);
+
+        return query.ToList();
+    }
 
     private IList<BucketModel> FilterApplicableBuckets(
         IList<BucketModel> availableBuckets,
@@ -298,14 +310,13 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             .ToList();
     }
 
-    private static readonly ConcurrentDictionary<string, int> Seq = new();
     private BucketModel CreateAndValidateBucketRecord(
-        AgentConnectionId agentConnectionId, 
-        HostId hostId, 
-        string workerId, 
+        AgentConnectionId agentConnectionId,
+        HostId hostId,
+        string workerId,
         JobMasterPriority priority,
-        string workerName,  
-        string? workerLane, 
+        string workerName,
+        string? workerLane,
         string repositoryTypeId,
         BucketType type)
     {
@@ -322,18 +333,15 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             RepositoryTypeId = repositoryTypeId,
             BucketType = type,
         };
+
         if (type == BucketType.Fallback)
-        {
             bucketModel.Name = $"{workerName}:fallback:bucket-";
-        }
         else
-        {
             bucketModel.Name = $"{workerName}:{priority}:bucket-";
-        }
-        
+
         var seq = Seq.AddOrUpdate(bucketModel.Name, 0, (key, oldVal) => oldVal + 1);
         bucketModel.Name += seq;
-        
+
         bucketModel.Id = $"{bucketModel.Name}:{JobMasterIdGenUtil.NewShortId()}";
 
         if (!JobMasterStringUtils.IsValidForId(bucketModel.Id))
@@ -342,7 +350,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                 $"Invalid bucket ID format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. Received: '{bucketModel.Id}'",
                 nameof(bucketModel.Id));
         }
-            
 
         return bucketModel;
     }
@@ -354,10 +361,11 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         if (agentConfiguration is null)
             throw new ArgumentException($"Agent configuration with id {agentConnectionId} not found.", nameof(agentConnectionId));
     }
-    
+
     private GenericRecordQueryCriteria ToGenericRecordQueryCriteria(MasterBucketQueryCriteria criteria)
     {
         var genericRecordQueryCriteria = new GenericRecordQueryCriteria();
+
         if (criteria.Status.HasValue)
         {
             genericRecordQueryCriteria.Filters.Add(new()
@@ -407,9 +415,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                 Value = criteria.WorkerLane,
             });
         }
-        
+
         genericRecordQueryCriteria.ReadIsolationLevel = criteria.ReadIsolationLevel;
-        
+
         return genericRecordQueryCriteria;
     }
 }

@@ -212,7 +212,9 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                     
                     // Send AckProgress to reset AckWait timer now that we're actually processing this message
                     // This prevents NATS from redelivering due to AckWait timeout while message sits in buffer
-                    await msg.AckProgressAsync(cancellationToken: ct).ConfigureAwait(false);
+                    // Use an independent CTS — must not be tied to the consumer lifecycle token
+                    using var progressCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                    await msg.AckProgressAsync(cancellationToken: progressCts.Token).ConfigureAwait(false);
                     
                     // Check if this is a heartbeat message and skip processing
                     var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
@@ -225,12 +227,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                         {
                             LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
 
-                            await msg.AckTerminateAsync(cancellationToken: ct).ConfigureAwait(false);
+                            using var termCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                            await msg.AckTerminateAsync(cancellationToken: termCts.Token).ConfigureAwait(false);
                             return;
                         }
-                        
+
                         logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
-                        await msg.AckAsync(cancellationToken: ct).ConfigureAwait(false);
+                        using var ackCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                        await msg.AckAsync(cancellationToken: ackCts.Token).ConfigureAwait(false);
                         continue;
                     }
 
@@ -356,6 +360,33 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
         Stopwatch? sw = null;
         bool success = false;
+        var keepAliveInterval = NatsJetStreamConstants.CalcAckProgressKeepAliveInterval(BackgroundAgentWorker.BucketBufferLeadTime);
+        using var keepAliveCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var keepAliveTask = Task.Run(async () =>
+        {
+            while (!keepAliveCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(keepAliveInterval, keepAliveCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break; // consumer stopping — exit cleanly
+                }
+
+                try
+                {
+                    using var kaCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                    await msg.AckProgressAsync(cancellationToken: kaCts.Token).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    // AckProgress failed — continue loop so next attempt still fires
+                }
+            }
+        }, keepAliveCts.Token);
+
         try
         {
             logger.Debug($"{GetRunnerDescription()} processing-started CorrId={correlationId} MessageId={messageId} FailureAttempts={attempts}", JobMasterLogSubjectType.Bucket, BucketId);
@@ -374,10 +405,9 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         catch (Exception ex)
         {
-            
             var (sig, corr, rtime, mid) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
             ulong maxRetries = LostRisk() ? NatsJetStreamConstants.MaxMsgRetriesForLostRisk : NatsJetStreamConstants.MaxMsgRetriesForNoLostRisk;
-            
+
             // Check current failure count before incrementing
             if (ackGuard.FailureCount >= maxRetries)
             {
@@ -395,12 +425,18 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         finally
         {
+            // Stop keep-alive before unlock/logging — ensures no AckProgress fires after the final ack/nak
+            keepAliveCts.Cancel();
+            await keepAliveTask.ConfigureAwait(false);
+
             if (ackGuard.Outcome == AckOutcome.Ack)
             {
-                // Keep locked for the redelivery window — OnTickAsync will clean up
+                // Keep locked for 5 min + AckWait to cover any post-ACK redeliveries — OnTickAsync will clean up
                 lock (messagesToUnlock)
                 {
-                    messagesToUnlock.Add((messageId!, DateTime.UtcNow.AddMinutes(5)));
+                    var messageLockDuration =
+                        NatsJetStreamConstants.CalcMessageLockDuration(BackgroundAgentWorker.BucketBufferLeadTime);
+                    messagesToUnlock.Add((messageId!, DateTime.UtcNow.Add(messageLockDuration)));
                 }
             }
             else

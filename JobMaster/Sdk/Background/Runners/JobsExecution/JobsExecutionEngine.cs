@@ -1,5 +1,6 @@
 using System;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Threading;
 using System.Threading.Tasks;
 using JobMaster.Abstractions;
@@ -17,6 +18,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
@@ -31,10 +33,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
     private readonly IMasterJobsService masterJobsService;
 
+    private readonly List<JobRawModel> jobsToFlush = new();
+    private readonly object jobsToFlushLock = new();
+    private DateTime lastFlushedAtUtc = DateTime.MinValue;
+
     private readonly JobMasterLockKeys lockKeys;
     private readonly string bucketId;
     private readonly JobMasterPriority priority;
-    
+
     public IOnBoardingControl<JobRawModel> OnBoardingControl { get; }
     public ITaskQueueControl<JobRawModel> TaskQueueControl { get; }
 
@@ -50,213 +56,244 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         this.masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         this.logger = backgroundAgentWorker.GetClusterAwareService<IJobMasterLogger>();
-        
+
         this.lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         this.bucketId = bucketId;
         this.priority = priority;
-        
+
         this.OnBoardingControl = new OnBoardingControl<JobRawModel>(backgroundAgentWorker.BucketBufferSize);
         this.TaskQueueControl = TaskQueueControl<JobRawModel>.Create(
-            priority, 
+            priority,
             factor: backgroundAgentWorker.ParallelismFactor,
             preEnqueueAction: this.PreEnqueuedAsync);
     }
-    
+
     public string BucketId => this.bucketId;
     public JobMasterPriority Priority => this.priority;
-    
+
+    public int CountOnBoardingAvailability()
+    {
+        lock (jobsToFlushLock)
+        {
+            return OnBoardingControl.CountAvailability() - jobsToFlush.Count;
+        }
+    }
+
+    public bool HasOnBoardingAvailability() => CountOnBoardingAvailability() > 0;
+
     public async Task<OnBoardingResult> TryOnBoardingJobAsync(JobRawModel payload, bool forceIfNoCapacity = false)
     {
-        var now = DateTime.UtcNow;
-        
-        if (payload.ExceedProcessDeadline())
-        {
-            logger.Warn($"ExceedProcessDeadline. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
-            
-            if (payload.CanHeldOnMasterExceedDeadline())
-            {
-                payload.MarkAsHeldOnMaster();
-                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn(
-                    $"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={now:O}", JobMasterLogSubjectType.Job, payload.Id);
-            }
-           
-            return OnBoardingResult.MovedToMaster;
-        }
-        
         // Check if job belongs to a cancelled recurring schedule
         if (payload.SourceId.HasValue && payload.TriggerSourceType.IsRecurringTrigger())
         {
             var (validationResult, _) = await ValidateRecurringScheduleAsync(
-                payload.SourceId.Value, 
-                payload.GetSafeNextPlanExecutionAt(), 
+                payload.SourceId.Value,
+                payload.GetSafeNextPlanExecutionAt(),
                 payload.Id);
-            
+
             switch (validationResult)
             {
                 case RecurringScheduleValidationResult.NotFound:
                     payload.MarkAsFailed();
                     await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(payload);
                     return OnBoardingResult.Cancelled;
-                    
+
                 case RecurringScheduleValidationResult.Terminated:
                     payload.TryToCancel(ignoreOnBoarding: true);
                     await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(payload);
                     return OnBoardingResult.Cancelled;
-                    
+
                 case RecurringScheduleValidationResult.StaticIdle:
                     payload.MarkAsHeldOnMaster();
                     await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(payload);
                     return OnBoardingResult.MovedToMaster;
             }
         }
-        
+
         if (!payload.IsOnBoarding())
         {
             return OnBoardingResult.TooEarly;
         }
-        
+
         if (payload.ProcessDeadline is null || !payload.Status.IsBucketStatus())
         {
             logger.Error($"Bad data", JobMasterLogSubjectType.Job, payload.Id); // TODO improve logo.
             return OnBoardingResult.Invalid;
         }
-        
-        // Try to buffer into OnBoarding. If briefly full, retry quickly before falling back.
-        if (forceIfNoCapacity)
+
+        // Authorize the job — add to the staging list for deadline refresh + ForcePush on next flush.
+        lock (jobsToFlushLock)
         {
-            var departureTime = payload.GetSafeNextPlanExecutionAt();
-            OnBoardingControl.ForcePush(payload, payload.Id.ToString(), departureTime, payload.ProcessDeadline!.Value);
-            logger.Debug($"OnBoarding (forced): JobId={payload.Id}");
-            return OnBoardingResult.Accepted;
+            var available = OnBoardingControl.CountAvailability() - jobsToFlush.Count;
+            if (forceIfNoCapacity || available > 0)
+            {
+                jobsToFlush.Add(payload);
+                logger.Debug($"OnBoarding authorized: JobId={payload.Id} force={forceIfNoCapacity}");
+                return OnBoardingResult.Accepted;
+            }
         }
 
-        var result = OnBoardingControl.Push(payload, payload.Id.ToString(), payload.GetSafeNextPlanExecutionAt(), payload.ProcessDeadline!.Value);
-        if (result)
-        {
-            logger.Debug($"OnBoarding: JobId={payload.Id}");
-            return OnBoardingResult.Accepted;
-        }
-
-        var onBoardingCount = OnBoardingControl.Count();
-        var onBoardingCapacity = OnBoardingControl.CountAvailability() + onBoardingCount;
-        this.logger.Warn($"OnBoarding Push unaccepted. Count={onBoardingCount}, Capacity={onBoardingCapacity}, ProcessDeadline={payload.ProcessDeadline:O}, Now={DateTime.UtcNow:O}", JobMasterLogSubjectType.Bucket, BucketId);
-
-        var delayExecution = this.backgroundAgentWorker.BucketBufferLeadTime;
-        if (delayExecution < JobMasterConstants.MinDelayWhenOnboardingBusy)
-        {
-            delayExecution = JobMasterConstants.MinDelayWhenOnboardingBusy;
-        }
-        delayExecution += TimeSpan.FromSeconds(JobMasterRandomUtil.GetInt(1, 6));
-        
-        payload.DelayNextExecutionPlan(delayExecution);
-        payload.MarkAsHeldOnMaster();
-        await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-        
         logger.Debug($"Moved to HeldOnMaster due to full OnBoarding: JobId={payload.Id}");
 
         await Task.Delay(TimeSpan.FromMilliseconds(250));
-        return OnBoardingResult.MovedToMaster;
+        return OnBoardingResult.Busy;
     }
 
     public async Task PulseAsync()
     {
-        var abortedCount = TaskQueueControl.AbortTimeoutTasks();
-        var started = TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
-        var shouldSkip = TaskQueueControl.CountAvailability() <= 0;
-        
-        if (abortedCount > 0)
+        bool shouldFlush;
+        lock (jobsToFlushLock)
         {
-            logger.Debug($"Aborted {abortedCount} tasks due to timeout", JobMasterLogSubjectType.AgentWorker, backgroundAgentWorker.AgentWorkerId);
+            shouldFlush = DateTime.UtcNow - lastFlushedAtUtc >= TimeSpan.FromSeconds(10)
+                              || jobsToFlush.Count >= backgroundAgentWorker.BucketBufferSize;
         }
-        
-        // Only log when tasks are actually started to reduce noise during idle periods
-        if (started)
+
+        if (shouldFlush)
         {
-            logger.Debug($"Started tasks this tick. running: {TaskQueueControl.CountRunning()}, waiting: {TaskQueueControl.CountWaiting()}, available: {TaskQueueControl.CountAvailability()}", JobMasterLogSubjectType.Bucket, BucketId);
+            await FlushAuthorizedJobsAsync();
+            lastFlushedAtUtc = DateTime.UtcNow;
         }
-        
-        // Only log when there are jobs in onboarding to reduce noise during idle periods
-        if (OnBoardingControl.Count() > 0)
+
+        TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
+
+        var bucket = this.masterBucketsService.Get(bucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket?.Status == BucketStatus.Completing)
         {
-            logger.Debug($"OnBoarding Count: {OnBoardingControl.Count()}", JobMasterLogSubjectType.Bucket, BucketId);
+            await PullPendingJobsAsync();
         }
-        
-        // Prune expired items regardless of TaskQueue state — frees OnBoardingControl capacity
-        // even when shouldSkip=true (TaskQueue full). Without this, items past their ProcessDeadline
-        // can clog the buffer indefinitely, blocking all new jobs from entering.
-        var expiredJobs = OnBoardingControl.PruneDeadlinedItems();
-        foreach (var job in expiredJobs)
+
+        if (bucket?.Status != BucketStatus.Active)
+        {
+            return;
+        }
+
+        if (TaskQueueControl.CountAvailability() <= 0)
+        {
+            return;
+        }
+
+        await EnqueueJobsAsync();
+
+        // After enqueuing, try to start any queued tasks immediately
+        TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
+    }
+
+    public async Task<bool> PreEnqueuedAsync(JobRawModel jobRawModel)
+    {
+        if (!jobRawModel.Status.IsBucketStatus())
+        {
+            logger.Error($"Job is not in a bucket status. Status: {jobRawModel.Status}", JobMasterLogSubjectType.Job, jobRawModel.Id);
+            return false;
+        }
+
+        var originalStatus = jobRawModel.Status;
+        jobRawModel.Enqueue();
+        try
+        {
+            await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
+            return true;
+        }
+        catch (JobMasterVersionConflictException)
+        {
+            jobRawModel.Status = originalStatus;
+
+            var existingJob = await masterJobsService.GetAsync(jobRawModel.Id);
+            if (existingJob?.Status == JobMasterJobStatus.Cancelled)
+            {
+                logger.Info($"Job {jobRawModel.Id} was cancelled before enqueued", JobMasterLogSubjectType.Job, jobRawModel.Id);
+                return false;
+            }
+
+            logger.Warn($"" +
+                        $"Job Conflict found Probably held on master or assigned to another bucket. {Environment.NewLine}" +
+                        $"On Db Info(status: {existingJob?.Status}, bucketId: {existingJob?.BucketId}) {Environment.NewLine} " +
+                        $"On this bucket Info: (status: {jobRawModel.Status}, bucketId: {jobRawModel.BucketId}).  JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}",
+                JobMasterLogSubjectType.Job, jobRawModel.Id);
+            return false;
+        }
+    }
+
+    public async Task FlushToMasterAsync()
+    {
+        // Collect onboarded jobs and waiting (not yet running) queued jobs.
+        // Running jobs are managed by their own cancellation tokens and handle their own state.
+        // Onboarded jobs already have ProcessDeadline = now, so HeldOnMasterDeadlineTimeoutJobsRunner
+        // will recover them automatically — but we flush them here too for a faster handoff.
+        var onBoardingJobs = OnBoardingControl.Shutdown();
+        var waitingJobs = await TaskQueueControl.ShutdownAsync();
+
+        var bufferedJobs = onBoardingJobs.Concat(waitingJobs).ToList();
+        if (bufferedJobs.Count == 0)
+        {
+            this.logger.Info($"Graceful flush complete for {BucketId}. No buffered jobs.");
+            return;
+        }
+
+        foreach (var job in bufferedJobs)
+        {
+            job.MarkAsHeldOnMaster();
+        }
+
+        var partitions = bufferedJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+        foreach (var partition in partitions)
         {
             try
             {
-                logger.Debug($"OnBoarding Pruning: Job {job.Id} removed from memory due to deadline.", JobMasterLogSubjectType.Job, job.Id);
-                job.MarkAsHeldOnMaster();
-                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()));
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                logger.Warn($"OnBoarding Pruning: Failed to persist job {job.Id} after deadline expiry.", JobMasterLogSubjectType.Job, job.Id);
+                this.logger.Error($"Failed to flush jobs during shutdown for {BucketId}.", JobMasterLogSubjectType.Bucket, BucketId, ex);
             }
         }
 
-        if (shouldSkip)
-        {
-            return;
-        }
+        this.logger.Info($"Graceful flush complete for {BucketId}. Flushed {bufferedJobs.Count} jobs.");
+    }
 
-        var bucket = this.masterBucketsService.Get(bucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
-        if (bucket?.Status != BucketStatus.Active)
+    private async Task FlushAuthorizedJobsAsync()
+    {
+        List<JobRawModel> batch;
+        lock (jobsToFlushLock)
         {
-            var oldDepartureItems = OnBoardingControl.PruneOldDepartureItems(this.backgroundAgentWorker.BucketBufferSize);
-            foreach (var job in oldDepartureItems)
+            if (jobsToFlush.Count == 0)
             {
-                if (job.ExceedProcessDeadline())
-                {
-                    continue;
-                }
+                return;
+            }
+            var take = Math.Min(jobsToFlush.Count, backgroundAgentWorker.BucketBufferSize);
+            batch = jobsToFlush.GetRange(0, take);
+            jobsToFlush.RemoveRange(0, take);
+        }
 
-                job.MarkAsHeldOnMaster();
-                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+        foreach (var job in batch)
+        {
+            job.Onboard();
+        }
+
+        foreach (var partition in batch.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        {
+            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList());
+
+            foreach (var job in updated)
+            {
+                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt(), job.ProcessDeadline!.Value);
+                logger.Debug($"OnBoarding flushed: JobId={job.Id}");
             }
         }
+    }
 
-        if (bucket?.Status != BucketStatus.Active)
-        {
-            return;
-        }
-        
+    private async Task EnqueueJobsAsync()
+    {
         var departureCapacity = TaskQueueControl.CountAvailability();
         var jobs = OnBoardingControl.GetReadyItems(DateTime.UtcNow, departureCapacity);
-        logger.Debug($"DepartureItemsCount: {jobs.Count()} capacity={departureCapacity}", JobMasterLogSubjectType.Bucket, BucketId);
-        if (OnBoardingControl.Count() > 0 && !jobs.Any())
-        {
-            var next = OnBoardingControl.PeekNextDepartureTime();
-            logger.Debug($"OnBoarding has {OnBoardingControl.Count()} items but none ready. nextDeparture={next:O} now={DateTime.UtcNow:O}", JobMasterLogSubjectType.Bucket, BucketId);
-        }
-        
+
         foreach (var job in jobs)
         {
-            if (job.ExceedProcessDeadline())
-            {
-                logger.Warn($"ExceedProcessDeadline. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
-                
-                if (job.CanHeldOnMasterExceedDeadline())
-                {
-                    job.MarkAsHeldOnMaster();
-                    await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
-                }
-                
-                continue;
-            }
-            
             if (TaskQueueControl.Contains(job.Id.ToString()))
             {
                 logger.Debug($"JobId={job.Id} already in TaskQueue");
                 continue;
             }
-            
+
             var taskQueueItem = new TaskQueueItem<JobRawModel>(
                 job.Id.ToString(),
                 job,
@@ -273,7 +310,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     }
                 }
             );
-                
+
             var added = await TaskQueueControl.EnqueueAsync(taskQueueItem);
             if (!added)
             {
@@ -284,25 +321,52 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     logger.Warn($"Job Conflict found, Probably processed by another node or HeldOnMaster. Excluded from queue.  JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, job.Id);
                     continue;
                 }
-                
-                if (job.ProcessDeadline is null)
-                {
-                    logger.Error($"Bad data", JobMasterLogSubjectType.Job, job.Id); // TODO improve logo.
-                    continue;
-                }
-                
+
                 OnBoardingControl.ForcePush(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt(), job.ProcessDeadline!.Value);
             }
         }
-        
-        // After enqueuing, try to start any queued tasks immediately
-        TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();
     }
 
-    public async Task ExecuteJobAsync(JobRawModel jobRawModel, CancellationToken timeoutCancellationToken)
+    private async Task PullPendingJobsAsync()
+    {
+        var pendingJobs = OnBoardingControl.PullPending(this.backgroundAgentWorker.BucketBufferSize);
+        foreach (var job in pendingJobs)
+        {
+            if (job.ExceedProcessDeadline())
+            {
+                continue;
+            }
+
+            try
+            {
+                job.MarkAsHeldOnMaster();
+                await this.backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
+            }
+            catch (JobMasterVersionConflictException)
+            {
+                // Bucket may have transitioned to Lost while cache still shows Completing.
+                // A drain/recovery runner likely already claimed this job — re-check bucket status and stop draining.
+                logger.Warn($"Version conflict moving JobId={job.Id} to master during Completing drain. " +
+                            $"Job likely already claimed by drain/recovery runner (bucket may have transitioned to Lost).",
+                    JobMasterLogSubjectType.Job, job.Id);
+
+                await Task.Delay(TimeSpan.FromSeconds(1));
+
+                var bucket = this.masterBucketsService.Get(bucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
+                if (bucket?.Status != BucketStatus.Completing)
+                {
+                    break;
+                }
+
+                logger.Warn($"Bucket still in Completing state after conflict on JobId={job.Id}. Conflict may be job-specific, continuing drain.", JobMasterLogSubjectType.Bucket, BucketId);
+            }
+        }
+    }
+
+    private async Task ExecuteJobAsync(JobRawModel jobRawModel, CancellationToken timeoutCancellationToken)
     {
         var stopwatch = Stopwatch.StartNew();
-        
+
         string? lockRecurringScheduleProcessingToken = null;
         var lockRecurringScheduleProcessingKey = jobRawModel.SourceId.HasValue && jobRawModel.TriggerSourceType.IsRecurringTrigger()
             ? lockKeys.RecurringScheduleProcessingLock(jobRawModel.SourceId.Value)
@@ -329,20 +393,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
                 return;
             }
-
-            if (jobRawModel.ExceedProcessDeadline())
-            {
-                logger.Warn($"ExceedProcessDeadline. JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
-                
-                if (jobRawModel.CanHeldOnMasterExceedDeadline())
-                {
-                    jobRawModel.MarkAsHeldOnMaster();
-                    await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
-                    logger.Warn($"ExceedProcessDeadline. HeldOnMaster and terminated. JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", JobMasterLogSubjectType.Job, jobRawModel.Id);
-                }
-                
-                return;
-            }
+            
             JobExecution? execution = null;
             try
             {
@@ -364,22 +415,22 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                     // Check recurring schedule again at execution time (job may have been onboarded before cancellation)
                     var (validationResult, recurringSchedule) = await ValidateRecurringScheduleAsync(
-                        jobRawModel.SourceId.Value, 
-                        jobRawModel.GetSafeNextPlanExecutionAt(), 
+                        jobRawModel.SourceId.Value,
+                        jobRawModel.GetSafeNextPlanExecutionAt(),
                         jobRawModel.Id);
-                    
+
                     switch (validationResult)
                     {
                         case RecurringScheduleValidationResult.NotFound:
                             jobRawModel.MarkAsFailed();
                             await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
                             return;
-                            
+
                         case RecurringScheduleValidationResult.Terminated:
                             jobRawModel.TryToCancel(ignoreOnBoarding: true);
                             await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
                             return;
-                            
+
                         case RecurringScheduleValidationResult.StaticIdle:
                             backgroundAgentWorker.WorkerClusterOperations.MarkAsHeldOnMaster(jobRawModel.Id);
                             return;
@@ -387,9 +438,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                     recurringScheduleContext = RecurringScheduleConvertUtil.ToContext(recurringSchedule!);
                 }
-                
+
                 timeoutCancellationToken.ThrowIfCancellationRequested();
-                
+
                 execution = jobRawModel.ProcessingStarted();
                 await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel, execution);
 
@@ -437,7 +488,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 {
                     message = $"Job {jobRawModel.JobDefinitionId} timeout after {stopwatch.ElapsedMilliseconds}ms. reached end of retries";
                 }
-                
+
                 execution?.Fail(message);
 
                 logger.Error(message, JobMasterLogSubjectType.JobExecution, jobRawModel.Id);
@@ -488,42 +539,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             }
         }
     }
-    
-    public async Task<bool> PreEnqueuedAsync(JobRawModel jobRawModel)
-    {
-        if (!jobRawModel.Status.IsBucketStatus())
-        {
-            logger.Error($"Job is not in a bucket status. Status: {jobRawModel.Status}", JobMasterLogSubjectType.Job, jobRawModel.Id);
-            return false;
-        }
-        
-        var originalStatus = jobRawModel.Status;
-        jobRawModel.Enqueued();
-        try
-        {
-            await backgroundAgentWorker.WorkerClusterOperations.UpsertAsync(jobRawModel);
-            return true;
-        }
-        catch (JobMasterVersionConflictException)
-        {
-            jobRawModel.Status = originalStatus;
-            
-            var existingJob = await masterJobsService.GetAsync(jobRawModel.Id);
-            if (existingJob?.Status == JobMasterJobStatus.Cancelled)
-            {
-                logger.Info($"Job {jobRawModel.Id} was cancelled before enqueued", JobMasterLogSubjectType.Job, jobRawModel.Id);
-                return false;
-            }
-            
-            logger.Warn($"" +
-                        $"Job Conflict found Probably held on master or assigned to another bucket. {Environment.NewLine}" +
-                        $"On Db Info(status: {existingJob?.Status}, bucketId: {existingJob?.BucketId}) {Environment.NewLine} " +
-                        $"On this bucket Info: (status: {jobRawModel.Status}, bucketId: {jobRawModel.BucketId}).  JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}", 
-                JobMasterLogSubjectType.Job, jobRawModel.Id);
-            return false;
-        }
-    }
-    
+
     private static TimeSpan GetPriorityDelay(JobMasterPriority priority, double factor = 1.0)
     {
         var baseDelay = priority switch
@@ -535,45 +551,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             JobMasterPriority.Critical => TimeSpan.FromMilliseconds(100),
             _ => TimeSpan.FromSeconds(1)
         };
-        
+
         return TimeSpan.FromMilliseconds(baseDelay.TotalMilliseconds * factor);
-    }
-    
-    public async Task FlushToMasterAsync()
-    {
-        // 1. Collect everything from OnBoarding and waiting on queue
-        // We use a high limit to ensure we grab everything in the pen
-        var onBoardingJobs = OnBoardingControl.Shutdown();
-        var waitingJobs = await TaskQueueControl.ShutdownAsync();
-        
-        var bufferedJobs = onBoardingJobs.Concat(waitingJobs).ToList();
-
-        // 2. Collect everything from the TaskQueue waiting list (if applicable)
-        // Note: Items already 'Running' in the TaskQueue are managed by their own 
-        // cancellation tokens and should ideally finish or handle their own state.
-        foreach (var job in bufferedJobs)
-        {
-            try 
-            {
-                if (job.ExceedProcessDeadline())
-                {
-                    // Skip expired buffered job and continue flushing the rest
-                    continue;
-                }
-                
-                // Reset state so they aren't 'Locked' to this dead worker
-                job.MarkAsHeldOnMaster(); 
-            
-                await this.backgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.Upsert(job));
-            }
-            catch (Exception ex)
-            {
-                this.logger.Error($"Failed to flush job {job.Id} during shutdown.", JobMasterLogSubjectType.Job, job.Id, ex);
-            }
-        }
-
-        this.logger.Info($"Graceful flush complete for {BucketId}.");
     }
 
     private async Task HandleErrorAsync(JobRawModel job, JobExecution? execution, Stopwatch stopwatch, Exception e)
@@ -583,15 +562,15 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             message = $"Job {job.JobDefinitionId} failed after {stopwatch.ElapsedMilliseconds}ms. reached end of retries";
         }
-        
+
         execution?.Fail(message);
-                
+
         logger.Error(message, JobMasterLogSubjectType.JobExecution, job.Id, exception: e);
 
         await backgroundAgentWorker.WorkerClusterOperations
             .ExecWithRetryAsync(o => o.Upsert(job, execution), millisecondsToDelay: 50);
     }
-    
+
     private enum RecurringScheduleValidationResult
     {
         Valid,
@@ -599,17 +578,17 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         Terminated,
         StaticIdle
     }
-    
+
     private async Task<(RecurringScheduleValidationResult result, RecurringScheduleRawModel? schedule)> ValidateRecurringScheduleAsync(
-        Guid recurringScheduleId, 
-        DateTime jobScheduledAt, 
+        Guid recurringScheduleId,
+        DateTime jobScheduledAt,
         Guid jobId)
     {
         // For old jobs (>5 min in past), use UtcNow to prevent them from being valid indefinitely
         // For recent/future jobs, use their actual ScheduledAt time
         var dateToCheck = jobScheduledAt.AddMinutes(5) > DateTime.UtcNow ? jobScheduledAt : DateTime.UtcNow;
         var recurringSchedule = await masterRecurringSchedulesService.GetAsync(recurringScheduleId);
-        
+
         if (recurringSchedule is null)
         {
             logger.Error($"Recurring schedule {recurringScheduleId} not found", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleId);
@@ -624,12 +603,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 recurringSchedule.TerminatedAt = DateTime.UtcNow;
                 logger.Error("BAD DATA", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleId); // TODO put a better message.
             }
-            
+
             if (recurringSchedule.TerminatedAt.HasValue && recurringSchedule.TerminatedAt.Value > dateToCheck)
             {
                 return (RecurringScheduleValidationResult.Valid, recurringSchedule);
             }
-            
+
             logger.Warn($"Recurring schedule {recurringScheduleId} was terminated (canceled, inactive or completed)", JobMasterLogSubjectType.RecurringSchedule, recurringScheduleId);
             logger.Warn($"Recurring schedule {recurringScheduleId} was terminated (canceled, inactive or completed)", JobMasterLogSubjectType.JobExecution, jobId);
             return (RecurringScheduleValidationResult.Terminated, recurringSchedule);

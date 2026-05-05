@@ -141,13 +141,28 @@ internal class JobRawModel : JobMasterBaseModel
         Status = JobMasterJobStatus.InBucket;
     }
     
-    public bool Enqueued()
+    public bool Onboard()
+    {
+        if (Status != JobMasterJobStatus.InBucket)
+        {
+            return false;
+        }
+
+        Status = JobMasterJobStatus.Onboarded;
+        // Set deadline to now so HeldOnMasterDeadlineTimeoutJobsRunner can immediately recover this job
+        // if the bucket goes Lost. While the bucket is Active or Completing the runner won't touch it,
+        // but once the bucket is gone this acts as an instant recovery signal.
+        ProcessDeadline = DateTime.UtcNow;
+        return true;
+    }
+
+    public bool Enqueue()
     {
         if (!this.Status.IsBucketStatus())
         {
             return false;
         }
-        
+
         Status = JobMasterJobStatus.Queued;
         return true;
     }
@@ -341,26 +356,16 @@ internal class JobRawModel : JobMasterBaseModel
         };
     }
     
+    /// <summary>
+    /// Returns <c>true</c> if the job's ProcessDeadline is within the early-warning window
+    /// (<c>ProcessDeadline &lt; UtcNow + <see cref="JobMasterConstants.ProcessDeadlineEarlyWarning"/></c>).
+    /// Fires slightly before the hard deadline to give callers a chance to skip or defer
+    /// before <c>HeldOnMasterDeadlineTimeoutJobsRunner</c> bulk-recovers the job.
+    /// </summary>
     public bool ExceedProcessDeadline()
     {
-        return ProcessDeadline.HasValue && ProcessDeadline.Value < DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding).Add(TimeSpan.FromMinutes(1));
-    }
-    
-    public bool CanHeldOnMasterExceedDeadline()
-    {
-        if (this.Status == JobMasterJobStatus.OnMaster)
-        {
-            return false;
-        }
-
-        if (!this.ProcessDeadline.HasValue)
-        {
-            return false;
-        }
-
-        var nowWithSkew = DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding);
-        var threshold = nowWithSkew.Add(TimeSpan.FromMinutes(1));
-        return this.ProcessDeadline.Value <= threshold;
+        return ProcessDeadline.HasValue &&
+               ProcessDeadline.Value < DateTime.UtcNow.Add(JobMasterConstants.ProcessDeadlineEarlyWarning);
     }
     
     public static JobRawModel RecoverFromDb(JobPersistenceRecord d)

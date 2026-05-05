@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Utils.Extensions;
@@ -39,7 +40,7 @@ internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
 
     public JobMasterInMemoryCacheItem<T> Set<T>(string key, T value, TimeSpan? durationToExpire = null)
     {
-        durationToExpire ??= TimeSpan.FromHours(8);
+        durationToExpire ??= JobMasterConstants.DefaultCacheEntryExpiry;
         var utcNow = DateTime.UtcNow;
         var expiresAt = utcNow.Add(durationToExpire.Value);
 

@@ -6,7 +6,7 @@ internal class JobMasterSentinelKeys : JobMasterKeyManager
     {
     }
     
-    public string BucketsAvailableForJobs() => CreateKey("BucketsAvailableForJobs");
+    public string AllBuckets() => CreateKey("AllBuckets");
 
     public string GetMasterConfiguration() => CreateKey("MasterConfiguration");
     

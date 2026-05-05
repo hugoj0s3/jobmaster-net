@@ -31,6 +31,8 @@ internal class JobQueryCriteria
     public string? HostId { get; set; }
     public string? BucketId { get; set; }
     
+    public IList<string> ExcludeBucketIds { get; set; } = new List<string>();
+    
     public IList<Guid> JobIds { get; set; } = new List<Guid>();
     
     public int CountLimit { get; set; } = 100;

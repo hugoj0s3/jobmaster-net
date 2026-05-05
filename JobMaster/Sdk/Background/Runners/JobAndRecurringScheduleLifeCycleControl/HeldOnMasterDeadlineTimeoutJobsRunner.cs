@@ -4,35 +4,35 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.ScanPlans;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
 /// <summary>
-/// Enforces job deadlines and recovers stuck jobs that have exceeded their ProcessDeadline.
-/// This runner monitors jobs for deadline violations and marks them as held on master for reassignment,
-/// preventing jobs from getting permanently stuck when workers become unresponsive.
+/// Safety net runner that recovers jobs whose ProcessDeadline has expired and are no longer held by an active bucket.
+/// This is not the primary processing path — it only intervenes when the drain process fails or takes too long.
 /// </summary>
 /// <remarks>
 /// <para><strong>Execution Interval:</strong> Dynamic (calculated based on job count and worker threads)</para>
-/// <para><strong>Lifecycle:</strong> Global runner (useIndependentLifecycle: false, useSemaphore: true)</para>
+/// <para><strong>Lifecycle:</strong> Global runner (bucketAwareLifeCycle: false, useSemaphore: true)</para>
 /// <para><strong>Key Operations:</strong></para>
 /// <list type="bullet">
-/// <item>Queries jobs with ProcessDeadline &lt; DateTime.UtcNow (deadline missed by 5+ minutes)</item>
-/// <item>Uses partition locking to prevent race conditions during concurrent access</item>
-/// <item>Checks for job cancellation and processing locks before intervention</item>
-/// <item>Marks deadline-missed jobs as HeldOnMaster for reassignment to healthy workers</item>
+/// <item>Queries active and completing bucket IDs upfront and excludes their jobs from intervention</item>
+/// <item>Only acts on jobs whose bucket is gone, lost, or otherwise inactive</item>
+/// <item>Marks eligible jobs as HeldOnMaster for reassignment</item>
+/// <item>Uses partition locking to prevent race conditions across concurrent workers</item>
 /// </list>
 /// <para><strong>Safety Features:</strong></para>
 /// <list type="bullet">
-/// <item>Respects job cancellation locks (defers to cancellation process)</item>
-/// <item>Double-checks processing locks to avoid interfering with active jobs</item>
-/// <item>Skips jobs in final status (completed, failed, cancelled)</item>
-/// <item>Uses database-level filtering for efficient deadline detection</item>
+/// <item>Never touches jobs belonging to Active or Completing buckets — those are owned by their worker</item>
+/// <item>Skips jobs already in a final status (completed, failed, cancelled)</item>
+/// <item>Uses database-level bucket exclusion for efficient and safe filtering</item>
 /// </list>
 /// <para><strong>Performance:</strong> Uses partition locking similar to AssignHeldJobsRunner for scalable concurrent processing</para>
 /// </remarks>
@@ -40,7 +40,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
 {
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
-    private readonly IMasterAgentWorkersService masterAgentWorkersService;
+    private readonly IMasterBucketsService masterBucketsService;
     
     private ScanPlanResult? lastScanPlanResult;
     
@@ -53,7 +53,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
     {
         masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
-        masterAgentWorkersService = backgroundAgentWorker.GetClusterAwareService<IMasterAgentWorkersService>();
+        masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
         
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
     }
@@ -68,17 +68,30 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
         var utcNow = DateTime.UtcNow;
         var durationToLock = JobMasterConstants.DurationToLockRecords;
         var cutOffTime = utcNow.Add(durationToLock).AddSeconds(-30);
+
+        var bucketQueryCriteria = new MasterBucketQueryCriteria()
+        {
+            Statuses = new List<BucketStatus>()
+            {
+                BucketStatus.Active,
+                BucketStatus.Completing
+            }
+        };
+
+        var activeBuckets = await masterBucketsService.QueryAsync(bucketQueryCriteria, JobMasterConstants.BucketFastAllowDiscrepancy);
+        var activeBucketIds = activeBuckets.Select(b => b.Id).ToList();
         
         var jobQueryCriteria = new JobQueryCriteria()
         {
             CountLimit = BackgroundAgentWorker.TransferBatchSize,
-            ProcessDeadlineTo = utcNow.AddSeconds(-30),
+            ProcessDeadlineTo = JobMasterConstants.NowUtcWithSkewTolerance(),
             Offset = 0,
+            ExcludeBucketIds = activeBucketIds,
             SortBy = new SortByCriteria()
             {
                 Property = nameof(JobRawModel.NextPlanExecutionAt),
                 Ascending = true,
-            }
+            },
         };
         
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
@@ -114,40 +127,31 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
 
-        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Found {jobs.Count} jobs past deadline. JobIds: {string.Join(", ", jobs.Select(x => x.Id).Take(10))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-        
-        await MarkAsHeldOnMasterAsync(jobs, cutOffTime, ct);
-        
-        masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
-        
-        return OnTickResult.Success(lastScanPlanResult.Interval);
-    }
+        var eligibleJobs = jobs
+            .Where(j => !j.Status.IsFinalStatus())
+            .ToList();
 
-    private async Task MarkAsHeldOnMasterAsync(IList<JobRawModel> jobs, DateTime cutOffTime, CancellationToken ct)
-    {
-        foreach (var job in jobs)
+        if (eligibleJobs.Count < jobs.Count)
         {
-
-            if (cutOffTime <= DateTime.UtcNow)
-            {
-                logger.Warn($"Runner timeout ", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-                break;
-            }
-
-            if (ct.IsCancellationRequested)
-            {
-                break;
-            }
-            
-            if (job.Status.IsFinalStatus()) 
-            {
-                logger.Warn($"Skipping final status job. JobId={job.Id} Status={job.Status}", JobMasterLogSubjectType.Job, job.Id);
-                continue;
-            }
-
-            logger.Warn($"Job exceeded ProcessDeadline. Marking as HeldOnMaster. JobId={job.Id} Status={job.Status} ProcessDeadline={job.ProcessDeadline:O} BucketId={job.BucketId}", JobMasterLogSubjectType.Job, job.Id);
-            job.MarkAsHeldOnMaster();
-            await masterJobsService.UpsertAsync(job);
+            logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         }
+
+        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+
+        var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+        foreach (var partition in partitions)
+        {
+            if (ct.IsCancellationRequested || cutOffTime <= DateTime.UtcNow)
+            {
+                logger.Warn($"Runner timeout or cancellation — stopping bulk update early.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                break;
+            }
+
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()));
+        }
+
+        masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
+
+        return OnTickResult.Success(lastScanPlanResult.Interval);
     }
 }

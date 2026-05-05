@@ -191,7 +191,7 @@ internal sealed class NatsJetStreamConnector
                 var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value);
                 
                 bucketBufferLeadTime ??= new WorkerDefinition().BucketBufferLeadTime;
-                var ackWait = bucketBufferLeadTime.Value + NatsJetStreamConstants.MinConsumerAckWait;
+                var ackWait = NatsJetStreamConstants.CalcAckWait(bucketBufferLeadTime.Value);
                 
                 var consumerConfig = new ConsumerConfig(consumerName)
                 {

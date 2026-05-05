@@ -87,7 +87,7 @@ internal class JobSavePendingOperation
     
     public async Task<SaveDrainResultCode> HeldOnMasterProcessingForDrainAsync(JobRawModel job)
     {
-        if (job.ExceedProcessDeadline() && !job.CanHeldOnMasterExceedDeadline())
+        if (job.ExceedProcessDeadline())
         {
             return SaveDrainResultCode.Skipped;
         }
@@ -137,7 +137,7 @@ internal class JobSavePendingOperation
                      $"IsOnBoarding={jobRaw.IsOnBoarding()} " +
                      $"EngineAvailable={engine is not null} " +
                      $"BucketStatus={currentBucket?.Status} " +
-                     $"OnBoardingAvailability={engine?.OnBoardingControl.CountAvailability()} " +
+                     $"OnBoardingAvailability={engine?.CountOnBoardingAvailability()} " +
                      $"NextPlanAt={jobRaw.NextPlanExecutionAt:O} " +
                      $"CutOffDate={cutOffDate:O}");
         
@@ -146,7 +146,7 @@ internal class JobSavePendingOperation
             jobRaw.Status == JobMasterJobStatus.PendingSave && 
             currentBucket?.Status == BucketStatus.Active &&
             jobRaw.IsOnBoarding() && 
-            engine.OnBoardingControl.CountAvailability() > 0)
+            engine.HasOnBoardingAvailability())
         {
             jobRaw.AssignToBucket(currentBucket);
             
@@ -175,6 +175,8 @@ internal class JobSavePendingOperation
                 {
                     return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
                 }
+                
+                logger.Error($"Unexpected OnBoardingResult. JobId {jobRaw.Id} OnBoardingResult {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
             }
             catch (Exception e)
             { 

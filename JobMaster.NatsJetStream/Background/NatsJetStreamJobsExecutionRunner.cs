@@ -17,6 +17,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 {
     private IJobsExecutionEngine? jobsExecutionEngine;
     private readonly Stopwatch lifetimeSw = new();
+    private readonly Dictionary<string, int> busyRetryCount = new();
     
     public NatsJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -47,14 +48,19 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         }
         
         var onBoardingResult = await jobsExecutionEngine.TryOnBoardingJobAsync(payload);
-        
+
+        if (onBoardingResult != OnBoardingResult.Busy)
+        {
+            busyRetryCount.Remove(payload.Id.ToString());
+        }
+
         if (onBoardingResult == OnBoardingResult.Cancelled)
         {
             // Job was cancelled (e.g., recurring schedule cancelled) - ACK to remove from queue
             logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id} Status={payload.Status}", JobMasterLogSubjectType.Job, payload.Id);
             return; // Message will be ACK'd automatically by NatsJetStreamRunnerBase
         }
-        
+
         if (onBoardingResult == OnBoardingResult.TooEarly)
         {
             // Scheduling guard: avoid onboarding too early
@@ -77,6 +83,30 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
             await ackGuard.TryNakAsync(delay + jitter);
             
             logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
+        }
+
+        if (onBoardingResult == OnBoardingResult.Busy)
+        {
+            var jobId = payload.Id.ToString();
+            busyRetryCount.TryGetValue(jobId, out var retryCount);
+            retryCount++;
+
+            if (retryCount >= NatsJetStreamConstants.BusyRetryDelays.Length)
+            {
+                busyRetryCount.Remove(jobId);
+                payload.MarkAsHeldOnMaster();
+                await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
+                logger.Warn($"{GetRunnerDescription()}: Onboarding busy after {retryCount} retries. Moved to master. JobId={payload.Id}", JobMasterLogSubjectType.Job, payload.Id);
+                return;
+            }
+
+            busyRetryCount[jobId] = retryCount;
+
+            var busyDelay = NatsJetStreamConstants.BusyRetryDelays[retryCount - 1];
+
+            await ackGuard.TryNakAsync(busyDelay);
+            logger.Debug($"{GetRunnerDescription()}: Onboarding busy, retry {retryCount}/3. Nak with delay={busyDelay}. JobId={payload.Id}", JobMasterLogSubjectType.Job, payload.Id);
+            return;
         }
     }
 

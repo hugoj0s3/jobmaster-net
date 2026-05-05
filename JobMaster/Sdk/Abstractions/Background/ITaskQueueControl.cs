@@ -8,6 +8,5 @@ internal interface ITaskQueueControl<T>
     int CountWaiting();
     bool Contains(string id);
     Task<bool> EnqueueAsync(ITaskQueueItem<T> queueItem);
-    int AbortTimeoutTasks();
     Task<IList<T>> ShutdownAsync();
 }

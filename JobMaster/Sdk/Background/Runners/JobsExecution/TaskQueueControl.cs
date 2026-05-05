@@ -180,40 +180,6 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
-    /// <summary>
-    /// Aborts tasks that have exceeded their timeout duration
-    /// </summary>
-    /// <returns>The number of tasks that were aborted due to timeout</returns>
-    public int AbortTimeoutTasks()
-    {
-        lock (syncLock)
-        {
-            int abortedCount = 0;
-            
-            for (int i = 0; i < Tasks.Length; i++)
-            {
-                var task = Tasks[i];
-                if (task != null && task.IsTimedOut() && !task.Task.IsCompleted && !task.Task.IsCanceled && !task.Task.IsFaulted)
-                {
-                    try
-                    {
-                        task.Abort();
-                        // Remove ID from tracking when task is aborted
-                        itemIds.Remove(task.Id);
-                        abortedCount++;
-                    }
-                    catch (Exception)
-                    {
-                        // Log the exception if needed, but continue processing other tasks
-                        // The task will be cleaned up in the next DeallocateCompletedTasks call
-                    }
-                }
-            }
-            
-            return abortedCount;
-        }
-    }
-    
     public async Task<IList<T>> ShutdownAsync()
     {
         IList<T> result = new List<T>();
@@ -243,7 +209,6 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
                 }
                 
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
-                AbortTimeoutTasks();
             }
             
             tasksToStop = tasksToStop.Where(x => !x.Task.IsCompleted || !x.Task.IsCanceled || !x.Task.IsFaulted).ToList();

@@ -11,6 +11,7 @@ public enum JobMasterJobStatus
     Failed = 7,
     Cancelled = 8,
     Aborted = 9,
+    Onboarded = 10,
 }
 
 public static class JobMasterJobStatusUtil
@@ -29,5 +30,5 @@ public static class JobMasterJobStatusUtil
         };
     
     public static IList<JobMasterJobStatus> GetBucketStatuses() => 
-        new List<JobMasterJobStatus> { JobMasterJobStatus.InBucket, JobMasterJobStatus.Queued };
+        new List<JobMasterJobStatus> { JobMasterJobStatus.InBucket, JobMasterJobStatus.Onboarded, JobMasterJobStatus.Queued };
 }

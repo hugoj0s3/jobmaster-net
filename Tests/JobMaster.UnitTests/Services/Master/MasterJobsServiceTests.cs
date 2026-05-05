@@ -77,21 +77,6 @@ public class MasterJobsServiceTests
         repo.VerifyAll();
     }
 
-    [Fact]
-    public void BulkUpdateStatus_WhenIdsEmpty_ShouldDoNothing()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
-
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
-
-        sut.BulkUpdateStatus(new List<Guid>(), JobMasterJobStatus.Succeeded, agentConnectionId: null, agentWorkerId: null, bucketId: null);
-
-        repo.Verify(x => x.BulkUpdateStatus(It.IsAny<IList<Guid>>(), It.IsAny<JobMasterJobStatus>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<IList<JobMasterJobStatus>>()), Times.Never);
-    }
-
     private static string NewClusterId() => $"c{Guid.NewGuid():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)

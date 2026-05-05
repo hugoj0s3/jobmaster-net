@@ -29,54 +29,11 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         this.capacity = capacity > 0 ? capacity : 100;
     }
 
-    public bool Contains(string id)
-    {
-        lock (syncLock)
-        {
-            return itemIds.Contains(id);
-        }
-    }
-
     public int CountAvailability()
     {
         lock (syncLock)
         {
             return capacity - holdingPen.Count;
-        }
-    }
-
-    /// <summary>
-    /// Pushes an item into the pen. Maintains chronological order via Binary Search.
-    /// Returns: true if added, false if duplicate or capacity full.
-    /// Use IsDuplicate() to distinguish between duplicate vs capacity issues.
-    /// </summary>
-    public bool Push(T item, string id, DateTime departureTime, DateTime departureDeadline)
-    {
-        lock (syncLock)
-        {
-            if (isShuttingDown) return false;
-
-            if (departureDeadline < JobMasterConstants.NowUtcWithSkewTolerance())
-            {
-                return false;
-            }
-            
-            if (itemIds.Contains(id))
-            {
-                var existingItem = this.holdingPen.Find(x => x.Id == id);
-                // replace and return true.
-                this.holdingPen.Remove(existingItem!);
-                itemIds.Remove(id);
-                DoPush(item, id, departureTime, departureDeadline);
-                    
-                return true;
-            }
-            
-            if (holdingPen.Count >= capacity)
-                return false; // Capacity full
-
-            DoPush(item, id, departureTime, departureDeadline);
-            return true;
         }
     }
 
@@ -97,39 +54,7 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         }
     }
     
-    public int Count()
-    {
-        lock (syncLock)
-        {
-            return holdingPen.Count;
-        }
-    }
-    
-    public IList<T> PruneDeadlinedItems()
-    {
-        List<T> expiredItems = new List<T>();
-
-        lock (syncLock)
-        {
-            if (isShuttingDown) return expiredItems;
-
-            // Iterating backwards to safely remove items while traversing
-            for (int i = holdingPen.Count - 1; i >= 0; i--)
-            {
-                if (holdingPen[i].DepartureDeadline < JobMasterConstants.NowUtcWithSkewTolerance())
-                {
-                    var wrapper = holdingPen[i];
-                    expiredItems.Add(wrapper.Item);
-                    itemIds.Remove(wrapper.Id);
-                    holdingPen.RemoveAt(i);
-                }
-            }
-        }
-
-        return expiredItems;
-    }
-
-    public IList<T> PruneOldDepartureItems(int limit)
+    public IList<T> PullPending(int limit)
     {
         List<T> pruneItems = new List<T>();
         lock(syncLock)
@@ -198,20 +123,6 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         return result;
     }
     
-    /// <summary>
-    /// Returns the earliest departure time among buffered items, if any.
-    /// </summary>
-    public DateTime? PeekNextDepartureTime()
-    {
-        lock (syncLock)
-        {
-            if (holdingPen.Count == 0)
-                return null;
-
-            return holdingPen[0].DepartureTime;
-        }
-    }
-
     public IList<T> Shutdown()
     {
         lock (syncLock)

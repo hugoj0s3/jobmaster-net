@@ -23,8 +23,8 @@ internal interface IMasterBucketsService : IJobMasterClusterAwareService
     Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null);
     IList<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null);
     
-    Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria);
-    IList<BucketModel> Query(MasterBucketQueryCriteria criteria);
+    Task<IList<BucketModel>> QueryAsync(MasterBucketQueryCriteria criteria, TimeSpan? allowedDiscrepancy = null);
+    IList<BucketModel> Query(MasterBucketQueryCriteria criteria, TimeSpan? allowedDiscrepancy = null);
     
     Task<int> CountAsync(MasterBucketQueryCriteria criteria);
     int Count(MasterBucketQueryCriteria criteria);

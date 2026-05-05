@@ -8,7 +8,7 @@ internal class JobMasterInMemoryKeys : JobMasterKeyManager
 
     public string AgentConnections => CreateKey("AgentConnections");
 
-    public string BucketsAvailableForJobs() => CreateKey("BucketsAvailableForJobs");
+    public string AllBuckets() => CreateKey("AllBuckets");
     public string Bucket(string id) => CreateKey($"Bucket:{id}");
     
     public string AllAgentsWorkers() => CreateKey("AllAgentsWorkers");

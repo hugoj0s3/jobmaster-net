@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -14,6 +13,7 @@ using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Background.ScanPlans;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
@@ -34,7 +34,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private FallbackBucketJobsOnboardingSource? fallbackOnboardingSource;
     private BucketModel? fallbackBucket;
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
-    private static readonly ConcurrentDictionary<string, DateTime> BucketAssignFirstFailure = new();
+    private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
 
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(5);
 
@@ -105,21 +105,32 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
             JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
-        var jobIdByBucketModel = new Dictionary<Guid, BucketModel>();
-
-        // Assign buckets first because the cache, assign buckets in separate foreach loop.
+        var bucketAssignments = new Dictionary<Guid, BucketModel>();
         foreach (var job in new List<JobRawModel>(jobs))
         {
-           var result = await HandleJobBucketAssignmentAsync(job, jobIdByBucketModel, ct);
-           if (result == HandleJobBucketAssignmentResult.Canceled)
-           {
-               break;
-           }
-           
-           if (result == HandleJobBucketAssignmentResult.Failed || result == HandleJobBucketAssignmentResult.FallbackAssignment)
-           {
-               jobs.Remove(job);
-           }
+            var (result, bucket) = await HandleJobBucketAssignmentAsync(job, ct);
+            if (result == HandleJobBucketAssignmentResult.Canceled)
+            {
+                break;
+            }
+
+            if (result == HandleJobBucketAssignmentResult.Failed ||
+                result == HandleJobBucketAssignmentResult.FallbackAssignment)
+            {
+                jobs.Remove(job);
+            }
+            
+            if (bucket != null)
+            {
+                bucketAssignments[job.Id] = bucket;
+            }
+        }
+
+        var updatedJobs = new List<JobRawModel>();
+        foreach (var partition in jobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        {
+            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList());
+            updatedJobs.AddRange(updated);
         }
 
         var timeRemaining = cutOffTime - DateTime.UtcNow;
@@ -130,6 +141,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             CancellationToken = batchTimeoutCts.Token,
             MaxDegreeOfParallelism = 10,
         };
+        
         await JobMasterParallelUtil.ForEachAsync(
             jobs, 
             parallelOptions, 
@@ -141,8 +153,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                     return;
                 }
 
-                await DispatchJobToBucketAsync(jobIdByBucketModel, job);
+                await DispatchJobToBucketAsync(bucketAssignments, job);
             });
+
+        logger.Debug(
+            $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
+            JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
         masterDistributedLockerService.ReleaseLock(lockKeys.BucketAssignerLock(bucketAssignerSlot ), lockToken);
 
@@ -188,8 +204,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
         try
         {
-            await BackgroundAgentWorker.WorkerClusterOperations.AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(
-                this.BackgroundAgentWorker, job, bucket);
+            await BackgroundAgentWorker.WorkerClusterOperations.DispatchJobToBucketAsync(this.BackgroundAgentWorker, job, bucket);
         }
         catch (Exception e)
         {
@@ -221,9 +236,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         return lastScanPlanResult;
     }
     
-    private async Task<HandleJobBucketAssignmentResult> HandleJobBucketAssignmentAsync(
-        JobRawModel job, 
-        Dictionary<Guid, BucketModel> jobIdByBucketModel, 
+    private async Task<(HandleJobBucketAssignmentResult, BucketModel?)> HandleJobBucketAssignmentAsync(
+        JobRawModel job,
         CancellationToken ct)
     {
         if (job.Status != JobMasterJobStatus.OnMaster)
@@ -231,38 +245,34 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             logger.Error($"Job {job.Id} is not held on master. This is not allowed.", JobMasterLogSubjectType.Job,
                 job.Id);
             masterJobsService.ReleasePartitionLock(job.Id);
-            return HandleJobBucketAssignmentResult.Failed;
+            return (HandleJobBucketAssignmentResult.Failed, null);
         }
 
         if (ct.IsCancellationRequested)
         {
-            return HandleJobBucketAssignmentResult.Canceled;
+            return (HandleJobBucketAssignmentResult.Canceled, null);
         }
 
         var bucket = await GetBucketAvailableForJobAsync(job);
         if (bucket is null)
-        { 
-            await HandleJobFallbackAssignmentAsync(job);
-            return HandleJobBucketAssignmentResult.FallbackAssignment;
-        }
-
-        BucketAssignFirstFailure.TryRemove(BucketFailureKey(job), out _);
-        
-        if (!jobIdByBucketModel.TryGetValue(job.Id, out _))
         {
-            jobIdByBucketModel.Add(job.Id, bucket!);
+            await HandleJobFallbackAssignmentAsync(job);
+            return (HandleJobBucketAssignmentResult.FallbackAssignment, null);
         }
 
-        return HandleJobBucketAssignmentResult.Success;
+        bucketAssignFirstFailure.Remove(BucketFailureKey(job));
+        job.AssignToBucket(bucket);
+
+        return (HandleJobBucketAssignmentResult.Success, bucket);
     }
 
     private async Task HandleJobFallbackAssignmentAsync(JobRawModel job)
     {
         var bucketKey = BucketFailureKey(job);
-        if (!BucketAssignFirstFailure.TryGetValue(bucketKey, out var firstFailure))
+        if (!bucketAssignFirstFailure.TryGetValue(bucketKey, out var firstFailure))
         {
             firstFailure = DateTime.UtcNow;
-            BucketAssignFirstFailure.TryAdd(bucketKey, firstFailure);
+            bucketAssignFirstFailure[bucketKey] = firstFailure;
         }
 
         var elapsed = DateTime.UtcNow - firstFailure;

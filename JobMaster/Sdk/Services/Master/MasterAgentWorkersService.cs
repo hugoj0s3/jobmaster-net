@@ -98,8 +98,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
     {
         var worker = await CreateValidatedWorkerAsync(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
         var workerRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker);
-        await masterGenericRecordRepository.InsertAsync(workerRecord);
         NotifyChanges();
+        await masterGenericRecordRepository.InsertAsync(workerRecord);
         
         return (worker.Id, HostId.Recover(worker.HostDisplayName, worker.HostId));
     }
@@ -117,6 +117,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             throw new InvalidOperationException($"Worker with id {workerId} is in use and cannot be deleted.");
         }
         
+        NotifyChanges();
         masterGenericRecordRepository.Delete(MasterGenericRecordGroupIds.AgentWorker, workerId);
     }
 
@@ -133,6 +134,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             throw new InvalidOperationException($"Worker with id {workerId} is in use and cannot be deleted.");
         }
         
+        NotifyChanges();
         await masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentWorker, workerId);
     }
 
@@ -158,8 +160,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             StopGracePeriod = wokder.StopGracePeriod,
         };
        
-        await masterGenericRecordRepository.UpsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
         NotifyChanges();
+        await masterGenericRecordRepository.UpsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
     }
 
     private IList<AgentWorkerRecord> GetAllAgentWorkers(bool useCache = true)
@@ -179,7 +181,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             factory: FetchAllAgentWorkers,
             allowedDiscrepancy: JobMasterConstants.AgentWorkersAllowDiscrepancy,
             valueFactoryLockDuration: TimeSpan.FromSeconds(2),
-            durationToExpire: TimeSpan.FromMinutes(5)));
+            durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
     private async Task<IList<AgentWorkerRecord>> GetAllAgentWorkersAsync(bool useCache = true)
@@ -199,7 +201,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             factory: FetchAllAgentWorkersAsync,
             allowedDiscrepancy: JobMasterConstants.AgentWorkersAllowDiscrepancy,
             valueFactoryLockDuration: TimeSpan.FromSeconds(2),
-            durationToExpire: TimeSpan.FromMinutes(5)));
+            durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
     private IList<AgentWorkerRecord> FetchAllAgentWorkers()

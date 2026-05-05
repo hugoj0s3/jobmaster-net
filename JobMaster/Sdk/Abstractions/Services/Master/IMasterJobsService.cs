@@ -22,5 +22,7 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task<bool> CheckVersionAsync(Guid jobId, string? version);
     JobRawModel? Get(Guid jobId);
     Task<JobRawModel?> GetAsync(Guid jobId);
-    void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
+    Task BulkUpdateAsync(BulkJobUpdateRequest request);
+
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs);
 }

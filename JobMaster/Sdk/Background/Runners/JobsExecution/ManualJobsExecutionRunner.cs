@@ -82,8 +82,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             return;
         }
         
-        var countAvailability = jobExecutionEngine!.OnBoardingControl.CountAvailability();
-        
+        var countAvailability = jobExecutionEngine!.CountOnBoardingAvailability();
         if (countAvailability == 0)
         {
             return;
@@ -102,7 +101,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         // Perform queue maintenance (abort timeouts, start queued) and decide if we should skip
         foreach (var job in jobs)
         {
-            var result = await jobExecutionEngine.TryOnBoardingJobAsync(job);
+            var result = await jobExecutionEngine.TryOnBoardingJobAsync(job, forceIfNoCapacity: true);
             logger.Debug($"JobId {job.Id} OnBoardingResult {result} ", JobMasterLogSubjectType.Job, job.Id);
             if (result == OnBoardingResult.Accepted)
             {
@@ -120,7 +119,12 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             if (result == OnBoardingResult.MovedToMaster)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+                continue;
             }
+            
+            logger.Error($"Unexpected OnBoardingResult. JobId {job.Id} OnBoardingResult {result}", JobMasterLogSubjectType.Job, job.Id);
+            job.MarkAsHeldOnMaster();
+            await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpsertAsync(job));
         }
     }
 

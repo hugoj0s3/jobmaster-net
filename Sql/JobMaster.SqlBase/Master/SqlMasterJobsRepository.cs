@@ -218,41 +218,98 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         conn.Execute(sqlText, new { ClusterId = this.ClusterConnConfig.ClusterId, JobId = jobId });
     }
 
-    public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null)
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
+
+        var t = TableName();
+        var args = new DynamicParameters();
+        args.Add("ClusterId", ClusterConnConfig.ClusterId);
+        args.Add("JobIds", request.JobIds);
+
+        var setClauses = new List<string>(request.Properties.Count + 1);
+        for (var i = 0; i < request.Properties.Count; i++)
+        {
+            var field = request.Properties[i];
+            var colName = sql.ColumnNameFor(field.Expression);
+            var paramName = $"f{i}";
+            setClauses.Add($"{colName} = @{paramName}");
+            args.Add(paramName, field.Value);
+        }
+        setClauses.Add($"{Col(x => x.Version)} = {sql.GenerateVersionSql()}");
+
+        var inIds = sql.InClauseFor(Col(x => x.Id), "@JobIds");
+        var whereSql = $"{Col(x => x.ClusterId)} = @ClusterId AND {inIds}";
+
+        if (request.ExcludeStatuses is { Count: > 0 })
+        {
+            args.Add("ExcludeStatuses", request.ExcludeStatuses);
+            var notIn = sql.InClauseFor(Col(x => x.Status), "@ExcludeStatuses");
+            whereSql += $" AND NOT ({notIn})";
+        }
+
+        var sqlText = $"UPDATE {t} SET {string.Join(", ", setClauses)} WHERE {whereSql}";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = TableName();
-            var inIds = this.sql.InClauseFor(Col(x => x.Id), "@JobIds");
-            var where = inIds;
-            var hasExclude = excludeStatuses != null && excludeStatuses.Count > 0;
-            if (hasExclude)
-            {
-                var notInStatuses = this.sql.InClauseFor(Col(x => x.Status), "@NegateStatuses");
-                where += $" AND NOT ({notInStatuses})";
-            }
-
-            var sqlText =
-                $"UPDATE {t} SET {Col(x => x.Status)} = @Status, {Col(x => x.AgentConnectionId)} = @AgentConnectionId, {Col(x => x.AgentWorkerId)} = @AgentWorkerId, {Col(x => x.BucketId)} = @BucketId, {Col(x => x.Version)} = {sql.GenerateVersionSql()} WHERE {where}";
-            var args = new
-            {
-                JobIds = jobIds,
-                Status = status,
-                AgentConnectionId = agentConnectionId,
-                AgentWorkerId = agentWorkerId,
-                BucketId = bucketId,
-                NegateStatuses = hasExclude ? excludeStatuses!.Select(s => (int)s).ToList() : null
-            };
-            conn.Execute(sqlText, args, trans);
+            await conn.ExecuteAsync(sqlText, args, trans);
             trans.Commit();
         }
-        catch (Exception)
+        catch
         {
             trans.SafeRollback();
             throw;
         }
+    }
+
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
+
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+        var setClause = $"{UpdateSetClauseWithoutVersion()}, {Col(x => x.Version)} = @Version";
+        var sqlText = $"UPDATE {t} SET {setClause} WHERE {cClusterId} = @ClusterId AND {cId} = @Id";
+
+        var newVersions = new Dictionary<Guid, string>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            newVersions[job.Id] = Guid.NewGuid().ToString("N").ToLowerInvariant();
+        }
+
+        var updated = new List<JobRawModel>(jobs.Count);
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            foreach (var job in jobs)
+            {
+                var rec = JobRawModel.ToPersistence(job);
+                rec.Version = newVersions[job.Id];
+                var rowsAffected = await conn.ExecuteAsync(sqlText, rec, trans);
+                if (rowsAffected > 0)
+                {
+                    updated.Add(job);
+                }
+            }
+            trans.Commit();
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+
+        foreach (var job in updated)
+        {
+            job.SetVersion(newVersions[job.Id]);
+        }
+
+        return updated;
     }
 
     public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
@@ -618,6 +675,13 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         {
             where.Add($"j.{Col(x => x.WorkerLane)} = @WorkerLane");
             args.Add("WorkerLane", c.WorkerLane);
+        }
+
+        if (c.ExcludeBucketIds is { Count: > 0 })
+        {
+            var notInClause = sql.InClauseFor($"j.{Col(x => x.BucketId)}", "@ExcludeBucketIds");
+            where.Add($"NOT ({notInClause})");
+            args.Add("ExcludeBucketIds", c.ExcludeBucketIds.ToArray());
         }
 
         var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.JobMetadata);

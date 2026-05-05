@@ -7,4 +7,5 @@ internal enum OnBoardingResult
     TooEarly,
     Invalid,
     Cancelled,
+    Busy
 }

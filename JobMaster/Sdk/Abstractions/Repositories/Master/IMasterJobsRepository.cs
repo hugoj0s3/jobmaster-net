@@ -26,7 +26,9 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     
     void ReleasePartitionLock(Guid jobId);
     
-    void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
+    Task BulkUpdateAsync(BulkJobUpdateRequest request);
+    
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels);
 
     Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);

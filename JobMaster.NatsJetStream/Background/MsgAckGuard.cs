@@ -2,6 +2,7 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using NATS.Client.JetStream;
+using JobMaster.NatsJetStream;
 
 namespace JobMaster.NatsJetStream.Background;
 
@@ -24,7 +25,7 @@ internal sealed class MsgAckGuard
     {
         if (Outcome != AckOutcome.None) return false;
         
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
         await Msg.AckAsync(cancellationToken: cts.Token);
         Outcome = AckOutcome.Ack;
         ClearFailure(messageId);
@@ -36,7 +37,7 @@ internal sealed class MsgAckGuard
     {
         if (Outcome != AckOutcome.None) return false;
         
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
         await Msg.NakAsync(delay: delay, cancellationToken: cts.Token);
         Outcome = AckOutcome.Nak;
         
@@ -60,7 +61,7 @@ internal sealed class MsgAckGuard
         };
         var delay = TimeSpan.FromSeconds(delaySeconds);
         
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
         await Msg.NakAsync(delay: delay, cancellationToken: cts.Token);
         Outcome = AckOutcome.Nak;
         
@@ -71,7 +72,7 @@ internal sealed class MsgAckGuard
     {
         if (Outcome != AckOutcome.None) return false;
         
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
         await Msg.AckTerminateAsync(cancellationToken: cts.Token);
         Outcome = AckOutcome.Term;
         

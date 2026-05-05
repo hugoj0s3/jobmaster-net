@@ -175,14 +175,16 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return job.Version == expectedVersion;
     }
 
-    public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? negateStatuses = null)
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
-        if (jobIds.Count <= 0)
-        {
-            return;
-        }
-        
-        operationThrottler.Exec(() => { masterJobsRepository.BulkUpdateStatus(jobIds, status, agentConnectionId, agentWorkerId, bucketId, negateStatuses); return true; });
+        if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
+        await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
+    }
+
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
     }
 
     private void DoUpsert(JobRawModel jobRaw) => masterJobsRepository.Upsert(jobRaw);

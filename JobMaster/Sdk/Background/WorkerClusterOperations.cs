@@ -51,34 +51,29 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         this.lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
 
-    public async Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
+    public async Task DispatchJobToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
     {
-        if (jobRaw.Status != JobMasterJobStatus.OnMaster && 
+        if (jobRaw.Status != JobMasterJobStatus.OnMaster &&
             jobRaw.Status != JobMasterJobStatus.PendingSave)
         {
             return;
         }
-        
-        var originalStatus = jobRaw.Status;
-        jobRaw.AssignToBucket(bucket);
 
-        await masterJobsService.UpsertAsync(jobRaw);
-        
         try
         {
             // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
             var engine = backgroundAgentWorker.GetEngine(bucket.Id);
-            if (engine != null && 
-                jobRaw.IsOnBoarding() && 
-                engine.OnBoardingControl.CountAvailability() > 0)
+            if (engine != null &&
+                jobRaw.IsOnBoarding() &&
+                engine.HasOnBoardingAvailability())
             {
-                var result = await engine.TryOnBoardingJobAsync(jobRaw);
+                var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                 if (result == OnBoardingResult.Accepted)
                 {
                     logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return;
                 }
-                
+
                 if (result == OnBoardingResult.MovedToMaster)
                 {
                     logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
@@ -90,15 +85,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     logger.Warn($"Short-circuit failed job or recurring scheduled was cancelled", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return;
                 }
-                
+
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
+                jobRaw.MarkAsHeldOnMaster();
+                await masterJobsService.UpsertAsync(jobRaw);
+                
+                return;
             }
-            
+
             await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
         }
         catch (Exception ex)
         {
-            logger.Error($"Failed to add job {jobRaw.Id} to processing for bucket {bucket.Id}. Reverting to {originalStatus}", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+            logger.Error($"Failed to dispatch job {jobRaw.Id} to bucket {bucket.Id}.", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
             jobRaw.MarkAsHeldOnMaster();
             await masterJobsService.UpsertAsync(jobRaw);
             throw;

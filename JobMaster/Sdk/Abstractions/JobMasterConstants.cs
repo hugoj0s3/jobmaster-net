@@ -70,6 +70,13 @@ internal static class JobMasterConstants
     /// Jobs must be processed within this time from their scheduled time or current time (whichever is later).
     /// </summary>
     public static readonly TimeSpan JobProcessDeadlineDuration = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Combined early-warning buffer used when evaluating whether a job's ProcessDeadline is approaching.
+    /// Incorporates <see cref="ClockSkewPadding"/> plus a 1-minute lead time so callers detect expiry
+    /// before <c>HeldOnMasterDeadlineTimeoutJobsRunner</c> acquires the job, avoiding version conflicts.
+    /// </summary>
+    public static readonly TimeSpan ProcessDeadlineEarlyWarning = ClockSkewPadding.Add(TimeSpan.FromMinutes(1));
     public static readonly TimeSpan OnBoardingWindow = TimeSpan.FromSeconds(30);
     
     /// <summary>
@@ -79,6 +86,12 @@ internal static class JobMasterConstants
     public static readonly TimeSpan MinDelayWhenOnboardingBusy = TimeSpan.FromSeconds(15);
 
     public static readonly TimeSpan NoBucketFallbackThreshold = TimeSpan.FromMinutes(2.5);
+
+    /// <summary>
+    /// Default TTL for sentinel-backed cache entries. Sentinel invalidation handles freshness;
+    /// this is just a safety-net expiry to prevent stale entries if a notification is ever missed.
+    /// </summary>
+    public static readonly TimeSpan DefaultCacheEntryExpiry = TimeSpan.FromHours(8);
 
     public static DateTime NowUtcWithSkewTolerance()
     {
