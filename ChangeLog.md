@@ -1,4 +1,63 @@
 # ChangeLog
+## 0.0.7-alpha
+### Added
+- **`Onboarded` job status** (`= 10`, between `InBucket` and `Queued`): marks a job that
+  has been accepted into a bucket's onboarding buffer and had its `ProcessDeadline` set to
+  `UtcNow` as an instant recovery signal — if the bucket goes Lost, the deadline runner
+  picks it up immediately without waiting for a natural expiry.
+
+- **`BulkJobUpdateRequest.HeldOnMaster(ids)` factory**: single-call shorthand for the
+  standard HeldOnMaster bulk update (clears `Status`, `AgentConnectionId`, `AgentWorkerId`,
+  `BucketId`, `ProcessDeadline`, `PartitionLockId`, `PartitionLockExpiresAt`). Adopted
+  across all drain and deadline paths.
+
+- **`JobMasterConstants.DefaultCacheEntryExpiry` (`8h`)**: single source of truth for
+  sentinel-backed cache TTLs. Sentinel invalidation handles freshness; this is the
+  safety-net expiry in case a notification is missed. Applied to `MasterBucketService`,
+  `MasterAgentWorkersService`, `MasterClusterConfigurationService`, and
+  `JobMasterInMemoryCache` default.
+
+- **`ExcludeBucketIds` SQL support**: `SqlMasterJobsRepository.BuildWhere` now generates a
+  `NOT IN` clause for `ExcludeBucketIds`, allowing runners to exclude jobs by bucket at the
+  DB level.
+
+- **NATS JetStream busy-retry**: when onboarding is full the runner NAKs with increasing
+  delays (30s → 75s → 3 min) tracked via an in-memory counter (avoids `NumDelivered` noise
+  from TooEarly redeliveries). After 3 retries the job is redirected to master.
+
+### Changes
+- **Deadline runner is now a safety net only**: `HeldOnMasterDeadlineTimeoutJobsRunner`
+  excludes jobs whose bucket is Active or Completing via `ExcludeBucketIds`. The drain
+  path inside the engine is the primary mechanism; the deadline runner only intervenes when
+  a bucket is lost or the drain fails.
+
+- **Unified `AllBuckets` cache**: `MasterBucketService` now uses a single sentinel-backed
+  `AllBuckets` cache for both `Query`/`QueryAsync` (when `allowedDiscrepancy` is provided)
+  and `SelectBucketForJob`. `NotifyChanges` is always called before the DB operation, and
+  both `AllBuckets()` and `Bucket(id)` sentinel keys are notified on every mutation.
+  `IMasterBucketsService.Query`/`QueryAsync` now accept an optional `allowedDiscrepancy`
+  parameter.
+
+- **`MasterAgentWorkersService`**: `NotifyChanges` moved before DB operations in all
+  mutating methods; missing notifications added to both `Delete` variants.
+
+- **`JobsExecutionEngine` refactor**: extracted `FlushAuthorizedJobsAsync`,
+  `EnqueueJobsAsync`, and `PullPendingJobsAsync` from `PulseAsync`; moved `shouldSkip`
+  check after the Completing drain block; removed stale `ExceedProcessDeadline` guard
+  inside `ExecuteJobAsync` (with `ProcessDeadline = UtcNow` set by `Onboard()` it would
+  drop every job); `FlushToMasterAsync` uses `BulkJobUpdateRequest.HeldOnMaster`.
+
+- **`ManualDrainProcessingJobsRunner`**: uses `BulkJobUpdateRequest.HeldOnMaster`.
+
+- **`IOnBoardingControl` cleanup**: removed unused `Contains`, `Push`, `Count`,
+  `PruneDeadlinedItems`, and `GetNextDepartureTime`; renamed `PruneOldDepartureItems` →
+  `PullPending`.
+
+- **`ITaskQueueControl` cleanup**: removed `AbortTimeoutTasks()` — superseded by
+  `CancelAfter(Timeout)` in `TaskQueueItem.Start()`.
+
+- **`JobRawModel`**: added `Onboard()` method; renamed `Enqueued()` → `Enqueue()`.
+
 ## 0.0.6-alpha
 ### Added
 - **TriggerSourceTypes filter on JobQueryCriteria**
