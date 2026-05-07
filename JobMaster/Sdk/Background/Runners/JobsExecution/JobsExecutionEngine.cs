@@ -151,7 +151,10 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         if (shouldFlush)
         {
             await FlushToOnBoardingControlAsync();
-            lastFlushedAtUtc = DateTime.UtcNow;
+            lock (jobsToFlushLock)
+            {
+                lastFlushedAtUtc = DateTime.UtcNow;
+            }
         }
 
         TaskQueueControl.StartQueuedTasksIfHasSlotAvailable();

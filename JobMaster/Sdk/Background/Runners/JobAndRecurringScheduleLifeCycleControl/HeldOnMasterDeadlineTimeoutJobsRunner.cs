@@ -107,7 +107,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
                 countJobs,
                 workerCount,
                 BackgroundAgentWorker.TransferBatchSize,
-                TimeSpan.FromMinutes(2),
+                JobMasterConstants.JobProcessDeadlineDuration,
                 lockerLane:1);
         }
         jobQueryCriteria.CountLimit = lastScanPlanResult.BatchSize;

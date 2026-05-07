@@ -119,7 +119,7 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = bucketId;
         HostId = hostId;
         Status = JobMasterJobStatus.InBucket;
-        RefreshDeadline();
+        RefreshDeadline(JobMasterConstants.JobProcessDeadlineDuration);
     }
 
     public void AssignSavePendingJobToBucket(BucketModel bucketModel) {
@@ -149,10 +149,6 @@ internal class JobRawModel : JobMasterBaseModel
         }
 
         Status = JobMasterJobStatus.Onboarded;
-        // Set deadline to now so HeldOnMasterDeadlineTimeoutJobsRunner can immediately recover this job
-        // if the bucket goes Lost. While the bucket is Active or Completing the runner won't touch it,
-        // but once the bucket is gone this acts as an instant recovery signal.
-        ProcessDeadline = DateTime.UtcNow;
         return true;
     }
 
@@ -165,22 +161,6 @@ internal class JobRawModel : JobMasterBaseModel
 
         Status = JobMasterJobStatus.Queued;
         return true;
-    }
-    
-    public void RefreshDeadline(TimeSpan? processDeadlineDuration = null)
-    {
-        if (!processDeadlineDuration.HasValue)
-        {
-            processDeadlineDuration = JobMasterConstants.JobProcessDeadlineDuration;
-        }
-        
-        var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration.Value);
-        if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)
-        {
-            jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration.Value);
-        }
-        
-        this.ProcessDeadline = jobProcessDeadline;
     }
     
     public void MarkAsHeldOnMaster()
@@ -373,4 +353,15 @@ internal class JobRawModel : JobMasterBaseModel
 
     public static JobPersistenceRecord ToPersistence(JobRawModel m)
         => JobConvertUtil.ToPersistence(m);
+    
+    private void RefreshDeadline(TimeSpan processDeadlineDuration)
+    {
+        var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration);
+        if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)
+        {
+            jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration);
+        }
+        
+        this.ProcessDeadline = jobProcessDeadline;
+    }
 }

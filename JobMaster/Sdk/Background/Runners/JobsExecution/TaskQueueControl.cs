@@ -196,23 +196,29 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
             
         await Task.Delay(TimeSpan.FromSeconds(1));
 
-        var tasksToStop = Tasks.Where(x => x is not null).Select(x => x!).Where(x => !x!.Task.IsCompleted || !x!.Task.IsCanceled || !x!.Task.IsFaulted).ToList();
+        ITaskQueueItem<T>[] taskSnapshot;
+        lock (syncLock)
+        {
+            taskSnapshot = Tasks.Where(x => x is not null).Select(x => x!).ToArray();
+        }
+
+        var tasksToStop = taskSnapshot.Where(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted).ToList();
         if (tasksToStop.Count > 0)
         {
             var timeoutAt = DateTime.UtcNow.AddSeconds(5);
-            while(tasksToStop.Any(x => !x.Task.IsCompleted || !x.Task.IsCanceled || !x.Task.IsFaulted))
+            while (tasksToStop.Any(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted))
             {
                 if (DateTime.UtcNow >= timeoutAt)
                 {
                     // Timeout reached, stop waiting for tasks to complete
                     break;
                 }
-                
+
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
             }
-            
-            tasksToStop = tasksToStop.Where(x => !x.Task.IsCompleted || !x.Task.IsCanceled || !x.Task.IsFaulted).ToList();
-            
+
+            tasksToStop = tasksToStop.Where(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted).ToList();
+
             if (tasksToStop.Count > 0)
             {
                 tasksToStop.ForEach(x => x?.Dispose());

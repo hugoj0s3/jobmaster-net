@@ -165,7 +165,7 @@ public class MasterBucketsServiceTests
         dispatcher.Verify(x => x.CreateBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == $"{clusterId}:agent"), created.Id), Times.Once);
 
         var keys = new JobMasterSentinelKeys(clusterId);
-        sentinel.Verify(x => x.NotifyChanges(keys.BucketsAvailableForJobs()), Times.Once);
+        sentinel.Verify(x => x.NotifyChanges(keys.AllBuckets()), Times.Once);
         sentinel.Verify(x => x.NotifyChanges(keys.Bucket(created.Id)), Times.Once);
     }
 
@@ -339,6 +339,17 @@ public class MasterBucketsServiceTests
 
         // Force cache miss
         cache.Setup(x => x.Get<List<BucketModel>>(It.IsAny<string>())).Returns((JobMasterInMemoryCacheItem<List<BucketModel>>?)null);
+        cache.Setup(x => x.GetOrSet(
+                It.IsAny<string>(),
+                It.IsAny<Func<List<BucketModel>>>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<TimeSpan?>()))
+            .Returns<string, Func<List<BucketModel>>, TimeSpan?, TimeSpan?>((key, factory, _, __) =>
+            {
+                var value = factory();
+                cache.Object.Set(key, value, null);
+                return new JobMasterInMemoryCacheItem<List<BucketModel>>(DateTime.UtcNow, DateTime.UtcNow.AddHours(8), value);
+            });
 
         var b1 = new BucketModel(clusterId)
         {
@@ -406,8 +417,8 @@ public class MasterBucketsServiceTests
         selected!.Id.Should().Be("b1");
 
         cache.Verify(x => x.Set(
-            new JobMasterInMemoryKeys(clusterId).BucketsAvailableForJobs(),
-            It.Is<List<BucketModel>>(lst => lst.Select(x => x.Id).OrderBy(x => x).SequenceEqual(new[] { "b1", "b3" })),
+            new JobMasterInMemoryKeys(clusterId).AllBuckets(),
+            It.Is<List<BucketModel>>(lst => lst.Select(x => x.Id).OrderBy(x => x).SequenceEqual(new[] { "b1", "b2", "b3" })),
             null), Times.Once);
 
         selector.Verify(x => x.Select(It.Is<IList<BucketModel>>(lst => lst.Count == 1 && lst[0].Id == "b1")), Times.Once);
@@ -432,6 +443,17 @@ public class MasterBucketsServiceTests
 
         // Force cache miss
         cache.Setup(x => x.Get<List<BucketModel>>(It.IsAny<string>())).Returns((JobMasterInMemoryCacheItem<List<BucketModel>>?)null);
+        cache.Setup(x => x.GetOrSet(
+                It.IsAny<string>(),
+                It.IsAny<Func<List<BucketModel>>>(),
+                It.IsAny<TimeSpan?>(),
+                It.IsAny<TimeSpan?>()))
+            .Returns<string, Func<List<BucketModel>>, TimeSpan?, TimeSpan?>((key, factory, _, __) =>
+            {
+                var value = factory();
+                cache.Object.Set(key, value, null);
+                return new JobMasterInMemoryCacheItem<List<BucketModel>>(DateTime.UtcNow, DateTime.UtcNow.AddHours(8), value);
+            });
 
         var b1 = new BucketModel(clusterId)
         {
@@ -499,8 +521,8 @@ public class MasterBucketsServiceTests
         selected!.Id.Should().Be("b1");
 
         cache.Verify(x => x.Set(
-            new JobMasterInMemoryKeys(clusterId).BucketsAvailableForJobs(),
-            It.Is<List<BucketModel>>(lst => lst.Select(x => x.Id).OrderBy(x => x).SequenceEqual(new[] { "b1", "b3" })),
+            new JobMasterInMemoryKeys(clusterId).AllBuckets(),
+            It.Is<List<BucketModel>>(lst => lst.Select(x => x.Id).OrderBy(x => x).SequenceEqual(new[] { "b1", "b2", "b3" })),
             null), Times.Once);
 
         selector.Verify(x => x.Select(It.Is<IList<BucketModel>>(lst => lst.Count == 1 && lst[0].Id == "b1")), Times.Once);
