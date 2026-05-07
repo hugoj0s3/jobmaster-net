@@ -37,7 +37,7 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         }
     }
 
-    public void ForcePush(T item, string id, DateTime departureTime, DateTime departureDeadline)
+    public void Push(T item, string id, DateTime departureTime)
     {
         lock (syncLock)
         {
@@ -50,7 +50,7 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
                 itemIds.Remove(id);
             }
 
-            DoPush(item, id, departureTime, departureDeadline);
+            DoPush(item, id, departureTime);
         }
     }
     
@@ -77,9 +77,9 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         return pruneItems;
     }
 
-    private void DoPush(T item, string itemId, DateTime departureTime, DateTime departureDeadline)
+    private void DoPush(T item, string itemId, DateTime departureTime)
     {
-        var wrapper = new ItemWrapper(item, itemId, departureTime, departureDeadline);
+        var wrapper = new ItemWrapper(item, itemId, departureTime);
                 
         // O(log n) efficiency ensures zero performance impact during high-frequency pushes.
         int index = holdingPen.BinarySearch(wrapper, new DepartureComparer());
@@ -140,15 +140,12 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         public string Id { get; set; }
         public T Item { get; set; }
         public DateTime DepartureTime { get; set; }
-        
-        public DateTime DepartureDeadline { get; set; }
 
-        public ItemWrapper(T item, string id, DateTime departureTime, DateTime departureDeadline)
+        public ItemWrapper(T item, string id, DateTime departureTime)
         {
             Id = id;
             Item = item;
             DepartureTime = departureTime;
-            DepartureDeadline = departureDeadline;
         }
     }
         

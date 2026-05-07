@@ -150,7 +150,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
         if (shouldFlush)
         {
-            await FlushAuthorizedJobsAsync();
+            await FlushToOnBoardingControlAsync();
             lastFlushedAtUtc = DateTime.UtcNow;
         }
 
@@ -222,7 +222,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         var onBoardingJobs = OnBoardingControl.Shutdown();
         var waitingJobs = await TaskQueueControl.ShutdownAsync();
 
-        var bufferedJobs = onBoardingJobs.Concat(waitingJobs).ToList();
+        List<JobRawModel> bufferedJobs;
+        lock (jobsToFlushLock)
+        {
+            bufferedJobs = onBoardingJobs.Concat(waitingJobs).Concat(jobsToFlush).ToList();
+        }
+        
         if (bufferedJobs.Count == 0)
         {
             this.logger.Info($"Graceful flush complete for {BucketId}. No buffered jobs.");
@@ -250,7 +255,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.logger.Info($"Graceful flush complete for {BucketId}. Flushed {bufferedJobs.Count} jobs.");
     }
 
-    private async Task FlushAuthorizedJobsAsync()
+    private async Task FlushToOnBoardingControlAsync()
     {
         List<JobRawModel> batch;
         lock (jobsToFlushLock)
@@ -259,6 +264,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             {
                 return;
             }
+            
             var take = Math.Min(jobsToFlush.Count, backgroundAgentWorker.BucketBufferSize);
             batch = jobsToFlush.GetRange(0, take);
             jobsToFlush.RemoveRange(0, take);
@@ -275,7 +281,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
             foreach (var job in updated)
             {
-                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt(), job.ProcessDeadline!.Value);
+                OnBoardingControl.Push(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt());
                 logger.Debug($"OnBoarding flushed: JobId={job.Id}");
             }
         }
@@ -322,7 +328,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     continue;
                 }
 
-                OnBoardingControl.ForcePush(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt(), job.ProcessDeadline!.Value);
+                OnBoardingControl.Push(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt());
             }
         }
     }
