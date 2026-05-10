@@ -7,7 +7,7 @@ using JobMaster.Sdk.Abstractions.Background;
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
 /// <summary>
-/// Information about a task for monitoring and debugging purposes
+/// A point-in-time snapshot of a single running slot, used for monitoring and debugging.
 /// </summary>
 internal class TaskInfo
 {
@@ -19,25 +19,64 @@ internal class TaskInfo
     public TaskStatus TaskStatus { get; set; }
 }
 
+/// <summary>
+/// Concurrent execution manager for jobs inside a single bucket.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Maintains two layers:
+/// <list type="bullet">
+///   <item><term>Running slots (<c>Tasks[]</c>)</term>
+///   <description>Fixed-size array sized by priority and parallelism factor (see <see cref="Create"/>).
+///   Each slot holds one actively executing <see cref="ITaskQueueItem{T}"/>. Slots are freed lazily
+///   the next time <see cref="StartQueuedTasksIfHasSlotAvailable"/> is called.</description></item>
+///   <item><term>Waiting queue (<c>WaitingQueue</c>)</term>
+///   <description>Bounded FIFO queue (capacity = run slots × 5). Jobs sit here until a running slot
+///   opens up. <see cref="CountAvailability"/> measures remaining space in this queue, not in the
+///   running slots.</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// This type is <b>thread-safe</b>: all state mutations are guarded by an internal lock.
+/// </para>
+/// </remarks>
+/// <typeparam name="T">The job value type stored in each queue item.</typeparam>
 internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
 {
     private ITaskQueueItem<T>?[] Tasks { get; set; }
-    
+
     private Queue<ITaskQueueItem<T>> WaitingQueue { get; set; } = new();
-    
+
     private readonly HashSet<string> itemIds = new HashSet<string>();
-    
+
     public int WaitingQueueCapacity { get; private set; }
-    
+
     private readonly object syncLock = new();
     private readonly Func<T, bool>? preEnqueueAction;
-    
-    private bool isShuttingDown = false;
-    
 
+    private bool isShuttingDown = false;
+
+
+    /// <summary>
+    /// Creates a <see cref="TaskQueueControl{T}"/> sized for the given <paramref name="priority"/>
+    /// and optionally scaled by <paramref name="factor"/>.
+    /// </summary>
+    /// <param name="priority">
+    /// Determines the base number of concurrent running slots:
+    /// <c>VeryLow=2, Low=3, Medium=4, High=5, Critical=6</c>.
+    /// </param>
+    /// <param name="factor">
+    /// Multiplier applied to the base run capacity (rounded to nearest integer, minimum 1).
+    /// Defaults to <c>1.0</c> (no scaling). The waiting queue capacity is always
+    /// <c>runCapacity × 5</c>.
+    /// </param>
+    /// <param name="preEnqueueAction">
+    /// Optional callback invoked with the item's value just before it is added to the waiting queue.
+    /// Return <see langword="false"/> to reject the item. Not called for duplicate IDs.
+    /// </param>
     public static TaskQueueControl<T> Create(
-        JobMasterPriority priority, 
-        double factor = 1, 
+        JobMasterPriority priority,
+        double factor = 1,
         Func<T, bool>? preEnqueueAction = null)
     {
         var runCapacity = priority switch
@@ -66,6 +105,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         WaitingQueueCapacity = waitingQueueCapacity;
     }
     
+    /// <inheritdoc/>
     public bool StartQueuedTasksIfHasSlotAvailable()
     {
         lock (syncLock)
@@ -104,6 +144,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountRunning()
     {
         lock (syncLock)
@@ -113,6 +154,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountAvailability()
     {
         lock (syncLock)
@@ -122,6 +164,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountWaiting()
     {
         lock (syncLock)
@@ -131,6 +174,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public bool Contains(string id)
     {
         lock (syncLock)
@@ -139,6 +183,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public bool Enqueue(ITaskQueueItem<T> queueItem)
     {
         lock (syncLock)
@@ -170,6 +215,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public async Task<IList<T>> ShutdownAsync()
     {
         IList<T> result = new List<T>();
@@ -233,6 +279,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public IList<string> GetIds()
     {
         lock (syncLock)
@@ -272,6 +319,11 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <summary>
+    /// Disposes all items currently held in running slots and clears all internal state.
+    /// Does not wait for running tasks to finish; use <see cref="ShutdownAsync"/> for a
+    /// graceful drain before calling this.
+    /// </summary>
     public void Dispose()
     {
         lock (syncLock)
