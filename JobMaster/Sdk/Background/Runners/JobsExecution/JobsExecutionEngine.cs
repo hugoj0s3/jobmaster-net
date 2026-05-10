@@ -884,7 +884,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// Computes the postpone duration for deadline-exceeded jobs that are safe to defer.
     /// In error mode (a recent <see cref="PulseAsync"/> failure within <see cref="ErrorHoldDuration"/>)
     /// returns <see cref="MinPostponeDuration"/> to retry quickly without overwhelming a struggling engine.
-    /// In normal mode the average running job timeout is added as a buffer so the job is not recalled
+    /// In normal mode the average running job timeout * PostponeFactor is added as a buffer so the job is not recalled
     /// before the current cohort is likely to have finished.
     /// Falls back to <see cref="MinPostponeDuration"/> when nothing is currently running.
     /// </summary>
@@ -901,7 +901,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             return MinPostponeDuration;
         }
 
-        var avgTicks = (long)runningTimeouts.Average(t => t.Ticks);
+        var avgTicks = (long)runningTimeouts.Average(t => t.Ticks) * PostponeFactor;
         return TimeSpan.FromTicks(avgTicks) + MinPostponeDuration;
     }
 
