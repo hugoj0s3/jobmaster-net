@@ -139,7 +139,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// <inheritdoc/>
     public async Task<OnBoardingResult> TryOnBoardingJobAsync(JobRawModel payload, bool forceIfNoCapacity = false)
     {
-        if (recentlyHeldOnMasterIdsGuard.ContainsKey(payload.Id))
+        if (recentlyHeldOnMasterIdsGuard.ContainsKey(payload.Id) && 
+            recentlyHeldOnMasterIdsGuard[payload.Id].Version == payload.Version)
         {
             return OnBoardingResult.MovedToMaster;
         }
@@ -491,7 +492,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
     private readonly HashSet<Guid> firstPostponedIds = new();
     private DateTime lastDeadlineCheckAtUtc = DateTime.MinValue;
-    private readonly Dictionary<Guid, DateTime> recentlyHeldOnMasterIdsGuard = new();
+    private readonly Dictionary<Guid, RecentlyHeldOnMaster> recentlyHeldOnMasterIdsGuard = new();
     private DateTime lastErrorAtUtc = DateTime.MinValue;
     private async Task CheckDeadlineJobsAsync()
     {
@@ -501,7 +502,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         lastDeadlineCheckAtUtc = nowUtc;
         
         recentlyHeldOnMasterIdsGuard
-            .Where(kv => kv.Value <= nowUtc)
+            .Where(kv => kv.Value.ExpiresAt <= nowUtc)
             .Select(kv => kv.Key).ToList()
             .ForEach(id => recentlyHeldOnMasterIdsGuard.Remove(id));
         
@@ -612,16 +613,22 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             job.MarkAsHeldOnMaster();
         }
 
-        foreach (var partition in toHoldOnMaster.Select(j => j.Id).ToList()
+        foreach (var partition in toHoldOnMaster.ToList()
                      .Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
         {
+            var partitionIds =  partition.Select(j => j.Id).ToList();
             await backgroundAgentWorker.WorkerClusterOperations
                 .ExecWithRetryAsync(o => o.BulkUpdateAsync(
-                    BulkJobUpdateRequest.HeldOnMaster(partition.ToList())));
+                    BulkJobUpdateRequest.HeldOnMaster(partitionIds)));
             
-            foreach (var jobId in partition)
+            foreach (var job in partition)
             {
-                recentlyHeldOnMasterIdsGuard[jobId] = DateTime.UtcNow.Add(ErrorHoldDuration);
+                recentlyHeldOnMasterIdsGuard[job.Id] = new RecentlyHeldOnMaster()
+                {
+                    JobId = job.Id,
+                    Version = job.Version,
+                    ExpiresAt = DateTime.UtcNow.Add(ErrorHoldDuration),
+                };
             }
         }
 
@@ -999,5 +1006,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
 
         return (RecurringScheduleValidationResult.Valid, recurringSchedule);
+    }
+
+    private class RecentlyHeldOnMaster
+    {
+        public Guid JobId { get; set; }
+        public string? Version { get; set; }
+        
+        public DateTime ExpiresAt { get; set; }
     }
 }

@@ -11,6 +11,14 @@ using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Reassigns Lost buckets to alive workers within the same agent connection.
+/// Queries all Lost buckets, finds alive workers in matching agent connections, and
+/// calls <c>ReadyToDrain</c> on each eligible bucket. Drain-mode workers are preferred
+/// (with a weighted probability) to consolidate drain activity. A per-bucket distributed
+/// lock prevents concurrent reassignment across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class AssignedLostBucketsRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

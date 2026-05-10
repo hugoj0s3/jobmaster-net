@@ -4,6 +4,12 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
+/// <summary>
+/// Removes agent connection records that have not sent a heartbeat within the dead-connection
+/// threshold. Connections marked with <c>ProtectConnectionChanges</c> are not deleted but
+/// emit a critical warning if they are dead and still own buckets, as jobs may be at risk.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class CleanupDeadAgentConnectionsRunner : JobMasterRunner
 {
     private static readonly TimeSpan DeadAgentConnectionThreshold = TimeSpan.FromMinutes(10);
@@ -24,6 +30,7 @@ internal class CleanupDeadAgentConnectionsRunner : JobMasterRunner
             
             var connectionsToDelete = allConnections
                 .Where(c => (c.LastHeartbeatAt ?? c.FootprintCreatedAt) < DateTime.UtcNow - DeadAgentConnectionThreshold)
+                .Where(c => !c.ProtectConnectionChanges)
                 .ToList();
             
             var deadProtectedConnections = allConnections

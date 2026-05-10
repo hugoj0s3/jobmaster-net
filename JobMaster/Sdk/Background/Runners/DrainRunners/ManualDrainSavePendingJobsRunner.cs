@@ -9,6 +9,13 @@ using JobMaster.Sdk.Background.Runners.SavePendingJobs;
 
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
+/// <summary>
+/// Saves <c>PendingSave</c> jobs for a draining bucket using the drain-safe path
+/// (<c>AddPendingSaveJobForDrainWithSafeGuardAsync</c>). Skips if no bucket ID is set
+/// or the bucket is not in <c>Draining</c> status. Applies a consecutive-failure backoff
+/// (60–180 s) when individual jobs fail to save.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJobsRunner
 {
     

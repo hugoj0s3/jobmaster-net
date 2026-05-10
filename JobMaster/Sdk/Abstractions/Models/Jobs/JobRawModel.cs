@@ -101,7 +101,20 @@ internal class JobRawModel : JobMasterBaseModel
     {
         return Job.FromModel(this);
     }
-    
+
+    public string ToLogSummary()
+    {
+        var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Priority:{Priority} " +
+               $"NumberOfFailures:{NumberOfFailures} ScheduledAt:{ScheduledAt:O} BucketId:{BucketId}";
+        
+        result += $"\nMsgData:{(MsgData.Length > 500 ? MsgData.Substring(0, 500) + "...[truncated]" : MsgData)}";
+        result += $"\nMetadata:{(Metadata == null ? "[null]" : 
+            Metadata.Length > 500 ? Metadata.Substring(0, 500) + "..[truncated]" : Metadata)}";
+        
+        return result;
+    }
+
+
     public void AssignToBucket(BucketModel bucketModel)
     {
         if (!bucketModel.CanAssign())

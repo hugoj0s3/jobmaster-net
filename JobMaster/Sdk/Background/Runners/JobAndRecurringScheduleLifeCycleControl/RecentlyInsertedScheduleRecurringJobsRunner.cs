@@ -10,6 +10,14 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Fast-path planner for recurring schedules that were just inserted.
+/// Dequeues schedule IDs from <c>IRecentlyInsertedRecurringScheduleQueue</c> and
+/// immediately plans their first job occurrences, bypassing the coverage-based scan used
+/// by <see cref="ScheduleRecurringJobsRunner"/>. If the distributed lock cannot be acquired,
+/// the IDs are re-enqueued for the next tick.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
 {
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;

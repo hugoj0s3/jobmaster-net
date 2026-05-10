@@ -6,6 +6,12 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Marks non-Lost buckets as Lost when their owning worker is dead or no longer registered.
+/// Skips buckets owned by the current worker and any bucket whose worker is still alive.
+/// A distributed lock prevents concurrent evaluation across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class MarkBucketAsLostRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

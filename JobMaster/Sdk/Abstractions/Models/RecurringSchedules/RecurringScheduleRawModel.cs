@@ -117,6 +117,18 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         Version = version;
     }
 
+    public string ToLogSummary()
+    {
+        var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Type:{RecurringScheduleType} " +
+                     $"ExpressionTypeId:{ExpressionTypeId} BucketId:{BucketId} HasFailedOnLastPlanExecution:{HasFailedOnLastPlanExecution}";
+
+        result += $" MsgData:{(MsgData.Length > 500 ? MsgData.Substring(0, 500) + "...[truncated]" : MsgData)}";
+        result += $" Metadata:{(Metadata == null ? "[null]" : Metadata.Length > 500 ? Metadata.Substring(0, 500) + "...[truncated]" : Metadata)}";
+
+        return result;
+    }
+
+
     public void Active()
     {
         Status = RecurringScheduleStatus.Active;

@@ -7,6 +7,13 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
+/// <summary>
+/// Monitors a draining bucket and transitions it to <c>ReadyToDelete</c> once it has
+/// been idle (no jobs in the dispatcher) for at least <c>BucketNoJobsBeforeReadyToDelete</c>.
+/// Skips immediately if no bucket ID is set or the bucket is not in <c>Draining</c> status.
+/// Calls <c>ReadyToDelete()</c> on the bucket model and stops itself after the transition.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class DrainBucketReadyToDeleteRunner : BucketAwareRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

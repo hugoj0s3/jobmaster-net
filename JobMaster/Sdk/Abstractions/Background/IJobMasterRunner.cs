@@ -1,8 +1,5 @@
 namespace JobMaster.Sdk.Abstractions.Background;
 
-/// <summary>
-/// Defines the contract for JobMaster runner components that handle background processing tasks.
-/// </summary>
 internal interface IJobMasterRunner
 {
     Task OnTickFailureAsync(Exception ex, CancellationToken ct);

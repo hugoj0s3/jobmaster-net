@@ -6,8 +6,12 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
 /// <summary>
-/// Periodically deletes finalized jobs older than DataRetentionTtl based on ScheduledAt.
-/// Not bucket-aware and uses a distributed lock to avoid parallel runs across workers.
+/// Purges finalized jobs (Succeeded, Failed, Cancelled, Aborted) from the master repository
+/// once they are older than the cluster's <c>DataRetentionTtl</c>.
+/// Skipped when no TTL is configured. A distributed lock prevents concurrent purges across
+/// coordinator workers. A <see cref="ConsecutiveBurstLimiter"/> shortens the next interval
+/// when a full batch was deleted, allowing the runner to drain large backlogs quickly before
+/// returning to its normal <see cref="SucceedInterval"/>.
 /// </summary>
 internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 {

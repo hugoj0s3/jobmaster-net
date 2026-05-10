@@ -15,27 +15,13 @@ using JobMaster.Sdk.Utils.Extensions;
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
 /// <summary>
-/// Safety net runner that recovers jobs whose ProcessDeadline has expired and are no longer held by an active bucket.
-/// This is not the primary processing path — it only intervenes when the drain process fails or takes too long.
+/// Detects jobs whose <c>ProcessDeadline</c> has expired while they are held on master
+/// (i.e. not currently owned by an active or completing bucket) and bulk-updates them
+/// to the <c>HeldOnMaster</c> status so the scheduler can re-evaluate and re-assign them.
+/// Uses a scan-plan with slot-based distributed locking to coordinate safely across
+/// multiple coordinator workers. Active-bucket jobs are always excluded from the update.
+/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
 /// </summary>
-/// <remarks>
-/// <para><strong>Execution Interval:</strong> Dynamic (calculated based on job count and worker threads)</para>
-/// <para><strong>Lifecycle:</strong> Global runner (bucketAwareLifeCycle: false, useSemaphore: true)</para>
-/// <para><strong>Key Operations:</strong></para>
-/// <list type="bullet">
-/// <item>Queries active and completing bucket IDs upfront and excludes their jobs from intervention</item>
-/// <item>Only acts on jobs whose bucket is gone, lost, or otherwise inactive</item>
-/// <item>Marks eligible jobs as HeldOnMaster for reassignment</item>
-/// <item>Uses partition locking to prevent race conditions across concurrent workers</item>
-/// </list>
-/// <para><strong>Safety Features:</strong></para>
-/// <list type="bullet">
-/// <item>Never touches jobs belonging to Active or Completing buckets — those are owned by their worker</item>
-/// <item>Skips jobs already in a final status (completed, failed, cancelled)</item>
-/// <item>Uses database-level bucket exclusion for efficient and safe filtering</item>
-/// </list>
-/// <para><strong>Performance:</strong> Uses partition locking similar to AssignHeldJobsRunner for scalable concurrent processing</para>
-/// </remarks>
 internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
 {
     private readonly IMasterJobsService masterJobsService;

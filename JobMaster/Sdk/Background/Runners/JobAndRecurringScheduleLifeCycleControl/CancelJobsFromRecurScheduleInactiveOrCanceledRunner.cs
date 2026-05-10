@@ -13,6 +13,14 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Bulk-cancels future pending jobs for recurring schedules that have been inactivated or
+/// cancelled and have <c>IsJobCancellationPending</c> set. Only jobs scheduled more than
+/// 5 minutes in the future are cancelled; in-flight jobs are handled by the execution engine.
+/// Uses a scan-plan with slot-based distributed locking to coordinate across multiple
+/// coordinator workers.
+/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
+/// </summary>
 internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRunner
 {
     private IMasterRecurringSchedulesService masterRecurringSchedulesService;

@@ -3,6 +3,11 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
+/// <summary>
+/// Sends a heartbeat for the current <c>AgentWorker</c> on every tick, keeping its
+/// registration alive in the master store so other runners can detect it as active.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class KeepAliveWorkerRunner : JobMasterRunner
 {
     private IMasterHeartbeatService masterHeartbeatService;

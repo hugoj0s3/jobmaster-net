@@ -14,33 +14,15 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 namespace JobMaster.Sdk.Background.Runners.SavePendingJobs;
 
 /// <summary>
-/// Handles the persistence of pending job changes to ensure data consistency and durability.
-/// This runner is essential for maintaining job state integrity by saving pending modifications to persistent storage.
+/// Processes <c>PendingSave</c> jobs queued for a specific bucket.
+/// Must be activated via <see cref="DefineBucketId"/> before ticking; skips immediately
+/// if no bucket ID is set or the bucket is not in an Active or Completing state.
+/// For each pulled job, delegates to <see cref="JobSavePendingOperation"/>:
+/// jobs whose <c>NextPlanExecutionAt</c> is beyond the transient threshold are held on master
+/// directly; all others are routed to the best available bucket via the dispatcher.
+/// On per-job failure the job is re-queued and a consecutive-failure backoff (10–60 s) is applied.
+/// Runs every <see cref="SucceedInterval"/> while the bucket is healthy.
 /// </summary>
-/// <remarks>
-/// <para>
-/// The SaveJobsRunner performs the following critical data persistence functions:
-/// </para>
-/// <list type="bullet">
-/// <item><description>Dequeues pending job save operations from the dispatcher service</description></item>
-/// <item><description>Processes job state changes that need to be persisted to storage</description></item>
-/// <item><description>Applies transient threshold logic to determine save timing and priorities</description></item>
-/// <item><description>Ensures job modifications are durably stored for system reliability</description></item>
-/// <item><description>Manages save operation batching to optimize database performance</description></item>
-/// </list>
-/// <para>
-/// Performance characteristics:
-/// - Uses 250ms intervals for responsive job state persistence
-/// - Implements adaptive delays when no pending saves are available
-/// - Processes jobs in configurable batch sizes to balance throughput and memory usage
-/// - Applies transient threshold logic to prioritize time-sensitive job saves
-/// </para>
-/// <para>
-/// This runner is bucket-specific and works in coordination with job execution runners
-/// to ensure that job state changes are promptly and reliably persisted to storage,
-/// preventing data loss during system failures or restarts.
-/// </para>
-/// </remarks>
 internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobsRunner
 {
     protected readonly IAgentJobsDispatcherService agentJobsDispatcherService;
@@ -128,7 +110,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                     }
                     catch (Exception e2)
                     { 
-                        logger.Critical($"Failed to add job to queue. Data: {InternalJobMasterSerializer.Serialize(job)}", JobMasterLogSubjectType.Job, job.Id, exception: e2);
+                        logger.Critical($"Failed to add job to queue. Data: {job.ToLogSummary()}", JobMasterLogSubjectType.Job, job.Id, exception: e2);
                     }
                 
                     hasFailed = true;
@@ -145,7 +127,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                 }
                 catch 
                 { 
-                    // CRITICAL: Job is lost in memory. Log this if logger available. 
+                    logger.Critical($"Failed to add job to queue. jobId: {job.Id} Data: {job.ToLogSummary()}");
                 }
             }
         }

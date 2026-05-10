@@ -6,8 +6,13 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
 /// <summary>
-/// Periodically deletes recurring schedules in Inactive or Canceled status older than DataRetentionTtl,
-/// based on CreatedAt. Not bucket-aware and guarded by a cluster-wide distributed lock.
+/// Purges terminated recurring schedules from the master repository once they are older
+/// than the cluster's <c>DataRetentionTtl</c> (only schedules with a non-null
+/// <c>TerminatedAt</c> are eligible).
+/// Skipped when no TTL is configured. A distributed lock prevents concurrent purges across
+/// coordinator workers. A <see cref="ConsecutiveBurstLimiter"/> shortens the next interval
+/// when a full batch was deleted, allowing the runner to drain large backlogs quickly before
+/// returning to its normal <see cref="SucceedInterval"/>
 /// </summary>
 internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunner
 {

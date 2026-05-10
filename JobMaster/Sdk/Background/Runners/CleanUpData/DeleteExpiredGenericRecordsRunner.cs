@@ -5,6 +5,15 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
+/// <summary>
+/// Deletes generic records whose per-record expiry has passed (<c>UtcNow</c> is used as
+/// the cutoff rather than a cluster-level TTL). Expired records are short-lived entries
+/// that don't need to persist beyond a fixed window — heartbeats, sentinel change events,
+/// etc. A distributed lock prevents concurrent deletes across coordinator workers.
+/// A <see cref="ConsecutiveBurstLimiter"/> shortens the next interval when a full batch
+/// was deleted, allowing the runner to drain large backlogs quickly before returning to
+/// its normal <see cref="SucceedInterval"/>.
+/// </summary>
 internal sealed class DeleteExpiredGenericRecordsRunner : JobMasterRunner
 {
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;

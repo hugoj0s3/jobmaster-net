@@ -11,6 +11,15 @@ using JobMaster.Sdk.Background.Runners.DrainRunners;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Coordinates the lifecycle of drain runners for this worker.
+/// On each tick, stops drain and ready-to-delete runners whose bucket is no longer
+/// in a <c>Draining</c> or <c>ReadyToDrain</c> state, then creates new runner sets
+/// (save-pending jobs, processing jobs, save-pending recurring schedules, ready-to-delete)
+/// for any <c>ReadyToDrain</c> bucket owned by the current worker. Transitions the bucket
+/// to <c>Draining</c> and starts all runners atomically under a per-bucket distributed lock.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class DrainRunnersCoordinator : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

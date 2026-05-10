@@ -4,6 +4,11 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
+/// <summary>
+/// Sends a heartbeat for the current <c>Host</c> and calls <c>UpdateStatsAsync</c> on
+/// every tick, keeping the host registration alive and its runtime statistics up to date.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class KeepAliveHostRunner : JobMasterRunner
 {
     private readonly IMasterHeartbeatService masterHeartbeatService;

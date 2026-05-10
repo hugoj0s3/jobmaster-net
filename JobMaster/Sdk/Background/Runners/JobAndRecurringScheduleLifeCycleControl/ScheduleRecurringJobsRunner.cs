@@ -11,6 +11,13 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Plans the next job occurrences for Active recurring schedules whose planning coverage
+/// is about to expire. Only runs when the cluster is in <c>ClusterMode.Active</c>.
+/// Uses a scan-plan with slot-based distributed locking to coordinate safely across
+/// multiple coordinator workers. Delegates to <c>IRecurringSchedulePlanner</c> per schedule.
+/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
+/// </summary>
 internal class ScheduleRecurringJobsRunner : JobMasterRunner
 {
     private IMasterRecurringSchedulesService masterRecurringSchedulesService;

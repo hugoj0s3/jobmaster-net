@@ -10,6 +10,14 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Permanently destroys buckets that are in the <c>ReadyToDelete</c> state and have
+/// passed their <c>DeletesAt</c> timestamp. Before calling <c>DestroyAsync</c>, verifies
+/// via the dispatcher that no jobs remain; if jobs are still present or <c>DeletesAt</c>
+/// is null, the bucket is reverted to <c>Lost</c> for re-evaluation. A distributed lock
+/// prevents concurrent destruction across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

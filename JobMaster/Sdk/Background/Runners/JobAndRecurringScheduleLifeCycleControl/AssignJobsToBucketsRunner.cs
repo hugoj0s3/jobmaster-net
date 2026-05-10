@@ -17,6 +17,15 @@ using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Acquires <c>OnMaster</c> jobs not yet past the transient threshold and assigns them to
+/// the best available bucket, then dispatches each job to its target bucket. Uses a
+/// scan-plan with slot-based distributed locking to coordinate across multiple coordinator
+/// workers. Only runs when the cluster is in <c>ClusterMode.Active</c>. If no bucket can
+/// be found for a job beyond <c>NoBucketFallbackThreshold</c>, a temporary fallback bucket
+/// is created locally to prevent job starvation.
+/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
+/// </summary>
 internal class AssignJobsToBucketsRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
