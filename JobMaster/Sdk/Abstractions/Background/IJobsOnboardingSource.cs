@@ -4,5 +4,5 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IJobsOnboardingSource
 {
-    Task<IList<JobRawModel>> PullAsync(int count, DateTime scheduledAt);
+    Task<IList<JobRawModel>> PullAsync(int count, DateTime? scheduledAt);
 }

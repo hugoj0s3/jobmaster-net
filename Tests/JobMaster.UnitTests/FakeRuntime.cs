@@ -9,6 +9,8 @@ internal sealed class FakeRuntime : IJobMasterRuntime
     public DateTime? StartedAt { get; } = DateTime.UtcNow;
     public DateTime? StartingAt { get; } = DateTime.UtcNow;
 
+    public FakeRuntime() : this(started: true) { }
+
     public FakeRuntime(bool started)
     {
         Started = started;

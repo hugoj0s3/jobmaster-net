@@ -30,7 +30,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
     public int WaitingQueueCapacity { get; private set; }
     
     private readonly object syncLock = new();
-    private readonly Func<T, Task<bool>>? preEnqueueAction;
+    private readonly Func<T, bool>? preEnqueueAction;
     
     private bool isShuttingDown = false;
     
@@ -38,7 +38,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
     public static TaskQueueControl<T> Create(
         JobMasterPriority priority, 
         double factor = 1, 
-        Func<T, Task<bool>>? preEnqueueAction = null)
+        Func<T, bool>? preEnqueueAction = null)
     {
         var runCapacity = priority switch
         {
@@ -58,7 +58,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         return new TaskQueueControl<T>(runCapacity, waitingQueueCapacity,  preEnqueueAction);
     }
     
-    private TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, Task<bool>>? preEnqueueAction = null)
+    private TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, bool>? preEnqueueAction = null)
     {
         this.preEnqueueAction = preEnqueueAction;
         Tasks = new ITaskQueueItem<T>?[runCapacity];
@@ -139,41 +139,31 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
-    public async Task<bool> EnqueueAsync(ITaskQueueItem<T> queueItem)
+    public bool Enqueue(ITaskQueueItem<T> queueItem)
     {
-        // Check for duplicate first
         lock (syncLock)
         {
             if (isShuttingDown) return false;
-            
+
             if (itemIds.Contains(queueItem.Id))
             {
                 return true; // Already in queue or running, treat as success
             }
-        }
-        
-        if (WaitingQueue.Count >= WaitingQueueCapacity)
-        {
-            return false;
-        }
 
-        if (preEnqueueAction is not null && queueItem.Value is not null)
-        {
-            var result = await preEnqueueAction(queueItem.Value);
-            if (!result)
+            if (WaitingQueue.Count >= WaitingQueueCapacity)
             {
                 return false;
             }
-        }
-        
-        lock(syncLock)
-        {
-            // Double-check after preEnqueueAction (in case of race condition)
-            if (itemIds.Contains(queueItem.Id))
+
+            if (preEnqueueAction is not null && queueItem.Value is not null)
             {
-                return true; // Already in queue or running
+                var result = preEnqueueAction(queueItem.Value);
+                if (!result)
+                {
+                    return false;
+                }
             }
-            
+
             WaitingQueue.Enqueue(queueItem);
             itemIds.Add(queueItem.Id);
             return true;
@@ -226,6 +216,29 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
         
         return result;
+    }
+
+    /// <summary>
+    /// Returns the configured timeout for each slot that currently has a running task.
+    /// Used to compute the average running timeout for postpone duration calculations.
+    /// </summary>
+    public IEnumerable<TimeSpan> GetRunningTimeouts()
+    {
+        lock (syncLock)
+        {
+            return Tasks
+                .Where(x => x is not null)
+                .Select(x => x!.Timeout)
+                .ToList();
+        }
+    }
+
+    public IList<string> GetIds()
+    {
+        lock (syncLock)
+        {
+            return new List<string>(itemIds);
+        }
     }
 
     /// <summary>

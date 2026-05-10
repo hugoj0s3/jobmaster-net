@@ -152,8 +152,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             return;
         }
         
-        var finalStatuses = JobMasterJobStatusUtil.GetFinalStatuses().Where(x => x != JobMasterJobStatus.Cancelled).ToList();
-        var bulkUpdateRequest = BulkJobUpdateRequest.Cancel(jobIdsToCancel, finalStatuses);
+        var bulkUpdateRequest = BulkJobUpdateRequest.Cancel(jobIdsToCancel);
         await masterJobsService.BulkUpdateAsync(bulkUpdateRequest);
 
         recurringScheduleRawModel.HasCancelJobsFinish();

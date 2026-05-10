@@ -17,12 +17,12 @@ internal sealed class FallbackBucketJobsOnboardingSource : IJobsOnboardingSource
         }
     }
 
-    public Task<IList<JobRawModel>> PullAsync(int count, DateTime scheduledAt)
+    public Task<IList<JobRawModel>> PullAsync(int count, DateTime? scheduledAt)
     {
         lock (objLock)
         {
             var toReturn = queue
-                .Where(j => j.NextPlanExecutionAt <= scheduledAt)
+                .Where(j => scheduledAt == null || j.NextPlanExecutionAt <= scheduledAt)
                 .Take(count)
                 .ToList();
 

@@ -20,6 +20,7 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task MarkBucketAsLostAsync(string bucketId);
     Task MarkBucketAsLostIfNotDrainingAsync(string bucketId);
     Task MarkBucketAsReadyToDeleteAsync(string bucketId);
+    Task MarkBucketAsReadyToDrainAsync(string bucketId);
     void MarkBucketAsLost(BucketModel bucket);
     Task<int> CountActiveCoordinatorWorkersAsync();
     Task<int> CountWorkersAsync();
@@ -27,6 +28,10 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     
     Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200);
     Task ExecWithRetryAsync(Func<IWorkerClusterOperations, Task> func, int maxRetries = 5, int millisecondsToDelay = 200);
+    Task<T> ExecWithRetryAsync<T>(Func<IWorkerClusterOperations, Task<T>> func, int maxRetries = 5, int millisecondsToDelay = 200);
+
+    Task BulkUpdateAsync(BulkJobUpdateRequest request);
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs);
 
     Task AddAsync(JobRawModel job);
     

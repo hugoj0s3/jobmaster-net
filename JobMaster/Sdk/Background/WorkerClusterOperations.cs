@@ -64,7 +64,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
             var engine = backgroundAgentWorker.GetEngine(bucket.Id);
             if (engine != null &&
-                jobRaw.IsOnBoarding() &&
+                jobRaw.IsWithinOnboardingWindow() &&
                 engine.HasOnBoardingAvailability())
             {
                 var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
@@ -204,8 +204,24 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         {
             return;
         }
-       
+
         bucket.ReadyToDelete();
+        await masterBucketsService.UpdateAsync(bucket);
+    }
+
+    public async Task MarkBucketAsReadyToDrainAsync(string bucketId)
+    {
+        var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket is null)
+        {
+            return;
+        }
+
+        if (!bucket.ReadyToDrainFromCompleting())
+        {
+            return;
+        }
+
         await masterBucketsService.UpdateAsync(bucket);
     }
 
@@ -261,11 +277,11 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobMasterDuplicationException)
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException)
                 {
                     throw;
                 }
-                
+
                 logger.Error("Failed to execute function", exception: e);
                 if (attempt >= maxRetries)
                 {
@@ -300,28 +316,70 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobMasterDuplicationException)
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException)
                 {
                     throw;
                 }
-                
+
                 logger.Error("Failed to execute function", exception: e);
                 if (attempt >= maxRetries)
                 {
                     throw;
                 }
-                
+
                 attempt++;
 
                 if (JobMasterRandomUtil.GetBoolean(0.25))
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(millisecondsToDelay));
                 }
-                
+
                 var jitter = CalcJitterOnExecWithRetry(attempt);
                 await Task.Delay(TimeSpan.FromMilliseconds(jitter));
             }
         }
+    }
+
+    public async Task<T> ExecWithRetryAsync<T>(Func<IWorkerClusterOperations, Task<T>> func, int maxRetries = 5, int millisecondsToDelay = 200)
+    {
+        if (func is null) throw new ArgumentNullException(nameof(func));
+        if (maxRetries < 1) throw new ArgumentOutOfRangeException(nameof(maxRetries), maxRetries, "maxRetries must be >= 1");
+
+        var attempt = 1;
+        while (true)
+        {
+            try
+            {
+                return await func(this);
+            }
+            catch (Exception e)
+            {
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException) throw;
+
+                logger.Error("Failed to execute function", exception: e);
+                if (attempt >= maxRetries) throw;
+
+                attempt++;
+                if (JobMasterRandomUtil.GetBoolean(0.25))
+                    await Task.Delay(TimeSpan.FromMilliseconds(millisecondsToDelay));
+
+                var jitter = CalcJitterOnExecWithRetry(attempt);
+                await Task.Delay(TimeSpan.FromMilliseconds(jitter));
+            }
+        }
+    }
+
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
+    {
+        await masterJobsService.BulkUpdateAsync(request);
+        await Task.Delay(TimeSpan.FromMilliseconds(25));
+    }
+
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        var result = await masterJobsService.BulkUpdateAsync(jobs);
+        await Task.Delay(TimeSpan.FromMilliseconds(25));
+        return result;
     }
 
     public async Task AddAsync(JobRawModel job)

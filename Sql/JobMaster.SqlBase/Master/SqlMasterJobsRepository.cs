@@ -585,6 +585,13 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("JobIds", c.JobIds.ToArray());
         }
 
+        if (c.ExcludeJobIds is { Count: > 0 })
+        {
+            var notInClause = sql.InClauseFor($"j.{Col(x => x.Id)}", "@ExcludeJobIds");
+            where.Add($"NOT ({notInClause})");
+            args.Add("ExcludeJobIds", c.ExcludeJobIds.ToArray());
+        }
+
         if (c.Status.HasValue)
         {
             where.Add($"j.{Col(x => x.Status)} = @Status");

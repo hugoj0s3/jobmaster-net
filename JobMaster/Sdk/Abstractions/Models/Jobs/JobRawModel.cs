@@ -119,7 +119,7 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = bucketId;
         HostId = hostId;
         Status = JobMasterJobStatus.InBucket;
-        RefreshDeadline(JobMasterConstants.JobProcessDeadlineDuration);
+        RefreshDeadline(JobMasterConstants.JobProcessDeadlineDefaultDuration);
     }
 
     public void AssignSavePendingJobToBucket(BucketModel bucketModel) {
@@ -143,7 +143,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public bool Onboard()
     {
-        if (Status != JobMasterJobStatus.InBucket)
+        if (!this.Status.IsBucketStatus())
         {
             return false;
         }
@@ -179,7 +179,7 @@ internal class JobRawModel : JobMasterBaseModel
         Status = JobMasterJobStatus.OnMaster;
     } 
 
-    public bool IsOnBoarding(TimeSpan? extraWindow = null)
+    public bool IsWithinOnboardingWindow(TimeSpan? extraWindow = null)
     {
         var now = DateTime.UtcNow;
         var window = JobMasterConstants.ClockSkewPadding + JobMasterConstants.OnBoardingWindow;
@@ -202,7 +202,7 @@ internal class JobRawModel : JobMasterBaseModel
         {
             
             // If it is onboarding can not be cancelled
-            if (IsOnBoarding(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding) 
+            if (IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding) 
             {
                 return false;
             }
@@ -240,7 +240,7 @@ internal class JobRawModel : JobMasterBaseModel
         
         var secondsToWait = 30 * Math.Pow(2, this.NumberOfFailures - 1);
         var timeToWait = TimeSpan.FromSeconds(secondsToWait);
-        timeToWait += JobMasterConstants.JobProcessDeadlineDuration;
+        timeToWait += JobMasterConstants.JobProcessDeadlineDefaultDuration;
         
         DelayNextExecutionPlan(timeToWait);
         ProcessDeadline = null;
@@ -310,7 +310,7 @@ internal class JobRawModel : JobMasterBaseModel
             return false;
         }
 
-        if (this.IsOnBoarding(TimeSpan.FromSeconds(5)))
+        if (this.IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)))
         {
             return false;
         }
@@ -322,9 +322,9 @@ internal class JobRawModel : JobMasterBaseModel
     {
         Status = JobMasterJobStatus.Processing;
         ProcessStartedAt = DateTime.UtcNow;
-        RefreshDeadline(Timeout + JobMasterConstants.JobProcessDeadlineDuration);
+        RefreshDeadline(Timeout + TimeSpan.FromMinutes(1));
 
-        return new JobExecution(this.ClusterId)
+        var execution = new JobExecution(this.ClusterId)
         {
             JobId = this.Id,
             StartedAt = DateTime.UtcNow,
@@ -334,6 +334,12 @@ internal class JobRawModel : JobMasterBaseModel
             HostId = this.HostId!,
             Outcome = JobExecutionOutcomeStatus.Processing,
         };
+        
+        AgentConnectionId = null;
+        AgentWorkerId = null;
+        BucketId = null;
+        
+        return execution;
     }
     
     /// <summary>
@@ -354,7 +360,7 @@ internal class JobRawModel : JobMasterBaseModel
     public static JobPersistenceRecord ToPersistence(JobRawModel m)
         => JobConvertUtil.ToPersistence(m);
     
-    private void RefreshDeadline(TimeSpan processDeadlineDuration)
+    public void RefreshDeadline(TimeSpan processDeadlineDuration)
     {
         var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration);
         if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)

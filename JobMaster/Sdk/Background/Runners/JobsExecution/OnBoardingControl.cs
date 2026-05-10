@@ -37,6 +37,14 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         }
     }
 
+    public int CountItems()
+    {
+        lock (syncLock)
+        {
+            return holdingPen.Count;
+        }
+    }
+
     public void Push(T item, string id, DateTime departureTime)
     {
         lock (syncLock)
@@ -123,6 +131,22 @@ internal class OnBoardingControl<T> : IOnBoardingControl<T>
         return result;
     }
     
+    public bool Contains(string id)
+    {
+        lock (syncLock)
+        {
+            return itemIds.Contains(id);
+        }
+    }
+
+    public IList<string> GetIds()
+    {
+        lock (syncLock)
+        {
+            return new List<string>(itemIds);
+        }
+    }
+
     public IList<T> Shutdown()
     {
         lock (syncLock)

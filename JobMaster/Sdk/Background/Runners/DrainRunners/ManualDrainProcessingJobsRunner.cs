@@ -15,17 +15,11 @@ namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
 internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProcessingJobsRunner
 {
-    private JobMasterLockKeys lockKeys;
-    private IMasterJobsService masterJobsService;
-    private IMasterDistributedLockerService masterDistributedLockerService;
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
     
     public ManualDrainProcessingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
-        lockKeys = new JobMasterLockKeys(this.BackgroundAgentWorker.ClusterConnConfig.ClusterId);
-        masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
-        masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -49,32 +43,21 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
             return OnTickResult.Skipped(TimeSpan.FromMinutes(1));
         }
 
-        var activeIds = processingJobs
-            .Where(j => !j.ExceedProcessDeadline())
-            .Select(j => j.Id)
-            .ToList();
-
-        var exceededJobs = processingJobs
-            .Where(j => j.ExceedProcessDeadline())
-            .ToList();
+        var jobIds = processingJobs.Select(j => j.Id).ToList();
 
         bool hasFailed = false;
-        foreach (var partition in activeIds.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        foreach (var partition in jobIds.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
         {
             try
             {
-                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()));
+                await BackgroundAgentWorker.WorkerClusterOperations
+                    .ExecWithRetryAsync(o => o.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList())));
             }
             catch (Exception e)
             {
                 logger.Error($"Drain: failed to bulk mark jobs as HeldOnMaster. PartitionSize={partition.Count}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
                 hasFailed = true;
             }
-        }
-
-        foreach (var job in exceededJobs)
-        {
-            logger.Debug($"Drain skipping exceeded-deadline job. Recovery delegated to deadline runner. JobId={job.Id} ProcessDeadline={job.ProcessDeadline:O}", JobMasterLogSubjectType.Job, job.Id);
         }
 
         if (hasFailed)

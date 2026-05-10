@@ -87,21 +87,21 @@ internal class JobSavePendingOperation
     
     public async Task<SaveDrainResultCode> HeldOnMasterProcessingForDrainAsync(JobRawModel job)
     {
-        if (job.ExceedProcessDeadline())
-        {
-            return SaveDrainResultCode.Skipped;
-        }
-        
         try
-        { 
+        {
             job.MarkAsHeldOnMaster();
             await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
             return SaveDrainResultCode.Success;
         }
+        catch (JobMasterVersionConflictException)
+        {
+            // Conflict means another runner already claimed or updated this job — treat as handled.
+            return SaveDrainResultCode.Skipped;
+        }
         catch
         {
-           logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
-           return SaveDrainResultCode.Failed;
+            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
+            return SaveDrainResultCode.Failed;
         }
     }
     
@@ -134,7 +134,7 @@ internal class JobSavePendingOperation
         var engine = backgroundAgentWorker.GetEngine(bucketId);
         
         logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
-                     $"IsOnBoarding={jobRaw.IsOnBoarding()} " +
+                     $"IsOnBoarding={jobRaw.IsWithinOnboardingWindow()} " +
                      $"EngineAvailable={engine is not null} " +
                      $"BucketStatus={currentBucket?.Status} " +
                      $"OnBoardingAvailability={engine?.CountOnBoardingAvailability()} " +
@@ -145,7 +145,7 @@ internal class JobSavePendingOperation
         if (engine is not null && 
             jobRaw.Status == JobMasterJobStatus.PendingSave && 
             currentBucket?.Status == BucketStatus.Active &&
-            jobRaw.IsOnBoarding() && 
+            jobRaw.IsWithinOnboardingWindow() && 
             engine.HasOnBoardingAvailability())
         {
             jobRaw.AssignToBucket(currentBucket);

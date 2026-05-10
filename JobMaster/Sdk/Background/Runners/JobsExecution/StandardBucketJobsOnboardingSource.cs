@@ -21,6 +21,6 @@ internal sealed class StandardBucketJobsOnboardingSource : IJobsOnboardingSource
         this.bucketId = bucketId;
     }
 
-    public Task<IList<JobRawModel>> PullAsync(int count, DateTime scheduledAt)
+    public Task<IList<JobRawModel>> PullAsync(int count, DateTime? scheduledAt)
         => dispatcher.PullForProcessingAsync(agentConnectionId, bucketId, count, scheduledAt);
 }

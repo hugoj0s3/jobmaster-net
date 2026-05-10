@@ -7,6 +7,8 @@ internal interface ITaskQueueControl<T>
     int CountAvailability();
     int CountWaiting();
     bool Contains(string id);
-    Task<bool> EnqueueAsync(ITaskQueueItem<T> queueItem);
+    bool Enqueue(ITaskQueueItem<T> queueItem);
     Task<IList<T>> ShutdownAsync();
+    IEnumerable<TimeSpan> GetRunningTimeouts();
+    IList<string> GetIds();
 }

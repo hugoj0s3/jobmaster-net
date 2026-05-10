@@ -69,9 +69,9 @@ internal static class JobMasterConstants
     /// The default process deadline duration for jobs.
     /// Jobs must be processed within this time from their scheduled time or current time (whichever is later).
     /// </summary>
-    public static readonly TimeSpan JobProcessDeadlineDuration = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan JobProcessDeadlineDefaultDuration = TimeSpan.FromMinutes(10);
 
-    /// <summary>
+/// <summary>
     /// Combined early-warning buffer used when evaluating whether a job's ProcessDeadline is approaching.
     /// Incorporates <see cref="ClockSkewPadding"/> plus a 1-minute lead time so callers detect expiry
     /// before <c>HeldOnMasterDeadlineTimeoutJobsRunner</c> acquires the job, avoiding version conflicts.

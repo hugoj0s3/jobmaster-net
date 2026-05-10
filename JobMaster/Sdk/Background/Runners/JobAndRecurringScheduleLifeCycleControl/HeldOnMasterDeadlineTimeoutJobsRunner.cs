@@ -89,7 +89,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
             ExcludeBucketIds = activeBucketIds,
             SortBy = new SortByCriteria()
             {
-                Property = nameof(JobRawModel.NextPlanExecutionAt),
+                Property = nameof(JobRawModel.ProcessDeadline),
                 Ascending = true,
             },
         };
@@ -107,7 +107,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
                 countJobs,
                 workerCount,
                 BackgroundAgentWorker.TransferBatchSize,
-                JobMasterConstants.JobProcessDeadlineDuration,
+                JobMasterConstants.JobProcessDeadlineDefaultDuration,
                 lockerLane:1);
         }
         jobQueryCriteria.CountLimit = lastScanPlanResult.BatchSize;
