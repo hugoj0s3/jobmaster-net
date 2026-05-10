@@ -264,10 +264,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         return result;
     }
 
-    /// <summary>
-    /// Returns the configured timeout for each slot that currently has a running task.
-    /// Used to compute the average running timeout for postpone duration calculations.
-    /// </summary>
+    /// <inheritdoc/>
     public IEnumerable<TimeSpan> GetRunningTimeouts()
     {
         lock (syncLock)
