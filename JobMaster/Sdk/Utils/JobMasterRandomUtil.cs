@@ -101,7 +101,6 @@ internal static class JobMasterRandomUtil
     {
         var unixMilliseconds = timestamp.ToUnixTimeMilliseconds();
 
-        // "UUIDv7 values are created by allocating a Unix timestamp in milliseconds in the most significant 48 bits ..."
         var timeHigh = (uint)(unixMilliseconds >> 16);
         var timeLow = (ushort)unixMilliseconds;
 
