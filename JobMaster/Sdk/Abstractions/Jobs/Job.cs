@@ -14,7 +14,7 @@ internal class Job : JobMasterBaseModel
 
     internal Job(string clusterId) : base(clusterId)
     {
-        Id = JobMasterRandomUtil.NewGuid();
+        Id = JobMasterRandomUtil.NewGuid7();
         Status = JobMasterJobStatus.PendingSave;
         CreatedAt = DateTime.UtcNow;
     }

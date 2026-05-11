@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -109,7 +110,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
 
     public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid7();
         return await retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 

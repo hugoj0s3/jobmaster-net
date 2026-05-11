@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -21,7 +22,7 @@ public class AssignJobsToBucketsRunnerTests
     private static JobRawModel OnMasterJob()
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.OnMaster,
             NextPlanExecutionAt = DateTime.UtcNow,
         };

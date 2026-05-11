@@ -66,7 +66,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             }
             
             // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
             
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
@@ -108,7 +108,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             }
             
             // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
             
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
@@ -277,7 +277,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         var newVersions = new Dictionary<Guid, string>(jobs.Count);
         foreach (var job in jobs)
         {
-            newVersions[job.Id] = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            newVersions[job.Id] = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
         }
 
         var updated = new List<JobRawModel>(jobs.Count);

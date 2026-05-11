@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.SqlBase.Connections;
 using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
@@ -32,7 +33,7 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
         {
             var rec = JobRawModel.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {
@@ -83,7 +84,7 @@ internal class PostgresMasterJobsRepository : SqlMasterJobsRepository
         {
             var rec = JobRawModel.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {

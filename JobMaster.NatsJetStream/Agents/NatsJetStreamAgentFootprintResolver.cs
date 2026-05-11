@@ -42,7 +42,7 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
         }
 
         // 2. Generate new footprint
-        var footprint = Guid.NewGuid().ToString("N");
+        var footprint = JobMasterRandomUtil.NewGuid4().ToString("N");
 
         // 3. Try to create (insert only if missing)
         try

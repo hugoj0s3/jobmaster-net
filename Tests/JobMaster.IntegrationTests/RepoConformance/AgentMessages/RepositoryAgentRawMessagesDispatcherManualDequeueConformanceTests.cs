@@ -1,5 +1,6 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Utils;
 using Xunit;
 using Xunit.Sdk;
 
@@ -23,7 +24,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task CreateBucket_Push_Dequeue_ShouldRoundTrip_And_Remove()
     {
-        var bucket = "manual-dequeue-" + Guid.NewGuid();
+        var bucket = "manual-dequeue-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -55,7 +56,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task Dequeue_ShouldRespect_OrderByReferenceTimeThenMessageId()
     {
-        var bucket = "manual-dequeue-order-" + Guid.NewGuid();
+        var bucket = "manual-dequeue-order-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -84,7 +85,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task Dequeue_ShouldSupport_ReferenceTimeTo_Filter()
     {
-        var bucket = "manual-dequeue-refto-" + Guid.NewGuid();
+        var bucket = "manual-dequeue-refto-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -115,7 +116,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task BulkPush_Then_Dequeue_ShouldReturn_AllMessages()
     {
-        var bucket = "manual-dequeue-bulk-" + Guid.NewGuid();
+        var bucket = "manual-dequeue-bulk-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try

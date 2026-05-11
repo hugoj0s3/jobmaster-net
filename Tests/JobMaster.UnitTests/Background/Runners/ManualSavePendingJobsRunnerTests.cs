@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Background.Runners.SavePendingJobs;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
@@ -41,7 +42,7 @@ public class ManualSavePendingJobsRunnerTests
     private static JobRawModel TransientJob(string bucketId)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.PendingSave,
             BucketId = bucketId,
             NextPlanExecutionAt = DateTime.UtcNow.AddHours(1), // beyond any transient threshold

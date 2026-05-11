@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -46,7 +47,7 @@ public class JobConvertUtilTests
             MaxNumberOfRetries = 3,
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             SourceId = Guid.Parse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"),
-            PartitionLockId = Guid.NewGuid(),
+            PartitionLockId = JobMasterRandomUtil.NewGuid4(),
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             ProcessDeadline = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),
             WorkerLane = "lane"
@@ -120,7 +121,7 @@ public class JobConvertUtilTests
             MaxNumberOfRetries = 3,
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             SourceId = Guid.Parse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"),
-            PartitionLockId = Guid.NewGuid(),
+            PartitionLockId = JobMasterRandomUtil.NewGuid4(),
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             ProcessDeadline = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),
             WorkerLane = "lane"

@@ -1,5 +1,6 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Utils;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;
@@ -19,7 +20,7 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
     [Fact]
     public void TryLock_ShouldReturnToken_And_IsLocked_ShouldBeTrue()
     {
-        var key = $"lock-test-{Guid.NewGuid():N}";
+        var key = $"lock-test-{JobMasterRandomUtil.NewGuid4():N}";
 
         Assert.False(Repo.IsLocked(key));
 
@@ -35,7 +36,7 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
     [Fact]
     public void TryLock_ShouldBeMutuallyExclusive_UntilReleased()
     {
-        var key = $"lock-test-{Guid.NewGuid():N}";
+        var key = $"lock-test-{JobMasterRandomUtil.NewGuid4():N}";
 
         var token1 = Repo.TryLock(key, TimeSpan.FromMinutes(1));
         Assert.False(string.IsNullOrEmpty(token1));
@@ -52,7 +53,7 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
     [Fact]
     public void ReleaseLock_ShouldRequireCorrectToken()
     {
-        var key = $"lock-test-{Guid.NewGuid():N}";
+        var key = $"lock-test-{JobMasterRandomUtil.NewGuid4():N}";
 
         var token = Repo.TryLock(key, TimeSpan.FromSeconds(5));
         Assert.False(string.IsNullOrEmpty(token));
@@ -67,7 +68,7 @@ public abstract class RepositoryDistributedLockerConformanceTests<TFixture>
     [Fact]
     public async Task Lock_ShouldExpire_AfterLeaseDuration()
     {
-        var key = $"lock-test-{Guid.NewGuid():N}";
+        var key = $"lock-test-{JobMasterRandomUtil.NewGuid4():N}";
 
         var token1 = Repo.TryLock(key, TimeSpan.FromMilliseconds(200));
         Assert.False(string.IsNullOrEmpty(token1));

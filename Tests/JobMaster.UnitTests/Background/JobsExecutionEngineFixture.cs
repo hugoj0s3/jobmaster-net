@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
+using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
@@ -33,8 +34,8 @@ internal static class JobsExecutionEngineFixture
         JobMasterPriority priority = JobMasterPriority.High,
         int bufferSize = 10)
     {
-        var clusterId = $"c{Guid.NewGuid():N}";
-        var bucketId = $"b{Guid.NewGuid():N}";
+        var clusterId = $"c{JobMasterRandomUtil.NewGuid4():N}";
+        var bucketId = $"b{JobMasterRandomUtil.NewGuid4():N}";
         var clusterConfig = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);
 
         var ops = new Mock<IWorkerClusterOperations>(MockBehavior.Loose);
@@ -153,7 +154,7 @@ internal static class JobsExecutionEngineFixture
     {
         return new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
             JobDefinitionId = jobDefinitionId,
             NextPlanExecutionAt = nextPlanExecutionAt ?? DateTime.UtcNow.AddMinutes(-1),
@@ -183,7 +184,7 @@ internal static class JobsExecutionEngineFixture
     {
         return new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
             JobDefinitionId = FakeJobHandler.DefinitionId,
             SourceId = sourceId,
@@ -203,7 +204,7 @@ internal static class JobsExecutionEngineFixture
     {
         return new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
             JobDefinitionId = FakeJobHandler.DefinitionId,
             NextPlanExecutionAt = DateTime.UtcNow.AddMinutes(-5),

@@ -1,6 +1,7 @@
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
 
@@ -20,7 +21,7 @@ internal class MySqlMasterDistributedLockerRepository : SqlMasterDistributedLock
 
     public override string? TryLock(string key, TimeSpan duration)
     {
-        var token = Guid.NewGuid().ToString("N");
+        var token = JobMasterRandomUtil.NewGuid4().ToString("N");
         using var cnn = connManager.Open(connString, additionalConnConfig);
         if (cnn == null)
         {

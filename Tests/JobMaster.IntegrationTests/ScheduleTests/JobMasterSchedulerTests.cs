@@ -177,7 +177,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         int scheduleParallelLimit = 250)
     {
         var fromTimestamp = DateTime.UtcNow;
-        var testExecutionId = Guid.NewGuid().ToString("N");
+        var testExecutionId = JobMasterRandomUtil.NewGuid4().ToString("N");
         fixture.CurrentTestExecutionId = testExecutionId;
         
         var sessionMetadataFilters = new List<GenericRecordValueFilter>()
@@ -227,7 +227,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             
             var workerStopTask = Task.Run(async () =>
             {
-                var shuffledWorkers = workersToStop.OrderBy(_ => Guid.NewGuid()).ToList();
+                var shuffledWorkers = workersToStop.OrderBy(_ => JobMasterRandomUtil.NewGuid4()).ToList();
                 var firstBatch = shuffledWorkers.SkipLast(1).ToList(); // all but one
                 var lastWorker = shuffledWorkers.Last();
 
@@ -607,7 +607,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         int scheduleParallelLimit = 25)
     {
         var fromTimestamp = DateTime.UtcNow.AddMinutes(-1);
-        var testExecutionId = Guid.NewGuid().ToString();
+        var testExecutionId = JobMasterRandomUtil.NewGuid4().ToString();
         
         // Set current test execution ID for log flushing
         fixture.CurrentTestExecutionId = testExecutionId;
@@ -938,7 +938,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         TimeSpan frequencyExpected)
     {
         var fromTimestamp = DateTime.UtcNow.AddMinutes(-1);
-        var testExecutionId = Guid.NewGuid().ToString();
+        var testExecutionId = JobMasterRandomUtil.NewGuid4().ToString();
         fixture.CurrentTestExecutionId = testExecutionId;
         
         // Start performance monitoring (sample every 500ms)

@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -21,7 +22,7 @@ public class MasterJobsServiceTests
 
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
 
-        var id = Guid.NewGuid();
+        var id = JobMasterRandomUtil.NewGuid4();
         var raw = new JobRawModel(clusterId)
         {
             Id = id,
@@ -53,7 +54,7 @@ public class MasterJobsServiceTests
 
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
 
-        var id = Guid.NewGuid();
+        var id = JobMasterRandomUtil.NewGuid4();
         var raw = new JobRawModel(clusterId)
         {
             Id = id,
@@ -77,7 +78,7 @@ public class MasterJobsServiceTests
         repo.VerifyAll();
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

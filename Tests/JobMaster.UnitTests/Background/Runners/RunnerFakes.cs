@@ -12,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -41,14 +42,14 @@ internal static class RunnerFakes
             if (IsLocked(key))
                 return null;
 
-            var token = Guid.NewGuid().ToString("N");
+            var token = JobMasterRandomUtil.NewGuid4().ToString("N");
             _locks[key] = (token, DateTime.UtcNow.Add(leaseDuration));
             return token;
         }
 
         /// <summary>Pre-locks a key so IsLocked returns true without going through TryLock.</summary>
         public void ForceAddLock(string key, TimeSpan duration)
-            => _locks[key] = (Guid.NewGuid().ToString("N"), DateTime.UtcNow.Add(duration));
+            => _locks[key] = (JobMasterRandomUtil.NewGuid4().ToString("N"), DateTime.UtcNow.Add(duration));
 
         public bool ReleaseLock(string key, string? lockToken)
         {

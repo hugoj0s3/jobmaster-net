@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Services;
@@ -282,7 +283,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         var raw = new RecurringScheduleRawModel(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             JobDefinitionId = "def",
             MsgData = "{}",
             CreatedAt = DateTime.UtcNow,
@@ -383,7 +384,7 @@ public class JobMasterSchedulerClusterAwareTests
     {
         return new JobRawModel(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             JobDefinitionId = "def",
             TriggerSourceType = JobMasterTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
@@ -397,7 +398,7 @@ public class JobMasterSchedulerClusterAwareTests
         };
     }
 
-    private static string NewClusterId() => Guid.NewGuid().ToString("N");
+    private static string NewClusterId() => JobMasterRandomUtil.NewGuid4().ToString("N");
 
     private static JobMasterClusterConnectionConfig CreateClusterConfigWithActiveAgent(string clusterId, string agentName)
     {

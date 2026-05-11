@@ -2,6 +2,7 @@ using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -20,7 +21,7 @@ public class StaticRecurringDefinitionsKeepAliveRunnerTests : IDisposable
     public StaticRecurringDefinitionsKeepAliveRunnerTests()
     {
         // Each test uses a unique cluster ID to avoid cross-test static state pollution.
-        _clusterId = $"c{Guid.NewGuid():N}";
+        _clusterId = $"c{JobMasterRandomUtil.NewGuid4():N}";
     }
 
     public void Dispose()

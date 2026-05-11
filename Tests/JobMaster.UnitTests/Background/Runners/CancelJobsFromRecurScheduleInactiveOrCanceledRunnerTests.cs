@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -72,7 +73,7 @@ public class CancelJobsFromRecurScheduleInactiveOrCanceledRunnerTests
         // Add a non-final job that the fake service will return.
         var pendingJob = new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.OnMaster,
             SourceId = schedule.Id,
             NextPlanExecutionAt = DateTime.UtcNow.AddHours(1),

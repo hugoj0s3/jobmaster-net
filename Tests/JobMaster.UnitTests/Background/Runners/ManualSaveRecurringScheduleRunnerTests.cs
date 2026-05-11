@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
@@ -31,7 +32,7 @@ public class ManualSaveRecurringScheduleRunnerTests
     private static RecurringScheduleRawModel PendingSchedule(string clusterId, string bucketId)
         => new(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = RecurringScheduleStatus.PendingSave,
             BucketId = bucketId,
         };

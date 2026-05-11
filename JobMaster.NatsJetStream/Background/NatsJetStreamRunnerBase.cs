@@ -275,7 +275,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             var headers = new NatsHeaders
             {
                 [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
-                [NatsJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString(),
+                [NatsJetStreamConstants.HeaderMessageId] = JobMasterRandomUtil.NewGuid4().ToString(),
                 [NatsJetStreamConstants.HeaderHeartbeat] = "true",
             };
             await jsContext!.PublishAsync(subjectName, data, headers: headers, cancellationToken: pubCts.Token);
@@ -292,7 +292,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)
     {
         var (signature, correlationId, referenceTimeUtc, messageId) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
-        var ackGuard = new MsgAckGuard(msg, messageId ?? Guid.NewGuid().ToString());
+        var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString());
         var attempts = ackGuard.FailureCount;
         var natsDeliveryCount = msg.Metadata?.NumDelivered ?? 0;
         

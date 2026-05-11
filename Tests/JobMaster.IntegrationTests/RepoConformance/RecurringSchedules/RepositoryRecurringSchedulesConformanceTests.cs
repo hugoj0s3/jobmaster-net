@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
@@ -25,12 +26,12 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     {
         var now = DateTime.UtcNow;
 
-        var schedule = NewSchedule(jobDefinitionId: "def-rt-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-rt-" + JobMasterRandomUtil.NewGuid4());
         schedule.ExpressionTypeId = NeverRecursExprCompiler.TypeId;
         schedule.Expression = string.Empty;
 
-        schedule.StaticDefinitionId = "static-" + Guid.NewGuid();
-        schedule.ProfileId = "profile-" + Guid.NewGuid();
+        schedule.StaticDefinitionId = "static-" + JobMasterRandomUtil.NewGuid4();
+        schedule.ProfileId = "profile-" + JobMasterRandomUtil.NewGuid4();
 
         schedule.Status = RecurringScheduleStatus.PendingSave;
         schedule.RecurringScheduleType = RecurringScheduleType.Static;
@@ -47,10 +48,10 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.AgentConnectionId = Fixture.AgentConnectionId;
         schedule.AgentWorkerId = "worker-1";
 
-        schedule.PartitionLockId = Guid.NewGuid();
+        schedule.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         schedule.PartitionLockExpiresAt = now.AddMinutes(30);
 
-        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
+        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "test-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
         schedule.CreatedAt = now;
         schedule.StartAfter = now.AddMinutes(-10);
@@ -73,7 +74,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Upsert_ShouldPersistChanges()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-upd-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-upd-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
         var updated = Clone(schedule);
@@ -90,9 +91,9 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.BucketId = "bucket-upd";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
         updated.AgentWorkerId = "worker-upd";
-        updated.PartitionLockId = Guid.NewGuid();
+        updated.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(10);
-        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "updated-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         updated.StartAfter = DateTime.UtcNow.AddHours(-1);
         updated.EndBefore = DateTime.UtcNow.AddHours(5);
         updated.LastPlanCoverageUntil = DateTime.UtcNow.AddHours(3);
@@ -112,7 +113,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
         // Load two separate copies to simulate concurrent upserts
@@ -134,14 +135,14 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Upsert_ShouldThrow_WhenVersionMismatch()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
         var current = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(current);
 
         var stale = Clone(current!);
-        stale.Version = Guid.NewGuid().ToString("N");
+        stale.Version = JobMasterRandomUtil.NewGuid4().ToString("N");
         stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
@@ -151,13 +152,13 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task GetByStaticId_ShouldReturnOnly_StaticSchedules()
     {
-        var staticId = "static-" + Guid.NewGuid();
+        var staticId = "static-" + JobMasterRandomUtil.NewGuid4();
 
-        var matching = NewSchedule(jobDefinitionId: "def-static-" + Guid.NewGuid());
+        var matching = NewSchedule(jobDefinitionId: "def-static-" + JobMasterRandomUtil.NewGuid4());
         matching.StaticDefinitionId = staticId;
         matching.RecurringScheduleType = RecurringScheduleType.Static;
 
-        var nonStatic = NewSchedule(jobDefinitionId: "def-nonstatic-" + Guid.NewGuid());
+        var nonStatic = NewSchedule(jobDefinitionId: "def-nonstatic-" + JobMasterRandomUtil.NewGuid4());
         nonStatic.StaticDefinitionId = staticId;
         nonStatic.RecurringScheduleType = RecurringScheduleType.Dynamic;
 
@@ -173,8 +174,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     public async Task Query_And_Count_ShouldBeConsistent_ForCommonFilters()
     {
         var baseTime = DateTime.UtcNow;
-        var defA = "defA-" + Guid.NewGuid();
-        var defB = "defB-" + Guid.NewGuid();
+        var defA = "defA-" + JobMasterRandomUtil.NewGuid4();
+        var defB = "defB-" + JobMasterRandomUtil.NewGuid4();
 
         var s1 = NewSchedule(jobDefinitionId: defA);
         s1.Status = RecurringScheduleStatus.Active;
@@ -220,11 +221,11 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_IsLocked_And_PartitionLockId()
     {
-        var def = "defLock-" + Guid.NewGuid();
+        var def = "defLock-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
-        var lockedLockId = Guid.NewGuid();
-        var expiredLockId = Guid.NewGuid();
+        var lockedLockId = JobMasterRandomUtil.NewGuid4();
+        var expiredLockId = JobMasterRandomUtil.NewGuid4();
 
         var locked = NewSchedule(jobDefinitionId: def);
         locked.PartitionLockId = lockedLockId;
@@ -263,7 +264,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_StartAfter_And_EndBefore_Ranges_WithNulls()
     {
-        var def = "defRanges-" + Guid.NewGuid();
+        var def = "defRanges-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var nulls = NewSchedule(jobDefinitionId: def);
@@ -300,7 +301,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CoverageUntil_Filter_WithNulls()
     {
-        var def = "defCoverage-" + Guid.NewGuid();
+        var def = "defCoverage-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var nullCoverage = NewSchedule(jobDefinitionId: def);
@@ -333,7 +334,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_IsJobCancellationPending_Filter()
     {
-        var def = "defCancel-" + Guid.NewGuid();
+        var def = "defCancel-" + JobMasterRandomUtil.NewGuid4();
 
         var a = NewSchedule(jobDefinitionId: def);
         a.IsJobCancellationPending = true;
@@ -359,7 +360,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CanceledOrInactive_Filter()
     {
-        var def = "defCanceledOrInactive-" + Guid.NewGuid();
+        var def = "defCanceledOrInactive-" + JobMasterRandomUtil.NewGuid4();
 
         var active = NewSchedule(jobDefinitionId: def);
         active.Status = RecurringScheduleStatus.Active;
@@ -392,7 +393,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_RecurringScheduleType_ProfileId_And_WorkerLane()
     {
-        var def = "defTypeProfileLane-" + Guid.NewGuid();
+        var def = "defTypeProfileLane-" + JobMasterRandomUtil.NewGuid4();
 
         var a = NewSchedule(jobDefinitionId: def);
         a.RecurringScheduleType = RecurringScheduleType.Static;
@@ -424,7 +425,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_MetadataFilters_AllOperations_And_Types()
     {
-        var def = "defMeta-" + Guid.NewGuid();
+        var def = "defMeta-" + JobMasterRandomUtil.NewGuid4();
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
@@ -471,7 +472,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CountLimit_And_Offset_OrderIsDeterministic()
     {
-        var def = "defPaging-" + Guid.NewGuid();
+        var def = "defPaging-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var list = new List<RecurringScheduleRawModel>();
@@ -524,10 +525,10 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var now = DateTime.UtcNow;
         return new RecurringScheduleRawModel(Fixture.ClusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             ExpressionTypeId = NeverRecursExprCompiler.TypeId,
             Expression = string.Empty,
-            JobDefinitionId = jobDefinitionId ?? ("def-" + Guid.NewGuid()),
+            JobDefinitionId = jobDefinitionId ?? ("def-" + JobMasterRandomUtil.NewGuid4()),
             Status = RecurringScheduleStatus.Active,
             RecurringScheduleType = RecurringScheduleType.Dynamic,
             MsgData = "{}",
@@ -699,7 +700,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldDelete_OnlyTerminatedSchedulesOlderThanCutoff()
     {
-        var def = "defPurge-" + Guid.NewGuid();
+        var def = "defPurge-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(5);
 
@@ -746,7 +747,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldRespect_Limit()
     {
-        var def = "defPurgeLimit-" + Guid.NewGuid();
+        var def = "defPurgeLimit-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -774,7 +775,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldNotDelete_ActiveSchedules()
     {
-        var def = "defPurgeActive-" + Guid.NewGuid();
+        var def = "defPurgeActive-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 

@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -19,7 +20,7 @@ public class HeldOnMasterDeadlineTimeoutJobsRunnerTests
     private static JobRawModel OverdueJob(string? bucketId = null)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.OnMaster,
             ProcessDeadline = DateTime.UtcNow.AddMinutes(-10),
             BucketId = bucketId,
@@ -28,7 +29,7 @@ public class HeldOnMasterDeadlineTimeoutJobsRunnerTests
     private static JobRawModel FinalJob(string? bucketId = null)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.Succeeded,
             ProcessDeadline = DateTime.UtcNow.AddMinutes(-5),
             BucketId = bucketId,
@@ -58,7 +59,7 @@ public class HeldOnMasterDeadlineTimeoutJobsRunnerTests
         // Jobs with future deadlines are not yet overdue.
         f.JobsService.Jobs.Add(new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.OnMaster,
             ProcessDeadline = DateTime.UtcNow.AddHours(1),
         });

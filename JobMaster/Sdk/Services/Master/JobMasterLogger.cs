@@ -12,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -73,7 +74,7 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
             SourceMember = sourceMember,
             SourceFile = sourceFile,
             SourceLine = sourceLine,
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid7(),
         };
         
         if (exception != null)

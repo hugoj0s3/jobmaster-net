@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
@@ -33,7 +34,7 @@ internal class SqlServerMasterRecurringSchedulesRepository : SqlMasterRecurringS
         {
             var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {
@@ -83,7 +84,7 @@ internal class SqlServerMasterRecurringSchedulesRepository : SqlMasterRecurringS
         {
             var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {

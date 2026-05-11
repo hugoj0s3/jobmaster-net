@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -78,7 +79,7 @@ public class JobMasterLoggerTests
                     GenericRecordEntry.Create(
                         clusterId,
                         MasterGenericRecordGroupIds.Log,
-                        Guid.NewGuid(),
+                        JobMasterRandomUtil.NewGuid4(),
                         subjectType: nameof(JobMasterLogSubjectType.Job),
                         subjectId: "sid",
                         obj: payload)
@@ -146,7 +147,7 @@ public class JobMasterLoggerTests
                     GenericRecordEntry.Create(
                         clusterId,
                         MasterGenericRecordGroupIds.Log,
-                        Guid.NewGuid(),
+                        JobMasterRandomUtil.NewGuid4(),
                         subjectType: "NotAType",
                         subjectId: "sid",
                         obj: payload)
@@ -162,7 +163,7 @@ public class JobMasterLoggerTests
         result[0].SubjectType.Should().BeNull();
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

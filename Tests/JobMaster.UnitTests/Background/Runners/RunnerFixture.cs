@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
@@ -38,8 +39,8 @@ internal sealed record RunnerFixture(
 {
     public static RunnerFixture Create()
     {
-        var clusterId = $"c{Guid.NewGuid():N}";
-        var workerId = $"w{Guid.NewGuid():N}";
+        var clusterId = $"c{JobMasterRandomUtil.NewGuid4():N}";
+        var workerId = $"w{JobMasterRandomUtil.NewGuid4():N}";
         var agentConnectionId = new AgentConnectionId(clusterId, "fake-agent");
         var hostId = new HostId(clusterId, "fake-host");
         var clusterConnConfig = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);
@@ -205,7 +206,7 @@ internal sealed record RunnerFixture(
     public static JobRawModel FinalizedJob(DateTime finalizedAt, JobMasterJobStatus status = JobMasterJobStatus.Succeeded)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = status,
             FinalizedAt = finalizedAt,
         };
@@ -253,21 +254,21 @@ internal sealed record RunnerFixture(
     public static RecurringScheduleRawModel ActiveSchedule(string clusterId)
         => new(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = RecurringScheduleStatus.Active,
         };
 
     public static RecurringScheduleRawModel InactiveSchedule(string clusterId)
         => new(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = RecurringScheduleStatus.Inactive,
         };
 
     public static RecurringScheduleRawModel CanceledScheduleWithJobCancellationPending(string clusterId)
         => new(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = RecurringScheduleStatus.Canceled,
             IsJobCancellationPending = true,
         };

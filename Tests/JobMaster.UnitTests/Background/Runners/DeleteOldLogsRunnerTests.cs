@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -24,7 +25,7 @@ public class DeleteOldLogsRunnerTests
         var record = GenericRecordEntry.Create(
             clusterId,
             MasterGenericRecordGroupIds.Log,
-            entryId: Guid.NewGuid().ToString(),
+            entryId: JobMasterRandomUtil.NewGuid4().ToString(),
             obj: new { });
 
         record.CreatedAt = createdAt;

@@ -114,7 +114,7 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
             }
 
             // Generate initial version for new recurring schedule
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
@@ -154,7 +154,7 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
             }
 
             // Generate initial version for new recurring schedule
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";

@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Background;
@@ -71,7 +72,7 @@ public class JobsExecutionEngineTests
         var f = JobsExecutionEngineFixture.Create();
         var job = new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
             NextPlanExecutionAt = DateTime.UtcNow.AddMinutes(-1),
             ProcessDeadline = null,
@@ -88,7 +89,7 @@ public class JobsExecutionEngineTests
         var f = JobsExecutionEngineFixture.Create();
         var job = new JobRawModel
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.OnMaster,
             NextPlanExecutionAt = DateTime.UtcNow.AddMinutes(-1),
             ProcessDeadline = DateTime.UtcNow.AddMinutes(10),
@@ -103,7 +104,7 @@ public class JobsExecutionEngineTests
     public async Task TryOnBoardingJobAsync_WhenRecurringScheduleNotFound_ShouldFailJobAndReturnCancelled()
     {
         var f = JobsExecutionEngineFixture.Create();
-        var sourceId = Guid.NewGuid();
+        var sourceId = JobMasterRandomUtil.NewGuid4();
         var job = JobsExecutionEngineFixture.CreateRecurringJob(sourceId);
 
         f.Schedules.Setup(x => x.GetAsync(sourceId)).ReturnsAsync((RecurringScheduleRawModel?)null);
@@ -119,7 +120,7 @@ public class JobsExecutionEngineTests
     public async Task TryOnBoardingJobAsync_WhenRecurringScheduleTerminated_ShouldCancelJobAndReturnCancelled()
     {
         var f = JobsExecutionEngineFixture.Create();
-        var sourceId = Guid.NewGuid();
+        var sourceId = JobMasterRandomUtil.NewGuid4();
         var job = JobsExecutionEngineFixture.CreateRecurringJob(sourceId);
 
         var schedule = new RecurringScheduleRawModel
@@ -141,7 +142,7 @@ public class JobsExecutionEngineTests
     public async Task TryOnBoardingJobAsync_WhenRecurringScheduleStaticIdle_ShouldMoveToMasterAndReturnMovedToMaster()
     {
         var f = JobsExecutionEngineFixture.Create();
-        var sourceId = Guid.NewGuid();
+        var sourceId = JobMasterRandomUtil.NewGuid4();
         var job = JobsExecutionEngineFixture.CreateRecurringJob(sourceId);
 
         var schedule = new RecurringScheduleRawModel

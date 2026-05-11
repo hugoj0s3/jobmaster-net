@@ -12,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -135,13 +136,13 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid7();
         return retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
     public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, DateTime expiresAtUtc)
     {
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid7();
         var criteria = new RecurringScheduleQueryCriteria
         {
             Ids = ids,

@@ -12,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
 using Moq;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -217,7 +218,7 @@ public class MasterAgentWorkersServiceTests
         public string HostDisplayName { get; set; } = string.Empty;
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

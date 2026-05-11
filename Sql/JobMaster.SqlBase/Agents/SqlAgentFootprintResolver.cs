@@ -4,6 +4,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Scripts;
 
@@ -36,7 +37,7 @@ where cluster_id = @clusterId and
             return footprint!;
         }
 
-        footprint = Guid.NewGuid().ToString();
+        footprint = JobMasterRandomUtil.NewGuid4().ToString();
         
         // insert footprint 
         await connection.ExecuteAsync($@"

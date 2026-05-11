@@ -14,6 +14,7 @@ using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -528,7 +529,7 @@ public class MasterBucketsServiceTests
         selector.Verify(x => x.Select(It.Is<IList<BucketModel>>(lst => lst.Count == 1 && lst[0].Id == "b1")), Times.Once);
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
+using JobMaster.Sdk.Utils;
 using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
@@ -49,7 +50,7 @@ public class RecentlyInsertedScheduleRecurringJobsRunnerTests
         var f = CreateFixture();
         f.Locker.BlockAllLocks = true;
 
-        var scheduleId = Guid.NewGuid();
+        var scheduleId = JobMasterRandomUtil.NewGuid4();
         f.RecentlyInsertedQueue.Queue.Add(scheduleId);
 
         var runner = new RecentlyInsertedScheduleRecurringJobsRunner(f.Worker.Object);
@@ -104,7 +105,7 @@ public class RecentlyInsertedScheduleRecurringJobsRunnerTests
         var f = CreateFixture();
 
         // ID in queue but not in the service — fetch returns nothing; runner still succeeds.
-        f.RecentlyInsertedQueue.Queue.Add(Guid.NewGuid());
+        f.RecentlyInsertedQueue.Queue.Add(JobMasterRandomUtil.NewGuid4());
 
         var runner = new RecentlyInsertedScheduleRecurringJobsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);

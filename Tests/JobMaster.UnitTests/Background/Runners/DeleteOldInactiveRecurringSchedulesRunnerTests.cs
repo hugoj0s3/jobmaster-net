@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -21,14 +22,14 @@ public class DeleteOldInactiveRecurringSchedulesRunnerTests
     private static RecurringScheduleRawModel TerminatedSchedule(DateTime terminatedAt)
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             TerminatedAt = terminatedAt,
         };
 
     private static RecurringScheduleRawModel ActiveSchedule()
         => new()
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             TerminatedAt = null,
         };
 

@@ -365,7 +365,7 @@ WHERE {colBucket} = @Bucket";
         return $"{GetInsertHeaderSql()} VALUES ({GetInsertValuesClause(payloadParameter, refTimeParameter, corrIdParameter, enqAtParameter)})"; 
     }
 
-    protected virtual string GenerateMessageId() => Guid.NewGuid().ToString("D");
+    protected virtual string GenerateMessageId() => JobMasterRandomUtil.NewGuid4().ToString("D");
     
     protected virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsyncCore(IDbConnection cnn, IDbTransaction tx, string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {

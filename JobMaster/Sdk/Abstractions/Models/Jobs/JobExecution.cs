@@ -1,6 +1,7 @@
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -8,12 +9,12 @@ internal class JobExecution : JobMasterBaseModel
 {
     public JobExecution(string clusterId) : base(clusterId)
     {
-        Id = Guid.NewGuid();
+        Id = JobMasterRandomUtil.NewGuid7();
     }
 
     protected JobExecution()
     {
-        Id = Guid.NewGuid();
+        Id = JobMasterRandomUtil.NewGuid7();
     }
     
     public Guid Id { get; set; }

@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Utils;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
@@ -24,7 +25,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var now = DateTime.UtcNow;
 
         var job = NewJob(
-            jobDefinitionId: "job-def-rt-" + Guid.NewGuid(),
+            jobDefinitionId: "job-def-rt-" + JobMasterRandomUtil.NewGuid4(),
             status: JobMasterJobStatus.InBucket,
             scheduledAt: now.AddMinutes(1),
             workerLane: "LANE_RT");
@@ -35,15 +36,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.NumberOfFailures = 2;
         job.MaxNumberOfRetries = 7;
         job.Timeout = TimeSpan.FromSeconds(123);
-        job.SourceId = Guid.NewGuid();
-        job.PartitionLockId = Guid.NewGuid();
+        job.SourceId = JobMasterRandomUtil.NewGuid4();
+        job.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         job.PartitionLockExpiresAt = now.AddMinutes(30);
         job.ProcessDeadline = now.AddMinutes(20);
         job.ProcessStartedAt = now.AddMinutes(-2);
         job.FinalizedAt = now.AddMinutes(-1);
         job.MsgData = "{\"a\":1,\"b\":\"x\"}";
         job.Metadata = "{\"meta_k\":\"meta_v\",\"n\":5}";
-        job.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
+        job.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "test-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
         await Fixture.MasterJobs.AddAsync(job);
 
@@ -73,15 +74,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.NumberOfFailures = 3;
         updated.MaxNumberOfRetries = 9;
         updated.Timeout = TimeSpan.FromSeconds(77);
-        updated.SourceId = Guid.NewGuid();
-        updated.PartitionLockId = Guid.NewGuid();
+        updated.SourceId = JobMasterRandomUtil.NewGuid4();
+        updated.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(15);
         updated.ProcessDeadline = DateTime.UtcNow.AddMinutes(5);
         updated.ProcessStartedAt = DateTime.UtcNow.AddMinutes(-10);
         updated.FinalizedAt = DateTime.UtcNow.AddMinutes(-1);
         updated.MsgData = "{\"x\":\"y\"}";
         updated.Metadata = "{\"k\":\"v\"}";
-        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "updated-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
         await Fixture.MasterJobs.UpsertAsync(updated);
 
@@ -126,7 +127,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.NotNull(current);
 
         var stale = Clone(current!);
-        stale.Version = Guid.NewGuid().ToString("N");
+        stale.Version = JobMasterRandomUtil.NewGuid4().ToString("N");
         stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
@@ -136,7 +137,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_Status_Filter()
     {
-        var def = "defStatus-" + Guid.NewGuid();
+        var def = "defStatus-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster));
         await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded));
 
@@ -150,7 +151,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_ScheduledFrom_Filter()
     {
-        var def = "defScheduledFrom-" + Guid.NewGuid();
+        var def = "defScheduledFrom-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var early = NewJob(jobDefinitionId: def, scheduledAt: baseTime.AddMinutes(1));
@@ -168,7 +169,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_ScheduledTo_Filter()
     {
-        var def = "defScheduledTo-" + Guid.NewGuid();
+        var def = "defScheduledTo-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var early = NewJob(jobDefinitionId: def, scheduledAt: baseTime.AddMinutes(1));
@@ -186,7 +187,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_ProcessDeadlineTo_Filter()
     {
-        var def = "defDeadline-" + Guid.NewGuid();
+        var def = "defDeadline-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var within = NewJob(jobDefinitionId: def);
@@ -207,13 +208,13 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_RecurringScheduleId_Filter()
     {
-        var def = "defRecurring-" + Guid.NewGuid();
-        var sourceId = Guid.NewGuid();
+        var def = "defRecurring-" + JobMasterRandomUtil.NewGuid4();
+        var sourceId = JobMasterRandomUtil.NewGuid4();
 
         var match = NewJob(jobDefinitionId: def);
         match.SourceId = sourceId;
         var other = NewJob(jobDefinitionId: def);
-        other.SourceId = Guid.NewGuid();
+        other.SourceId = JobMasterRandomUtil.NewGuid4();
 
         await Fixture.MasterJobs.AddAsync(match);
         await Fixture.MasterJobs.AddAsync(other);
@@ -228,8 +229,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_JobDefinitionId_Filter()
     {
-        var defA = "defA-" + Guid.NewGuid();
-        var defB = "defB-" + Guid.NewGuid();
+        var defA = "defA-" + JobMasterRandomUtil.NewGuid4();
+        var defB = "defB-" + JobMasterRandomUtil.NewGuid4();
         var a = NewJob(jobDefinitionId: defA);
         var b = NewJob(jobDefinitionId: defB);
         await Fixture.MasterJobs.AddAsync(a);
@@ -245,7 +246,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_WorkerLane_Filter()
     {
-        var def = "defLane-" + Guid.NewGuid();
+        var def = "defLane-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var lane1 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: baseTime.AddMinutes(1), workerLane: "LANE_A");
@@ -272,7 +273,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CountLimit_And_Offset()
     {
-        var def = "defPaging-" + Guid.NewGuid();
+        var def = "defPaging-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var jobs = new List<JobRawModel>();
@@ -301,7 +302,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_MetadataFilters_AllOperations_And_Types()
     {
-        var def = "defMeta-" + Guid.NewGuid();
+        var def = "defMeta-" + JobMasterRandomUtil.NewGuid4();
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
@@ -371,8 +372,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var job = new JobRawModel(Fixture.ClusterId)
         {
-            Id = Guid.NewGuid(),
-            JobDefinitionId = jobDefinitionId ?? ("job-def-" + Guid.NewGuid()),
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobDefinitionId = jobDefinitionId ?? ("job-def-" + JobMasterRandomUtil.NewGuid4()),
             TriggerSourceType = JobMasterTriggerSourceType.Once,
             Priority = JobMasterPriority.Medium,
             ScheduledAt = sched,
@@ -473,7 +474,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task PurgeFinalizedAsync_ShouldDelete_OnlyFinalJobsOlderThanCutoff()
     {
-        var def = "defPurgeFinal-" + Guid.NewGuid();
+        var def = "defPurgeFinal-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(5);
 
@@ -511,7 +512,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task PurgeFinalizedAsync_ShouldRespect_Limit()
     {
-        var def = "defPurgeFinalLimit-" + Guid.NewGuid();
+        var def = "defPurgeFinalLimit-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -537,7 +538,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task PurgeFinalizedAsync_ShouldNotDelete_NonFinalJobs()
     {
-        var def = "defPurgeNonFinal-" + Guid.NewGuid();
+        var def = "defPurgeNonFinal-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -568,7 +569,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task PurgeFinalizedAsync_ShouldDelete_AllFinalStatuses()
     {
-        var def = "defPurgeAllFinal-" + Guid.NewGuid();
+        var def = "defPurgeAllFinal-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -601,7 +602,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldLockAndReturnMatchingJobs()
     {
-        var def = "defAcquire-" + Guid.NewGuid();
+        var def = "defAcquire-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var j1 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
@@ -610,7 +611,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(j2);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var lockId = Guid.NewGuid();
+        var lockId = JobMasterRandomUtil.NewGuid4();
         var expiresAt = now.AddMinutes(30);
 
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, lockId, expiresAt);
@@ -630,11 +631,11 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldSkipAlreadyLockedJobs()
     {
-        var def = "defAcquireSkipLocked-" + Guid.NewGuid();
+        var def = "defAcquireSkipLocked-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var locked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
-        locked.PartitionLockId = Guid.NewGuid();
+        locked.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         locked.PartitionLockExpiresAt = now.AddMinutes(30);
 
         var unlocked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(2));
@@ -644,7 +645,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(locked);
         await Fixture.MasterJobs.AddAsync(unlocked);
 
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
@@ -656,9 +657,9 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldReacquireExpiredLocks()
     {
-        var def = "defAcquireExpired-" + Guid.NewGuid();
+        var def = "defAcquireExpired-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
-        var partitionLockIdExpired = Guid.NewGuid();
+        var partitionLockIdExpired = JobMasterRandomUtil.NewGuid4();
 
         var expiredLock = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
         expiredLock.PartitionLockId = partitionLockIdExpired;
@@ -666,7 +667,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         await Fixture.MasterJobs.AddAsync(expiredLock);
         
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
@@ -678,7 +679,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_SecondAcquireShouldNotReturnAlreadyAcquiredJobs()
     {
-        var def = "defAcquireNoOverlap-" + Guid.NewGuid();
+        var def = "defAcquireNoOverlap-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var j1 = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
@@ -687,11 +688,11 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(j2);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var partitionLockId1 = Guid.NewGuid();
+        var partitionLockId1 = JobMasterRandomUtil.NewGuid4();
         var first = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId1, now.AddMinutes(30));
         Assert.Equal(2, first.Count);
 
-        var partitionLockId2 = Guid.NewGuid();
+        var partitionLockId2 = JobMasterRandomUtil.NewGuid4();
         var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId2, now.AddMinutes(30));
         Assert.Empty(second);
     }
@@ -699,7 +700,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldRespectQueryCriteriaFilters()
     {
-        var def = "defAcquireFilter-" + Guid.NewGuid();
+        var def = "defAcquireFilter-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var match = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
@@ -709,7 +710,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(match);
         await Fixture.MasterJobs.AddAsync(noMatch);
 
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
@@ -720,7 +721,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldBumpVersion()
     {
-        var def = "defAcquireVersion-" + Guid.NewGuid();
+        var def = "defAcquireVersion-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
         var job = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(1));
@@ -729,7 +730,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var beforeAcquire = await Fixture.MasterJobs.GetAsync(job.Id);
         var originalVersion = beforeAcquire!.Version;
 
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
@@ -741,10 +742,10 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     [Fact]
     public async Task AcquireAndFetch_ShouldRespectCountLimit()
     {
-        var def = "defAcquireLimit-" + Guid.NewGuid();
+        var def = "defAcquireLimit-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
-        var partitionLockId1 = Guid.NewGuid();
-        var partitionLockId2 = Guid.NewGuid();
+        var partitionLockId1 = JobMasterRandomUtil.NewGuid4();
+        var partitionLockId2 = JobMasterRandomUtil.NewGuid4();
 
         for (var i = 0; i < 5; i++)
         {

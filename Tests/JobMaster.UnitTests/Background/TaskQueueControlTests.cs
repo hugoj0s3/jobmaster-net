@@ -2,6 +2,7 @@ using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Background;
 
@@ -368,7 +369,7 @@ public class TaskQueueControlTests
     {
         using var sut = CreateSingleSlot();
 
-        sut.Contains(Guid.NewGuid().ToString()).Should().BeFalse();
+        sut.Contains(JobMasterRandomUtil.NewGuid4().ToString()).Should().BeFalse();
     }
 
     [Fact]
@@ -498,7 +499,7 @@ public class TaskQueueControlTests
         var executed = false;
 
         var item = new TaskQueueItem<string>(
-            id: Guid.NewGuid().ToString(),
+            id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "my-job",
             timeout: TimeSpan.FromSeconds(5),
             action: async ct =>
@@ -530,7 +531,7 @@ public class TaskQueueControlTests
         using var sut = CreateSingleSlot();
 
         var item = new TaskQueueItem<string>(
-            id: Guid.NewGuid().ToString(),
+            id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "slow-job",
             timeout: TimeSpan.FromMilliseconds(100),
             action: async ct =>
@@ -609,7 +610,7 @@ internal sealed class FakeTaskQueueItem<T> : ITaskQueueItem<T>
     private readonly TaskCompletionSource _tcs =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public string Id { get; } = Guid.NewGuid().ToString();
+    public string Id { get; } = JobMasterRandomUtil.NewGuid4().ToString();
     public T Value { get; }
     public Task Task => _tcs.Task;
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(1);

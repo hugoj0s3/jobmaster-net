@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -20,7 +21,7 @@ public class MasterRecurringSchedulesServiceTests
         var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
         var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
 
-        var id = Guid.NewGuid();
+        var id = JobMasterRandomUtil.NewGuid4();
         var raw = new RecurringScheduleRawModel(clusterId)
         {
             Id = id,
@@ -49,7 +50,7 @@ public class MasterRecurringSchedulesServiceTests
         var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
         var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
 
-        var id = Guid.NewGuid();
+        var id = JobMasterRandomUtil.NewGuid4();
         var raw = new RecurringScheduleRawModel(clusterId)
         {
             Id = id,
@@ -85,7 +86,7 @@ public class MasterRecurringSchedulesServiceTests
         repo.Verify(x => x.BulkUpdateStaticDefinitionLastEnsuredByStaticIds(It.IsAny<IList<string>>(), It.IsAny<DateTime>()), Times.Never);
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

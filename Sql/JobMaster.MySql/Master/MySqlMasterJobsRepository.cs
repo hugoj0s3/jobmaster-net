@@ -12,6 +12,7 @@ using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
 using JobMaster.SqlBase.Scripts;
 using System.Data;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.MySql.Master;
 
@@ -34,7 +35,7 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
         {
             var rec = JobRawModel.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {
@@ -90,7 +91,7 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
         {
             var rec = JobRawModel.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             if (rec.Metadata is not null)
             {

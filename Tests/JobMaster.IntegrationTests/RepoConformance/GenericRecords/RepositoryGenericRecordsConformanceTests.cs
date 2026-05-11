@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Utils;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.GenericRecords;
@@ -19,7 +20,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     public async Task InsertAndGet_ShouldRoundTrip_AllSupportedValueTypes()
     {
         var groupId = "GenericRecordTestGroup";
-        var entryId = "entry-" + Guid.NewGuid().ToString("N");
+        var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var now = DateTime.UtcNow;
         var expiresAt = now.AddHours(1);
@@ -53,7 +54,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     public async Task Update_ShouldPersist_Values_And_HeaderFields()
     {
         var groupId = "GenericRecordTestGroup";
-        var entryId = "entry-" + Guid.NewGuid().ToString("N");
+        var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var record = NewEntry(groupId, entryId);
         record.SubjectType = "st1";
@@ -90,7 +91,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     public async Task Upsert_ShouldInsertThenUpdate()
     {
         var groupId = "GenericRecordTestGroup";
-        var entryId = "entry-" + Guid.NewGuid().ToString("N");
+        var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var record = NewEntry(groupId, entryId);
         record.SubjectType = "st";
@@ -117,7 +118,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     public async Task Delete_ShouldRemove_Entry_And_Values()
     {
         var groupId = "GenericRecordTestGroup";
-        var entryId = "entry-" + Guid.NewGuid().ToString("N");
+        var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var record = NewEntry(groupId, entryId);
         record.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -141,7 +142,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         var baseTime = DateTime.UtcNow.AddHours(-1);
 
-        var e1 = NewEntry(groupId, "e1_" + Guid.NewGuid().ToString("N"));
+        var e1 = NewEntry(groupId, "e1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         e1.SubjectType = subjectType;
         e1.SubjectId = "S1";
         e1.CreatedAt = baseTime.AddMinutes(1);
@@ -152,7 +153,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["n"] = 10L,
         };
 
-        var e2 = NewEntry(groupId, "e2_" + Guid.NewGuid().ToString("N"));
+        var e2 = NewEntry(groupId, "e2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         e2.SubjectType = subjectType;
         e2.SubjectId = "S2";
         e2.CreatedAt = baseTime.AddMinutes(2);
@@ -163,7 +164,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["n"] = 20L,
         };
 
-        var e3 = NewEntry(groupId, "e3_" + Guid.NewGuid().ToString("N"));
+        var e3 = NewEntry(groupId, "e3_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         e3.SubjectType = subjectType;
         e3.SubjectId = "S1";
         e3.CreatedAt = baseTime.AddMinutes(3);
@@ -267,7 +268,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
-        var a = NewEntry(groupId, "a_" + Guid.NewGuid().ToString("N"));
+        var a = NewEntry(groupId, "a_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         a.SubjectType = subjectType;
         a.SubjectId = "S1";
         a.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -277,7 +278,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["dt"] = t0,
         };
 
-        var b = NewEntry(groupId, "b_" + Guid.NewGuid().ToString("N"));
+        var b = NewEntry(groupId, "b_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         b.SubjectType = subjectType;
         b.SubjectId = "S2";
         b.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -287,7 +288,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["dt"] = t0.AddDays(1),
         };
 
-        var c = NewEntry(groupId, "c_" + Guid.NewGuid().ToString("N"));
+        var c = NewEntry(groupId, "c_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         c.SubjectType = subjectType;
         c.SubjectId = "S3";
         c.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -335,21 +336,21 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // not just records that have the key set to a different value. The bug was that the
         // old EXISTS clause required the key row to exist, so key-less records were silently
         // excluded and the filter returned zero rows.
-        var groupId = "GR_Neq_MissingKey_" + Guid.NewGuid().ToString("N");
+        var groupId = "GR_Neq_MissingKey_" + JobMasterRandomUtil.NewGuid4().ToString("N");
         var subjectType = "NeqMissingKey";
 
         // has "type" = 1
-        var withType1 = NewEntry(groupId, "withType1_" + Guid.NewGuid().ToString("N"));
+        var withType1 = NewEntry(groupId, "withType1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         withType1.SubjectType = subjectType;
         withType1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 1L };
 
         // has "type" = 2  (the value we filter out)
-        var withType2 = NewEntry(groupId, "withType2_" + Guid.NewGuid().ToString("N"));
+        var withType2 = NewEntry(groupId, "withType2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         withType2.SubjectType = subjectType;
         withType2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 2L };
 
         // has no "type" key at all — must be included by Neq
-        var withoutType = NewEntry(groupId, "withoutType_" + Guid.NewGuid().ToString("N"));
+        var withoutType = NewEntry(groupId, "withoutType_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         withoutType.SubjectType = subjectType;
         withoutType.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["other"] = "x" };
 
@@ -375,7 +376,7 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         for (var i = 0; i < 5; i++)
         {
-            var e = NewEntry(groupId, $"e{i}-" + Guid.NewGuid().ToString("N"));
+            var e = NewEntry(groupId, $"e{i}-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
             e.CreatedAt = baseTime.AddMinutes(i);
             e.ExpiresAt = baseTime.AddHours(5);
             e.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -394,22 +395,22 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task DeleteExpiredAsync_ShouldDelete_OnlyExpiredRecords()
     {
-        var groupId = "GR_DelExp_" + Guid.NewGuid().ToString("N");
+        var groupId = "GR_DelExp_" + JobMasterRandomUtil.NewGuid4().ToString("N");
         var now = DateTime.UtcNow;
 
-        var expired1 = NewEntry(groupId, "expired1_" + Guid.NewGuid().ToString("N"));
+        var expired1 = NewEntry(groupId, "expired1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         expired1.ExpiresAt = now.AddMinutes(-10);
         expired1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "expired" };
 
-        var expired2 = NewEntry(groupId, "expired2_" + Guid.NewGuid().ToString("N"));
+        var expired2 = NewEntry(groupId, "expired2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         expired2.ExpiresAt = now.AddMinutes(-5);
         expired2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "expired" };
 
-        var notExpired = NewEntry(groupId, "notExpired_" + Guid.NewGuid().ToString("N"));
+        var notExpired = NewEntry(groupId, "notExpired_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         notExpired.ExpiresAt = now.AddHours(1);
         notExpired.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "active" };
 
-        var noExpiry = NewEntry(groupId, "noExpiry_" + Guid.NewGuid().ToString("N"));
+        var noExpiry = NewEntry(groupId, "noExpiry_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         noExpiry.ExpiresAt = null;
         noExpiry.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["status"] = "permanent" };
 
@@ -431,12 +432,12 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task DeleteExpiredAsync_ShouldRespect_Limit()
     {
-        var groupId = "GR_DelExpLim_" + Guid.NewGuid().ToString("N");
+        var groupId = "GR_DelExpLim_" + JobMasterRandomUtil.NewGuid4().ToString("N");
         var now = DateTime.UtcNow;
 
         for (var i = 0; i < 10; i++)
         {
-            var e = NewEntry(groupId, $"expired{i}_" + Guid.NewGuid().ToString("N"));
+            var e = NewEntry(groupId, $"expired{i}_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
             e.ExpiresAt = now.AddMinutes(-i - 1);
             e.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["i"] = (long)i };
             await Fixture.MasterGenericRecords.InsertAsync(e);
@@ -453,23 +454,23 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task DeleteByCreatedAtAsync_ShouldDelete_OnlyRecordsOlderThanCutoff()
     {
-        var groupId = "GR_DelByCreated_" + Guid.NewGuid().ToString("N");
+        var groupId = "GR_DelByCreated_" + JobMasterRandomUtil.NewGuid4().ToString("N");
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(5);
 
-        var old1 = NewEntry(groupId, "old1_" + Guid.NewGuid().ToString("N"));
+        var old1 = NewEntry(groupId, "old1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         old1.CreatedAt = baseTime.AddMinutes(1);
         old1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "old" };
 
-        var old2 = NewEntry(groupId, "old2_" + Guid.NewGuid().ToString("N"));
+        var old2 = NewEntry(groupId, "old2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         old2.CreatedAt = baseTime.AddMinutes(3);
         old2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "old" };
 
-        var recent1 = NewEntry(groupId, "recent1_" + Guid.NewGuid().ToString("N"));
+        var recent1 = NewEntry(groupId, "recent1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         recent1.CreatedAt = baseTime.AddMinutes(10);
         recent1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "recent" };
 
-        var recent2 = NewEntry(groupId, "recent2_" + Guid.NewGuid().ToString("N"));
+        var recent2 = NewEntry(groupId, "recent2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         recent2.CreatedAt = baseTime.AddMinutes(20);
         recent2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["age"] = "recent" };
 
@@ -491,13 +492,13 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task DeleteByCreatedAtAsync_ShouldRespect_Limit()
     {
-        var groupId = "GR_DelCreatedLim_" + Guid.NewGuid().ToString("N");
+        var groupId = "GR_DelCreatedLim_" + JobMasterRandomUtil.NewGuid4().ToString("N");
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
         for (var i = 0; i < 10; i++)
         {
-            var e = NewEntry(groupId, $"old{i}_" + Guid.NewGuid().ToString("N"));
+            var e = NewEntry(groupId, $"old{i}_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
             e.CreatedAt = baseTime.AddMinutes(i);
             e.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["i"] = (long)i };
             await Fixture.MasterGenericRecords.InsertAsync(e);

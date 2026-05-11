@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 using JobMaster.Sdk.Services.Agents;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Agents;
 
@@ -27,7 +28,7 @@ public class AgentJobsDispatcherServiceTests
 
         var job = new JobRawModel(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             JobDefinitionId = "def",
             NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
@@ -71,7 +72,7 @@ public class AgentJobsDispatcherServiceTests
 
         var job = new JobRawModel(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             JobDefinitionId = "def",
             NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
@@ -118,7 +119,7 @@ public class AgentJobsDispatcherServiceTests
 
         var job = new JobRawModel(clusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             JobDefinitionId = "def",
             NextPlanExecutionAt = DateTime.UtcNow,
             ScheduledAt = DateTime.UtcNow,
@@ -169,7 +170,7 @@ public class AgentJobsDispatcherServiceTests
         var jobs = Enumerable.Range(0, JobMasterConstants.MaxBatchSizeForBulkOperation + 1)
             .Select(_ => new JobRawModel(clusterId)
             {
-                Id = Guid.NewGuid(),
+                Id = JobMasterRandomUtil.NewGuid4(),
                 JobDefinitionId = "def",
                 NextPlanExecutionAt = DateTime.UtcNow,
                 ScheduledAt = DateTime.UtcNow,
@@ -191,7 +192,7 @@ public class AgentJobsDispatcherServiceTests
         factory.Verify(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue)), Times.Once);
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);
