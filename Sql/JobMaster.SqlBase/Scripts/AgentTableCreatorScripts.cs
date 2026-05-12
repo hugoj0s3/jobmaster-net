@@ -61,10 +61,15 @@ internal class AgentTableCreatorScripts
 
         var create = $"CREATE TABLE {tableName} ({string.Join(", ", cols)},{pk},{fk});";
 
-        // Index aligned with dequeue filter/order
-        var idx = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref", (bucketCol, false, 250), (refTimeCol, false, null));
+        // Hierarchical prefix strategy: bucket isolated, then bucket + ref_time as base
+        var idxBucket = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket", (bucketCol, false, 250));
+        var idxBucketRef = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref", (bucketCol, false, 250), (refTimeCol, false, null));
+        // Covers full ORDER BY (ref_time ASC, message_id ASC) without filesort
+        var idxBucketRefMsg = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_ref_msg", (bucketCol, false, 250), (refTimeCol, false, null), (msgIdCol, false, 64));
+        // Covers cleanup/stale message queries by enqueue age
+        var idxBucketEnqAt = sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_bucket_enq_at", (bucketCol, false, 250), (enqAtCol, false, null));
 
-        return $"{create}\n{idx}";
+        return $"{create}\n{idxBucket}\n{idxBucketRef}\n{idxBucketRefMsg}\n{idxBucketEnqAt}";
     }
 
     public static string CreateAgentConnectionFootprint(ISqlGenerator sqlGenerator, string tablePrefix)

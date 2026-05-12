@@ -272,7 +272,7 @@ internal sealed class NatsJetStreamConnector
                 var lastAt = afterScheme.LastIndexOf('@');
                 var firstAt = afterScheme.IndexOf('@');
 
-                if (firstAt >= 0 && lastAt > firstAt)
+                if (firstAt >= 0)
                 {
                     var userInfo = afterScheme[..lastAt];
                     var hostPart = afterScheme[(lastAt + 1)..];

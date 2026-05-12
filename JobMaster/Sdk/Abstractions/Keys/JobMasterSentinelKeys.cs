@@ -15,4 +15,6 @@ internal class JobMasterSentinelKeys : JobMasterKeyManager
     public string Bucket(string id) => CreateKey($"Bucket:{id}");
 
     public string Hosts() => CreateKey("Hosts");
+
+    public string AgentConnections() => CreateKey("AgentConnections");
 }

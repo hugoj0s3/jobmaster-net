@@ -2,6 +2,7 @@ using Castle.Core.Logging;
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -36,7 +37,7 @@ public class MasterJobsServiceTests
 
         repo.Setup(x => x.UpsertAsync(raw)).Returns(Task.CompletedTask);
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         await sut.UpsertAsync(raw);
 
@@ -68,7 +69,7 @@ public class MasterJobsServiceTests
 
         repo.Setup(x => x.Upsert(raw));
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.Upsert(raw);
 
@@ -84,7 +85,7 @@ public class MasterJobsServiceTests
 
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
 
-        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true));
+        var sut = new MasterJobsService(clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new FakeRuntime(true), new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.BulkUpdateStatus(new List<Guid>(), JobMasterJobStatus.Succeeded, agentConnectionId: null, agentWorkerId: null, bucketId: null);
 

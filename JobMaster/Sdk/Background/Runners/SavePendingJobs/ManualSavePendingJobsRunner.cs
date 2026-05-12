@@ -83,7 +83,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
         }
         
         var jobs = await agentJobsDispatcherService
-            .DequeueSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
+            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (jobs.Count <= 0)
         {
@@ -122,6 +122,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                     // If re-queueing fails, we catch it so the loop continues for other jobs.
                     try 
                     {
+                        job.AssignToBucket(bucket);
                         await agentJobsDispatcherService.AddSavePendingJobAsync(job);
                         pendingTracker.TryRemove(job.Id, out _);
                     }

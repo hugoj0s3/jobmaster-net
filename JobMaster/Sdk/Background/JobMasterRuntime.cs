@@ -86,7 +86,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
 
                 var agentConnectionId = new AgentConnectionId(agentConfig.Id);
-                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId);
+                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
                 
                 var footprintResolver = agentComponentFactory.GetFootprintResolver(agentConfig.Id);
                 var footprint = await footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentConfig.Id);
@@ -109,7 +109,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             var workerDefinitions = clusterDefinition.Workers;
           
-            var modelToSave = masterConfigService.GetNoAche() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
+            var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount = clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
@@ -252,7 +252,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
 
-            var existingClusterConfig = masterConfigService.GetNoAche();
+            var existingClusterConfig = masterConfigService.GetFresh();
             var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
             
             if (clusterDefinition.IanaTimeZoneId != null && existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
@@ -316,56 +316,56 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
     }
 
-    private IDictionary<string, OperationLimiter> OperationLimiterPerCluster { get; } = new ConcurrentDictionary<string, OperationLimiter>();
-    private OperationLimiter? notStartedClusterOperationLimiter;
-    public OperationLimiter GetOperationLimiterForCluster(string clusterId)
+    private IDictionary<string, OperationThrottler> OperationLimiterPerCluster { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+    private OperationThrottler? notStartedClusterOperationThrottler;
+    public OperationThrottler GetOperationLimiterForCluster(string clusterId)
     {
         if (!Started)
         {
-            if (notStartedClusterOperationLimiter == null)
+            if (notStartedClusterOperationThrottler == null)
             {
-                notStartedClusterOperationLimiter = new OperationLimiter(50);
+                notStartedClusterOperationThrottler = new OperationThrottler(50);
             }
             
-            return notStartedClusterOperationLimiter;
+            return notStartedClusterOperationThrottler;
         }
         
-        if (!OperationLimiterPerCluster.TryGetValue(clusterId, out var limiter))
+        if (!OperationLimiterPerCluster.TryGetValue(clusterId, out var throttler))
         {
             var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
-            limiter = new OperationLimiter(jobMasterClusterConnectionConfig.RuntimeDbOperationLimit);
-            OperationLimiterPerCluster[clusterId] = limiter;
+            throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationLimit);
+            OperationLimiterPerCluster[clusterId] = throttler;
         }
         
-        return limiter;
+        return throttler;
     }
     
 
-    private IDictionary<string, OperationLimiter> OperationLimiterPerAgent { get; } = new ConcurrentDictionary<string, OperationLimiter>();
-    private OperationLimiter? notStartedAgentOperationLimiter;
-    public OperationLimiter GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
+    private IDictionary<string, OperationThrottler> OperationLimiterPerAgent { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+    private OperationThrottler? notStartedAgentOperationLimiter;
+    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
     {
         if (!Started)
         {
             if (notStartedAgentOperationLimiter == null)
             {
-                notStartedAgentOperationLimiter = new OperationLimiter(50);
+                notStartedAgentOperationLimiter = new OperationThrottler(50);
             }
             
             return notStartedAgentOperationLimiter;
         }
         
         var key = clusterId + "||" + agentConnectionIdOrName;
-        if (!OperationLimiterPerAgent.TryGetValue(key, out var limiter))
+        if (!OperationLimiterPerAgent.TryGetValue(key, out var throttler))
         {
             var runtimeDbOperationLimit = JobMasterClusterConnectionConfig
                 .Get(clusterId, includeNotReady: true)
                 .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationLimit;
-            limiter = new OperationLimiter(runtimeDbOperationLimit);
-            OperationLimiterPerAgent[key] = limiter;
+            throttler = new OperationThrottler(runtimeDbOperationLimit);
+            OperationLimiterPerAgent[key] = throttler;
         }   
         
-        return limiter;
+        return throttler;
     }
 
     public int CountWorkersForCluster(string clusterId)

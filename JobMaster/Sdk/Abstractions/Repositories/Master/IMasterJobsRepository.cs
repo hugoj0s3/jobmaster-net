@@ -24,13 +24,10 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     
     long Count(JobQueryCriteria queryCriteria);
     
-    IList<Guid> QueryIds(JobQueryCriteria queryCriteria);
-    Task<IList<Guid>> QueryIdsAsync(JobQueryCriteria queryCriteria);
-    
     void ReleasePartitionLock(Guid jobId);
     
     void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
 
     Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
-    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, int partitionLockId, DateTime expiresAtUtc);
+    Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
 }

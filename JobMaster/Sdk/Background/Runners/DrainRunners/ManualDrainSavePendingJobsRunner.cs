@@ -43,7 +43,7 @@ internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJob
         }
 
         var savingPendingJobs = await agentJobsDispatcherService
-            .DequeueSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
+            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (!savingPendingJobs.Any())
         {

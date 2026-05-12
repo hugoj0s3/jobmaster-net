@@ -137,7 +137,7 @@ internal class Job : JobMasterBaseModel
     public  JobMasterTriggerSourceType TriggerSourceType { get; internal set; }
     public  int NumberOfFailures { get; internal set; } 
     
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     public DateTime? ProcessDeadline { get; internal set; }
 

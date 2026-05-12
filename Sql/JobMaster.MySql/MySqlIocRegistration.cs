@@ -1,7 +1,9 @@
 using JobMaster.MySql.Agents;
+using JobMaster.MySql.Exceptions;
 using JobMaster.MySql.Master;
 using JobMaster.SqlBase.Connections;
 using JobMaster.Sdk;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Setup;
@@ -23,6 +25,7 @@ internal static class MySqlIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, MySqlMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, MySqlMasterJobsRepository>();
         registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, MySqlMasterRecurringSchedulesRepository>();
+        registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, MySqlKnownExceptionIdentifierStrategy>();
     }
 
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)

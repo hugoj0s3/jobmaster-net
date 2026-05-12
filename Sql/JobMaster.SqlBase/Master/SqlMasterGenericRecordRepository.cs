@@ -93,61 +93,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         return LinearListToDomain(result);
     }
 
-    public virtual void Upsert(GenericRecordEntry recordEntry)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            var rowsAffected = conn.Execute(sqlText, args, transaction);
-            if (rowsAffected == 0)
-            {
-                (sqlText, args) = BuildInsertEntrySql(sqlEntry);
-                conn.Execute(sqlText, args, transaction);
-            }
-
-            // Replace values: clear and insert fresh to reflect current payload
-            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            InsertEntryValues(conn, transaction, sqlEntry);
-
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
-
-    public virtual async Task UpsertAsync(GenericRecordEntry recordEntry)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            var rowsAffected = await conn.ExecuteAsync(sqlText, args, transaction);
-            if (rowsAffected == 0)
-            {
-                (sqlText, args) = BuildInsertEntrySql(sqlEntry);
-                await conn.ExecuteAsync(sqlText, args, transaction);
-            }
-            
-            // Replace values: clear and insert fresh to reflect current payload
-            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            await InsertEntryValuesAsync(conn, transaction, sqlEntry);
-
-            transaction.Commit();
-        } 
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
+    
 
     public void Insert(GenericRecordEntry recordEntry)
     {
@@ -159,6 +105,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             var (sqlText, args) = BuildInsertEntrySql(sqlEntry);
             conn.Execute(sqlText, args, transaction);
             InsertEntryValues(conn, transaction, sqlEntry);
+            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             transaction.Commit();
         }
         catch (Exception)
@@ -178,6 +125,7 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             var (sqlText, args) = BuildInsertEntrySql(sqlEntry);
             await conn.ExecuteAsync(sqlText, args, transaction);
             await InsertEntryValuesAsync(conn, transaction, sqlEntry);
+            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             transaction.Commit();
         }
         catch (Exception)
@@ -187,51 +135,8 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
         }
     }
 
-    public void Update(GenericRecordEntry recordEntry)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            
-            conn.Execute(sqlText, args, transaction);
-            // replace values
-            conn.Execute(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            InsertEntryValues(conn, transaction, sqlEntry);
-            
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-    }
-
-    public async Task UpdateAsync(GenericRecordEntry recordEntry)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var transaction = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            var sqlEntry = MapToSqlEntry(recordEntry);
-            var (sqlText, args) = BuildUpdateEntrySql(sqlEntry);
-            
-            await conn.ExecuteAsync(sqlText, args, transaction);
-            await conn.ExecuteAsync(BuildDeleteValuesSql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-            await InsertEntryValuesAsync(conn, transaction, sqlEntry);
-            
-            transaction.Commit();
-        }
-        catch (Exception)
-        {
-            transaction.SafeRollback();
-            throw;
-        }
-
-    }
+    public abstract void Upsert(GenericRecordEntry recordEntry);
+    public abstract Task UpsertAsync(GenericRecordEntry recordEntry);
 
     public void Delete(string groupId, string id)
     {
@@ -348,14 +253,14 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
 
                     // Build one multi-values INSERT for entries
                     var t = genericUtil.EntryTable(batch[0].GroupId);
-                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.SubjectType)}, {Col(x => x.SubjectId)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}";
+                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.SubjectType)}, {Col(x => x.SubjectId)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
                     var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
                     var dynParams = new DynamicParameters();
 
                     for (int i = 0; i < sqlEntries.Count; i++)
                     {
                         var e = sqlEntries[i];
-                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @SubjectType_{i}, @SubjectId_{i}, @CreatedAt_{i}, @ExpiresAt_{i})");
+                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @SubjectType_{i}, @SubjectId_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
                         if (i < sqlEntries.Count - 1) sb.Append(",\n"); else sb.Append(";");
 
                         dynParams.Add($"RecordUniqueId_{i}", e.RecordUniqueId);
@@ -367,6 +272,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                         dynParams.Add($"SubjectId_{i}", e.SubjectId);
                         dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
                         dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
+                        dynParams.Add($"IsReady_{i}", false); // Always false initially in bulk
                     }
 
                     await conn.ExecuteAsync(AppendSqlTag(sb.ToString(), "BulkInsert.InsertEntries", batch[0].GroupId), dynParams, transaction);
@@ -376,6 +282,10 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                     {
                         await InsertEntryValuesAsync(conn, transaction, e);
                     }
+
+                    // Final step for batch: set IsReady = 1
+                    var setReadySql = genericUtil.BuildSetReadyMultipleSql(batch[0].GroupId, "@Ids");
+                    await conn.ExecuteAsync(AppendSqlTag(setReadySql, "BulkInsert.SetReady", batch[0].GroupId), new { Ids = sqlEntries.Select(x => x.RecordUniqueId).ToArray() }, transaction);
                 }
             }
 

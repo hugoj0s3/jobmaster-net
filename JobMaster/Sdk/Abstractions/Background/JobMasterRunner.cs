@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -11,13 +12,19 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 {
     private CancellationTokenSource? cts;
     private Task? taskRunner;
-    private const int MaxOfConsecutiveFails = 3;
+    private const int MaxOfConsecutiveFails = 15;
+    public double ConsecutiveFailedCount { get; private set; }
+
+    private const int MaxOfConsecutiveToDelay = 3;
+    public int ConsecutiveFailedCountToDelay { get; private set; }
 
     protected IJobMasterBackgroundAgentWorker BackgroundAgentWorker;
     private readonly bool useSemaphore;
     private readonly bool bucketAwareLifeCycle;
     protected readonly IJobMasterLogger logger;
-    
+    private readonly IKnownExceptionIdentifier knownExceptionIdentifier;
+    private Exception? lastFailureException;
+
     private static readonly HashSet<Type> KeepAliveRunnerTypes = new()
     {
         typeof(KeepAliveWorkerRunner),
@@ -31,6 +38,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
         this.useSemaphore = useSemaphore;
         this.bucketAwareLifeCycle = bucketAwareLifeCycle;
         this.logger = backgroundAgentWorker.GetClusterAwareService<IJobMasterLogger>();
+        this.knownExceptionIdentifier = backgroundAgentWorker.GetClusterAwareComponent<IKnownExceptionIdentifier>();
     }
     
     public Task StartAsync()
@@ -125,6 +133,13 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
+            if (ConsecutiveFailedCountToDelay >= MaxOfConsecutiveToDelay && !KeepAliveRunnerTypes.Contains(this.GetType()))
+            {
+                ConsecutiveFailedCountToDelay = 0;
+                await RunnerDelayUtil.DelayAsync(TimeSpan.FromSeconds(30), ct);
+                continue;
+            }
+            
             // Skip execution during worker initialization (except KeepAliveRunners)
             // This prevents deadlocks during bucket creation
             if (!BackgroundAgentWorker.IsInitialized && !KeepAliveRunnerTypes.Contains(this.GetType()))
@@ -157,25 +172,29 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             {
                 var sw = Stopwatch.StartNew();
                 var result = await OnTickAsync(ct);
+                Exception? failureException = null;
                 if (result.Status == TicketResultStatus.Failed)
                 {
-                    ConsecutiveFailedCount++;
+                    failureException = result.Exception ?? new Exception(result.ErrorMessage ?? "Unknown error");
+                    ConsecutiveFailedCountToDelay++;
+                    ConsecutiveFailedCount += CalcFailureWeight(failureException);
                 }
                 else if (result.Status == TicketResultStatus.Success && ConsecutiveFailedCount > 0)
                 {
+                    ConsecutiveFailedCountToDelay = 0;
                     ConsecutiveFailedCount = 0;
                 }
-                
+
                 // Only apply delay if the operation was successful or didn't run
                 // Failed operations will be retried after their specified delay
                 (plannedDelay, plannedEarlyReleaseChance) =  CalcDelay(result);
                 sw.Stop();
                 logger.Debug($"Runner {this.GetType().Name} tick completed. status={result.Status} elapsedMs={sw.ElapsedMilliseconds} plannedDelayMs={(long)plannedDelay.TotalMilliseconds}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-                
-                if (result.Status == TicketResultStatus.Failed)
+
+                if (failureException is not null)
                 {
-                    var ex = result.Exception ?? new Exception(result.ErrorMessage ?? "Unknown error");
-                    await OnErrorAsync(ex, ct);
+                    lastFailureException = failureException;
+                    await OnTickFailureAsync(failureException, ct);
                 }
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -186,10 +205,11 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             {
                 // Measure failure tick duration for observability
                 logger.Debug($"Runner {this.GetType().Name} tick failed quickly. elapsed unknown due to exception.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-                ConsecutiveFailedCount++;
-                await OnErrorAsync(ex, ct);
+                ConsecutiveFailedCount += CalcFailureWeight(ex);
+                lastFailureException = ex;
+                await OnTickFailureAsync(ex, ct);
 
-                plannedDelay = OnTickResult.Failed(this).Delay;
+                plannedDelay = this.FailedInterval;
                 plannedEarlyReleaseChance = 0.0;
 
                 logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
@@ -215,7 +235,19 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                     await RunnerDelayUtil.DelayAsync(timeSpanAfterRelease - firstDelayDuration, ct);
                 }
                 
-                await RunnerDelayUtil.DelayAsync(RunnerDelayUtil.CalcJitter(ConsecutiveFailedCount), ct);
+                await RunnerDelayUtil.DelayAsync(RunnerDelayUtil.CalcJitter((int)ConsecutiveFailedCount), ct);
+            }
+        }
+
+        if (ConsecutiveFailedCount >= MaxOfConsecutiveFails && !KeepAliveRunnerTypes.Contains(this.GetType()))
+        {
+            try
+            {
+                await OnTerminateFailureAsync(lastFailureException ?? new Exception($"Runner {this.GetType().Name} terminated after {ConsecutiveFailedCount} consecutive failures."));
+            }
+            catch (Exception terminateEx)
+            {
+                logger.Error($"Runner {this.GetType().Name} OnTerminateFailureAsync threw.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: terminateEx);
             }
         }
 
@@ -228,7 +260,51 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             await StopAsync();
         }
     }
+    
+    public virtual Task OnTickFailureAsync(Exception ex, CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
 
+    public virtual Task OnTerminateFailureAsync(Exception lastException)
+    {
+        return Task.CompletedTask;
+    }
+    
+    public virtual Task OnStartAsync(CancellationToken ct)
+    {
+        return Task.CompletedTask;
+    }
+    
+    public abstract Task<OnTickResult> OnTickAsync(CancellationToken ct);
+    
+    public virtual Task OnStopAsync()
+    {
+        return Task.CompletedTask;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await StopAsync(); 
+        cts?.Dispose(); 
+    }
+    
+    public abstract TimeSpan SucceedInterval { get; }
+    public virtual TimeSpan WarmUpInterval => this.SucceedInterval;
+
+    public virtual TimeSpan FailedInterval => OnTickResult.Failed(this).Delay;
+    
+    private double CalcFailureWeight(Exception ex)
+    {
+        var knownId = knownExceptionIdentifier.Identify(ex);
+        return knownId switch
+        {
+            JobMasterKnownExceptionId.Deadlock => 0.25,
+            JobMasterKnownExceptionId.VersionConflict => 0.5,
+            _ => 1.0
+        };
+    }
+    
     private (TimeSpan, double) CalcDelay(OnTickResult onTickResult)
     {
         TimeSpan plannedDelay = TimeSpan.FromSeconds(1);
@@ -261,31 +337,5 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
         
         return (plannedDelay, plannedEarlyReleaseChance);
     }
-    
-    public virtual Task OnErrorAsync(Exception ex, CancellationToken ct)
-    {
-        return Task.CompletedTask;
-    }
-    
-    public virtual Task OnStartAsync(CancellationToken ct)
-    {
-        return Task.CompletedTask;
-    }
-    
-    public abstract Task<OnTickResult> OnTickAsync(CancellationToken ct);
-    
-    public virtual Task OnStopAsync()
-    {
-        return Task.CompletedTask;
-    }
 
-    public async ValueTask DisposeAsync()
-    {
-        await StopAsync(); 
-        cts?.Dispose(); 
-    }
-    
-    public abstract TimeSpan SucceedInterval { get; }
-    public virtual TimeSpan WarmUpInterval => this.SucceedInterval;
-    public int ConsecutiveFailedCount { get; private set; }
 }

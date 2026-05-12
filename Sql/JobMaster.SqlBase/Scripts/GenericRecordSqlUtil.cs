@@ -72,6 +72,8 @@ internal class GenericRecordSqlUtil
             where.Add($"{cExpiresAt} >= @ExpiresAtFrom");
         if (criteria.ExpiresAtTo.HasValue)
             where.Add($"{cExpiresAt} <= @ExpiresAtTo");
+        
+        where.Add($"{sql.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady)} = {sql.GetDbBool(true)}");
     }
     
     public (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
@@ -79,10 +81,12 @@ internal class GenericRecordSqlUtil
         var t = EntryTable(groupId);
         var baseSelectSql = BaseSelectSql(groupId);
         var uniqueId = GenericRecordEntry.UniqueId(clusterId, groupId, entryId);
+        var cIsReady = ColSqlEntry(x => x.IsReady);
 
         var sql = $@"
 {baseSelectSql}
 where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
+  and {t}.{cIsReady} = {this.sql.GetDbBool(true)}
 ";
         if (!includeExpired)
         {
@@ -104,6 +108,7 @@ where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
         var cSubjectId   = Col(x => x.SubjectId);
         var cCreatedAt   = Col(x => x.CreatedAt);
         var cExpiresAt   = Col(x => x.ExpiresAt);
+        var cIsReady     = ColSqlEntry(x => x.IsReady);
 
         return $@"
 SELECT {cRecordId},
@@ -114,6 +119,7 @@ SELECT {cRecordId},
        {cSubjectId},
        {cCreatedAt},
        {cExpiresAt},
+       {cIsReady},
        {ColVal(x => x.KeyName)},
        {ColVal(x => x.ValueText)},
        {ColVal(x => x.ValueBinary)},
@@ -338,11 +344,11 @@ WHERE {string.Join(" AND ", where)}
         } 
         else if (filter.Operation == GenericFilterOperation.Eq) 
         {
-             finalClause = ($" {initialClause} and {fieldRelated} = @Value{index} )");
+             finalClause = $" {initialClause} and {fieldRelated} = @Value{index} )";
         }
         else if (filter.Operation == GenericFilterOperation.Neq)
         {
-            finalClause = $" {initialClause} and {fieldRelated} != @Value{index} )";
+            finalClause = $" {initialClause} and {fieldRelated} = @Value{index} )";
         }
         else if (filter.Operation == GenericFilterOperation.Contains && filter.Value is string)
         {
@@ -447,18 +453,41 @@ WHERE {string.Join(" AND ", where)}
             // Allow later args to overwrite earlier ones if same key shows up
             args[kv.Key] = kv.Value;
         }
-        var clauses = filterArgs.Select(x => x.Item1).Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
-        if (clauses.Count == 0) return string.Empty;
 
         var vt = groupId != null ? EntryValueTable(groupId) : EntryValueTable();
-        var exists = $" exists (  " +
-                     $"           select 1 " +
-                     $"             from {vt} as {entryValueTableAlias} " +
-                     $"           where {entryTableAlias}.{Col(x => x.RecordUniqueId)} = {entryValueTableAlias}.{ColVal(x => x.RecordUniqueId)}" +
-                     $"           and {string.Join(" AND ", clauses)}" +
-                     $"   ) ";
+        var correlationClause = $"{entryTableAlias}.{Col(x => x.RecordUniqueId)} = {entryValueTableAlias}.{ColVal(x => x.RecordUniqueId)}";
 
-        return exists;
+        var parts = new List<string>();
+
+        // Non-Neq filters: all go into a single EXISTS — the record must have a matching value row.
+        var nonNeqClauses = filterArgs
+            .Where((fa, i) => filters[i].Operation != GenericFilterOperation.Neq)
+            .Select(fa => fa.Item1)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        if (nonNeqClauses.Count > 0)
+        {
+            parts.Add($" EXISTS ( SELECT 1 FROM {vt} AS {entryValueTableAlias} " +
+                      $"WHERE {correlationClause} AND {string.Join(" AND ", nonNeqClauses)} )");
+        }
+
+        // Neq filters: each gets its own NOT EXISTS — records missing the key entirely are
+        // correctly included because NOT EXISTS returns true when the subquery finds no rows.
+        var neqClauses = filterArgs
+            .Where((fa, i) => filters[i].Operation == GenericFilterOperation.Neq)
+            .Select(fa => fa.Item1)
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .ToList();
+
+        foreach (var neqClause in neqClauses)
+        {
+            parts.Add($" NOT EXISTS ( SELECT 1 FROM {vt} AS {entryValueTableAlias} " +
+                      $"WHERE {correlationClause} AND {neqClause} )");
+        }
+
+        if (parts.Count == 0) return string.Empty;
+        return string.Join(" AND ", parts);
     }
     
     private string EntryTable() => sql.TableNameFor<GenericRecordEntry>(additionalConnConfig);
@@ -504,7 +533,8 @@ WHERE {string.Join(" AND ", where)}
         var cSubjectType = Col(x => x.SubjectType);
         var cSubjectId   = Col(x => x.SubjectId);
         var cExpiresAt   = Col(x => x.ExpiresAt);
-        // Note: not updating EntryId/ClusterId/GroupId/CreatedAt
+        var cIsReady     = ColSqlEntry(x => x.IsReady);
+        // Note: not updating EntryId/ClusterId/GroupId/CreatedAt/IsReady
 
         var args = new Dictionary<string, object?>
         {
@@ -536,7 +566,8 @@ WHERE {cRecordId} = @RecordUniqueId;");
 {Col(x => x.SubjectType)},
 {Col(x => x.SubjectId)},
 {Col(x => x.CreatedAt)},
-{Col(x => x.ExpiresAt)}";
+{Col(x => x.ExpiresAt)},
+{ColSqlEntry(x => x.IsReady)}";
 
         var args = new Dictionary<string, object?>
         {
@@ -548,11 +579,12 @@ WHERE {cRecordId} = @RecordUniqueId;");
             {"SubjectType", entry.SubjectType},
             {"SubjectId", entry.SubjectId},
             {"CreatedAt", entry.CreatedAt},
-            {"ExpiresAt", entry.ExpiresAt}
+            {"ExpiresAt", entry.ExpiresAt},
+            {"IsReady", entry.IsReady}
         };
 
         var sb = new StringBuilder($"INSERT INTO {t} ({cols}) ");
-        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt);");
+        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, @IsReady);");
 
         return (sb.ToString(), args);
     }
@@ -654,6 +686,23 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         var inClause = sql.InClauseFor(cRecordId, idsParamName);
         return $"DELETE FROM {t} WHERE {inClause};";
     }
+
+    public string BuildSetReadySql(string groupId)
+    {
+        var t = EntryTable(groupId);
+        var cRecordId = Col(x => x.RecordUniqueId);
+        var cIsReady = ColSqlEntry(x => x.IsReady);
+        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {cRecordId} = @RecordUniqueId;";
+    }
+
+    public string BuildSetReadyMultipleSql(string groupId, string idsParamName = "@RecordUniqueIds")
+    {
+        var t = EntryTable(groupId);
+        var cRecordId = Col(x => x.RecordUniqueId);
+        var cIsReady = ColSqlEntry(x => x.IsReady);
+        var inClause = sql.InClauseFor(cRecordId, idsParamName);
+        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {inClause};";
+    }
     
     public IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)
     {
@@ -676,7 +725,8 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
                 SubjectType = entry.Value[0].SubjectType,
                 SubjectId = entry.Value[0].SubjectId,
                 CreatedAt = entry.Value[0].CreatedAt,
-                ExpiresAt = entry.Value[0].ExpiresAt
+                ExpiresAt = entry.Value[0].ExpiresAt,
+                IsReady = entry.Value[0].IsReady
             };
             
             sqlEntry.Values = entry.Value.Select(x => new SqlGenericRecordEntryValue

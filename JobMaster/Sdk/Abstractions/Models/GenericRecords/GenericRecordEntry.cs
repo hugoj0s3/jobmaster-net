@@ -439,5 +439,102 @@ internal class GenericRecordEntry : JobMasterBaseModel
         }
     }
     
-    private IDictionary<string, object?> DictionaryShallowCopy() => new Dictionary<string, object?>(Values); 
+    private IDictionary<string, object?> DictionaryShallowCopy() => new Dictionary<string, object?>(Values);
+
+    public static T? DeepClone<T>(T? value)
+    {
+        if (value is null) return default;
+
+        var runtimeType = value.GetType();
+
+        if (runtimeType.IsPrimitive || runtimeType.IsEnum) return value;
+        if (value is string or DateTime or DateTimeOffset or TimeSpan or decimal or Guid) return value;
+
+        if (runtimeType.IsArray)
+        {
+            var elementType = runtimeType.GetElementType()!;
+            var src = (Array)(object)value;
+            var dst = Array.CreateInstance(elementType, src.Length);
+            for (var i = 0; i < src.Length; i++)
+            {
+                dst.SetValue(CloneViaStorage(src.GetValue(i), elementType), i);
+            }
+            return (T)(object)dst;
+        }
+
+        if (runtimeType.IsGenericType && runtimeType.GetGenericTypeDefinition() == typeof(List<>))
+        {
+            var elementType = runtimeType.GetGenericArguments()[0];
+            var src = (System.Collections.IList)value;
+            var dst = (System.Collections.IList)Activator.CreateInstance(runtimeType, src.Count)!;
+            foreach (var item in src)
+            {
+                dst.Add(CloneViaStorage(item, elementType));
+            }
+            return (T)dst;
+        }
+
+        return (T)CloneViaStorage(value, runtimeType)!;
+    }
+
+    private static object? CloneViaStorage(object? value, Type declaredType)
+    {
+        if (value is null) return null;
+
+        var t = Nullable.GetUnderlyingType(declaredType) ?? declaredType;
+        if (t.IsPrimitive || t.IsEnum) return value;
+        if (value is string or DateTime or DateTimeOffset or TimeSpan or decimal or Guid) return value;
+
+        var actualType = value.GetType();
+        var copy = Activator.CreateInstance(actualType, nonPublic: true)
+                   ?? throw new InvalidOperationException(
+                       $"DeepCloneViaGenericEntry cannot clone {actualType.FullName}: no accessible parameterless constructor.");
+
+        var props = GetUsableProps(actualType);
+        foreach (var p in props)
+        {
+            var srcVal = p.GetValue(value);
+            var stored = ToStorageObject(srcVal, p.PropertyType);
+
+            // Mirror the storage layer's JSON step. Some FromStorageObject branches
+            // (e.g. JobMasterConfigDictionary, complex-type fallback) expect a JSON
+            // string because in production the GenericRecordEntry.Values dict is
+            // serialized to JSON when persisted. ToStorageObject returns scalars
+            // as-is, and non-scalars as dictionaries or already-serialized JSON.
+            // Re-serialize anything that isn't a scalar so FromStorageObject sees
+            // the same shape it would after a real storage round-trip.
+            if (stored is not null && !IsScalarStorageValue(stored))
+            {
+                stored = InternalJobMasterSerializer.Serialize(stored);
+            }
+
+            var restored = FromStorageObject(stored, p.PropertyType);
+            p.SetValue(copy, restored);
+        }
+
+        return copy;
+    }
+
+    private static bool IsScalarStorageValue(object value)
+    {
+        var t = value.GetType();
+        if (t.IsPrimitive || t.IsEnum) return true;
+        return value is string
+            or DateTime
+            or DateTimeOffset
+            or TimeSpan
+            or decimal
+            or Guid
+#if NET6_0_OR_GREATER
+            or DateOnly
+            or TimeOnly
+#endif
+            ;
+    }
+}
+
+internal static class GenericRecordEntryExtensions
+{
+    public static T? DeepCloneViaGenericEntry<T>(this T? value)
+        => GenericRecordEntry.DeepClone(value);
 }

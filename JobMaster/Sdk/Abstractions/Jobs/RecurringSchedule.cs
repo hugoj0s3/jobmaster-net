@@ -34,7 +34,7 @@ internal class RecurringSchedule : JobMasterBaseModel
     public JobMasterPriority? Priority { get; internal set; }
     public int? MaxNumberOfRetries { get; internal set; }
     public TimeSpan? Timeout { get; internal set; }
-    public int? PartitionLockId { get; internal set; }
+    public Guid? PartitionLockId { get; internal set; }
     public HostId? HostId { get; internal set; }
     public DateTime? PartitionLockExpiresAt { get; internal set; }
     public string? BucketId { get; internal set; }

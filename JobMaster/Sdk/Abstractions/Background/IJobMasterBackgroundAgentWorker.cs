@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 
 namespace JobMaster.Sdk.Abstractions.Background;
@@ -56,6 +57,8 @@ internal interface IJobMasterBackgroundAgentWorker
     bool IsOnWarmUpTime();
     IJobsExecutionEngine? GetEngine(string bucketId);
     IJobsExecutionEngine  GetOrCreateEngine(JobMasterPriority priority, string bucketId);
-    
+
+    void RegisterRuntimeBucket(BucketModel bucket);
+
     bool IsInitialized { get; }
 }

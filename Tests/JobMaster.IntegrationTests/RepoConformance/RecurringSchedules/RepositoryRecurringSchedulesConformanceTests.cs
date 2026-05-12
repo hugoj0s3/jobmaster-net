@@ -47,7 +47,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.AgentConnectionId = Fixture.AgentConnectionId;
         schedule.AgentWorkerId = "worker-1";
 
-        schedule.PartitionLockId = 123;
+        schedule.PartitionLockId = Guid.NewGuid();
         schedule.PartitionLockExpiresAt = now.AddMinutes(30);
 
         schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
@@ -90,7 +90,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.BucketId = "bucket-upd";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
         updated.AgentWorkerId = "worker-upd";
-        updated.PartitionLockId = 55;
+        updated.PartitionLockId = Guid.NewGuid();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(10);
         updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
         updated.StartAfter = DateTime.UtcNow.AddHours(-1);
@@ -223,12 +223,15 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var def = "defLock-" + Guid.NewGuid();
         var now = DateTime.UtcNow;
 
+        var lockedLockId = Guid.NewGuid();
+        var expiredLockId = Guid.NewGuid();
+
         var locked = NewSchedule(jobDefinitionId: def);
-        locked.PartitionLockId = 1;
+        locked.PartitionLockId = lockedLockId;
         locked.PartitionLockExpiresAt = now.AddMinutes(30);
 
         var expired = NewSchedule(jobDefinitionId: def);
-        expired.PartitionLockId = 2;
+        expired.PartitionLockId = expiredLockId;
         expired.PartitionLockExpiresAt = now.AddMinutes(-30);
 
         var unlocked = NewSchedule(jobDefinitionId: def);
@@ -251,7 +254,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Contains(qUnlocked, x => x.Id == unlocked.Id);
         Assert.DoesNotContain(qUnlocked, x => x.Id == locked.Id);
 
-        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = 2, CountLimit = 100 };
+        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = expiredLockId, CountLimit = 100 };
         var qLockId = await Fixture.MasterRecurringSchedules.QueryAsync(cLockId);
         Assert.Contains(qLockId, x => x.Id == expired.Id);
         Assert.DoesNotContain(qLockId, x => x.Id == locked.Id);

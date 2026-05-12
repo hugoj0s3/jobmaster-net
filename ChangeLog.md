@@ -29,9 +29,15 @@
   - **Benefits**: Better query performance, easier maintenance, and isolation
     of high-volume transient data (logs, heartbeats) from stable config data
 
-- **Separate TransferBatchSize, BucketBufferSize and introduce BucketBufferLeadTime**
+- **Split BatchSize into TransferBatchSize, BucketBufferSize, and BucketBufferLeadTime**
+  - `BatchSize` has been removed. Its responsibilities are now split across three dedicated settings:
+  - **`TransferBatchSize`** — number of jobs pulled per DB round-trip when the Coordinator transfers jobs from the Master DB into Agent Buckets and during other bulk operations. Default: `1000` (standalone: `250`).
+  - **`BucketBufferSize`** — maximum number of jobs held in memory per bucket while awaiting execution. When the buffer is full, excess deliveries are bounced back to the Master with a short delay. Default: `250`.
+  - **`BucketBufferLeadTime`** — how far ahead in time the worker pre-loads jobs into the in-memory buffer. Must be between `250ms` and `30s`. Default: `30s`.
+  - See [WorkersConfiguration](docs/WorkersConfiguration.md) for sizing guidance.
 
 - **Pagination and sorting for all API endpoints**
+- ** 
 
 ### Changes
 
@@ -41,6 +47,7 @@
   - `OriginalScheduledAt` → `ScheduledAt`
   - `SucceedExecutedAt` → `FinalizedAt` (now also set on failure and cancellation)
   - `ProcessingStartedAt` → `ProcessStartedAt`
+  -  `PartitionLockId (int)` -> `PartitionLockId (guid)`
   - **Migration Scripts** in [`migrations/0.0.6-alpha/`](migrations/0.0.6-alpha/)
     - ⚠️ **Alpha Notice**: Not fully tested. Recommended approach: let
       JobMaster create a fresh database. Only use migration scripts if you
@@ -55,10 +62,14 @@
   - [PostgreSQL](migrations/0.0.6-alpha/generic-tables-family-migration-postgres.sql)
   - [SQL Server](migrations/0.0.6-alpha/generic-tables-family-migration-sqlserver.sql)
   - [MySQL](migrations/0.0.6-alpha/generic-tables-family-migration-mysql.sql)
+- 
 
 ### Fixes
 - Fix pagination bug for SQL providers
-- Fix missing rollbacks on failed SQL transactions
+- Create fallback bucket when no buckets were configured to the jobs.
+- Implement better fail policy for the Runners
+- Reduce the concurrency of the AcquireAndFetchAsync method and introduce debug policies.
+- Rename `DequeueMessageAsync` to `PullMessageAsync`
 - Remove keep-alive connection from `DequeueMessageAsync` to prevent
   connection contention during message dequeue
 - Add retry mechanism for `DequeueMessageAsync`

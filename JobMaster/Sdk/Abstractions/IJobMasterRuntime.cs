@@ -18,9 +18,9 @@ internal interface IJobMasterRuntime
 
     Task StartAsync(IServiceProvider serviceProvider);
 
-    public OperationLimiter GetOperationLimiterForCluster(string clusterId);
+    public OperationThrottler GetOperationLimiterForCluster(string clusterId);
     
-    public OperationLimiter GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName);
+    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName);
     
     int CountWorkersForCluster(string clusterId);
     

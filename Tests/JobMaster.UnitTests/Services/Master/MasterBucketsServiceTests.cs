@@ -3,6 +3,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.BucketSelector;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -47,6 +48,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var act = async () => await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -90,6 +92,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var act =  async () => await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -143,6 +146,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var created = await sut.CreateAsync(new AgentConnectionId(clusterId, "agent"), "w", JobMasterPriority.High);
@@ -193,6 +197,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         await sut.DestroyAsync("missing");
@@ -245,6 +250,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         await sut.DestroyAsync(bucket.Id);
@@ -302,6 +308,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var got = sut.Get("b1", JobMasterConstants.BucketDefaultAllowDiscrepancy);
@@ -390,6 +397,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var selected = sut.SelectBucket(JobMasterConstants.BucketDefaultAllowDiscrepancy, JobMasterPriority.High, "lane");
@@ -482,6 +490,7 @@ public class MasterBucketsServiceTests
             workers.Object,
             dispatcher.Object,
             masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
             logger.Object);
 
         var selected = await sut.SelectBucketAsync(JobMasterConstants.BucketDefaultAllowDiscrepancy, JobMasterPriority.High, "lane");

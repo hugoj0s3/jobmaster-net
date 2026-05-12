@@ -17,9 +17,6 @@ internal interface IMasterGenericRecordRepository : IJobMasterClusterAwareMaster
     void Insert(GenericRecordEntry recordEntry);
     Task InsertAsync(GenericRecordEntry recordEntry);
     
-    void Update(GenericRecordEntry recordEntry);
-    Task UpdateAsync(GenericRecordEntry recordEntry);
-    
     void Delete(string groupId, string id);
     Task DeleteAsync(string groupId, string id);
     Task BulkInsertAsync(IList<GenericRecordEntry> records);

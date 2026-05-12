@@ -49,9 +49,13 @@ internal class JobSavePendingOperation
         }
         catch
         {
+            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
             try
             {
+                var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+                job.AssignToBucket(bucket!);
                 await agentJobsDispatcherService.AddSavePendingJobAsync(job);
+                return SaveDrainResultCode.Failed;
             }
             catch (Exception e)
             {
@@ -59,8 +63,6 @@ internal class JobSavePendingOperation
                 return SaveDrainResultCode.Failed;
             }
         }
-
-        return SaveDrainResultCode.Failed;
     }
     
     public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainAsync(JobRawModel job)
@@ -105,6 +107,7 @@ internal class JobSavePendingOperation
     
     public async Task<AddSavePendingResult> AddSavePendingJobAsync(JobRawModel jobRaw, DateTime cutOffDate)
     {
+        
         // Insert-first flow to avoid extra read; duplicate key maps to AlreadyExists
         if (jobRaw.GetSafeNextPlanExecutionAt() > cutOffDate)
         {
@@ -129,6 +132,14 @@ internal class JobSavePendingOperation
 
         var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         var engine = backgroundAgentWorker.GetEngine(bucketId);
+        
+        logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
+                     $"IsOnBoarding={jobRaw.IsOnBoarding()} " +
+                     $"EngineAvailable={engine is not null} " +
+                     $"BucketStatus={currentBucket?.Status} " +
+                     $"OnBoardingAvailability={engine?.OnBoardingControl.CountAvailability()} " +
+                     $"NextPlanAt={jobRaw.NextPlanExecutionAt:O} " +
+                     $"CutOffDate={cutOffDate:O}");
         
         // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
         if (engine is not null && 
@@ -159,7 +170,7 @@ internal class JobSavePendingOperation
                     logger.Debug("Short-circuit accepted", JobMasterLogSubjectType.Job, jobRaw.Id);
                     return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId, null);
                 }
-            
+
                 if (result == OnBoardingResult.MovedToMaster)
                 {
                     return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
@@ -203,15 +214,22 @@ internal class JobSavePendingOperation
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
             return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
+        }
+        catch (Exception e)
+        {
+            logger.Error("Failed to insert job; holding on master", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            jobRaw.MarkAsHeldOnMaster();
+            await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
+            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
         }
         
         try
         {
             logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
             
-            var publishedMessageId = await agentJobsDispatcherService.AddToProcessingAsync(jobRaw);
+            var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
             
             return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: selectedBucket.Id, publishedMessageId: publishedMessageId);
         }

@@ -33,8 +33,8 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
         var countWorkers = await BackgroundAgentWorker.WorkerClusterOperations.CountWorkersAsync();
-        var maxPartitionLockId = MinPartitionLockId + countWorkers + 1;
-        var partitionLockId = JobMasterRandomUtil.GetInt(MinPartitionLockId, maxPartitionLockId);
+        var maxLockSlot = MinPartitionLockId + countWorkers + 1;
+        var lockSlot = JobMasterRandomUtil.GetInt(MinPartitionLockId, maxLockSlot);
         var ids = queue.Dequeue(BackgroundAgentWorker.TransferBatchSize);
         if (ids.Count == 0)
         {
@@ -45,7 +45,7 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
         var durationToLock = JobMasterConstants.DurationToLockRecords;
 
         var lockToken = distributedLockerService.TryLock(
-            lockKeys.RecurringSchedulerLock(partitionLockId),
+            lockKeys.RecurringSchedulerLock(lockSlot),
             durationToLock.Add(TimeSpan.FromMinutes(1)));
 
         if (lockToken == null)
@@ -59,10 +59,9 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
 
         var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchByIdsAsync(
             ids.ToList(),
-            partitionLockId,
             utcNow.Add(durationToLock));
 
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(partitionLockId), lockToken);
+        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
 
         foreach (var schedule in recurringSchedules)
         {

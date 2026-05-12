@@ -46,7 +46,7 @@ public class JobConvertUtilTests
             MaxNumberOfRetries = 3,
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             SourceId = Guid.Parse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"),
-            PartitionLockId = 12,
+            PartitionLockId = Guid.NewGuid(),
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             ProcessDeadline = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),
             WorkerLane = "lane"
@@ -120,7 +120,7 @@ public class JobConvertUtilTests
             MaxNumberOfRetries = 3,
             CreatedAt = new DateTime(2025, 01, 02, 03, 04, 07, DateTimeKind.Utc),
             SourceId = Guid.Parse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"),
-            PartitionLockId = 12,
+            PartitionLockId = Guid.NewGuid(),
             PartitionLockExpiresAt = new DateTime(2025, 01, 02, 03, 05, 00, DateTimeKind.Utc),
             ProcessDeadline = new DateTime(2025, 01, 02, 03, 06, 00, DateTimeKind.Utc),
             WorkerLane = "lane"

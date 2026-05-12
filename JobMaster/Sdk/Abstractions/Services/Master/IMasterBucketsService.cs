@@ -9,7 +9,12 @@ namespace JobMaster.Sdk.Abstractions.Services.Master;
 internal interface IMasterBucketsService : IJobMasterClusterAwareService
 {
     Task DestroyAsync(string bucketId);
-    Task<BucketModel> CreateAsync(AgentConnectionId agentConnectionId, string workerId, JobMasterPriority priority);
+
+    Task<BucketModel> CreateAsync(
+        AgentConnectionId agentConnectionId,
+        string workerId,
+        JobMasterPriority priority,
+        BucketType type = BucketType.Standard);
     void Update(BucketModel model);
     Task UpdateAsync(BucketModel model);
     BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null);

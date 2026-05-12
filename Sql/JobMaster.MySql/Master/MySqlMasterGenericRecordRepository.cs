@@ -28,9 +28,10 @@ internal class MySqlMasterGenericRecordRepository : SqlMasterGenericRecordReposi
             
             // MySQL-specific: Upsert entry using INSERT ... ON DUPLICATE KEY UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
+            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0)
 ON DUPLICATE KEY UPDATE
     subject_type = VALUES(subject_type),
     subject_id = VALUES(subject_id),
@@ -97,6 +98,8 @@ ON DUPLICATE KEY UPDATE
                 conn.Execute(valueUpsertSql, valueRows, transaction);
             }
 
+            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+
             transaction.Commit();
         }
         catch
@@ -116,9 +119,10 @@ ON DUPLICATE KEY UPDATE
             
             // MySQL-specific: Upsert entry using INSERT ... ON DUPLICATE KEY UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
+            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0)
 ON DUPLICATE KEY UPDATE
     subject_type = VALUES(subject_type),
     subject_id = VALUES(subject_id),
@@ -184,6 +188,8 @@ ON DUPLICATE KEY UPDATE
                 
                 await conn.ExecuteAsync(valueUpsertSql, valueRows, transaction);
             }
+
+            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
 
             transaction.Commit();
         }

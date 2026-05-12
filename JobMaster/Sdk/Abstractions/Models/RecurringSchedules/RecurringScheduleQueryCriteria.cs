@@ -17,7 +17,7 @@ internal class RecurringScheduleQueryCriteria
     
     public int Offset { get; set; }
     public bool? IsLocked { get; set; }
-    public int? PartitionLockId { get; set; }
+    public Guid? PartitionLockId { get; set; }
     
     public bool? IsJobCancellationPending { get; set; }
     

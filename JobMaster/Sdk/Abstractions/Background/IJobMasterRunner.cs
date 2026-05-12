@@ -5,15 +5,18 @@ namespace JobMaster.Sdk.Abstractions.Background;
 /// </summary>
 internal interface IJobMasterRunner
 {
-    Task OnErrorAsync(Exception ex, CancellationToken ct);
+    Task OnTickFailureAsync(Exception ex, CancellationToken ct);
+    Task OnTerminateFailureAsync(Exception lastException);
     Task OnStartAsync(CancellationToken ct);
     Task<OnTickResult> OnTickAsync(CancellationToken ct);
     Task OnStopAsync();
     TimeSpan SucceedInterval { get; }
     
     TimeSpan WarmUpInterval { get; }
-
-    int ConsecutiveFailedCount { get; }
+    
+    TimeSpan FailedInterval { get; }
+    
+    double ConsecutiveFailedCount { get; }
     
     Task StartAsync();
     

@@ -34,12 +34,14 @@ internal interface ISqlGenerator
     public string InClauseFor(string columnName, string parameterName);
 
     public string NormalizeIdentifierForDb(string identifier);
-    
+
     public string CreateIndex(string tableName, string indexName, params (string ColumnName, bool IsMaxLength, int? Length)[] columns);
-    
+
     public string IdentityColumn();
-    
+
     public string GenerateVersionSql();
+
+    public string GetDbBool(bool value);
     
     public string GetCaseInsensitiveCollation();
     
@@ -146,6 +148,8 @@ internal abstract class SqlGenerator : ISqlGenerator
     
     public abstract string GenerateVersionSql();
     public abstract string GetCaseInsensitiveCollation();
+
+    public virtual string GetDbBool(bool value) => value ? "1" : "0";
     
     public string ParamFor<TModel>(Expression<Func<TModel, object?>> property)
     {

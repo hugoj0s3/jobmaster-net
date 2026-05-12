@@ -24,12 +24,6 @@ public class ApiAgentWorker : ApiClusterBaseModel
     
     internal static ApiAgentWorker FromDomain(AgentWorkerModel model)
     {
-        // TODO: Mock host assignment until worker-to-host mapping/telemetry is implemented.
-        var hostSeed = HashCode.Combine(model.ClusterId, model.Id);
-        var hostIndex = (Math.Abs(hostSeed) % 8) + 1;
-        var hostId = $"host-{hostIndex}";
-        var hostDisplayName = $"Host {hostIndex}";
-
         return new ApiAgentWorker
         {
             ClusterId = model.ClusterId,
@@ -46,8 +40,8 @@ public class ApiAgentWorker : ApiClusterBaseModel
             WorkerLane = model.WorkerLane,
             ParallelismFactor = model.ParallelismFactor,
             Status = model.Status(),
-            HostId = hostId,
-            HostDisplayName = hostDisplayName,
+            HostId = model.HostId.IdValue,
+            HostDisplayName = model.HostId.HostDisplayName,
         };
     }
 }

@@ -20,7 +20,7 @@ internal class MySqlDbConnectionManager : DbConnectionManager, IDbConnectionMana
         conn.Open(); 
         
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL {IsolationLevelToSql(isolationLevel)};";
+        cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
         cmd.ExecuteNonQuery();
         
         return conn;
@@ -37,7 +37,7 @@ internal class MySqlDbConnectionManager : DbConnectionManager, IDbConnectionMana
             await conn.OpenAsync();
         
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL {IsolationLevelToSql(isolationLevel)};";
+            cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
             await cmd.ExecuteNonQueryAsync();
         
             return conn;

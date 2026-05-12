@@ -24,14 +24,14 @@ internal class JobQueryCriteria
     
     public IList<GenericRecordValueFilter> MetadataFilters { get; set; } = new List<GenericRecordValueFilter>();
     public string? JobDefinitionId { get; set; }
-    public bool? IsLocked { get; set; }
-    public int? PartitionLockId { get; set; }
     public string? WorkerLane { get; set; }
     
     public string? WorkerId { get; set; }
     public string? AgentConnectionId { get; set; }
     public string? HostId { get; set; }
     public string? BucketId { get; set; }
+    
+    public IList<Guid> JobIds { get; set; } = new List<Guid>();
     
     public int CountLimit { get; set; } = 100;
     public int Offset { get; set; }

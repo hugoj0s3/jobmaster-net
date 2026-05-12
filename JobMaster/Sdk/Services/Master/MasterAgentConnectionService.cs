@@ -1,4 +1,6 @@
-﻿using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models;
@@ -8,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 
@@ -17,27 +20,41 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 {
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;
     private readonly JobMasterInMemoryKeys cacheKeys;
+    private readonly JobMasterSentinelKeys sentinelKeys;
     private readonly IJobMasterInMemoryCache jobMasterInMemoryCache;
+    private readonly IMasterChangesSentinelService masterChangesSentinelService;
     private readonly IMasterHeartbeatService masterHeartbeatService;
     private readonly IMasterBucketsService masterBucketsService;
+    private readonly RetryDeadlockPolicy retryDeadlockPolicy;
+    private readonly SentinelCachedReader sentinelCachedReader;
 
     public MasterAgentConnectionService(
         JobMasterClusterConnectionConfig clusterConnConfig,
         IMasterGenericRecordRepository masterGenericRecordRepository,
         IJobMasterInMemoryCache jobMasterInMemoryCache,
+        IMasterChangesSentinelService masterChangesSentinelService,
+        IKnownExceptionIdentifier knownExceptionIdentifier,
         IMasterHeartbeatService masterHeartbeatService,
         IMasterBucketsService masterBucketsService) : base(clusterConnConfig)
     {
         this.masterGenericRecordRepository = masterGenericRecordRepository;
         this.cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
+        this.sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
         this.jobMasterInMemoryCache = jobMasterInMemoryCache;
+        this.masterChangesSentinelService = masterChangesSentinelService;
         this.masterHeartbeatService = masterHeartbeatService;
         this.masterBucketsService = masterBucketsService;
+
+        this.retryDeadlockPolicy =
+            new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+
+        this.sentinelCachedReader =
+            new SentinelCachedReader(jobMasterInMemoryCache, masterChangesSentinelService);
     }
 
     public async Task<AgentConnectionModel> SaveConnectionAsync(
-        AgentConnectionId agentConnectionId, 
-        string repositoryTypeId, 
+        AgentConnectionId agentConnectionId,
+        string repositoryTypeId,
         string footprint,
         bool protectChanges)
     {
@@ -65,6 +82,8 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
                 agentConnectionRecord);
         await masterGenericRecordRepository.UpsertAsync(record);
 
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+
         var lastHeartbeat =
             masterHeartbeatService.GetLastHeartbeat(ResourceHeartbeatType.AgentConnection, agentConnectionId.IdValue);
         return ToModel(agentConnectionRecord, lastHeartbeat);
@@ -72,16 +91,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 
     public async Task<IList<AgentConnectionModel>> QueryAllAsync(bool useCache = true)
     {
-        IList<AgentConnectionRecord> records;
-        if (useCache)
-        {
-            var cacheItem = this.jobMasterInMemoryCache.Get<IList<AgentConnectionRecord>>(cacheKeys.AgentConnections);
-            records = cacheItem?.Value ?? await QueryAllAndCache();
-        }
-        else
-        {
-            records = await QueryAllAndCache();
-        }
+        var records = await GetAllAgentConnectionsAsync(useCache);
 
         var heartbeats = masterHeartbeatService.GetLastHeartbeats(
             ResourceHeartbeatType.AgentConnection,
@@ -98,6 +108,9 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         }
 
         await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
+
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+
         return true;
     }
 
@@ -137,13 +150,30 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         return ToModel(agentConnectionRecord, lastHeartbeatAt);
     }
 
-    private async Task<IList<AgentConnectionRecord>> QueryAllAndCache()
+    private async Task<IList<AgentConnectionRecord>> GetAllAgentConnectionsAsync(bool useCache = true)
     {
-        var records = await this.masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.AgentConnection);
-        var agentConnectionRecords = records.Select(x => x.ToObject<AgentConnectionRecord>()).ToList();
-        jobMasterInMemoryCache.Set(cacheKeys.AgentConnections, agentConnectionRecords);
+        if (!useCache)
+        {
+            // Bypass the sentinel check but still warm the cache so subsequent cached
+            // reads don't double-fetch.
+            var fresh = await retryDeadlockPolicy.ExecAsync(FetchAllAgentConnectionsAsync);
+            jobMasterInMemoryCache.Set(cacheKeys.AgentConnections, fresh);
+            return fresh;
+        }
 
-        return agentConnectionRecords;
+        return await retryDeadlockPolicy.ExecAsync(() => sentinelCachedReader.GetOrFetchAsync(
+            cacheKey: cacheKeys.AgentConnections,
+            sentinelKey: sentinelKeys.AgentConnections(),
+            factory: FetchAllAgentConnectionsAsync,
+            allowedDiscrepancy: JobMasterConstants.AgentConnectionsAllowDiscrepancy,
+            valueFactoryLockDuration: TimeSpan.FromSeconds(2),
+            durationToExpire: TimeSpan.FromMinutes(5)));
+    }
+
+    private async Task<IList<AgentConnectionRecord>> FetchAllAgentConnectionsAsync()
+    {
+        var records = await masterGenericRecordRepository.QueryAsync(MasterGenericRecordGroupIds.AgentConnection);
+        return records.Select(x => x.ToObject<AgentConnectionRecord>()).ToList();
     }
 
 
@@ -182,7 +212,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         public AgentConnectionRecord(string clusterId) : base(clusterId)
         {
         }
-        
+
         protected AgentConnectionRecord()
         {
         }

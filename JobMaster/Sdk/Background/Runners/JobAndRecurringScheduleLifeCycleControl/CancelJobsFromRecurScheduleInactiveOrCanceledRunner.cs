@@ -71,18 +71,17 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         var durationToLock = JobMasterConstants.DurationToLockRecords;
         var cutOffTime = utcNow.Add(durationToLock).AddSeconds(-30);
         
-        var lockId = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
-        
-        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockId), durationToLock.Add(TimeSpan.FromMinutes(1)));
+        var lockSlot = JobMasterRandomUtil.GetInt(lastScanPlanResult.LockerMin, lastScanPlanResult.LockerMax + 1);
+        var lockToken = distributedLockerService.TryLock(lockKeys.RecurringSchedulerLock(lockSlot), durationToLock.Add(TimeSpan.FromMinutes(1)));
         if (lockToken == null)
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, lockId, utcNow.Add(durationToLock));
+        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, utcNow.Add(durationToLock));
         if (recurringSchedules.Count <= 0)
         {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
             return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
         }
         
@@ -99,10 +98,10 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
                 break;
             }
 
-            await CencelJobsAsync(recurringSchedule, lockId, durationToLock, ct);
+            await CencelJobsAsync(recurringSchedule, lockSlot, durationToLock, ct);
         }
         
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockId), lockToken);
+        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
         
         return OnTickResult.Success(lastScanPlanResult.Interval);
     }
@@ -126,7 +125,6 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             },
             // Only cancel jobs scheduled 5 minutes later. the job on fly will be cancelled by the JobExecutionEngine.
             NextPlanExecutionAtFrom = DateTime.UtcNow.AddMinutes(5),
-            IsLocked = false,
             Offset = 0,
             SortBy = new SortByCriteria()
             {
@@ -141,7 +139,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         }
 
         var expiresAtUtc = DateTime.UtcNow.Add(durationToLock);
-        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockId, expiresAtUtc);
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, expiresAtUtc);
         var jobIdsToCancel = jobs
             .Where(x => !x.Status.IsFinalStatus())
             .Select(x => x.Id)

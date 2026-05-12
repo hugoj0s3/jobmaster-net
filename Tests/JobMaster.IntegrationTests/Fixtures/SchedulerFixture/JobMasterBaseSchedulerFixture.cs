@@ -262,22 +262,34 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                             .BucketQtyConfig(JobMasterPriority.Medium, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.High, w.BucketQty)
                             .BucketQtyConfig(JobMasterPriority.Critical, w.BucketQty)
-                            .TransferBatchSize(1000);
-                        // .SkipWarmUpTime();
+                            .TransferBatchSize(1000)
+                            .BucketBufferSize(1000);
+
+                        if (IsDrainingModeTest)
+                        {
+                            selector.SkipWarmUpTime();
+                        }
                     }
 
                     if (IsDrainingModeTest)
                     {
-                        var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        drainModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Drain)
-                            .TransferBatchSize(1000)
-                            .SkipWarmUpTime();
+                        for (int i = 0; i < 3; i++)
+                        {
+                            var drainModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            drainModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Drain)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                         
-                        var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
-                        coordinatorModeSelector
-                            .SetWorkerMode(AgentWorkerMode.Coordinator)
-                            .TransferBatchSize(1000);
+                        for (int i = 0; i < 5; i++)
+                        {
+                            var coordinatorModeSelector = cfg.AddWorker().AgentConnName(a.AgentName);
+                            coordinatorModeSelector
+                                .SetWorkerMode(AgentWorkerMode.Coordinator)
+                                .TransferBatchSize(1000)
+                                .SkipWarmUpTime();
+                        }
                     }
                 }
 

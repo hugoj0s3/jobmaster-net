@@ -27,9 +27,10 @@ internal class PostgresMasterGenericRecordRepository : SqlMasterGenericRecordRep
             
             // Postgres-specific: Upsert entry using INSERT ... ON CONFLICT DO UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
+            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
 ON CONFLICT (record_unique_id) DO UPDATE SET
     subject_type = EXCLUDED.subject_type,
     subject_id = EXCLUDED.subject_id,
@@ -96,6 +97,8 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
                 conn.Execute(valueUpsertSql, valueRows, transaction);
             }
 
+            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
+
             transaction.Commit();
         }
         catch
@@ -115,9 +118,10 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
             
             // Postgres-specific: Upsert entry using INSERT ... ON CONFLICT DO UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
+            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at)
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
 ON CONFLICT (record_unique_id) DO UPDATE SET
     subject_type = EXCLUDED.subject_type,
     subject_id = EXCLUDED.subject_id,
@@ -183,6 +187,8 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
                 
                 await conn.ExecuteAsync(valueUpsertSql, valueRows, transaction);
             }
+
+            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
 
             transaction.Commit();
         }

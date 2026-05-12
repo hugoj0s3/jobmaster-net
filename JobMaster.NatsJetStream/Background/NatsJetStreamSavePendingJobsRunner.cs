@@ -72,6 +72,4 @@ internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBa
         }
     }
     
-    protected override TimeSpan LongDelayAfterBufferSize() => TimeSpan.FromMilliseconds(100);
-    protected override TimeSpan DelayAfterProcessPayload() => TimeSpan.Zero;
 }
