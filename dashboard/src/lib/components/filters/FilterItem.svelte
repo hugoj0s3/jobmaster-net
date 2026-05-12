@@ -93,13 +93,13 @@
         if (preset.type === "LAST_MINUTES") {
             dateMode = "relative";
             relativeUnit = "min";
-            relativeFromText = -preset.minutes;
-            relativeToText = 0;
+            relativeFromText = String(-preset.minutes);
+            relativeToText = "0";
         } else if (preset.type === "NEXT_HOURS") {
             dateMode = "relative";
             relativeUnit = "min";
-            relativeFromText = 0;
-            relativeToText = preset.hours * 60;
+            relativeFromText = "0";
+            relativeToText = String(preset.hours * 60);
         }
     }
 
@@ -156,7 +156,7 @@
         const hasFrom = typeof range.fromOffset === "number";
         const hasTo = typeof range.toOffset === "number";
 
-        if (!hasFrom || !hasTo) {
+        if (!hasFrom && !hasTo) {
             ctx.clearValue(id);
             return;
         }
@@ -177,10 +177,10 @@
         return typeof from === "string" && typeof to === "string";
     }
 
-    function canApplyRelativeDate(): boolean {
-        const range = relativeToIsoRange();
-        return typeof range.fromOffset === "number" && typeof range.toOffset === "number";
-    }
+    let hasRelativeInput = false;
+    $: hasRelativeInput =
+        String(relativeFromText ?? "").trim().length > 0 ||
+        String(relativeToText ?? "").trim().length > 0;
 
     function applyDateFilter() {
         if (dateMode === "specific") {
@@ -357,7 +357,7 @@
             <div class="font-semibold">{label}</div>
             <div class="flex items-center gap-2">
                 {#if ctx.isActiveValue(get(ctx.values)[id])}
-                    <button class="btn btn-ghost btn-xs" on:click={clearMe}>Clear</button>
+                    <button class="btn btn-xs bg-red-200 text-red-900 border border-red-300 hover:bg-red-300" on:click={clearMe}>Clear</button>
                 {/if}
             </div>
         </div>
@@ -482,16 +482,16 @@
                 <div class="mt-4 flex items-center justify-between">
                     <button
                         type="button"
-                        class="btn btn-ghost btn-sm"
+                        class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
                         on:click={clearMe}
                     >
-                        Reset
+                        Clear
                     </button>
                     <button
                         type="button"
                         class="btn btn-primary btn-sm"
                         on:click={applyDateFilter}
-                        disabled={dateMode === "specific" ? !canApplySpecificDate() : !canApplyRelativeDate()}
+                        disabled={dateMode === "specific" ? !canApplySpecificDate() : !hasRelativeInput}
                     >
                         Apply
                     </button>

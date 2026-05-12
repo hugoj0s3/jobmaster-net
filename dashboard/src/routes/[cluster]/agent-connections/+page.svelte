@@ -87,7 +87,7 @@
 	function resetFilters() {
 		selectedHealths = [];
 		filterValues = {};
-		sortDirection = "desc";
+		sortDirection = "";
 		pageIndex = 0;
 		refreshNow();
 	}
@@ -281,10 +281,10 @@
 					{#if activeFiltersCount > 0}
 						<button
 							type="button"
-							class="btn btn-sm btn-ghost"
+							class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
 							on:click={resetFilters}
 						>
-							Reset filters
+							Clear filters
 						</button>
 					{/if}
 				</div>

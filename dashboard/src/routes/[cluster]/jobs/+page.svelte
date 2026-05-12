@@ -17,6 +17,7 @@
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
     import SearchSelectModal from "$lib/components/filters/SearchSelectModal.svelte";
+    import { readSavedFilter, writeSavedFilter, setupFilterPersistOnUnload } from "$lib/helper/filter-persistence";
 
     let isDefinitionSearchOpen = false;
 
@@ -69,10 +70,23 @@
         size: { defaultValue: 10, ...Serializers.number }
     };
 
+    const LS_KEY_JOBS_FILTERS = `jobs-filters-${$page.params.cluster}`;
+    const DEFAULT_SCHEDULED_PARAM = "rel:min:-60:60"; // -1h to +1h
+
     let _initParams = readUrlParams(urlParamDefs);
     let pageSize = _initParams.size;
     let pageIndex = _initParams.page;
-    let lastClusterId: string | null = null;
+
+    // Carrega filtros salvos da localStorage
+    function loadSavedFilters() {
+        const saved = readSavedFilter(LS_KEY_JOBS_FILTERS, "");
+        if (!saved) return null;
+        try {
+            return JSON.parse(saved);
+        } catch {
+            return null;
+        }
+    }
 
     let filterKey = $page.url.search;
     let lastSearch = $page.url.search;
@@ -159,6 +173,7 @@
 
     let jobs: Job[] = [];
     let jobsTotalCount = 0;
+    let lastClusterId: string | null = null;
 
     let poller: number | undefined;
 
@@ -179,14 +194,14 @@
         refreshNow();
     }
 
+    // Inicializa com valores da URL se existirem
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
     let selectedJobDefinitionId: string = _initParams.jobDefinitionId;
     let selectedSortDirection: string = _initParams.sortDirection;
     let searchTimeout: number | undefined;
 
-
     type FilterValues = Record<string, unknown>;
-    let filterValues: FilterValues = parseDatetimeParam(_initParams.scheduledAt, "scheduledAt");
+    let filterValues: FilterValues = _initParams.scheduledAt ? parseDatetimeParam(_initParams.scheduledAt, "scheduledAt") : {};
 
     function debouncedSearch(value: string) {
         if (searchTimeout) clearTimeout(searchTimeout);
@@ -219,6 +234,38 @@
 
     $: filterValues, selectedStatuses, selectedJobDefinitionId, selectedSortDirection, pageIndex, pageSize, syncToUrl();
 
+    onMount(() => {
+        // Se não tem params na URL, tenta carregar da localStorage
+        const hasUrlParams = $page.url.search.length > 0;
+        if (!hasUrlParams) {
+            const savedFilters = loadSavedFilters();
+            if (savedFilters) {
+                // Carrega filtros salvos (respeita até valores vazios)
+                selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [];
+                selectedJobDefinitionId = savedFilters.jobDefinitionId !== undefined ? savedFilters.jobDefinitionId : "";
+                selectedSortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : "";
+                filterValues = savedFilters.scheduledAt ? parseDatetimeParam(savedFilters.scheduledAt, "scheduledAt") : {};
+            } else {
+                // Aplica default quando não há localStorage (primeira vez)
+                filterValues = parseDatetimeParam(DEFAULT_SCHEDULED_PARAM, "scheduledAt");
+            }
+            syncToUrl();
+        }
+    });
+
+    onDestroy(() => {
+        // Salva filtros atuais na localStorage no unmount
+        writeSavedFilter(
+            LS_KEY_JOBS_FILTERS,
+            JSON.stringify({
+                statuses: selectedStatuses,
+                jobDefinitionId: selectedJobDefinitionId,
+                sortDirection: selectedSortDirection,
+                scheduledAt: datetimeToParam(filterValues, "scheduledAt")
+            })
+        );
+    });
+
     function buildJobsQuery() {
         const hb = (filterValues.scheduledAt ?? {}) as DatetimeFilterValue;
         const range = computeDateRange(hb);
@@ -227,10 +274,8 @@
             Statuses: selectedStatuses.length > 0 ? selectedStatuses as components["schemas"]["JobMasterJobStatus"][] : undefined,
             ScheduledFrom: range.from?.toISOString(),
             ScheduledTo: range.to?.toISOString(),
-            JobDefinitionId: selectedJobDefinitionId || undefined,
-            SortByProperty: "ScheduledAt",
-            SortByAscending: selectedSortDirection === "asc"
-        } as const;
+            JobDefinitionId: selectedJobDefinitionId || undefined
+        };
     }
 
 
@@ -289,7 +334,10 @@
         isRefreshing = true;
         try {
             const cid = clusterId();
-            if (!cid) return;
+            if (!cid) {
+                console.log('[Jobs] No cluster ID found');
+                return;
+            }
 
             if (lastClusterId !== cid) {
                 lastClusterId = cid;
@@ -302,10 +350,15 @@
                 const safeOffset = Math.max(0, pageIndex) * pageSize;
 
                 const filters = buildJobsQuery();
+                console.log('[Jobs] Filters:', filters);
+                console.log('[Jobs] ClusterID:', cid);
+                console.log('[Jobs] Offset:', safeOffset, 'PageSize:', pageSize);
+
                 const [jobsCount, apiJobs] = await Promise.all([
                     jm.GET("/{clusterId}/jobs/count", {
                         params: { path: { clusterId: cid }, query: filters }
                     }).then((r) => {
+                        console.log('[Jobs] Count response:', r);
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
@@ -315,11 +368,14 @@
                             query: { ...filters, CountLimit: pageSize, Offset: safeOffset }
                         }
                     }).then((r) => {
+                        console.log('[Jobs] Jobs response:', r);
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     })
                 ]);
 
+                console.log('[Jobs] Jobs count:', jobsCount);
+                console.log('[Jobs] Jobs data:', apiJobs);
                 jobsTotalCount = jobsCount;
 
                 const newMaxPageIndex = Math.max(0, Math.ceil(jobsCount / pageSize) - 1);
@@ -353,9 +409,10 @@
                     };
                 });
 
-
+                console.log('[Jobs] Mapped jobs:', jobs);
                 lastUpdatedAt = new Date();
-            } catch {
+            } catch (error) {
+                console.error('[Jobs] Error fetching jobs:', error);
                 jobsTotalCount = 0;
                 jobs = [];
             }
@@ -517,10 +574,10 @@
                 {#if activeFiltersCount > 0}
                     <button
                         type="button"
-                        class="btn btn-sm btn-ghost"
+                        class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
                         on:click={resetFilters}
                     >
-                        Reset filters
+                        Clear filters
                     </button>
                 {/if}
             </div>
@@ -549,13 +606,28 @@
                         <th>Priority</th>
                         <th>Next Planned Execution</th>
                         <th>Schedule Date</th>
-                        <th>Finished</th>
+                        <th>Finish</th>
                         <th>Worker Lane</th>
                         <th>Bucket</th>
                     </tr>
                     </thead>
 
                     <tbody>
+                    {#if isRefreshing && jobs.length === 0}
+                        <tr>
+                            <td colspan="11" class="text-center py-8">
+                                <span class="loading loading-spinner loading-md"></span>
+                                <p class="mt-2 opacity-60">Loading jobs...</p>
+                            </td>
+                        </tr>
+                    {:else if jobs.length === 0}
+                        <tr>
+                            <td colspan="11" class="text-center py-8">
+                                <p class="opacity-60">No jobs found</p>
+                                <p class="text-sm opacity-40 mt-1">Try adjusting your filters</p>
+                            </td>
+                        </tr>
+                    {:else}
                     {#each jobs as j (j.jobId)}
                         <tr class="hover cursor-pointer">
 													<td class="font-medium">
@@ -674,6 +746,7 @@
                             </td>
                         </tr>
                     {/each}
+                    {/if}
                     </tbody>
                 </table>
                 <SearchSelectModal

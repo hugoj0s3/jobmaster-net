@@ -16,6 +16,7 @@
 	import { goto } from '$app/navigation';
 	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
+	import { readSavedFilter, writeSavedFilter } from '$lib/helper/filter-persistence';
 
 	type RecurringScheduleStatus = components["schemas"]["RecurringScheduleStatus"];
 	type RecurringScheduleType = components["schemas"]["RecurringScheduleType"];
@@ -26,6 +27,7 @@
 		handler: string;
 		description: string;
 		expressionTypeId?: string;
+		expression?: string;
 		frequency: string;
 		tz?: string;
 		nextRun: string;
@@ -37,29 +39,41 @@
 		status: RecurringScheduleStatus;
 		scheduleType: RecurringScheduleType;
 		lastJobStatus?: JobStatusLabel;
+		profileId?: string;
+		startBefore?: string;
+		endBefore?: string;
+		isStaticIdle?: boolean;
+		workman?: string;
 	};
 
 	let rows: RecurringScheduleRow[] = [];
 
+	const DEFAULT_STATUSES = ["Active"];
+	const DEFAULT_SORT_DIRECTION: "asc" | "desc" = "desc";
+
 	const urlParamDefs = {
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
-		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
+		sortDirection: { defaultValue: "" as "" | "asc" | "desc" },
+		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		createdAt: { defaultValue: "" as string }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
 
-	let filterKey = $page.url.search;
+	let filterKeySeed = 0;
+	let filterKeyBase = $page.url.search;
+	let filterKey = `${filterKeyBase}|${filterKeySeed}`;
 	let lastSearch = $page.url.search;
 	$: if ($page.url.search !== lastSearch) {
 		lastSearch = $page.url.search;
-		filterKey = $page.url.search;
+		filterKeyBase = $page.url.search;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
-		sortDirection = _initParams.sortDirection;
-		selectedStatuses = [];
+		sortDirection = _initParams.sortDirection || "";
+		selectedStatuses = [..._initParams.statuses];
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
@@ -68,14 +82,27 @@
 	let lastUpdatedAt = new Date();
 	let isRefreshing = false;
 	let poller: number | undefined;
+	let activeFiltersCount = 0;
 
 	const clusterId = () => $page.params.cluster;
 
-	let selectedStatuses: string[] = [];
-	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
+	// Carrega filtros salvos da localStorage
+	function loadSavedFilters() {
+		const saved = readSavedFilter(`recurring-schedules-filters-${clusterId()}`, "");
+		if (!saved) return null;
+		try {
+			return JSON.parse(saved);
+		} catch {
+			return null;
+		}
+	}
+
+	// Inicializa com valores da URL se existirem
+	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+	let sortDirection: "" | "asc" | "desc" = _initParams.sortDirection || "";
 
 	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
+	let filterValues: FilterValues = _initParams.createdAt ? parseDatetimeParam(_initParams.createdAt, "createdAt") : {};
 
 	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
 
@@ -93,17 +120,22 @@
 			page: pageIndex,
 			size: pageSize,
 			sortDirection,
+			statuses: selectedStatuses,
 			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
-	$: filterValues, sortDirection, pageIndex, pageSize, syncToUrl();
+	$: filterValues, selectedStatuses, sortDirection, pageIndex, pageSize, syncToUrl();
 
 	function resetFilters() {
 		selectedStatuses = [];
 		filterValues = {};
-		sortDirection = "desc";
+		sortDirection = "";
 		pageIndex = 0;
+		filterKeySeed += 1;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
+		syncToUrl();
+		refreshNow();
 	}
 
 	$: totalCount = filtered.length;
@@ -115,7 +147,8 @@
 	}
 
 	$: sorted = filtered.slice().sort((a, b) => {
-		const dir = sortDirection === "asc" ? 1 : -1;
+		const effectiveDir: "asc" | "desc" = sortDirection === "asc" || sortDirection === "desc" ? sortDirection : DEFAULT_SORT_DIRECTION;
+		const dir = effectiveDir === "asc" ? 1 : -1;
 		const safeTime = (iso: string | undefined) => {
 			if (!iso) return Number.MIN_SAFE_INTEGER;
 			const t = new Date(iso).getTime();
@@ -125,10 +158,12 @@
 	});
 
 	$: paged = sorted.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
-	$: activeFiltersCount =
-		(selectedStatuses.length > 0 ? 1 : 0) +
-		(filterValues?.createdAt ? 1 : 0) +
-		(sortDirection !== "desc" ? 1 : 0);
+	$: {
+		const statusesActive = selectedStatuses.length > 0 ? 1 : 0;
+		const createdActive = filterValues?.createdAt ? 1 : 0;
+		const sortActive = sortDirection ? 1 : 0;
+		activeFiltersCount = statusesActive + createdActive + sortActive;
+	}
 
 	function stringifyMetadata(meta: Record<string, unknown> | null | undefined): Record<string, string> {
 		if (!meta) return {};
@@ -245,6 +280,7 @@
 					description: meta["description"] ?? schedule.description ?? "",
 					metadata: meta,
 					expressionTypeId: expressionTypeId,
+					expression: expression,
 					frequency: RecurrenceExpressionUtil.formatExpression(expressionTypeId, expression) ?? formatCronExpression(schedule.cronExpression),
 					tz: schedule.timeZoneId,
 					nextRun: formatNextRun(schedule.nextScheduledAt),
@@ -254,7 +290,12 @@
 					scheduleStatusAgo: formatTimeAgo(schedule.lastJobExecutedAt),
 					status: schedule.status ?? 3,
 					scheduleType: schedule.scheduleType ?? 2,
-					lastJobStatus: mapLastJobStatus(schedule.lastJobStatus)
+					lastJobStatus: mapLastJobStatus(schedule.lastJobStatus),
+					profileId: schedule.profileId ?? undefined,
+					startBefore: schedule.startBefore ?? undefined,
+					endBefore: schedule.endBefore ?? undefined,
+					isStaticIdle: schedule.isStaticIdle ?? false,
+					workman: schedule.workman ?? schedule.agentWorkerId ?? undefined
 				};
 			});
 
@@ -277,16 +318,39 @@
 
 
 	onMount(() => {
+		// Se não tem params na URL, tenta carregar da localStorage
+		const hasUrlParams = $page.url.search.length > 0;
+		if (!hasUrlParams) {
+			const savedFilters = loadSavedFilters();
+			if (savedFilters) {
+				// Carrega filtros salvos (respeita até arrays vazios)
+				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
+				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
+			} else {
+				// Aplica defaults quando não há localStorage
+				selectedStatuses = [...DEFAULT_STATUSES];
+				sortDirection = DEFAULT_SORT_DIRECTION;
+			}
+			syncToUrl();
+		}
+
 		refreshNow();
 		restartPoller();
-
-		return () => {
-			if (poller) window.clearInterval(poller);
-		};
 	});
 
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
+
+		// Salva filtros atuais na localStorage no unmount
+		writeSavedFilter(
+			`recurring-schedules-filters-${clusterId()}`,
+			JSON.stringify({
+				statuses: selectedStatuses,
+				sortDirection,
+				createdAt: datetimeToParam(filterValues, "createdAt")
+			})
+		);
 	});
 </script>
 
@@ -345,7 +409,7 @@
 					]}
 					value={sortDirection}
 					on:change={(e) => {
-						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
 						pageIndex = 0;
 					}}
 				/>
@@ -370,13 +434,13 @@
 				</FilterContainer>
 
 				{#if activeFiltersCount > 0}
-					<button
-						type="button"
-						class="btn btn-sm btn-ghost"
-						on:click={resetFilters}
-					>
-						Reset filters
-					</button>
+				<button
+					type="button"
+					class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
+					on:click={resetFilters}
+				>
+					Clear filters
+				</button>
 				{/if}
 			</div>
 			{/key}
@@ -396,10 +460,16 @@
 				<table class="table table-zebra">
 					<thead>
 					<tr class="text-base-content/70">
-						<th class="w-[24%]">Job Definition Id</th>
-						<th class="w-[20%]">Type</th>
+						<th>Id</th>
+						<th>Job Definition Id</th>
+						<th>Expression</th>
+						<th>Profile Id</th>
+						<th>Start Before</th>
+						<th>End Before</th>
+						<th>Is Static Idle</th>
+						<th>Workman</th>
 						<th>Metadata</th>
-						<th class="w-[13%]">Status</th>
+						<th>Status</th>
 					</tr>
 					</thead>
 
@@ -407,22 +477,61 @@
 					{#each paged as r (r.id)}
 						<tr class="hover cursor-pointer" on:click={() => navigateToDetail(r.id)}>
 							<td>
-								<div class="flex items-center gap-3">
-									<div class="h-10 w-10 rounded-xl bg-base-300/60 grid place-items-center">
-										<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-											<path d="M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z" />
-											<rect x="8" y="14" width="2" height="2" rx="1" />
-											<rect x="14" y="14" width="2" height="2" rx="1" />
-										</svg>
-									</div>
-									<div class="leading-tight">
-										<div class="font-medium">{r.jobType}</div>
-									</div>
+								<span class="font-mono text-sm opacity-80">{r.id}</span>
+							</td>
+
+							<td>
+								<span class="font-medium">{r.jobType}</span>
+							</td>
+
+							<td>
+								<div class="font-mono text-sm opacity-90">
+									{#if r.expression}
+										<span class="tooltip tooltip-bottom" data-tip={r.expression}>
+											{r.frequency}
+										</span>
+									{:else}
+										<span class="opacity-60">—</span>
+									{/if}
 								</div>
 							</td>
 
 							<td>
-								<div class="font-medium opacity-90">{r.expressionTypeId ?? "Unknown"}</div>
+								{#if r.profileId}
+									<span class="font-medium opacity-90">{r.profileId}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
+							</td>
+
+							<td>
+								{#if r.startBefore}
+									<span class="text-sm">{DateDisplayUtil.formatDateTime(r.startBefore)}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
+							</td>
+
+							<td>
+								{#if r.endBefore}
+									<span class="text-sm">{DateDisplayUtil.formatDateTime(r.endBefore)}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
+							</td>
+
+							<td>
+								<span class="badge badge-sm {r.isStaticIdle ? 'badge-success' : 'badge-ghost'}">
+									{r.isStaticIdle ? 'Yes' : 'No'}
+								</span>
+							</td>
+
+							<td>
+								{#if r.workman}
+									<span class="font-medium opacity-90">{r.workman}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
 							</td>
 
 							<td>
@@ -455,7 +564,7 @@
 
 					{#if filtered.length === 0}
 						<tr>
-							<td colspan="6">
+							<td colspan="10">
 								<div class="py-8 text-center opacity-70">No schedules found.</div>
 							</td>
 						</tr>

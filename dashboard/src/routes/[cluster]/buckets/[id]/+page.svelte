@@ -258,6 +258,7 @@
 					: "bg-base-content/30";
 
 	$: queuedJobsCount = activeApiJobs.filter((j) => j.status === JobStatus.Queued).length;
+	$: totalActiveJobsCount = activeJobsTotalCount;
 	$: avgQueueMs = avg(
 		activeApiJobs
 			.map((j) => safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null))
@@ -270,6 +271,9 @@
 	);
 	$: avgQueueLabel = formatDuration(avgQueueMs);
 	$: avgRunLabel = formatDuration(avgRunMs);
+	$: deltaMs = (avgQueueMs != null && avgRunMs != null) ? avgQueueMs - avgRunMs : null;
+	$: deltaLabel = formatDuration(deltaMs);
+	$: deltaIsPositive = deltaMs != null && deltaMs > 0;
 
 
 	const stateBadge: Record<ActiveJob["state"], string> = {
@@ -345,14 +349,14 @@
 				</div>
 
 				<!-- Stats row -->
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 
-					<!-- Queued jobs -->
+					<!-- Amount Jobs -->
 					<div class="card bg-base-100 border border-base-300/60">
 						<div class="card-body">
-							<div class="text-sm opacity-70">Queued Jobs</div>
-							<div class="mt-1 text-3xl font-semibold">{queuedJobsCount}</div>
-							<progress class="progress progress-primary mt-3" value="55" max="100"></progress>
+							<div class="text-sm opacity-70">Amount Jobs</div>
+							<div class="mt-1 text-3xl font-semibold">{totalActiveJobsCount}</div>
+							<div class="mt-2 text-xs opacity-60">{queuedJobsCount} queued</div>
 						</div>
 					</div>
 
@@ -361,8 +365,7 @@
 						<div class="card-body">
 							<div class="text-sm opacity-70">Avg Queue Time</div>
 							<div class="mt-1 text-3xl font-semibold">{avgQueueLabel}</div>
-							<progress class="progress progress-secondary mt-3" value="35" max="100"></progress>
-							<div class="mt-2 text-xs opacity-60">{avgQueueLabel}</div>
+							<div class="mt-2 text-xs opacity-60">Time in queue</div>
 						</div>
 					</div>
 
@@ -371,8 +374,34 @@
 						<div class="card-body">
 							<div class="text-sm opacity-70">Avg Run Duration</div>
 							<div class="mt-1 text-3xl font-semibold">{avgRunLabel}</div>
-							<progress class="progress progress-accent mt-3" value="45" max="100"></progress>
-							<div class="mt-2 text-xs opacity-60">{avgRunLabel}</div>
+							<div class="mt-2 text-xs opacity-60">Execution time</div>
+						</div>
+					</div>
+
+					<!-- Delta -->
+					<div class="card bg-base-100 border border-base-300/60">
+						<div class="card-body">
+							<div class="text-sm opacity-70">Delta (Queue - Run)</div>
+							<div class="mt-1 text-3xl font-semibold flex items-center gap-2">
+								{#if deltaMs === null}
+									<span>—</span>
+								{:else if deltaIsPositive}
+									<span class="text-warning">+{deltaLabel}</span>
+									<span class="text-warning text-lg">↑</span>
+								{:else}
+									<span class="text-success">{deltaLabel}</span>
+									<span class="text-success text-lg">↓</span>
+								{/if}
+							</div>
+							<div class="mt-2 text-xs opacity-60">
+								{#if deltaMs === null}
+									No data
+								{:else if deltaIsPositive}
+									Queue slower than run
+								{:else}
+									Queue faster than run
+								{/if}
+							</div>
 						</div>
 					</div>
 				</div>

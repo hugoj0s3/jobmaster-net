@@ -10,8 +10,10 @@
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
+	import { resolve } from "$app/paths";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
+	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -37,17 +39,33 @@
 	let lastUpdatedAt = new Date();
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
+	let activeFiltersCount = 0;
+
+	const DEFAULT_STATUSES = ["Online"];
 
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
-		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
+		sort: { defaultValue: "" as "" | "recent" | "oldest" | "online" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
 		createdAt: { defaultValue: "" as string }
 	};
 
+	const LS_KEY_HOSTS_FILTERS = `hosts-filters-${$page.params.cluster}`;
+
+	// Carrega filtros salvos da localStorage
+	function loadSavedFilters() {
+		const saved = readSavedFilter(LS_KEY_HOSTS_FILTERS, "");
+		if (!saved) return null;
+		try {
+			return JSON.parse(saved);
+		} catch {
+			return null;
+		}
+	}
+
 	let _initParams = readUrlParams(urlParamDefs);
-	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
+	let sort: "" | "recent" | "oldest" | "online" = _initParams.sort;
 
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
@@ -57,16 +75,19 @@
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 
-	let filterKey = $page.url.search;
+	let filterKeySeed = 0;
+	let filterKeyBase = $page.url.search;
+	let filterKey = `${filterKeyBase}|${filterKeySeed}`;
 	let lastSearch = $page.url.search;
 	$: if ($page.url.search !== lastSearch) {
 		lastSearch = $page.url.search;
-		filterKey = $page.url.search;
+		filterKeyBase = $page.url.search;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
 		_initParams = readUrlParams(urlParamDefs);
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-		sortDirection = _initParams.sortDirection;
+		sort = _initParams.sort;
 		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
@@ -74,20 +95,25 @@
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
 			statuses: selectedStatuses,
-			sortDirection,
+			sort,
 			page: pageIndex,
 			size: pageSize,
 			createdAt: datetimeToParam(filterValues, "createdAt")
 		});
 	}
 
-	$: filterValues, selectedStatuses, sortDirection, pageIndex, pageSize, syncToUrl();
+	$: if (filterValues || selectedStatuses || sort || pageIndex || pageSize) {
+		syncToUrl();
+	}
 
 	function resetFilters() {
 		selectedStatuses = [];
 		filterValues = {};
-		sortDirection = "desc";
+		sort = "";
 		pageIndex = 0;
+		filterKeySeed += 1;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
+		syncToUrl();
 	}
 
 	$: onlineCount = rows.filter(r => r.status === "Online").length;
@@ -180,7 +206,13 @@
 			return true;
 		})
 		.sort((a, b) => {
-			const dir = sortDirection === "asc" ? 1 : -1;
+			if (sort === "online") {
+				if (a.status === "Online" && b.status !== "Online") return -1;
+				if (a.status !== "Online" && b.status === "Online") return 1;
+				// If both have same status, fallback to recent
+			}
+
+			const dir = sort === "oldest" ? 1 : -1;
 			const safeTime = (iso: string | undefined) => {
 				if (!iso) return Number.MIN_SAFE_INTEGER;
 				const t = new Date(iso).getTime();
@@ -195,7 +227,7 @@
 	$: activeFiltersCount =
 		(selectedStatuses.length > 0 ? 1 : 0) +
 		(filterValues?.createdAt ? 1 : 0) +
-		(sortDirection !== "desc" ? 1 : 0);
+		(sort ? 1 : 0);
 
 	function refresh() {
 		refreshNow();
@@ -212,12 +244,38 @@
 	}
 
 	onMount(() => {
+		// Se não tem params na URL, tenta carregar da localStorage
+		const hasUrlParams = $page.url.search.length > 0;
+		if (!hasUrlParams) {
+			const savedFilters = loadSavedFilters();
+			if (savedFilters) {
+				// Carrega filtros salvos (respeita até valores vazios)
+				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
+				sort = savedFilters.sort !== undefined ? savedFilters.sort : "recent";
+				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
+			} else {
+				// Aplica defaults quando não há localStorage (primeira vez)
+				selectedStatuses = [...DEFAULT_STATUSES];
+				sort = "recent";
+			}
+		}
+
 		refreshNow();
 		restartPoller();
 	});
 
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
+
+		// Salva filtros atuais na localStorage no unmount
+		writeSavedFilter(
+			LS_KEY_HOSTS_FILTERS,
+			JSON.stringify({
+				statuses: selectedStatuses,
+				sort,
+				createdAt: datetimeToParam(filterValues, "createdAt")
+			})
+		);
 	});
 </script>
 
@@ -332,12 +390,13 @@
 				<FilterDropdown
 					label="Sort By"
 					options={[
-						{ value: "desc", label: "Recents" },
-						{ value: "asc", label: "Olders" }
+						{ value: "recent", label: "Recents" },
+						{ value: "oldest", label: "Olders" },
+						{ value: "online", label: "Online" }
 					]}
-					value={sortDirection}
+					value={sort}
 					on:change={(e) => {
-						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						sort = e.detail;
 						pageIndex = 0;
 					}}
 				/>
@@ -364,10 +423,10 @@
 				{#if activeFiltersCount > 0}
 					<button
 						type="button"
-						class="btn btn-sm btn-ghost"
+						class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
 						on:click={resetFilters}
 					>
-						Reset filters
+						Clear filters
 					</button>
 				{/if}
 			</div>
@@ -399,7 +458,7 @@
 						</thead>
 						<tbody>
 						{#each paginatedHosts as r (r.id)}
-							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(`/${clusterId()}/hosts/${r.id}`)}>
+							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(resolve(`/${clusterId()}/hosts/${r.id}`))}>
 								<td>
 									<div class="flex items-center gap-2">
 										<span class={`inline-block h-2.5 w-2.5 rounded-full ${dotClass(r.status)}`} />

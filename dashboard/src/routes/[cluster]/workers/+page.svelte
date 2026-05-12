@@ -13,6 +13,7 @@
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { WorkerModeUtil, type WorkerMode } from "$lib/helper/worker-mode-util";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
+	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
 
 	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
@@ -36,6 +37,10 @@
 	let lastUpdatedAt = new Date();
 	let poller: number | undefined;
 	const refreshIntervalSec = 10;
+	let activeFiltersCount = 0;
+
+	const DEFAULT_STATUSES = ["Online"];
+	const DEFAULT_SORT_DIRECTION: "asc" | "desc" = "desc";
 
 	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
@@ -46,14 +51,26 @@
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
 		modes: { defaultValue: [] as string[], ...Serializers.stringArray },
-		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
+		sortDirection: { defaultValue: "" as "" | "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 10, ...Serializers.number },
-		lastHeartbeat: { defaultValue: "" as string }
+		size: { defaultValue: 10, ...Serializers.number }
 	};
 
+	const LS_KEY_WORKERS_FILTERS = `workers-filters-${$page.params.cluster}`;
+
+	// Carrega filtros salvos da localStorage
+	function loadSavedFilters() {
+		const saved = readSavedFilter(LS_KEY_WORKERS_FILTERS, "");
+		if (!saved) return null;
+		try {
+			return JSON.parse(saved);
+		} catch {
+			return null;
+		}
+	}
+
 	let _initParams = readUrlParams(urlParamDefs);
-	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
+	let sortDirection: "" | "asc" | "desc" = _initParams.sortDirection;
 
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
@@ -69,15 +86,11 @@
 		sortDirection = _initParams.sortDirection;
 		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 		selectedModes = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
-		filterValues = parseDatetimeParam(_initParams.lastHeartbeat, "lastHeartbeat");
 		refreshNow();
 	}
 
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 	let selectedModes: string[] = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
-
-	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = parseDatetimeParam(_initParams.lastHeartbeat, "lastHeartbeat");
 
 	function syncToUrl() {
 		writeUrlParams(urlParamDefs, {
@@ -85,18 +98,16 @@
 			modes: selectedModes,
 			sortDirection,
 			page: pageIndex,
-			size: pageSize,
-			lastHeartbeat: datetimeToParam(filterValues, "lastHeartbeat")
+			size: pageSize
 		});
 	}
 
-	$: filterValues, selectedStatuses, selectedModes, sortDirection, pageIndex, pageSize, syncToUrl();
+	$: selectedStatuses, selectedModes, sortDirection, pageIndex, pageSize, syncToUrl();
 
 	function resetFilters() {
 		selectedStatuses = [];
 		selectedModes = [];
-		filterValues = {};
-		sortDirection = "desc";
+		sortDirection = "";
 		pageIndex = 0;
 	}
 
@@ -174,13 +185,10 @@
 	};
 
 
-	$: heartbeatFilter = (filterValues.lastHeartbeat ?? {}) as DatetimeFilterValue;
-
 	$: filteredAll = rows
 		.filter((r) => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
 			if (selectedModes.length > 0 && !selectedModes.includes(r.mode)) return false;
-			if (!passesDatetimeFilter(heartbeatFilter, r.lastHeartbeat)) return false;
 			return true;
 		})
 		.sort((a, b) => {
@@ -199,8 +207,7 @@
 	$: activeFiltersCount =
 		(selectedStatuses.length > 0 ? 1 : 0) +
 		(selectedModes.length > 0 ? 1 : 0) +
-		(filterValues?.lastHeartbeat ? 1 : 0) +
-		(sortDirection !== "desc" ? 1 : 0);
+		(sortDirection ? 1 : 0);
 
 
 	function refresh() {
@@ -208,12 +215,39 @@
 	}
 
 	onMount(() => {
+		// Se não tem params na URL, tenta carregar da localStorage
+		const hasUrlParams = $page.url.search.length > 0;
+		if (!hasUrlParams) {
+			const savedFilters = loadSavedFilters();
+			if (savedFilters) {
+				// Carrega filtros salvos (respeita até valores vazios)
+				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
+				selectedModes = savedFilters.modes !== undefined ? savedFilters.modes : [];
+				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+			} else {
+				// Aplica defaults quando não há localStorage (primeira vez)
+				selectedStatuses = [...DEFAULT_STATUSES];
+				sortDirection = DEFAULT_SORT_DIRECTION;
+			}
+			syncToUrl();
+		}
+
 		refreshNow();
 		restartPoller();
 	});
 
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
+
+		// Salva filtros atuais na localStorage no unmount
+		writeSavedFilter(
+			LS_KEY_WORKERS_FILTERS,
+			JSON.stringify({
+				statuses: selectedStatuses,
+				modes: selectedModes,
+				sortDirection
+			})
+		);
 	});
 </script>
 
@@ -318,32 +352,13 @@
 					}}
 				/>
 
-				<FilterContainer
-					initialValues={filterValues}
-					onChange={(v) => {
-						filterValues = v;
-						pageIndex = 0;
-					}}
-				>
-					<FilterItem
-						id="lastHeartbeat"
-						label="Last Heartbeat"
-						type="datetime"
-						presets={[
-							{ type: "LAST_MINUTES", minutes: 5, label: "Last 5 min" },
-							{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
-							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
-						]}
-					/>
-				</FilterContainer>
-
 				{#if activeFiltersCount > 0}
 					<button
 						type="button"
-						class="btn btn-sm btn-ghost"
+						class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
 						on:click={resetFilters}
 					>
-						Reset filters
+						Clear filters
 					</button>
 				{/if}
 			</div>

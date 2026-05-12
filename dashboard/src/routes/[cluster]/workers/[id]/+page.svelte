@@ -220,6 +220,14 @@
 								</div>
 								<span class="font-medium">{worker?.failedJobs?.toLocaleString() ?? '—'}</span>
 							</div>
+
+							<div class="flex items-center justify-between">
+								<div class="flex items-center gap-2 opacity-80">
+									<span class="text-primary">📦</span>
+									<span>Buckets</span>
+								</div>
+								<span class="font-medium">{buckets.length}</span>
+							</div>
 						</div>
 					</div>
 				</div>

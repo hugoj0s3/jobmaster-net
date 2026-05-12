@@ -1,5 +1,6 @@
 <script lang="ts">
     import { page } from "$app/stores";
+    import logoSvg from "$lib/assets/jobmaster-logo.svg";
 
     let isHovered = $state(false);
 
@@ -39,13 +40,7 @@
     <!-- Logo -->
     <a href="/" class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300 cursor-pointer">
         <div class="flex items-center min-w-[50px]">
-            <div
-                    class="w-10 h-10 bg-accent text-accent-content rounded-xl flex items-center justify-center font-black text-lg transition-transform duration-500 shadow-lg shadow-accent/20"
-                    style="transform: rotate({isHovered ? '-6deg' : '0deg'}); font-family: 'JetBrains Mono'; letter-spacing: -1px;"
-            >
-                JM
-            </div>
-
+            <img src={logoSvg} alt="JobMaster" class="h-10 w-10" />
         </div>
 
         {#if isHovered}

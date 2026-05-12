@@ -76,7 +76,7 @@
             <div class="flex items-center justify-between gap-3 mb-2">
                 <div class="font-semibold text-sm">{label}</div>
                 {#if isActive}
-                    <button class="btn btn-ghost btn-xs" on:click={clear}>Clear</button>
+                    <button class="btn btn-xs bg-red-200 text-red-900 border border-red-300 hover:bg-red-300" on:click={clear}>Clear</button>
                 {/if}
             </div>
 

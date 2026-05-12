@@ -14,6 +14,7 @@
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
+	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
 
 	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
@@ -45,14 +46,31 @@
 
 	let lastUpdatedAt = new Date();
 	let isRefreshing = false;
+	let activeFiltersCount = 0;
+
+	const DEFAULT_STATUSES = ["Active", "Completing", "ReadyToDrain", "Draining", "Lost"];
+	const DEFAULT_SORT_DIRECTION: "asc" | "desc" = "desc";
 
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
-		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
+		sortDirection: { defaultValue: "" as "" | "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
 		createdAt: { defaultValue: "" as string }
 	};
+
+	const LS_KEY_BUCKETS_FILTERS = `buckets-filters-${$page.params.cluster}`;
+
+	// Carrega filtros salvos da localStorage
+	function loadSavedFilters() {
+		const saved = readSavedFilter(LS_KEY_BUCKETS_FILTERS, "");
+		if (!saved) return null;
+		try {
+			return JSON.parse(saved);
+		} catch {
+			return null;
+		}
+	}
 
 	let _initParams = readUrlParams(urlParamDefs);
 
@@ -82,7 +100,7 @@
 
 	let pageSize = _initParams.size;
 	let pageIndex = _initParams.page;
-	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
+	let sortDirection: "" | "asc" | "desc" = _initParams.sortDirection;
 
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 
@@ -104,7 +122,7 @@
 	function resetFilters() {
 		selectedStatuses = [];
 		filterValues = {};
-		sortDirection = "desc";
+		sortDirection = "";
 		pageIndex = 0;
 	}
 	let poller: number | undefined;
@@ -135,7 +153,7 @@
 	$: activeFiltersCount =
 		(selectedStatuses.length > 0 ? 1 : 0) +
 		(filterValues?.createdAt ? 1 : 0) +
-		(sortDirection !== "desc" ? 1 : 0);
+		(sortDirection ? 1 : 0);
 
 	let lastPageIndexForRefresh = pageIndex;
 	$: if (pageIndex !== lastPageIndexForRefresh) {
@@ -259,6 +277,23 @@
 	}
 
 	onMount(() => {
+		// Se não tem params na URL, tenta carregar da localStorage
+		const hasUrlParams = $page.url.search.length > 0;
+		if (!hasUrlParams) {
+			const savedFilters = loadSavedFilters();
+			if (savedFilters) {
+				// Carrega filtros salvos (respeita até valores vazios)
+				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
+				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
+			} else {
+				// Aplica defaults quando não há localStorage (primeira vez)
+				selectedStatuses = [...DEFAULT_STATUSES];
+				sortDirection = DEFAULT_SORT_DIRECTION;
+			}
+			syncToUrl();
+		}
+
 		refreshNow();
 		restartPoller();
 
@@ -270,6 +305,16 @@
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
 		copyFeedback.destroy();
+
+		// Salva filtros atuais na localStorage no unmount
+		writeSavedFilter(
+			LS_KEY_BUCKETS_FILTERS,
+			JSON.stringify({
+				statuses: selectedStatuses,
+				sortDirection,
+				createdAt: datetimeToParam(filterValues, "createdAt")
+			})
+		);
 	});
 </script>
 
@@ -404,7 +449,7 @@
 						]}
 						value={sortDirection}
 						on:change={(e) => {
-							sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+							sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
 							pageIndex = 0;
 						}}
 					/>
@@ -431,10 +476,10 @@
 					{#if activeFiltersCount > 0}
 						<button
 							type="button"
-							class="btn btn-sm btn-ghost"
+							class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
 							on:click={resetFilters}
 						>
-							Reset filters
+							Clear filters
 						</button>
 					{/if}
 				</div>

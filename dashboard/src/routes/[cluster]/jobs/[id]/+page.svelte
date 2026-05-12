@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
@@ -33,9 +34,15 @@
 	let lastUpdatedAt = new Date();
 	let poller: number | undefined;
 	const refreshIntervalSec = 15;
+	let lastClusterId: string | null = null;
+	let notFound = false;
 
 	$: statusLabel = safeStatusLabel(job?.status);
 	$: priorityLabel = safePriorityLabel(job?.priority);
+	$: completedAt = (job as any)?.completedAt ?? job?.succeedExecutedAt;
+	$: outcomeMessage = (job as any)?.outcomeMessage ?? (job as any)?.lastOutcomeMessage;
+	$: outcome = (job as any)?.outcome ?? (job as any)?.lastOutcome;
+	$: agentConnectionName = (job as any)?.agentConnectionName;
 
 	$: filteredLogs = selectedLogLevel 
 		? recentLogs.filter(log => log.level === parseInt(selectedLogLevel))
@@ -103,10 +110,18 @@
 	async function refreshNow() {
 		isLoading = true;
 		refreshError = null;
+		notFound = false;
 		try {
 			const cid = clusterId();
 			const jid = jobId();
 			if (!cid || !jid) return;
+
+			// Se o cluster mudou, redireciona para a lista
+			if (lastClusterId && lastClusterId !== cid) {
+				goto(`/${cid}/jobs`);
+				return;
+			}
+			lastClusterId = cid;
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
@@ -116,11 +131,23 @@
 
 			if (response.error) {
 				console.error("API error (job detail):", response.error);
-				refreshError = "Failed to load job details.";
+				// Se for 404, marca como não encontrado
+				if (response.response?.status === 404) {
+					notFound = true;
+					refreshError = null;
+				} else {
+					refreshError = "Failed to load job details.";
+				}
 				return;
 			}
 
 			job = (response.data ?? null) as ApiJobModel | null;
+
+			// Se não retornou job, marca como não encontrado
+			if (!job) {
+				notFound = true;
+				return;
+			}
 
 			try {
 				const logsResp = await jm.GET("/{clusterId}/logs", {
@@ -167,7 +194,35 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		{#if isLoading && !job}
+		{#if notFound}
+			<div class="flex items-center justify-center py-20">
+				<div class="text-center max-w-2xl">
+					<div class="mb-8">
+						<h1 class="text-9xl font-bold text-primary opacity-20">404</h1>
+					</div>
+					<div class="space-y-4">
+						<h2 class="text-3xl font-semibold">Job Not Found</h2>
+						<p class="text-base-content/70 text-lg">
+							The job you're looking for doesn't exist in this cluster or has been deleted.
+						</p>
+					</div>
+					<div class="mt-8 flex gap-4 justify-center">
+						<button
+							class="btn btn-primary"
+							on:click={() => goto(`/${clusterId()}/jobs`)}
+						>
+							Go to Jobs List
+						</button>
+						<button
+							class="btn btn-ghost"
+							on:click={() => window.history.back()}
+						>
+							Go Back
+						</button>
+					</div>
+				</div>
+			</div>
+		{:else if isLoading && !job}
 			<div class="flex items-center justify-center py-20">
 				<span class="loading loading-spinner loading-lg"></span>
 			</div>
@@ -186,7 +241,7 @@
 						</ul>
 					</div>
 
-					<h1 class="text-3xl font-semibold tracking-tight">Job Detail</h1>
+					<h1 class="text-3xl font-semibold tracking-tight">JobExecutionDetail</h1>
 
 					<div class="flex flex-wrap items-center gap-2">
 						<span class={"badge " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
@@ -235,19 +290,15 @@
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Job ID</span>
+								<span class="opacity-70">Id</span>
 								<span class="font-mono font-medium">{job.id ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Definition ID</span>
+								<span class="opacity-70">JobId</span>
 								<span class="font-medium">{job.jobDefinitionId ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Source ID</span>
-								<span class="font-medium">{job.sourceId ?? "—"}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Cluster</span>
+								<span class="opacity-70">ClusterId</span>
 								<span class="font-medium">{job.clusterId ?? clusterId()}</span>
 							</div>
 						</div>
@@ -257,7 +308,7 @@
 				<!-- Status & Scheduling -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Status & Scheduling</h2>
+						<h2 class="card-title text-base">StatusAndScheduling</h2>
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
@@ -269,11 +320,11 @@
 								<span class={"badge " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Scheduled At</span>
-								<span class="font-medium">{formatDateTime(job.originalScheduledAt ?? job.scheduledAt)}</span>
+								<span class="opacity-70">StartedAt</span>
+								<span class="font-medium">{formatDateTime(job.processingStartedAt ?? job.originalScheduledAt ?? job.scheduledAt)}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Created At</span>
+								<span class="opacity-70">CreatedAt</span>
 								<span class="font-medium">{formatDateTime(job.createdAt)}</span>
 							</div>
 						</div>
@@ -283,7 +334,7 @@
 				<!-- Message Data (full width) -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
-						<h2 class="card-title text-base">Message Data</h2>
+						<h2 class="card-title text-base">MessageData</h2>
 						<div class="divider my-2"></div>
 						{#if msgDataEntries(job.msgData).length === 0}
 							<div class="text-sm opacity-60">No message data.</div>
@@ -337,7 +388,7 @@
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Bucket ID</span>
+								<span class="opacity-70">BucketId</span>
 								<span class="font-mono font-medium">
 									{#if job.bucketId}
 										<a href="/{clusterId()}/buckets/{job.bucketId}" class="link link-hover link-primary">{job.bucketId}</a>
@@ -347,7 +398,7 @@
 								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Agent Connection</span>
+								<span class="opacity-70">AgentConnectionId</span>
 								<span class="font-mono font-medium">
 									{#if job.agentConnectionId}
 										<a href="/{clusterId()}/agent-connections/{job.agentConnectionId}" class="link link-hover link-primary">{job.agentConnectionId}</a>
@@ -357,11 +408,15 @@
 								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Agent Worker ID</span>
+								<span class="opacity-70">AgentConnectionName</span>
+								<span class="font-medium">{agentConnectionName ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">AgentWorkerId</span>
 								<span class="font-mono font-medium">{job.agentWorkerId ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Host</span>
+								<span class="opacity-70">HostId</span>
 								<span class="font-medium">
 									{#if job.hostId}
 										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? "—"}</a>
@@ -371,11 +426,15 @@
 								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Worker Lane</span>
+								<span class="opacity-70">HostDisplayName</span>
+								<span class="font-medium">{job.hostDisplayName ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">WorkerLane</span>
 								<span class="font-medium">{job.workerLane ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Trigger Source</span>
+								<span class="opacity-70">TriggerSourceType</span>
 								<span class="font-medium">{job.triggerSourceType ?? "—"}</span>
 							</div>
 						</div>
@@ -385,15 +444,15 @@
 				<!-- Failure & Retries -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Failure & Retries</h2>
+						<h2 class="card-title text-base">FailureAndRetries</h2>
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Number of Failures</span>
+								<span class="opacity-70">NumberOfFailures</span>
 								<span class="font-semibold">{job.numberOfFailures ?? 0}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Max Retries</span>
+								<span class="opacity-70">MaxNumberOfRetries</span>
 								<span class="font-semibold">{job.maxNumberOfRetries ?? 0}</span>
 							</div>
 							{#if typeof job.numberOfFailures === "number" && typeof job.maxNumberOfRetries === "number" && job.maxNumberOfRetries > 0}
@@ -405,7 +464,7 @@
 							{/if}
 							{#if job.scheduledAt && typeof job.numberOfFailures === "number" && job.numberOfFailures > 0 && typeof job.maxNumberOfRetries === "number" && job.numberOfFailures < job.maxNumberOfRetries}
 								<div class="flex items-center justify-between gap-4">
-									<span class="opacity-70">Retrying at</span>
+									<span class="opacity-70">ScheduledAt</span>
 									<span class="font-medium text-warning">{formatDateTime(job.scheduledAt)}</span>
 								</div>
 							{/if}
@@ -422,23 +481,35 @@
 							<table class="table table-zebra">
 								<thead>
 								<tr class="text-base-content/70">
-									<th>Processing Started</th>
-									<th>Succeeded / Executed At</th>
-									<th>Process Deadline</th>
-									<th>Run Duration</th>
+									<th>StartedAt</th>
+									<th>CompletedAt</th>
+									<th>ProcessDeadline</th>
+									<th>RunDuration</th>
 									<th>Timeout</th>
 								</tr>
 								</thead>
 								<tbody>
 								<tr>
 									<td class="font-medium">{formatDateTime(job.processingStartedAt)}</td>
-									<td class="font-medium">{formatDateTime(job.succeedExecutedAt)}</td>
+									<td class="font-medium">{formatDateTime(completedAt)}</td>
 									<td class="font-medium">{formatDateTime(job.processDeadline)}</td>
-									<td class="font-medium">{formatDuration(job.processingStartedAt, job.succeedExecutedAt)}</td>
+									<td class="font-medium">{formatDuration(job.processingStartedAt, completedAt)}</td>
 									<td class="font-mono font-medium">{job.timeout ?? "—"}</td>
 								</tr>
 								</tbody>
 							</table>
+							{#if outcomeMessage || outcome}
+								<div class="mt-3 grid gap-2 text-sm lg:grid-cols-2">
+									<div class="flex items-center justify-between gap-4">
+										<span class="opacity-70">Outcome</span>
+										<span class="font-medium">{outcome ?? "—"}</span>
+									</div>
+									<div class="flex items-center justify-between gap-4">
+										<span class="opacity-70">OutcomeMessage</span>
+										<span class="font-medium text-right break-all">{outcomeMessage ?? "—"}</span>
+									</div>
+								</div>
+							{/if}
 						</div>
 					</div>
 				</div>
@@ -447,7 +518,7 @@
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
 						<div class="flex items-center justify-between gap-4">
-							<h2 class="card-title text-base">Recents Logs</h2>
+							<h2 class="card-title text-base">RecentLogs</h2>
 							<FilterDropdown
 								label="Log Level"
 								options={[
