@@ -713,25 +713,28 @@ internal static class RunnerFakes
             return source.Take(c.CountLimit);
         }
 
-        public void Upsert(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
         public Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
         {
-            throw new NotImplementedException();
+            var idx = Schedules.FindIndex(s => s.Id == scheduleRaw.Id);
+            if (idx >= 0) Schedules[idx] = scheduleRaw;
+            return Task.CompletedTask;
         }
 
         public void Update(RecurringScheduleRawModel scheduleRaw)
         {
-            throw new NotImplementedException();
+            var idx = Schedules.FindIndex(s => s.Id == scheduleRaw.Id);
+            if (idx >= 0) Schedules[idx] = scheduleRaw;
         }
 
         public Task AddAsync(RecurringScheduleRawModel scheduleRaw)
         {
-            throw new NotImplementedException();
+            Schedules.Add(scheduleRaw);
+            return Task.CompletedTask;
         }
 
         public void Add(RecurringScheduleRawModel scheduleRaw)
         {
-            throw new NotImplementedException();
+            Schedules.Add(scheduleRaw);
         }
 
         public void UpsertStatic(StaticRecurringScheduleDefinition definition) => throw new NotImplementedException();
