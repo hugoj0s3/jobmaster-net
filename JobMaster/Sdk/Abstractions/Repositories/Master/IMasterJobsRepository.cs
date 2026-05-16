@@ -8,9 +8,10 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
 {
     void Add(JobRawModel jobRaw);
     Task AddAsync(JobRawModel jobRaw);
-
-    void Upsert(JobRawModel jobRaw);
-    Task UpsertAsync(JobRawModel jobRaw);
+    void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    Task AddJobExecutionAsync(JobExecution jobExecution);
+    Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
     bool Exists(Guid jobId);
     Task<bool> ExistsAsync(Guid jobId);

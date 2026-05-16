@@ -57,7 +57,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Upsert_ShouldPersistChanges()
+    public async Task Update_ShouldPersistChanges()
     {
         var job = NewJob();
         await Fixture.MasterJobs.AddAsync(job);
@@ -84,7 +84,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.Metadata = "{\"k\":\"v\"}";
         updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "updated-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
-        await Fixture.MasterJobs.UpsertAsync(updated);
+        await Fixture.MasterJobs.UpdateAsync(updated);
 
         var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
 
@@ -96,7 +96,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
+    public async Task Update_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
         var job = NewJob();
         await Fixture.MasterJobs.AddAsync(job);
@@ -109,12 +109,12 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         // First upsert succeeds and advances the version
         copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
-        await Fixture.MasterJobs.UpsertAsync(copyA);
+        await Fixture.MasterJobs.UpdateAsync(copyA);
 
         // Second upsert uses stale version — should throw
         copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterJobs.UpsertAsync(copyB));
+            Fixture.MasterJobs.UpdateAsync(copyB));
     }
 
     [Fact]
@@ -131,7 +131,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterJobs.UpsertAsync(stale));
+            Fixture.MasterJobs.UpdateAsync(stale));
     }
 
     [Fact]

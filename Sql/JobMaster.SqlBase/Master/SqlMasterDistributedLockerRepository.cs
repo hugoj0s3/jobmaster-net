@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
@@ -61,12 +61,12 @@ internal abstract class SqlMasterDistributedLockerRepository : JobMasterClusterA
             if (deletedCount > 0)
             {
                 logger.Warn($"Zombie Locks Detected: Cleanup removed {deletedCount} locks that were expired more than 48h. Investigate worker stability.", 
-                    JobMasterLogSubjectType.Cluster, ClusterConnConfig.ClusterId);
+                    JobMasterLogCategory.Cluster, ClusterConnConfig.ClusterId);
             }
         }
         catch (Exception e)
         {
-            logger.Error($"Failed to cleanup expired locks", JobMasterLogSubjectType.Cluster, ClusterConnConfig.ClusterId, exception: e);
+            logger.Error($"Failed to cleanup expired locks", JobMasterLogCategory.Cluster, ClusterConnConfig.ClusterId, exception: e);
             if (!string.IsNullOrEmpty(lockToken))
             {
                 this.ReleaseLock(lockKeys.LockCleanupLock(), lockToken!);

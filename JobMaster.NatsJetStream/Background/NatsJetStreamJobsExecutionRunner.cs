@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Abstractions;
@@ -57,7 +57,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         if (onBoardingResult == OnBoardingResult.Cancelled)
         {
             // Job was cancelled (e.g., recurring schedule cancelled) - ACK to remove from queue
-            logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id} Status={payload.Status}", JobMasterLogSubjectType.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
             return; // Message will be ACK'd automatically by NatsJetStreamRunnerBase
         }
 
@@ -68,7 +68,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn($"{GetRunnerDescription()}: NextPlanExecutionAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
+                logger.Warn($"{GetRunnerDescription()}: NextPlanExecutionAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
                 return;
             }
 
@@ -82,7 +82,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
             await ackGuard.TryNakAsync(delay + jitter);
             
-            logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogSubjectType.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
         }
 
         if (onBoardingResult == OnBoardingResult.Busy)
@@ -96,7 +96,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
                 busyRetryCount.Remove(jobId);
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn($"{GetRunnerDescription()}: Onboarding busy after {retryCount} retries. Moved to master. JobId={payload.Id}", JobMasterLogSubjectType.Job, payload.Id);
+                logger.Warn($"{GetRunnerDescription()}: Onboarding busy after {retryCount} retries. Moved to master. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
                 return;
             }
 
@@ -105,7 +105,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
             var busyDelay = NatsJetStreamConstants.BusyRetryDelays[retryCount - 1];
 
             await ackGuard.TryNakAsync(busyDelay);
-            logger.Debug($"{GetRunnerDescription()}: Onboarding busy, retry {retryCount}/3. Nak with delay={busyDelay}. JobId={payload.Id}", JobMasterLogSubjectType.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: Onboarding busy, retry {retryCount}/3. Nak with delay={busyDelay}. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
             return;
         }
     }
@@ -124,7 +124,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         this.DefineBucketId(bucketId);
         this.Priority = priority;
         
-        logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogSubjectType.Bucket, bucketId);
+        logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogCategory.Bucket, bucketId);
     }
     
     public override async Task OnStopAsync()
@@ -132,7 +132,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         // 1. Standard Backbone Shutdown (stops subscribers and waits for loops)
         await base.OnStopAsync();
 
-        this.logger.Info($"{GetRunnerDescription()}: Starting graceful flush of buffered jobs for {BucketId}.", JobMasterLogSubjectType.Bucket, BucketId);
+        this.logger.Info($"{GetRunnerDescription()}: Starting graceful flush of buffered jobs for {BucketId}.", JobMasterLogCategory.Bucket, BucketId);
 
         if (jobsExecutionEngine is not null)
         {

@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -78,7 +78,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
             
             if (!workerToSelect.Any())
             {
-                logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogSubjectType.Bucket, bucket.Id);
+                logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
                 this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
                 continue;
             }
@@ -92,7 +92,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
 
             if (bucket.ReadyToDrain(worker.Id))
             {
-                logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogSubjectType.Bucket, bucket.Id);
+                logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogCategory.Bucket, bucket.Id);
                 await masterBucketsService.UpdateAsync(bucket);
             }
             

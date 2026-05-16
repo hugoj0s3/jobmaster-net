@@ -294,11 +294,9 @@ ON DUPLICATE KEY UPDATE
         var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
         var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
         return $@"
-INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0)
+INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0)
 ON DUPLICATE KEY UPDATE
-    subject_type = VALUES(subject_type),
-    subject_id = VALUES(subject_id),
     expires_at = VALUES(expires_at);";
     }
 
@@ -337,8 +335,6 @@ ON DUPLICATE KEY UPDATE
             { "GroupId", sqlEntry.GroupId },
             { "EntryId", sqlEntry.EntryId },
             { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "SubjectType", sqlEntry.SubjectType },
-            { "SubjectId", sqlEntry.SubjectId },
             { "CreatedAt", sqlEntry.CreatedAt },
             { "ExpiresAt", sqlEntry.ExpiresAt }
         };

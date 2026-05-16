@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -119,17 +119,17 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
 
         if (eligibleJobs.Count < jobs.Count)
         {
-            logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+            logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         }
 
-        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
         var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
         foreach (var partition in partitions)
         {
             if (ct.IsCancellationRequested || cutOffTime <= DateTime.UtcNow)
             {
-                logger.Warn($"Runner timeout or cancellation — stopping bulk update early.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                logger.Warn($"Runner timeout or cancellation — stopping bulk update early.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 break;
             }
 

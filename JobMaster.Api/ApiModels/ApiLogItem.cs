@@ -1,16 +1,16 @@
-﻿using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Api.ApiModels;
 
 public class ApiLogItem
 {
     public string Id { get; set; } = string.Empty;
-    
+
     public string ClusterId { get; set; } = string.Empty;
     public ApiJobMasterLogLevel Level { get; set; }
     public string Message { get; set; } = string.Empty;
-    public ApiJobMasterLogSubjectType? SubjectType { get; set; }
-    public string? SubjectId { get; set; }
+    public ApiJobMasterLogCategory? Category { get; set; }
+    public string? ReferenceId { get; set; }
     public DateTime TimestampUtc { get; set; }
     public string? Host { get; set; }
 
@@ -39,10 +39,10 @@ public class ApiLogItem
             ClusterId = model.ClusterId,
             Level = (ApiJobMasterLogLevel)(int)model.Level,
             Message = model.Message,
-            SubjectType = model.SubjectType.HasValue
-                ? (ApiJobMasterLogSubjectType)(int)model.SubjectType.Value
+            Category = model.Category.HasValue
+                ? (ApiJobMasterLogCategory)(int)model.Category.Value
                 : null,
-            SubjectId = model.SubjectId,
+            ReferenceId = model.ReferenceId,
             TimestampUtc = model.TimestampUtc,
             Host = model.Host,
             SourceMember = model.SourceMember,

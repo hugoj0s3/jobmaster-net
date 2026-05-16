@@ -25,6 +25,7 @@ internal static class MySqlIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, MySqlMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, MySqlMasterJobsRepository>();
         registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, MySqlMasterRecurringSchedulesRepository>();
+        registration.AddJobMasterComponent<IMasterLogsRepository, MySqlMasterLogsRepository>();
         registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, MySqlKnownExceptionIdentifierStrategy>();
     }
 

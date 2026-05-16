@@ -1,4 +1,4 @@
-using System.Collections.ObjectModel;
+﻿using System.Collections.ObjectModel;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -191,7 +191,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StartAsync()
     {
-        logger.Info("Starting JobMasterBackgroundAgentWorker", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
+        logger.Info("Starting JobMasterBackgroundAgentWorker", JobMasterLogCategory.AgentWorker, this.AgentWorkerId);
         var heartBeatRunner = new KeepAliveWorkerRunner(this);
         await heartBeatRunner.StartAsync();
         
@@ -237,7 +237,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         // Mark as initialized after all buckets and runners are created
         IsInitialized = true;
-        logger.Info("Started JobMasterBackgroundAgentWorker - Initialization complete", JobMasterLogSubjectType.AgentWorker, this.AgentWorkerId);
+        logger.Info("Started JobMasterBackgroundAgentWorker - Initialization complete", JobMasterLogCategory.AgentWorker, this.AgentWorkerId);
     }
     
     private async Task LoadFullRunnersAsync()

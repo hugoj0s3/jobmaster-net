@@ -10,10 +10,13 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task DispatchJobToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket);
     void MarkAsHeldOnMaster(Guid jobId);
     void CancelJob(Guid jobId);
-    void Upsert(JobRawModel jobRawModel, JobExecution? jobExecution = null);
-    Task UpsertAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    void Upsert(JobRawModel jobRawModel);
+    Task UpsertAsync(JobRawModel jobRawModel);
     
-    Task SaveJobExecutionAsync(JobExecution jobExecution);
+    void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    
+    Task AddJobExecutionAsync(JobExecution jobExecution);
     
     void Upsert(RecurringScheduleRawModel jobRawModel);
     Task MarkBucketAsLostAsync(BucketModel bucket);
@@ -34,7 +37,4 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs);
 
     Task AddAsync(JobRawModel job);
-    
-    void Insert(JobRawModel job);
-    
 }

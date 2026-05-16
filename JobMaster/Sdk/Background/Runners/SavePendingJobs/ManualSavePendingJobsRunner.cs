@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -100,7 +100,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                 }
                 catch (Exception e)
                 {
-                    logger.Error("Failed to save job", JobMasterLogSubjectType.Job, job.Id, exception: e);
+                    logger.Error("Failed to save job", JobMasterLogCategory.Job, job.Id, exception: e);
                     // If re-queueing fails, we catch it so the loop continues for other jobs.
                     try 
                     {
@@ -110,7 +110,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
                     }
                     catch (Exception e2)
                     { 
-                        logger.Critical($"Failed to add job to queue. Data: {job.ToLogSummary()}", JobMasterLogSubjectType.Job, job.Id, exception: e2);
+                        logger.Critical($"Failed to add job to queue. Data: {job.ToLogSummary()}", JobMasterLogCategory.Job, job.Id, exception: e2);
                     }
                 
                     hasFailed = true;

@@ -155,8 +155,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
         clusterServiceRegistration.AddJobMasterComponent<IHostStatsProvider, NullHostStatsProvider>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
-        clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
-        
+
         JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
         var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();

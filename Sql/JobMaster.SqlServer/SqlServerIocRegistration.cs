@@ -25,6 +25,7 @@ internal static class SqlServerIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, SqlServerMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, SqlServerMasterJobsRepository>();
         registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, SqlServerMasterRecurringSchedulesRepository>();
+        registration.AddJobMasterComponent<IMasterLogsRepository, SqlServerMasterLogsRepository>();
         registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, SqlServerKnownExceptionIdentifierStrategy>();
     }
 

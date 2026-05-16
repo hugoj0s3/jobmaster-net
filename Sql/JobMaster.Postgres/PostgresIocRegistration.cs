@@ -24,6 +24,7 @@ internal static class PostgresIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, PostgresMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, PostgresMasterJobsRepository>();
         registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, PostgresMasterRecurringSchedulesRepository>();
+        registration.AddJobMasterComponent<IMasterLogsRepository, PostgresMasterLogsRepository>();
         registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, PostgresKnownExceptionIdentifierStrategy>();
     }
     

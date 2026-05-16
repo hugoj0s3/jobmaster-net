@@ -337,6 +337,146 @@ internal static class MasterTableCreatorScripts
         return $"{create}\n{string.Join("\n", indexes)}";
     }
 
+    public static string CreateJobExecutionTableScript(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
+        var tableName = $"{prefix}job_execution";
+
+        var clusterIdCol = "cluster_id";
+        var clusterIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var idCol = "id";
+        var idType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: false);
+
+        var jobIdCol = "job_id";
+        var jobIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: false);
+
+        var startedAtCol = "started_at";
+        var startedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var agentConnectionIdCol = "agent_connection_id";
+        var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var agentWorkerIdCol = "agent_worker_id";
+        var agentWorkerIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var bucketIdCol = "bucket_id";
+        var bucketIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostIdCol = "host_id";
+        var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var hostDisplayNameCol = "host_display_name";
+        var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var finalizedAtCol = "finalized_at";
+        var finalizedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+
+        var outcomeMessageCol = "outcome_message";
+        var outcomeMessageType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: true);
+
+        var outcomeCol = "outcome";
+        var outcomeType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
+
+        var columns = new List<string>
+        {
+            $"{clusterIdCol} {clusterIdType}",
+            $"{idCol} {idType}",
+            $"{jobIdCol} {jobIdType}",
+            $"{startedAtCol} {startedAtType}",
+            $"{agentConnectionIdCol} {agentConnectionIdType}",
+            $"{agentWorkerIdCol} {agentWorkerIdType}",
+            $"{bucketIdCol} {bucketIdType}",
+            $"{hostIdCol} {hostIdType}",
+            $"{hostDisplayNameCol} {hostDisplayNameType}",
+            $"{finalizedAtCol} {finalizedAtType}",
+            $"{outcomeMessageCol} {outcomeMessageType}",
+            $"{outcomeCol} {outcomeType}",
+        };
+
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}");
+        var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {idCol})";
+        var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
+
+        var indexes = new List<string>
+        {
+            sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_job_id",
+                (clusterIdCol, false, 250), (jobIdCol, false, (int?)null))
+        };
+
+        return $"{create}\n{string.Join("\n", indexes)}";
+    }
+
+    public static string CreateLogTableScript(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
+        var tableName = $"{prefix}log";
+
+        var clusterIdCol = "cluster_id";
+        var clusterIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+
+        var idCol = "id";
+        var idType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: false);
+
+        var levelCol = "level";
+        var levelType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
+
+        var messageCol = "message";
+        var messageType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
+
+        var categoryCol = "category";
+        var categoryType = sqlGenerator.ColumnTypeFor(typeof(string), length: 100, nullable: true);
+
+        var referenceIdCol = "reference_id";
+        var referenceIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var timestampUtcCol = "timestamp_utc";
+        var timestampUtcType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
+
+        var hostCol = "host";
+        var hostType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var sourceMemberCol = "source_member";
+        var sourceMemberType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
+
+        var sourceFileCol = "source_file";
+        var sourceFileType = sqlGenerator.ColumnTypeFor(typeof(string), length: 500, nullable: true);
+
+        var sourceLineCol = "source_line";
+        var sourceLineType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
+
+        var columns = new List<string>
+        {
+            $"{clusterIdCol} {clusterIdType}",
+            $"{idCol} {idType}",
+            $"{levelCol} {levelType}",
+            $"{messageCol} {messageType}",
+            $"{categoryCol} {categoryType}",
+            $"{referenceIdCol} {referenceIdType}",
+            $"{timestampUtcCol} {timestampUtcType}",
+            $"{hostCol} {hostType}",
+            $"{sourceMemberCol} {sourceMemberType}",
+            $"{sourceFileCol} {sourceFileType}",
+            $"{sourceLineCol} {sourceLineType}",
+        };
+
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}");
+        var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {idCol})";
+        var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";
+
+        var indexes = new List<string>
+        {
+            sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_timestamp",
+                (clusterIdCol, false, 250), (timestampUtcCol, false, (int?)null)),
+            sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_level_timestamp",
+                (clusterIdCol, false, 250), (levelCol, false, (int?)null), (timestampUtcCol, false, (int?)null)),
+            sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_category",
+                (clusterIdCol, false, 250), (categoryCol, false, 100), (referenceIdCol, false, 250)),
+        };
+
+        return $"{create}\n{string.Join("\n", indexes)}";
+    }
+
     private static string CreateGenericRecordEntry(ISqlGenerator sqlGenerator, string tablePrefix, string familySuffix)
     {
        var baseTableName = sqlGenerator.TableNameFor<GenericRecordEntry>(tablePrefix);
@@ -353,13 +493,7 @@ internal static class MasterTableCreatorScripts
        
         var entryIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.EntryId);
         var entryIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.EntryId, length: 250, nullable: false);
-       
-        var subjectTypeCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.SubjectType);
-        var subjectTypeType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.SubjectType, length: 100, nullable: true);
-        
-        var subjectIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.SubjectId);
-        var subjectIdType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.SubjectId, length: 250, nullable: true);
-       
+
         var createdAtCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.CreatedAt);
         var createdAtType = sqlGenerator.ColumnTypeFor<GenericRecordEntry>(x => x.CreatedAt, nullable: false);
        
@@ -377,8 +511,6 @@ internal static class MasterTableCreatorScripts
         columns.Add($"{clusterIdCol} {clusterIdType} ");
         columns.Add($"{groupIdCol} {groupIdType}");
         columns.Add($"{entryIdCol} {entryIdType}");
-        columns.Add($"{subjectTypeCol} {subjectTypeType}");
-        columns.Add($"{subjectIdCol} {subjectIdType}");
         columns.Add($"{createdAtCol} {createdAtType}");
         columns.Add($"{expiresAtCol} {expiresAtType}");
         columns.Add($"{entryIdGuidCol} {entryIdGuidType}");
@@ -392,8 +524,6 @@ internal static class MasterTableCreatorScripts
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group", (clusterIdCol, false, 100), (groupIdCol, false, 100)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_entry", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (entryIdCol, false, 250)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_subject_type", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (subjectTypeCol, false, 100)));
-        indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_subject_id", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (subjectIdCol, false, 250)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_expires_at", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (expiresAtCol, false, (int?)null)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_created_at", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (createdAtCol, false, (int?)null)));
         indexScripts.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_group_ready_entry_guid", (clusterIdCol, false, 100), (groupIdCol, false, 100), (isReadyCol, false, (int?)null), (entryIdGuidCol, false, (int?)null)));

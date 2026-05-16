@@ -26,7 +26,6 @@ internal class GenericRecordSqlUtil
             { MasterGenericRecordGroupIds.AgentConnectionHeartbeat, "_runtime" },
             { MasterGenericRecordGroupIds.HostHeartbeat, "_runtime" },
             
-            { MasterGenericRecordGroupIds.Log, "_log" },
             { MasterGenericRecordGroupIds.JobMetadata, "_job_metadata" },
             { MasterGenericRecordGroupIds.RecurringScheduleMetadata, "_rs_metadata" },
             // ClusterConfiguration → no suffix (default table)
@@ -50,18 +49,12 @@ internal class GenericRecordSqlUtil
         List<string> where,
         GenericRecordQueryCriteria criteria,
         string cExpiresAt,
-        string cSubjectType,
-        string cSubjectId,
         string cEntryId,
         string cCreatedAt
     )
     {
         if (!criteria.IncludeExpired)
             where.Add($"({cExpiresAt} IS NULL OR {cExpiresAt} > @NowUtc)");
-        if (!string.IsNullOrEmpty(criteria.SubjectType))
-            where.Add($"{cSubjectType} = @SubjectType");
-        if (criteria.SubjectIds.Any())
-            where.Add(this.sql.InClauseFor(cSubjectId, "@SubjectIds"));
         if (criteria.EntryIds.Any())
             where.Add(this.sql.InClauseFor(cEntryId, "@EntryIds"));
         if (criteria.CreatedAtFrom.HasValue)
@@ -72,7 +65,7 @@ internal class GenericRecordSqlUtil
             where.Add($"{cExpiresAt} >= @ExpiresAtFrom");
         if (criteria.ExpiresAtTo.HasValue)
             where.Add($"{cExpiresAt} <= @ExpiresAtTo");
-        
+
         where.Add($"{sql.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady)} = {sql.GetDbBool(true)}");
     }
     
@@ -100,23 +93,19 @@ where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
     {
         var t = EntryTable(groupId);
         var vt = EntryValueTable(groupId);
-        var cRecordId    = t + "." + Col(x => x.RecordUniqueId);
-        var cClusterId   = Col(x => x.ClusterId);
-        var cGroupId     = Col(x => x.GroupId);
-        var cEntryId     = Col(x => x.EntryId);
-        var cSubjectType = Col(x => x.SubjectType);
-        var cSubjectId   = Col(x => x.SubjectId);
-        var cCreatedAt   = Col(x => x.CreatedAt);
-        var cExpiresAt   = Col(x => x.ExpiresAt);
-        var cIsReady     = ColSqlEntry(x => x.IsReady);
+        var cRecordId  = t + "." + Col(x => x.RecordUniqueId);
+        var cClusterId = Col(x => x.ClusterId);
+        var cGroupId   = Col(x => x.GroupId);
+        var cEntryId   = Col(x => x.EntryId);
+        var cCreatedAt = Col(x => x.CreatedAt);
+        var cExpiresAt = Col(x => x.ExpiresAt);
+        var cIsReady   = ColSqlEntry(x => x.IsReady);
 
         return $@"
 SELECT {cRecordId},
        {cClusterId},
        {cGroupId},
        {cEntryId},
-       {cSubjectType},
-       {cSubjectId},
        {cCreatedAt},
        {cExpiresAt},
        {cIsReady},
@@ -137,14 +126,12 @@ left join {vt} on {vt}.{ColVal(x => x.RecordUniqueId)} = {t}.{ColVal(x => x.Reco
         // This query pages *entries*, not value rows.
         // We first select an ordered/paged set of entries in a CTE (aliased as `base`),
         // then join values.
-        var cRecordId    = $"e.{Col(x => x.RecordUniqueId)}";
-        var cClusterId   = $"e.{Col(x => x.ClusterId)}";
-        var cGroupId     = $"e.{Col(x => x.GroupId)}";
-        var cEntryId     = $"e.{Col(x => x.EntryId)}";
-        var cSubjectType = $"e.{Col(x => x.SubjectType)}";
-        var cSubjectId   = $"e.{Col(x => x.SubjectId)}";
-        var cCreatedAt   = $"e.{Col(x => x.CreatedAt)}";
-        var cExpiresAt   = $"e.{Col(x => x.ExpiresAt)}";
+        var cRecordId  = $"e.{Col(x => x.RecordUniqueId)}";
+        var cClusterId = $"e.{Col(x => x.ClusterId)}";
+        var cGroupId   = $"e.{Col(x => x.GroupId)}";
+        var cEntryId   = $"e.{Col(x => x.EntryId)}";
+        var cCreatedAt = $"e.{Col(x => x.CreatedAt)}";
+        var cExpiresAt = $"e.{Col(x => x.ExpiresAt)}";
 
         var where = new List<string>
         {
@@ -152,24 +139,22 @@ left join {vt} on {vt}.{ColVal(x => x.RecordUniqueId)} = {t}.{ColVal(x => x.Reco
             $"{cGroupId} = @GroupId"
         };
 
-        AppendCriteriaWhere(where, criteria, cExpiresAt, cSubjectType, cSubjectId, cEntryId, cCreatedAt);
-        
+        AppendCriteriaWhere(where, criteria, cExpiresAt, cEntryId, cCreatedAt);
+
         var args = new Dictionary<string, object?>
         {
             { "ClusterId", clusterId },
             { "GroupId", groupId },
-            { "SubjectIds", criteria.SubjectIds },
             { "EntryIds", criteria.EntryIds.ToArray() },
             { "CreatedAtFrom", criteria.CreatedAtFrom },
             { "CreatedAtTo", criteria.CreatedAtTo },
             { "ExpiresAtFrom", criteria.ExpiresAtFrom },
             { "ExpiresAtTo", criteria.ExpiresAtTo },
-            { "SubjectType", criteria.SubjectType },
             { "NowUtc", DateTime.UtcNow }
         };
 
         var exists = BuildWhereClause(criteria.Filters, "e", "v2", args, groupId);
-        if (!string.IsNullOrEmpty(exists)) 
+        if (!string.IsNullOrEmpty(exists))
             where.Add(exists);
 
         var orderBy = criteria.OrderBy switch
@@ -200,8 +185,6 @@ WITH base AS (
        {Col(x => x.ClusterId)},
        {Col(x => x.GroupId)},
        {Col(x => x.EntryId)},
-       {Col(x => x.SubjectType)},
-       {Col(x => x.SubjectId)},
        {Col(x => x.CreatedAt)},
        {Col(x => x.ExpiresAt)}
     FROM {t} e
@@ -222,8 +205,6 @@ SELECT base.{Col(x => x.RecordUniqueId)},
        base.{Col(x => x.ClusterId)},
        base.{Col(x => x.GroupId)},
        base.{Col(x => x.EntryId)},
-       base.{Col(x => x.SubjectType)},
-       base.{Col(x => x.SubjectId)},
        base.{Col(x => x.CreatedAt)},
        base.{Col(x => x.ExpiresAt)},
        v.{ColVal(x => x.KeyName)},
@@ -245,10 +226,8 @@ ORDER BY {baseOrderBy}
     public (string Sql, object Args) BuildCountSql(string groupId, GenericRecordQueryCriteria criteria)
     {
         var cClusterId = $"e.{Col(x => x.ClusterId)}";
-        var cGroupId = $"e.{Col(x => x.GroupId)}";
-        var cEntryId = $"e.{Col(x => x.EntryId)}";
-        var cSubjectType = $"e.{Col(x => x.SubjectType)}";
-        var cSubjectId = $"e.{Col(x => x.SubjectId)}";
+        var cGroupId   = $"e.{Col(x => x.GroupId)}";
+        var cEntryId   = $"e.{Col(x => x.EntryId)}";
         var cCreatedAt = $"e.{Col(x => x.CreatedAt)}";
         var cExpiresAt = $"e.{Col(x => x.ExpiresAt)}";
 
@@ -258,19 +237,17 @@ ORDER BY {baseOrderBy}
             $"{cGroupId} = @GroupId"
         };
 
-        AppendCriteriaWhere(where, criteria, cExpiresAt, cSubjectType, cSubjectId, cEntryId, cCreatedAt);
+        AppendCriteriaWhere(where, criteria, cExpiresAt, cEntryId, cCreatedAt);
 
         var args = new Dictionary<string, object?>
         {
             { "ClusterId", clusterId },
             { "GroupId", groupId },
-            { "SubjectIds", criteria.SubjectIds },
             { "EntryIds", criteria.EntryIds.ToArray() },
             { "CreatedAtFrom", criteria.CreatedAtFrom },
             { "CreatedAtTo", criteria.CreatedAtTo },
             { "ExpiresAtFrom", criteria.ExpiresAtFrom },
             { "ExpiresAtTo", criteria.ExpiresAtTo },
-            { "SubjectType", criteria.SubjectType },
             { "NowUtc", DateTime.UtcNow }
         };
 
@@ -529,25 +506,17 @@ WHERE {string.Join(" AND ", where)}
     public (string Sql, IDictionary<string, object?> Args) BuildUpdateEntrySql(SqlGenericRecordEntry entry)
     {
         var t = EntryTable(entry.GroupId);
-        var cRecordId    = t + "." + Col(x => x.RecordUniqueId);
-        var cSubjectType = Col(x => x.SubjectType);
-        var cSubjectId   = Col(x => x.SubjectId);
-        var cExpiresAt   = Col(x => x.ExpiresAt);
-        var cIsReady     = ColSqlEntry(x => x.IsReady);
-        // Note: not updating EntryId/ClusterId/GroupId/CreatedAt/IsReady
+        var cRecordId  = t + "." + Col(x => x.RecordUniqueId);
+        var cExpiresAt = Col(x => x.ExpiresAt);
 
         var args = new Dictionary<string, object?>
         {
             {"RecordUniqueId", entry.RecordUniqueId},
-            {"SubjectType", entry.SubjectType},
-            {"SubjectId", entry.SubjectId},
             {"ExpiresAt", entry.ExpiresAt}
         };
 
         var sb = new StringBuilder($@"UPDATE {t}
-SET {cSubjectType} = @SubjectType,
-    {cSubjectId} = @SubjectId,
-    {cExpiresAt} = @ExpiresAt
+SET {cExpiresAt} = @ExpiresAt
 WHERE {cRecordId} = @RecordUniqueId;");
 
         return (sb.ToString(), args);
@@ -556,15 +525,12 @@ WHERE {cRecordId} = @RecordUniqueId;");
     public (string Sql, IDictionary<string, object?> Args) BuildInsertEntrySql(SqlGenericRecordEntry entry)
     {
         var t = EntryTable(entry.GroupId);
-        // Include EntryIdGuid column; ensure your DDL has been updated accordingly
         var cols = $@"
 {Col(x => x.RecordUniqueId)},
 {Col(x => x.ClusterId)},
 {Col(x => x.GroupId)},
 {Col(x => x.EntryId)},
 {ColSqlEntry(x => x.EntryIdGuid)},
-{Col(x => x.SubjectType)},
-{Col(x => x.SubjectId)},
 {Col(x => x.CreatedAt)},
 {Col(x => x.ExpiresAt)},
 {ColSqlEntry(x => x.IsReady)}";
@@ -576,15 +542,13 @@ WHERE {cRecordId} = @RecordUniqueId;");
             {"GroupId", entry.GroupId},
             {"EntryId", entry.EntryId},
             {"EntryIdGuid", entry.EntryIdGuid},
-            {"SubjectType", entry.SubjectType},
-            {"SubjectId", entry.SubjectId},
             {"CreatedAt", entry.CreatedAt},
             {"ExpiresAt", entry.ExpiresAt},
             {"IsReady", entry.IsReady}
         };
 
         var sb = new StringBuilder($"INSERT INTO {t} ({cols}) ");
-        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, @IsReady);");
+        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, @IsReady);");
 
         return (sb.ToString(), args);
     }
@@ -722,8 +686,6 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
                 ClusterId = entry.Value[0].ClusterId,
                 GroupId = entry.Value[0].GroupId,
                 EntryId = entry.Value[0].EntryId,
-                SubjectType = entry.Value[0].SubjectType,
-                SubjectId = entry.Value[0].SubjectId,
                 CreatedAt = entry.Value[0].CreatedAt,
                 ExpiresAt = entry.Value[0].ExpiresAt,
                 IsReady = entry.Value[0].IsReady
@@ -755,8 +717,6 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         
         e.CreatedAt = src.CreatedAt;
         e.ExpiresAt = src.ExpiresAt;
-        e.SubjectType = src.SubjectType;
-        e.SubjectId = src.SubjectId;
 
         if (src.Values is { Count: > 0 })
         {
@@ -787,10 +747,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
             ClusterId = src.ClusterId,
             GroupId = src.GroupId,
             EntryId = src.EntryId,
-            // Populate EntryIdGuid only when convertible (N format preferred)
             EntryIdGuid = Guid.TryParseExact(src.EntryId, "N", out var g) ? g : (Guid?)null,
-            SubjectType = src.SubjectType,
-            SubjectId = src.SubjectId,
             CreatedAt = src.CreatedAt,
             ExpiresAt = src.ExpiresAt
         };

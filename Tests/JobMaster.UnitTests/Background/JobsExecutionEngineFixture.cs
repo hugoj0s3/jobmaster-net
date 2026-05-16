@@ -87,10 +87,10 @@ internal static class JobsExecutionEngineFixture
             })
             .ReturnsAsync((IList<JobRawModel> list) => list.ToList());
 
-        ops.Setup(x => x.UpsertAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
+        ops.Setup(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
             .Callback<JobRawModel, JobExecution?>((job, _) => singleUpdateWatcher.Add(Clone(job)));
 
-        ops.Setup(x => x.Upsert(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
+        ops.Setup(x => x.Update(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
             .Callback<JobRawModel, JobExecution?>((job, _) => singleUpdateWatcher.Add(Clone(job)));
 
         ops.Setup(x => x.ExecWithRetryAsync(

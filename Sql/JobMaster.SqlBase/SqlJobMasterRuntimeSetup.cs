@@ -104,7 +104,23 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 var recurringScheduleTableScript = MasterTableCreatorScripts.CreateRecurringScheduleTablesScript(sql, tablePrefix);
                 await conn.ExecuteAsync(recurringScheduleTableScript, transaction: transaction);
             }
-            
+
+            var jobExecutionTableExistsSql = sql.TableExistsSql(tablePrefix, "job_execution");
+            var jobExecutionTableExists = await conn.QueryFirstOrDefaultAsync<bool>(jobExecutionTableExistsSql, transaction: transaction);
+            if (!jobExecutionTableExists)
+            {
+                var jobExecutionTableScript = MasterTableCreatorScripts.CreateJobExecutionTableScript(sql, tablePrefix);
+                await conn.ExecuteAsync(jobExecutionTableScript, transaction: transaction);
+            }
+
+            var logTableExistsSql = sql.TableExistsSql(tablePrefix, "log");
+            var logTableExists = await conn.QueryFirstOrDefaultAsync<bool>(logTableExistsSql, transaction: transaction);
+            if (!logTableExists)
+            {
+                var logTableScript = MasterTableCreatorScripts.CreateLogTableScript(sql, tablePrefix);
+                await conn.ExecuteAsync(logTableScript, transaction: transaction);
+            }
+
             transaction.Commit();
         }
     }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
@@ -84,13 +84,13 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
 
         if (bucketModel.Status != BucketStatus.ReadyToDelete)
         {
-            logger.Error("Bucket is not ready to delete", JobMasterLogSubjectType.Bucket, bucketId);
+            logger.Error("Bucket is not ready to delete", JobMasterLogCategory.Bucket, bucketId);
             return;
         }
 
         if (await this.masterAgentsDispatcherService.HasJobsAsync(bucketModel.AgentConnectionId, bucketId))
         {
-            logger.Error("Bucket has jobs", JobMasterLogSubjectType.Bucket, bucketId);
+            logger.Error("Bucket has jobs", JobMasterLogCategory.Bucket, bucketId);
             return;
         }
 

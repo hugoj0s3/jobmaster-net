@@ -136,12 +136,10 @@ USING (SELECT @RecordUniqueId AS record_unique_id) AS source
 ON target.record_unique_id = source.record_unique_id
 WHEN MATCHED THEN
     UPDATE SET
-        subject_type = @SubjectType,
-        subject_id = @SubjectId,
         expires_at = @ExpiresAt
 WHEN NOT MATCHED THEN
-    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0);";
+    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0);";
     }
 
     private string BuildMetadataValuesUpsertSql()
@@ -184,8 +182,6 @@ WHEN NOT MATCHED THEN
             { "GroupId", sqlEntry.GroupId },
             { "EntryId", sqlEntry.EntryId },
             { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "SubjectType", sqlEntry.SubjectType },
-            { "SubjectId", sqlEntry.SubjectId },
             { "CreatedAt", sqlEntry.CreatedAt },
             { "ExpiresAt", sqlEntry.ExpiresAt }
         };

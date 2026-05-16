@@ -29,14 +29,12 @@ internal class PostgresMasterGenericRecordRepository : SqlMasterGenericRecordRep
             var t = genericUtil.EntryTable(recordEntry.GroupId);
             var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, false)
 ON CONFLICT (record_unique_id) DO UPDATE SET
-    subject_type = EXCLUDED.subject_type,
-    subject_id = EXCLUDED.subject_id,
     expires_at = EXCLUDED.expires_at;";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
-            
+
             var entryArgs = new Dictionary<string, object?>
             {
                 {"RecordUniqueId", sqlEntry.RecordUniqueId},
@@ -44,12 +42,10 @@ ON CONFLICT (record_unique_id) DO UPDATE SET
                 {"GroupId", sqlEntry.GroupId},
                 {"EntryId", sqlEntry.EntryId},
                 {"EntryIdGuid", sqlEntry.EntryIdGuid},
-                {"SubjectType", sqlEntry.SubjectType},
-                {"SubjectId", sqlEntry.SubjectId},
                 {"CreatedAt", sqlEntry.CreatedAt},
                 {"ExpiresAt", sqlEntry.ExpiresAt}
             };
-            
+
             conn.Execute(entryUpsertSql, entryArgs, transaction);
 
             // Postgres-specific: Upsert values using INSERT ... ON CONFLICT DO UPDATE (more efficient than delete-reinsert)
@@ -120,14 +116,12 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
             var t = genericUtil.EntryTable(recordEntry.GroupId);
             var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, false)
 ON CONFLICT (record_unique_id) DO UPDATE SET
-    subject_type = EXCLUDED.subject_type,
-    subject_id = EXCLUDED.subject_id,
     expires_at = EXCLUDED.expires_at;";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
-            
+
             var entryArgs = new Dictionary<string, object?>
             {
                 {"RecordUniqueId", sqlEntry.RecordUniqueId},
@@ -135,12 +129,10 @@ ON CONFLICT (record_unique_id) DO UPDATE SET
                 {"GroupId", sqlEntry.GroupId},
                 {"EntryId", sqlEntry.EntryId},
                 {"EntryIdGuid", sqlEntry.EntryIdGuid},
-                {"SubjectType", sqlEntry.SubjectType},
-                {"SubjectId", sqlEntry.SubjectId},
                 {"CreatedAt", sqlEntry.CreatedAt},
                 {"ExpiresAt", sqlEntry.ExpiresAt}
             };
-            
+
             await conn.ExecuteAsync(entryUpsertSql, entryArgs, transaction);
 
             // Postgres-specific: Upsert values using INSERT ... ON CONFLICT DO UPDATE (more efficient than delete-reinsert)

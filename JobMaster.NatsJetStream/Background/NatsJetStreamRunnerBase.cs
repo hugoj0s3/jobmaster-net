@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using JobMaster.Abstractions.Models;
@@ -62,12 +62,12 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 
                 if (invalidBucketStatusTickCount >= 2)
                 {
-                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogSubjectType.Bucket, BucketId);
+                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogCategory.Bucket, BucketId);
                     consumerCts?.Cancel();
                 }
                 else if (invalidBucketStatusTickCount >= 6)
                 {
-                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status still invalid after {invalidBucketStatusTickCount} ticks, disposing CTS", JobMasterLogSubjectType.Bucket, BucketId);
+                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status still invalid after {invalidBucketStatusTickCount} ticks, disposing CTS", JobMasterLogCategory.Bucket, BucketId);
                     consumerCts?.SafeDispose();
                     consumerCts = null;
                     invalidBucketStatusTickCount = 0;
@@ -102,7 +102,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // 4. Subscriber Startup & Watchdog
         if (consumptionTask == null)
         {
-            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogCategory.Bucket, BucketId);
             consumerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var consumerToken = consumerCts.Token;
             
@@ -117,11 +117,11 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
         else if (IsTaskDead(consumptionTask))
         {
-            logger.Warn($"{GetRunnerDescription()}: Subscriber for bucket {BucketId} is DEAD. Status={consumptionTask.Status}, IsFaulted={consumptionTask.IsFaulted}, IsCompleted={consumptionTask.IsCompleted}, IsCanceled={consumptionTask.IsCanceled}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Warn($"{GetRunnerDescription()}: Subscriber for bucket {BucketId} is DEAD. Status={consumptionTask.Status}, IsFaulted={consumptionTask.IsFaulted}, IsCompleted={consumptionTask.IsCompleted}, IsCanceled={consumptionTask.IsCanceled}", JobMasterLogCategory.Bucket, BucketId);
             
             if (consumptionTask.IsFaulted && consumptionTask.Exception != null)
             {
-                logger.Error($"{GetRunnerDescription()}: Task exception details for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId, consumptionTask.Exception);
+                logger.Error($"{GetRunnerDescription()}: Task exception details for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId, consumptionTask.Exception);
             }
             
             consumptionTask?.SafeDispose();
@@ -137,7 +137,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             // Log status transitions (excluding WaitingForActivation as it's expected)
             if (lastReportedTaskStatus != currentStatus)
             {
-                logger.Debug($"{GetRunnerDescription()}: Subscriber status changed for bucket {BucketId}. Status: {lastReportedTaskStatus} -> {currentStatus}, TotalMsgsProcessed={totalMessagesProcessed}", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Debug($"{GetRunnerDescription()}: Subscriber status changed for bucket {BucketId}. Status: {lastReportedTaskStatus} -> {currentStatus}, TotalMsgsProcessed={totalMessagesProcessed}", JobMasterLogCategory.Bucket, BucketId);
                 lastReportedTaskStatus = currentStatus;
             }
         }
@@ -158,7 +158,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             // Stop runner if no message received for 90 seconds
             if (timeSinceLastMessage > TimeSpan.FromSeconds(90))
             {
-                logger.Error($"{GetRunnerDescription()}: Consumer unresponsive for {timeSinceLastMessage.TotalSeconds:F0}s (no messages or heartbeats), marking bucket {BucketId} as lost", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Error($"{GetRunnerDescription()}: Consumer unresponsive for {timeSinceLastMessage.TotalSeconds:F0}s (no messages or heartbeats), marking bucket {BucketId} as lost", JobMasterLogCategory.Bucket, BucketId);
                 await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(BucketId!);
                 await this.StopAsync();
                 return OnTickResult.Failed(TimeSpan.FromMinutes(1));
@@ -189,7 +189,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
     private async Task ListenMsgsAsync(CancellationToken ct, INatsJSConsumer consumer)
     {
-        logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+        logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
         try
         {
             var opts = new NatsJSConsumeOpts
@@ -232,7 +232,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                             return;
                         }
 
-                        logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                        logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
                         using var ackCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
                         await msg.AckAsync(cancellationToken: ackCts.Token).ConfigureAwait(false);
                         continue;
@@ -246,11 +246,11 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 }
             }
             
-            logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stop to reading msg.", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stop to reading msg.", JobMasterLogCategory.Bucket, BucketId);
         }
         catch (OperationCanceledException)
         {
-            this.logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stopped.", JobMasterLogSubjectType.Bucket, BucketId);
+            this.logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stopped.", JobMasterLogCategory.Bucket, BucketId);
         }
     }
 
@@ -280,11 +280,11 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             };
             await jsContext!.PublishAsync(subjectName, data, headers: headers, cancellationToken: pubCts.Token);
             
-            logger.Debug($"{GetRunnerDescription()}: Published heartbeat message for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()}: Published heartbeat message for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
         }
         catch (Exception ex)
         {
-            logger.Warn($"{GetRunnerDescription()}: Failed to publish heartbeat message for bucket {BucketId}: {ex.Message}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Warn($"{GetRunnerDescription()}: Failed to publish heartbeat message for bucket {BucketId}: {ex.Message}", JobMasterLogCategory.Bucket, BucketId);
         }
     }
 
@@ -309,7 +309,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             this.logger.Error(
                 $"{GetRunnerDescription()}: msg data null. CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}",
-                JobMasterLogSubjectType.Bucket,
+                JobMasterLogCategory.Bucket,
                 BucketId);
 
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
@@ -349,12 +349,12 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             if (shouldAck)
             {
                 await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
-                logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
                 return;
             }
 
             await ackGuard.TryNakAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
-            logger.Debug($"{GetRunnerDescription()} message already being processed, NAK'd. MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} message already being processed, NAK'd. MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
             return;
         }
 
@@ -389,19 +389,19 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
         try
         {
-            logger.Debug($"{GetRunnerDescription()} processing-started CorrId={correlationId} MessageId={messageId} FailureAttempts={attempts}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} processing-started CorrId={correlationId} MessageId={messageId} FailureAttempts={attempts}", JobMasterLogCategory.Bucket, BucketId);
             sw = Stopwatch.StartNew();
 
             logger.Debug(
                 $"Processing {GetRunnerDescription()} payload {payload} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MessageId={messageId} FailureAttempts={attempts}",
-                JobMasterLogSubjectType.Bucket,
+                JobMasterLogCategory.Bucket,
                 BucketId);
 
             await ProcessPayloadAsync(payload, ackGuard).ConfigureAwait(false);
 
             await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
             success = true;
-            logger.Debug($"{GetRunnerDescription()} acked CorrId={correlationId} MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} acked CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
         }
         catch (Exception ex)
         {
@@ -414,14 +414,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 var preview = NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data ?? Array.Empty<byte>()), 128);
                 LogCriticalOrError($"{GetRunnerDescription()}: exhausted retries. Preview: {preview} CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", ex);
                 await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
-                this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
                 return;
             }
 
-            this.logger.Error($"{GetRunnerDescription()}: failure (failureAttempts={ackGuard.FailureCount}). CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", JobMasterLogSubjectType.Bucket, BucketId, ex);
+            this.logger.Error($"{GetRunnerDescription()}: failure (failureAttempts={ackGuard.FailureCount}). CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", JobMasterLogCategory.Bucket, BucketId, ex);
 
             await ackGuard.TryNakFailAsync(messageId!).ConfigureAwait(false);
-            this.logger.Debug($"{GetRunnerDescription()}: nak-fail requested (failureAttempts={ackGuard.FailureCount}) with delay CorrId={corr} MsgId={mid}", JobMasterLogSubjectType.Bucket, BucketId);
+            this.logger.Debug($"{GetRunnerDescription()}: nak-fail requested (failureAttempts={ackGuard.FailureCount}) with delay CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
         }
         finally
         {
@@ -449,7 +449,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             {
                 sw.Stop();
                 logger.Debug($"{GetRunnerDescription()} processing-duration CorrId={correlationId} MessageId={messageId} Success={success} ElapsedMs={sw.ElapsedMilliseconds}",
-                    JobMasterLogSubjectType.Bucket, BucketId);
+                    JobMasterLogCategory.Bucket, BucketId);
             }
         }
     }
@@ -472,14 +472,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     protected void LogCriticalOrError(string message, Exception? ex = null)
     {
         if (LostRisk())
-            this.logger.Critical(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+            this.logger.Critical(message, JobMasterLogCategory.Bucket, BucketId, exception: ex);
         else
-            this.logger.Error(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+            this.logger.Error(message, JobMasterLogCategory.Bucket, BucketId, exception: ex);
     }
     
     private async Task StopConsumptionTaskAsync()
     {
-        this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogSubjectType.Bucket, BucketId);
+        this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogCategory.Bucket, BucketId);
 
         if (consumptionTask != null)
         {
@@ -487,15 +487,15 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             try
             {
                 await consumptionTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-                this.logger.Info($"{GetRunnerDescription()} subscriber task stopped gracefully for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Info($"{GetRunnerDescription()} subscriber task stopped gracefully for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
             }
             catch (TimeoutException)
             {
-                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
             }
             catch (Exception ex)
             {
-                this.logger.Warn($"{GetRunnerDescription()} shutdown failed: {ex.Message}", JobMasterLogSubjectType.Bucket, BucketId, ex);
+                this.logger.Warn($"{GetRunnerDescription()} shutdown failed: {ex.Message}", JobMasterLogCategory.Bucket, BucketId, ex);
             }
             finally
             {

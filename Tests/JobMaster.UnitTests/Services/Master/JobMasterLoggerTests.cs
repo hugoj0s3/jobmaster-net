@@ -1,10 +1,10 @@
 using FluentAssertions;
 using Moq;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Services.Master;
@@ -20,13 +20,13 @@ public class JobMasterLoggerTests
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
 
-        var tcs = new TaskCompletionSource<IList<GenericRecordEntry>>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var tcs = new TaskCompletionSource<IList<LogItem>>(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
-        repo.Setup(x => x.BulkInsertAsync(It.IsAny<IList<GenericRecordEntry>>()))
-            .Returns<IList<GenericRecordEntry>>(records =>
+        var repo = new Mock<IMasterLogsRepository>(MockBehavior.Strict);
+        repo.Setup(x => x.BulkInsertAsync(It.IsAny<IList<LogItem>>()))
+            .Returns<IList<LogItem>>(items =>
             {
-                tcs.TrySetResult(records);
+                tcs.TrySetResult(items);
                 return Task.CompletedTask;
             });
 
@@ -34,7 +34,7 @@ public class JobMasterLoggerTests
 
         for (var i = 0; i < 100; i++)
         {
-            sut.Log(JobMasterLogLevel.Info, $"m{i}", JobMasterLogSubjectType.Job, "s");
+            sut.Log(JobMasterLogLevel.Info, $"m{i}", JobMasterLogCategory.Job, "s");
         }
 
         var completed = await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(2)));
@@ -45,46 +45,41 @@ public class JobMasterLoggerTests
         flushed.Count.Should().BeGreaterThan(0);
         flushed.Count.Should().BeLessThanOrEqualTo(100);
 
-        repo.Verify(x => x.BulkInsertAsync(It.IsAny<IList<GenericRecordEntry>>()), Times.AtLeastOnce);
+        repo.Verify(x => x.BulkInsertAsync(It.IsAny<IList<LogItem>>()), Times.AtLeastOnce);
     }
 
     [Fact]
-    public async Task QueryAsync_WhenCriteriaProvided_ShouldTranslateToRepoCriteria_AndConvertSubjectFields()
+    public async Task QueryAsync_WhenCriteriaProvided_ShouldDelegateToRepo()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
 
-        GenericRecordQueryCriteria? captured = null;
-
-        var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
-        repo
-            .Setup(x => x.QueryAsync(MasterGenericRecordGroupIds.Log, It.IsAny<GenericRecordQueryCriteria>()))
-            .Callback<string, GenericRecordQueryCriteria?>((_, crit) => captured = crit)
-            .ReturnsAsync(() =>
+        var ts = new DateTime(2025, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+        var expected = new List<LogItem>
+        {
+            new LogItem
             {
-                var ts = new DateTime(2025, 1, 2, 3, 4, 5, DateTimeKind.Utc);
-                var payload = new LogPayload()
-                {
-                    Level = (int)JobMasterLogLevel.Error,
-                    Message = "hello",
-                    TimestampUtc = ts,
-                    Host = "h",
-                    SourceMember = "DequeueSavePendingRecur",
-                    SourceFile = "AgentJobsDispatcherRepository.cs",
-                    SourceLine = 93
-                };
+                ClusterId = clusterId,
+                Id = JobMasterRandomUtil.NewGuid4(),
+                Level = JobMasterLogLevel.Error,
+                Message = "hello",
+                Category = JobMasterLogCategory.Job,
+                ReferenceId = "sid",
+                TimestampUtc = ts,
+                Host = "h",
+                SourceMember = "DequeueSavePendingRecur",
+                SourceFile = "AgentJobsDispatcherRepository.cs",
+                SourceLine = 93,
+            }
+        };
 
-                return (IList<GenericRecordEntry>)new[]
-                {
-                    GenericRecordEntry.Create(
-                        clusterId,
-                        MasterGenericRecordGroupIds.Log,
-                        JobMasterRandomUtil.NewGuid4(),
-                        subjectType: nameof(JobMasterLogSubjectType.Job),
-                        subjectId: "sid",
-                        obj: payload)
-                };
-            });
+        LogItemQueryCriteria? captured = null;
+
+        var repo = new Mock<IMasterLogsRepository>(MockBehavior.Strict);
+        repo
+            .Setup(x => x.QueryAsync(It.IsAny<LogItemQueryCriteria>()))
+            .Callback<LogItemQueryCriteria>(c => captured = c)
+            .ReturnsAsync(expected);
 
         using var sut = new JobMasterLogger(clusterConfig, repo.Object);
 
@@ -97,70 +92,28 @@ public class JobMasterLoggerTests
             ToTimestamp = to,
             Level = JobMasterLogLevel.Error,
             Keyword = "hello",
-            SubjectType = JobMasterLogSubjectType.Job,
-            SubjectId = "sid"
+            Category = JobMasterLogCategory.Job,
+            ReferenceId = "sid"
         });
 
         captured.Should().NotBeNull();
-        captured!.SubjectType.Should().Be(JobMasterLogSubjectType.Job.ToString());
-        captured.SubjectIds.Should().ContainSingle().Which.Should().Be("sid");
-
-        captured.Filters.Should().Contain(f => f.Key == "TimestampUtc" && f.Operation == GenericFilterOperation.Gte && Equals(f.Value, from));
-        captured.Filters.Should().Contain(f => f.Key == "TimestampUtc" && f.Operation == GenericFilterOperation.Lte && Equals(f.Value, to));
-        captured.Filters.Should().Contain(f => f.Key == "Level" && f.Operation == GenericFilterOperation.Eq && Equals(f.Value, (int)JobMasterLogLevel.Error));
-        captured.Filters.Should().Contain(f => f.Key == "Message" && f.Operation == GenericFilterOperation.Contains && Equals(f.Value, "hello"));
+        captured!.FromTimestamp.Should().Be(from);
+        captured.ToTimestamp.Should().Be(to);
+        captured.Level.Should().Be(JobMasterLogLevel.Error);
+        captured.Keyword.Should().Be("hello");
+        captured.Category.Should().Be(JobMasterLogCategory.Job);
+        captured.ReferenceId.Should().Be("sid");
 
         result.Should().HaveCount(1);
-        result[0].SubjectId.Should().Be("sid");
-        result[0].SubjectType.Should().Be(JobMasterLogSubjectType.Job);
+        result[0].ReferenceId.Should().Be("sid");
+        result[0].Category.Should().Be(JobMasterLogCategory.Job);
         result[0].Level.Should().Be(JobMasterLogLevel.Error);
         result[0].Message.Should().Be("hello");
         result[0].SourceMember.Should().Be("DequeueSavePendingRecur");
         result[0].SourceFile.Should().Be("AgentJobsDispatcherRepository.cs");
         result[0].SourceLine.Should().Be(93);
 
-        repo.Verify(x => x.QueryAsync(MasterGenericRecordGroupIds.Log, It.IsAny<GenericRecordQueryCriteria>()), Times.Once);
-    }
-
-    [Fact]
-    public async Task QueryAsync_WhenRepoEntryHasInvalidSubjectType_ShouldReturnNullSubjectType()
-    {
-        var clusterId = NewClusterId();
-        var clusterConfig = CreateClusterConfig(clusterId);
-
-        var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
-        repo
-            .Setup(x => x.QueryAsync(MasterGenericRecordGroupIds.Log, It.IsAny<GenericRecordQueryCriteria>()))
-            .ReturnsAsync(() =>
-            {
-                var ts = new DateTime(2025, 1, 2, 3, 4, 5, DateTimeKind.Utc);
-                var payload = new
-                {
-                    Level = (int)JobMasterLogLevel.Info,
-                    Message = "m",
-                    TimestampUtc = ts,
-                    Host = "h"
-                };
-
-                return (IList<GenericRecordEntry>)new[]
-                {
-                    GenericRecordEntry.Create(
-                        clusterId,
-                        MasterGenericRecordGroupIds.Log,
-                        JobMasterRandomUtil.NewGuid4(),
-                        subjectType: "NotAType",
-                        subjectId: "sid",
-                        obj: payload)
-                };
-            });
-
-        using var sut = new JobMasterLogger(clusterConfig, repo.Object);
-
-        var result = await sut.QueryAsync(new LogItemQueryCriteria());
-
-        result.Should().HaveCount(1);
-        result[0].SubjectId.Should().Be("sid");
-        result[0].SubjectType.Should().BeNull();
+        repo.Verify(x => x.QueryAsync(It.IsAny<LogItemQueryCriteria>()), Times.Once);
     }
 
     private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";

@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -200,10 +201,14 @@ internal static class RunnerFakes
             return Task.FromResult<IList<JobRawModel>>(jobs);
         }
 
+        public List<JobExecution> JobExecutions { get; } = new();
+
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
-        public void Upsert(JobRawModel jobRaw) => throw new NotImplementedException();
-        public Task UpsertAsync(JobRawModel jobRaw) => throw new NotImplementedException();
+        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
+        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
+        public Task AddJobExecutionAsync(JobExecution jobExecution) { JobExecutions.Add(jobExecution); return Task.CompletedTask; }
+        public Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId) => Task.FromResult<IList<JobExecution>>(JobExecutions.Where(e => e.JobId == jobId).ToList());
         public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
         public bool CheckVersion(Guid jobId, string? version) => throw new NotImplementedException();
         public Task<bool> CheckVersionAsync(Guid jobId, string? version) => throw new NotImplementedException();
@@ -324,13 +329,17 @@ internal static class RunnerFakes
             return Task.FromResult(toRemove.Count);
         }
 
+        public List<JobExecution> JobExecutions { get; } = new();
+
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
         public JobRawModel? Get(Guid jobId) => Jobs.FirstOrDefault(j => j.Id == jobId);
         public Task<JobRawModel?> GetAsync(Guid jobId) => Task.FromResult(Get(jobId));
 
-        public void Upsert(JobRawModel jobRaw) => throw new NotImplementedException();
-        public Task UpsertAsync(JobRawModel jobRaw) => throw new NotImplementedException();
+        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
+        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
+        public Task AddJobExecutionAsync(JobExecution jobExecution) { JobExecutions.Add(jobExecution); return Task.CompletedTask; }
+        public Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId) => Task.FromResult<IList<JobExecution>>(JobExecutions.Where(e => e.JobId == jobId).ToList());
         public bool Exists(Guid jobId) => throw new NotImplementedException();
         public Task<bool> ExistsAsync(Guid jobId) => throw new NotImplementedException();
         public IList<JobRawModel> Query(JobQueryCriteria criteria) => throw new NotImplementedException();
@@ -398,6 +407,37 @@ internal static class RunnerFakes
         public Task BulkInsertAsync(IList<GenericRecordEntry> records) => throw new NotImplementedException();
         public int Count(string groupId, GenericRecordQueryCriteria? criteria = null) => throw new NotImplementedException();
         public Task<int> CountAsync(string groupId, GenericRecordQueryCriteria? criteria = null) => throw new NotImplementedException();
+    }
+
+    // ── FakeLogsRepository ───────────────────────────────────────────────────
+
+    internal sealed class FakeLogsRepository : IMasterLogsRepository
+    {
+        public JobMasterClusterConnectionConfig ClusterConnConfig { get; } = null!;
+        public string MasterRepoTypeId { get; } = "fake";
+
+        public List<LogItem> Logs { get; } = new();
+
+        public Task BulkInsertAsync(IList<LogItem> items)
+        {
+            Logs.AddRange(items);
+            return Task.CompletedTask;
+        }
+
+        public Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit)
+        {
+            var toRemove = Logs
+                .Where(r => r.TimestampUtc <= timestampTo)
+                .Take(limit)
+                .ToList();
+
+            foreach (var r in toRemove) Logs.Remove(r);
+            return Task.FromResult(toRemove.Count);
+        }
+
+        public Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria) => throw new NotImplementedException();
+        public Task<int> CountAsync(LogItemQueryCriteria criteria) => throw new NotImplementedException();
+        public Task<LogItem?> GetAsync(Guid id) => throw new NotImplementedException();
     }
 
     // ── FakeRecurringSchedulesRepository ─────────────────────────────────────

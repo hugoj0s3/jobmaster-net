@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions;
+﻿using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -81,7 +81,7 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
             await recurringSchedulePlanner.ScheduleNextJobsAsync(schedule);
         }
 
-        logger.Debug($"Recently inserted recurring schedules planned: {recurringSchedules.Count}/{ids.Count}", JobMasterLogSubjectType.RecurringSchedule);
+        logger.Debug($"Recently inserted recurring schedules planned: {recurringSchedules.Count}/{ids.Count}", JobMasterLogCategory.RecurringSchedule);
 
         return OnTickResult.Success(this);
     }

@@ -11,15 +11,17 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
     private readonly CancellationTokenSource cancellationTokenSource;
     private readonly Func<CancellationToken, Task> runAsync;
     private readonly Action? afterAction;
+    private readonly TimeSpan cancellationTimeout;
     private bool started;
 
-    public TaskQueueItem(string id, T value, TimeSpan timeout, Func<CancellationToken, Task> action, Action? afterAction = null)
+    public TaskQueueItem(string id, T value, TimeSpan timeout, Func<CancellationToken, Task> action, Action? afterAction = null, TimeSpan? cancellationTimeout = null)
     {
         Id = id;
         Value = value;
         runAsync = action;
         Task = Task.CompletedTask; // initialized so status checks work pre-start
         Timeout = timeout;
+        this.cancellationTimeout = cancellationTimeout ?? timeout;
         EnqueuedAt = DateTime.UtcNow;
         cancellationTokenSource = new CancellationTokenSource();
         this.afterAction = afterAction;
@@ -73,9 +75,9 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
         if (started) return;
         started = true;
         StartedAt = DateTime.UtcNow;
-        if (Timeout > TimeSpan.Zero)
+        if (cancellationTimeout > TimeSpan.Zero)
         {
-            try { cancellationTokenSource.CancelAfter(Timeout); } catch { /* ignore */ }
+            try { cancellationTokenSource.CancelAfter(cancellationTimeout); } catch { /* ignore */ }
         }
         Task = runAsync(cancellationTokenSource.Token);
 

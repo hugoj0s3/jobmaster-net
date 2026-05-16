@@ -56,7 +56,7 @@ public class JobMasterSchedulerClusterAwareTests
                 m.BucketId == bucket.Id &&
                 m.AgentWorkerId == bucket.AgentWorkerId &&
                 m.AgentConnectionId != null &&
-                m.AgentConnectionId.IdValue == agentConnId.IdValue)))
+                m.AgentConnectionId.IdValue == agentConnId.IdValue), It.IsAny<bool>()))
             .Returns("job-id-1")
             .Verifiable();
 
@@ -76,11 +76,11 @@ public class JobMasterSchedulerClusterAwareTests
 
         dispatcher.Verify();
         buckets.Verify();
-        jobs.Verify(x => x.Upsert(It.IsAny<JobRawModel>()), Times.Never);
+        jobs.Verify(x => x.Add(It.IsAny<JobRawModel>()), Times.Never);
     }
 
     [Fact]
-    public void Schedule_WhenBucketMissing_ShouldHoldOnMaster_AndUpsert()
+    public void Schedule_WhenBucketMissing_ShouldHoldOnMaster_AndAdd()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
@@ -103,7 +103,7 @@ public class JobMasterSchedulerClusterAwareTests
             .Returns(() => null);
 
         jobs
-            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
+            .Setup(x => x.Add(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Verifiable();
 
         var sut = new JobMasterSchedulerClusterAware(
@@ -121,7 +121,7 @@ public class JobMasterSchedulerClusterAwareTests
         sut.Schedule(job);
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
     }
 
     [Fact]
@@ -159,7 +159,7 @@ public class JobMasterSchedulerClusterAwareTests
     }
 
     [Fact]
-    public async Task ScheduleAsync_WhenClusterModePassive_ShouldHoldOnMaster_AndUpsertAsync()
+    public async Task ScheduleAsync_WhenClusterModePassive_ShouldHoldOnMaster_AndAddAsync()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
@@ -190,7 +190,7 @@ public class JobMasterSchedulerClusterAwareTests
             });
 
         jobs
-            .Setup(x => x.UpsertAsync(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
+            .Setup(x => x.AddAsync(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Returns(Task.CompletedTask)
             .Verifiable();
 
@@ -207,7 +207,7 @@ public class JobMasterSchedulerClusterAwareTests
         await sut.ScheduleAsync(NewJob(clusterId));
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
     }
 
     [Fact]
@@ -330,7 +330,7 @@ public class JobMasterSchedulerClusterAwareTests
     }
 
     [Fact]
-    public void Schedule_WhenClusterModePassive_ShouldHoldOnMaster_AndUpsert()
+    public void Schedule_WhenClusterModePassive_ShouldHoldOnMaster_AndAdd()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
@@ -361,7 +361,7 @@ public class JobMasterSchedulerClusterAwareTests
             });
 
         jobs
-            .Setup(x => x.Upsert(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
+            .Setup(x => x.Add(It.Is<JobRawModel>(m => m.Status == JobMasterJobStatus.OnMaster)))
             .Verifiable();
 
         var sut = new JobMasterSchedulerClusterAware(
@@ -377,7 +377,7 @@ public class JobMasterSchedulerClusterAwareTests
         sut.Schedule(NewJob(clusterId));
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
     }
 
     private static JobRawModel NewJob(string clusterId)

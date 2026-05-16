@@ -136,11 +136,9 @@ internal class PostgresMasterRecurringSchedulesRepository : SqlMasterRecurringSc
         var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata);
         var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
         return $@"
-INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, false)
+INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, false)
 ON CONFLICT (record_unique_id) DO UPDATE SET
-    subject_type = EXCLUDED.subject_type,
-    subject_id = EXCLUDED.subject_id,
     expires_at = EXCLUDED.expires_at;";
     }
 
@@ -179,8 +177,6 @@ ON CONFLICT ({cRecordId}, {cKeyName}) DO UPDATE SET
             { "GroupId", sqlEntry.GroupId },
             { "EntryId", sqlEntry.EntryId },
             { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "SubjectType", sqlEntry.SubjectType },
-            { "SubjectId", sqlEntry.SubjectId },
             { "CreatedAt", sqlEntry.CreatedAt },
             { "ExpiresAt", sqlEntry.ExpiresAt }
         };

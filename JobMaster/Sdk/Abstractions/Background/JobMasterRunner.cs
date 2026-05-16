@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -92,7 +92,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 if (completedTask == timeout)
                 {
                     // Runner didn't stop in time, likely not respecting cancellation token
-                    logger.Warn($"Runner {this.GetType().Name} did not stop within 10 seconds. Forcing shutdown.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                    logger.Warn($"Runner {this.GetType().Name} did not stop within 10 seconds. Forcing shutdown.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 }
                 else
                 {
@@ -189,7 +189,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 // Failed operations will be retried after their specified delay
                 (plannedDelay, plannedEarlyReleaseChance) =  CalcDelay(result);
                 sw.Stop();
-                logger.Debug($"Runner {this.GetType().Name} tick completed. status={result.Status} elapsedMs={sw.ElapsedMilliseconds} plannedDelayMs={(long)plannedDelay.TotalMilliseconds}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                logger.Debug($"Runner {this.GetType().Name} tick completed. status={result.Status} elapsedMs={sw.ElapsedMilliseconds} plannedDelayMs={(long)plannedDelay.TotalMilliseconds}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
                 if (failureException is not null)
                 {
@@ -204,7 +204,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             catch (Exception ex)
             {
                 // Measure failure tick duration for observability
-                logger.Debug($"Runner {this.GetType().Name} tick failed quickly. elapsed unknown due to exception.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                logger.Debug($"Runner {this.GetType().Name} tick failed quickly. elapsed unknown due to exception.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 ConsecutiveFailedCount += CalcFailureWeight(ex);
                 lastFailureException = ex;
                 await OnTickFailureAsync(ex, ct);
@@ -212,7 +212,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 plannedDelay = this.FailedInterval;
                 plannedEarlyReleaseChance = 0.0;
 
-                logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
+                logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
             }
             finally
             {
@@ -247,7 +247,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             }
             catch (Exception terminateEx)
             {
-                logger.Error($"Runner {this.GetType().Name} OnTerminateFailureAsync threw.", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: terminateEx);
+                logger.Error($"Runner {this.GetType().Name} OnTerminateFailureAsync threw.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: terminateEx);
             }
         }
 

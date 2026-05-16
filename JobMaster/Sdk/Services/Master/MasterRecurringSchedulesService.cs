@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
@@ -55,7 +55,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         }
         catch (JobMasterVersionConflictException e)
         {
-            this.logger.Error("RecurringSchedule version conflict", JobMasterLogSubjectType.RecurringSchedule, scheduleRaw.Id, e);
+            this.logger.Error("RecurringSchedule version conflict", JobMasterLogCategory.RecurringSchedule, scheduleRaw.Id, e);
             throw;
         }
     }
@@ -68,7 +68,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         }
         catch (JobMasterVersionConflictException e)
         {
-            this.logger.Error("RecurringSchedule version conflict", JobMasterLogSubjectType.RecurringSchedule, scheduleRaw.Id, e);
+            this.logger.Error("RecurringSchedule version conflict", JobMasterLogCategory.RecurringSchedule, scheduleRaw.Id, e);
             throw;
         }
     }

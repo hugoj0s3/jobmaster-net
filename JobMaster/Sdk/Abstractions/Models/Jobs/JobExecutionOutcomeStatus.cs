@@ -2,7 +2,6 @@
 
 public enum JobExecutionOutcomeStatus
 {
-    Processing = 1,
-    Succeeded,
+    Succeeded = 2,
     Failed,
 }

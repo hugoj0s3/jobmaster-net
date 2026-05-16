@@ -9,9 +9,7 @@ public class SqlGenericRecordEntry
     public string GroupId { get; set; } = string.Empty;
     public string EntryId { get; set; } = string.Empty;
     public Guid? EntryIdGuid { get; set; }
-    public string? SubjectType { get; set; }
-    public string? SubjectId { get; set; }
-    
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
     
@@ -38,14 +36,11 @@ public class SqlGenericRecordEntryLinearDto
     public string ClusterId { get; set; } = string.Empty;   
     public string GroupId { get; set; } = string.Empty;
     public string EntryId { get; set; } = string.Empty;
-    
-    public string? SubjectType { get; set; }
-    public string? SubjectId { get; set; }
-    
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
     public bool IsReady { get; set; }
-    
+
     public string KeyName { get; set; } = string.Empty;
     
     public long? ValueInt64 { get; set; }

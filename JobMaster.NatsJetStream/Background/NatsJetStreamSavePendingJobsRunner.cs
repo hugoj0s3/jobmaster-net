@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using JobMaster.Abstractions.Models;
 using JobMaster.NatsJetStream.Agents;
 using JobMaster.Sdk.Abstractions.Background;
@@ -68,7 +68,7 @@ internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBa
         if (result.ResultCode == AddSavePendingResultCode.HeldOnMasterPublishedUnknown || 
             result.ResultCode == AddSavePendingResultCode.PublishFailed)
         {
-            logger.Warn($"Failed {result.ResultCode}", JobMasterLogSubjectType.Job, job.Id, exception: result.Exception);
+            logger.Warn($"Failed {result.ResultCode}", JobMasterLogCategory.Job, job.Id, exception: result.Exception);
         }
     }
     

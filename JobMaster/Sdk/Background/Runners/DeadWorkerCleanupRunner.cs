@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -80,7 +80,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
         catch (Exception ex)
         {
             // Return failed status with exception details
-            logger.Error($"Failed to clean up dead workers", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, ex);
+            logger.Error($"Failed to clean up dead workers", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, ex);
             return OnTickResult.Failed(this, ex, "Dead worker cleanup failed");
         }
         

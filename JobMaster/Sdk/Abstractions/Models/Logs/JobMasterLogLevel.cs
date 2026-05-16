@@ -9,7 +9,7 @@ internal enum JobMasterLogLevel
     Critical
 }
 
-internal enum JobMasterLogSubjectType
+internal enum JobMasterLogCategory
 {
     Job = 1,
     JobExecution,

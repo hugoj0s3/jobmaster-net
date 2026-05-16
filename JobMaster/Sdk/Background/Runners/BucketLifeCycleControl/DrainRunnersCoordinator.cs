@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -144,7 +144,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
             }
             
             await masterBucketsService.UpdateAsync(bucket);
-            logger.Info($"Bucket {bucket.Id} is draining", JobMasterLogSubjectType.Bucket, bucket.Id);
+            logger.Info($"Bucket {bucket.Id} is draining", JobMasterLogCategory.Bucket, bucket.Id);
             
             this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
         }

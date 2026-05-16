@@ -26,8 +26,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         var expiresAt = now.AddHours(1);
 
         var record = NewEntry(groupId, entryId);
-        record.SubjectType = "subjectType";
-        record.SubjectId = "subjectId";
         record.CreatedAt = now;
         record.ExpiresAt = expiresAt;
 
@@ -57,8 +55,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var record = NewEntry(groupId, entryId);
-        record.SubjectType = "st1";
-        record.SubjectId = "sid1";
         record.CreatedAt = DateTime.UtcNow.AddMinutes(-5);
         record.ExpiresAt = DateTime.UtcNow.AddHours(1);
         record.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -69,8 +65,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         await Fixture.MasterGenericRecords.InsertAsync(record);
 
-        record.SubjectType = "st2";
-        record.SubjectId = "sid2";
         record.ExpiresAt = DateTime.UtcNow.AddHours(2);
         record.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -94,8 +88,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         var entryId = "entry-" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var record = NewEntry(groupId, entryId);
-        record.SubjectType = "st";
-        record.SubjectId = "sid";
         record.CreatedAt = DateTime.UtcNow.AddMinutes(-2);
         record.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
@@ -137,14 +129,11 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_AllCriteriaFields()
     {
-        var groupId = "GenericRecordTestGroup";
-        var subjectType = "SubType";
+        var groupId = "GR_Criteria_" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var baseTime = DateTime.UtcNow.AddHours(-1);
 
         var e1 = NewEntry(groupId, "e1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        e1.SubjectType = subjectType;
-        e1.SubjectId = "S1";
         e1.CreatedAt = baseTime.AddMinutes(1);
         e1.ExpiresAt = baseTime.AddHours(10);
         e1.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -154,8 +143,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         };
 
         var e2 = NewEntry(groupId, "e2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        e2.SubjectType = subjectType;
-        e2.SubjectId = "S2";
         e2.CreatedAt = baseTime.AddMinutes(2);
         e2.ExpiresAt = baseTime.AddMinutes(-10); // expired
         e2.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -165,8 +152,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         };
 
         var e3 = NewEntry(groupId, "e3_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        e3.SubjectType = subjectType;
-        e3.SubjectId = "S1";
         e3.CreatedAt = baseTime.AddMinutes(3);
         e3.ExpiresAt = null;
         e3.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
@@ -182,7 +167,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // includeExpired=false should exclude expired
         var q1 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
-            SubjectType = subjectType,
             IncludeExpired = false,
             OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtAsc
         });
@@ -191,22 +175,10 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // includeExpired=true should include expired
         var q2 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
-            SubjectType = subjectType,
             IncludeExpired = true,
             OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtAsc
         });
         Assert.Contains(q2, x => x.EntryId == e2.EntryId);
-
-        // SubjectIds filter
-        var q3 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
-        {
-            SubjectType = subjectType,
-            SubjectIds = new List<string> { "S1" },
-            IncludeExpired = true
-        });
-        Assert.Contains(q3, x => x.EntryId == e1.EntryId);
-        Assert.Contains(q3, x => x.EntryId == e3.EntryId);
-        Assert.DoesNotContain(q3, x => x.EntryId == e2.EntryId);
 
         // EntryIds filter
         var q4 = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
@@ -242,14 +214,12 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // Paging + order
         var ordered = (await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
-            SubjectType = subjectType,
             IncludeExpired = true,
             OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtAsc
         })).Select(x => x.EntryId).ToList();
 
         var paged = await Fixture.MasterGenericRecords.QueryAsync(groupId, new GenericRecordQueryCriteria
         {
-            SubjectType = subjectType,
             IncludeExpired = true,
             OrderBy = GenericRecordQueryOrderByTypeId.CreatedAtAsc,
             Limit = 1,
@@ -263,14 +233,11 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_MetadataFilters_AllOperations_And_Types()
     {
-        var groupId = "GenericRecordTestGroup";
-        var subjectType = "SubTypeMeta";
+        var groupId = "GR_Meta_" + JobMasterRandomUtil.NewGuid4().ToString("N");
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
         var a = NewEntry(groupId, "a_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        a.SubjectType = subjectType;
-        a.SubjectId = "S1";
         a.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["s"] = "alpha",
@@ -279,8 +246,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         };
 
         var b = NewEntry(groupId, "b_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        b.SubjectType = subjectType;
-        b.SubjectId = "S2";
         b.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["s"] = "alphabet",
@@ -289,8 +254,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         };
 
         var c = NewEntry(groupId, "c_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        c.SubjectType = subjectType;
-        c.SubjectId = "S3";
         c.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["s"] = "beta",
@@ -303,30 +266,30 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         await Fixture.MasterGenericRecords.InsertAsync(c);
 
         // String operations
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Eq, Value = "alpha" }, a.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Neq, Value = "alpha" }, b.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.In, Values = new object?[] { "alpha", "beta" } }, a.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Contains, Value = "lph" }, a.EntryId, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.StartsWith, Value = "alph" }, a.EntryId, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.EndsWith, Value = "bet" }, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Eq, Value = "alpha" }, a.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Neq, Value = "alpha" }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.In, Values = new object?[] { "alpha", "beta" } }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Contains, Value = "lph" }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.StartsWith, Value = "alph" }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.EndsWith, Value = "bet" }, b.EntryId);
 
         // Numeric operations
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Eq, Value = 20 }, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Neq, Value = 20 }, a.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.In, Values = new object?[] { 10, 30 } }, a.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Gt, Value = 10 }, b.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Gte, Value = 20 }, b.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Lt, Value = 30 }, a.EntryId, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Lte, Value = 20 }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Eq, Value = 20 }, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Neq, Value = 20 }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.In, Values = new object?[] { 10, 30 } }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Gt, Value = 10 }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Gte, Value = 20 }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Lt, Value = 30 }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "n", Operation = GenericFilterOperation.Lte, Value = 20 }, a.EntryId, b.EntryId);
 
         // DateTime operations
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Eq, Value = t0.AddDays(1) }, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Neq, Value = t0.AddDays(1) }, a.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.In, Values = new object?[] { t0, t0.AddDays(2) } }, a.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gt, Value = t0 }, b.EntryId, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gte, Value = t0.AddDays(2) }, c.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lt, Value = t0.AddDays(2) }, a.EntryId, b.EntryId);
-        await AssertGenericFilter(groupId, subjectType, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lte, Value = t0.AddDays(1) }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Eq, Value = t0.AddDays(1) }, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Neq, Value = t0.AddDays(1) }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.In, Values = new object?[] { t0, t0.AddDays(2) } }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gt, Value = t0 }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gte, Value = t0.AddDays(2) }, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lt, Value = t0.AddDays(2) }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lte, Value = t0.AddDays(1) }, a.EntryId, b.EntryId);
     }
 
     [Fact]
@@ -337,21 +300,17 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // old EXISTS clause required the key row to exist, so key-less records were silently
         // excluded and the filter returned zero rows.
         var groupId = "GR_Neq_MissingKey_" + JobMasterRandomUtil.NewGuid4().ToString("N");
-        var subjectType = "NeqMissingKey";
 
         // has "type" = 1
         var withType1 = NewEntry(groupId, "withType1_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        withType1.SubjectType = subjectType;
         withType1.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 1L };
 
         // has "type" = 2  (the value we filter out)
         var withType2 = NewEntry(groupId, "withType2_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        withType2.SubjectType = subjectType;
         withType2.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["type"] = 2L };
 
         // has no "type" key at all — must be included by Neq
         var withoutType = NewEntry(groupId, "withoutType_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
-        withoutType.SubjectType = subjectType;
         withoutType.Values = new Dictionary<string, object?>(StringComparer.Ordinal) { ["other"] = "x" };
 
         await Fixture.MasterGenericRecords.InsertAsync(withType1);
@@ -361,7 +320,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         // Neq 2: should return withType1 (type=1) and withoutType (no type key), NOT withType2
         await AssertGenericFilter(
             groupId,
-            subjectType,
             new GenericRecordValueFilter { Key = "type", Operation = GenericFilterOperation.Neq, Value = 2L },
             withType1.EntryId, withoutType.EntryId);
     }
@@ -513,11 +471,10 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.True(remaining.Count >= 6, $"Expected at least 6 remaining, got {remaining.Count}");
     }
 
-    internal async Task AssertGenericFilter(string groupId, string? subjectType, GenericRecordValueFilter filter, params string[] expectedEntryIds)
+    internal async Task AssertGenericFilter(string groupId, GenericRecordValueFilter filter, params string[] expectedEntryIds)
     {
         var criteria = new GenericRecordQueryCriteria
         {
-            SubjectType = subjectType,
             IncludeExpired = true,
             Filters = new List<GenericRecordValueFilter> { filter },
             Limit = 100,
@@ -548,8 +505,6 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.Equal(expected.GroupId, actual.GroupId);
         Assert.Equal(expected.EntryId, actual.EntryId);
         Assert.Equal(expected.RecordUniqueId, actual.RecordUniqueId);
-        Assert.Equal(expected.SubjectType, actual.SubjectType);
-        Assert.Equal(expected.SubjectId, actual.SubjectId);
 
         AssertDateTimeEquivalent(ToUtc(expected.CreatedAt), ToUtc(actual.CreatedAt));
         AssertDateTimeEquivalent(ToUtcN(expected.ExpiresAt), ToUtcN(actual.ExpiresAt));

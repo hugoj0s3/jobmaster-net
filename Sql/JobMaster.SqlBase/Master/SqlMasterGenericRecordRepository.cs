@@ -253,14 +253,14 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
 
                     // Build one multi-values INSERT for entries
                     var t = genericUtil.EntryTable(batch[0].GroupId);
-                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.SubjectType)}, {Col(x => x.SubjectId)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
+                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
                     var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
                     var dynParams = new DynamicParameters();
 
                     for (int i = 0; i < sqlEntries.Count; i++)
                     {
                         var e = sqlEntries[i];
-                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @SubjectType_{i}, @SubjectId_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
+                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
                         if (i < sqlEntries.Count - 1) sb.Append(",\n"); else sb.Append(";");
 
                         dynParams.Add($"RecordUniqueId_{i}", e.RecordUniqueId);
@@ -268,11 +268,9 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                         dynParams.Add($"GroupId_{i}", e.GroupId);
                         dynParams.Add($"EntryId_{i}", e.EntryId);
                         dynParams.Add($"EntryIdGuid_{i}", e.EntryIdGuid);
-                        dynParams.Add($"SubjectType_{i}", e.SubjectType);
-                        dynParams.Add($"SubjectId_{i}", e.SubjectId);
                         dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
                         dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
-                        dynParams.Add($"IsReady_{i}", false); // Always false initially in bulk
+                        dynParams.Add($"IsReady_{i}", false);
                     }
 
                     await conn.ExecuteAsync(AppendSqlTag(sb.ToString(), "BulkInsert.InsertEntries", batch[0].GroupId), dynParams, transaction);

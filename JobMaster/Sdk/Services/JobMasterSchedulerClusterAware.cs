@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using JobMaster.Abstractions.Models;
@@ -59,14 +59,14 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
+
         var bucket = await GetBucketAvailableForJobAsync(rawModel);
-        
+
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             EnforceMasterStoreSizeLimit(rawModel);
             rawModel.MarkAsHeldOnMaster();
-            await masterJobsService.UpsertAsync(rawModel);
+            await masterJobsService.AddAsync(rawModel);
             return;
         }
 
@@ -91,7 +91,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             {
                 EnforceMasterStoreSizeLimit(jobRawModel);
                 jobRawModel.MarkAsHeldOnMaster();
-                await masterJobsService.UpsertAsync(jobRawModel);
+                await masterJobsService.AddAsync(jobRawModel);
                 continue;
             }
 
@@ -101,7 +101,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
 
         if (jobsToSave.Count > 0)
         {
-            logger.Debug($"$Bulk scheduling jobs. {jobsToSave.Count}", JobMasterLogSubjectType.Job, jobsToSave.First().Id);
+            logger.Debug($"$Bulk scheduling jobs. {jobsToSave.Count}", JobMasterLogCategory.Job, jobsToSave.First().Id);
             await agentJobsDispatcherService.BulkAddSavePendingJobAsync(jobsToSave);
         }
     }
@@ -137,12 +137,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         var bucket = GetBucketAvailableForJob(job);
-        
+
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             EnforceMasterStoreSizeLimit(job);
             job.MarkAsHeldOnMaster();
-            masterJobsService.Upsert(job);
+            masterJobsService.Add(job);
             return;
         }
 
@@ -184,7 +184,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
 
-        await masterJobsService.UpsertAsync(jobEntity);
+        await masterJobsService.UpdateAsync(jobEntity);
         return true;
     }
 
@@ -201,7 +201,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
 
-        masterJobsService.Upsert(jobEntity);
+        masterJobsService.UpdateAsync(jobEntity);
         return true;
     }
 
@@ -259,7 +259,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         jobEntity.ReSchedule(scheduledAt);
-        await masterJobsService.UpsertAsync(jobEntity);
+        await masterJobsService.UpdateAsync(jobEntity);
         
         return true;
     }
@@ -284,7 +284,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         jobEntity.ReSchedule(scheduledAt);
-        masterJobsService.Upsert(jobEntity);
+        masterJobsService.Update(jobEntity);
         
         return true;
     }

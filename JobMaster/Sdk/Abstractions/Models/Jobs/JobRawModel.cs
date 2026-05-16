@@ -345,7 +345,7 @@ internal class JobRawModel : JobMasterBaseModel
             AgentWorkerId = this.AgentWorkerId!,
             BucketId = this.BucketId!,
             HostId = this.HostId!,
-            Outcome = JobExecutionOutcomeStatus.Processing,
+            Outcome = JobExecutionOutcomeStatus.Succeeded,
         };
         
         AgentConnectionId = null;

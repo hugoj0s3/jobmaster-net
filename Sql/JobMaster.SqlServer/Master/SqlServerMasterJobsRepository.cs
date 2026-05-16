@@ -25,108 +25,6 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
 
     public override string MasterRepoTypeId => SqlServerRepositoryConstants.RepositoryTypeId;
 
-    public override void Upsert(JobRawModel jobRaw)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
-        try
-        {
-            var rec = JobRawModel.ToPersistence(jobRaw);
-            var expectedVersion = rec.Version;
-            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
-
-            if (rec.Metadata is not null)
-            {
-                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
-
-                conn.Execute(BuildMetadataEntryUpsertSql(), entryArgs, trans);
-
-                if (sqlEntry.Values.Count > 0)
-                {
-                    var valueRows = BuildMetadataValueRows(sqlEntry);
-                    conn.Execute(BuildMetadataValuesUpsertSql(), valueRows, trans);
-                }
-
-                conn.Execute(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.JobMetadata),
-                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-            }
-
-            var dp = new DynamicParameters(rec);
-            dp.Add("ExpectedVersion", expectedVersion);
-            var rowsAffected = conn.Execute(BuildJobUpsertSql(), dp, trans);
-
-            if (rowsAffected == 0)
-            {
-                var t = TableName();
-                var exists = conn.ExecuteScalar<bool>(
-                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
-                    new { rec.ClusterId, rec.Id }, trans);
-                if (exists)
-                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
-            }
-
-            trans.Commit();
-            jobRaw.SetVersion(rec.Version);
-        }
-        catch
-        {
-            trans.SafeRollback();
-            throw;
-        }
-    }
-
-    public override async Task UpsertAsync(JobRawModel jobRaw)
-    {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var trans = conn.BeginTransaction(System.Data.IsolationLevel.ReadCommitted);
-        try
-        {
-            var rec = JobRawModel.ToPersistence(jobRaw);
-            var expectedVersion = rec.Version;
-            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
-
-            if (rec.Metadata is not null)
-            {
-                var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
-                var entryArgs = BuildMetadataEntryArgs(sqlEntry);
-
-                await conn.ExecuteAsync(BuildMetadataEntryUpsertSql(), entryArgs, trans);
-
-                if (sqlEntry.Values.Count > 0)
-                {
-                    var valueRows = BuildMetadataValueRows(sqlEntry);
-                    await conn.ExecuteAsync(BuildMetadataValuesUpsertSql(), valueRows, trans);
-                }
-
-                await conn.ExecuteAsync(genericUtil.BuildSetReadySql(MasterGenericRecordGroupIds.JobMetadata),
-                    new { RecordUniqueId = sqlEntry.RecordUniqueId }, trans);
-            }
-
-            var dp = new DynamicParameters(rec);
-            dp.Add("ExpectedVersion", expectedVersion);
-            var rowsAffected = await conn.ExecuteAsync(BuildJobUpsertSql(), dp, trans);
-
-            if (rowsAffected == 0)
-            {
-                var t = TableName();
-                var exists = await conn.ExecuteScalarAsync<bool>(
-                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
-                    new { rec.ClusterId, rec.Id }, trans);
-                if (exists)
-                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
-            }
-
-            trans.Commit();
-            jobRaw.SetVersion(rec.Version);
-        }
-        catch
-        {
-            trans.SafeRollback();
-            throw;
-        }
-    }
-
     protected override string UpdateToLockTableHint => "WITH (UPDLOCK, READPAST)";
 
     private string BuildMetadataEntryUpsertSql()
@@ -135,17 +33,15 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
         var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
         return $@"
 UPDATE {t2} WITH (UPDLOCK, SERIALIZABLE)
-SET subject_type = @SubjectType,
-    subject_id = @SubjectId,
-    expires_at = @ExpiresAt
+SET expires_at = @ExpiresAt
 WHERE record_unique_id = @RecordUniqueId;
 
 IF @@ROWCOUNT = 0
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM {t2} WITH (UPDLOCK, SERIALIZABLE) WHERE record_unique_id = @RecordUniqueId)
     BEGIN
-        INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, subject_type, subject_id, created_at, expires_at, {cIsReady})
-        VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @SubjectType, @SubjectId, @CreatedAt, @ExpiresAt, 0);
+        INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
+        VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0);
     END
 END";
     }
@@ -217,8 +113,6 @@ END";
             { "GroupId", sqlEntry.GroupId },
             { "EntryId", sqlEntry.EntryId },
             { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "SubjectType", sqlEntry.SubjectType },
-            { "SubjectId", sqlEntry.SubjectId },
             { "CreatedAt", sqlEntry.CreatedAt },
             { "ExpiresAt", sqlEntry.ExpiresAt }
         };

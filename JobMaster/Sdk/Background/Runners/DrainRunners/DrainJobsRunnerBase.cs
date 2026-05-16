@@ -20,10 +20,4 @@ internal abstract class DrainJobsRunnerBase : BucketAwareRunner, IDrainJobsRunne
     {
         BucketId = bucketId;
     }
-    
-    protected async Task HeldJobOnMaster(JobRawModel job)
-    {
-        job.MarkAsHeldOnMaster();
-        await BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-    }
 }

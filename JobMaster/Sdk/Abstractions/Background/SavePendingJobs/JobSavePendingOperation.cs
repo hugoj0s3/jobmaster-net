@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
@@ -44,12 +44,12 @@ internal class JobSavePendingOperation
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, job.Id, exception: e);
+            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, job.Id, exception: e);
             return SaveDrainResultCode.AlreadyExists;
         }
         catch
         {
-            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
+            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id);
             try
             {
                 var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
@@ -59,7 +59,7 @@ internal class JobSavePendingOperation
             }
             catch (Exception e)
             {
-                logger.Critical("Failed to add job to queue", JobMasterLogSubjectType.Job, job.Id, exception: e);
+                logger.Critical("Failed to add job to queue", JobMasterLogCategory.Job, job.Id, exception: e);
                 return SaveDrainResultCode.Failed;
             }
         }
@@ -75,12 +75,12 @@ internal class JobSavePendingOperation
         }
         catch (JobMasterDuplicationException dupE)
         {
-            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, job.Id, exception: dupE);
+            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, job.Id, exception: dupE);
             return SaveDrainResultCode.AlreadyExists;
         }
         catch (Exception ex)
         {
-            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id, exception: ex);
+            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id, exception: ex);
             return SaveDrainResultCode.Failed;
         }
     }
@@ -100,7 +100,7 @@ internal class JobSavePendingOperation
         }
         catch
         {
-            logger.Error("Failed to hold job on master", JobMasterLogSubjectType.Job, job.Id);
+            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id);
             return SaveDrainResultCode.Failed;
         }
     }
@@ -118,12 +118,12 @@ internal class JobSavePendingOperation
             }
             catch (JobMasterDuplicationException ex)
             {
-                logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
             catch (Exception ex)
             {
-                logger.Error("Failed to add job to processing", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+                logger.Error("Failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 throw;
             }
             
@@ -150,14 +150,14 @@ internal class JobSavePendingOperation
         {
             jobRaw.AssignToBucket(currentBucket);
             
-            logger.Debug("Short-circuit adding direct into the execution engine", JobMasterLogSubjectType.Job, jobRaw.Id);
+            logger.Debug("Short-circuit adding direct into the execution engine", JobMasterLogCategory.Job, jobRaw.Id);
             try
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
             }
             catch (JobMasterDuplicationException e)
             {
-                logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+                logger.Error("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
             
@@ -167,7 +167,7 @@ internal class JobSavePendingOperation
                 var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                 if (result == OnBoardingResult.Accepted)
                 {
-                    logger.Debug("Short-circuit accepted", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    logger.Debug("Short-circuit accepted", JobMasterLogCategory.Job, jobRaw.Id);
                     return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId, null);
                 }
 
@@ -176,11 +176,11 @@ internal class JobSavePendingOperation
                     return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
                 }
                 
-                logger.Error($"Unexpected OnBoardingResult. JobId {jobRaw.Id} OnBoardingResult {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
+                logger.Error($"Unexpected OnBoardingResult. JobId {jobRaw.Id} OnBoardingResult {result}", JobMasterLogCategory.Job, jobRaw.Id);
             }
             catch (Exception e)
             { 
-                logger.Error("Short-circuit failed to add job to processing", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+                logger.Error("Short-circuit failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
                 jobRaw.MarkAsHeldOnMaster();
                 await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
                 return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: bucketId, exception: e);
@@ -201,7 +201,7 @@ internal class JobSavePendingOperation
             }
             catch (JobMasterDuplicationException)
             {
-                logger.Error("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id);
+                logger.Error("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
             
@@ -216,12 +216,12 @@ internal class JobSavePendingOperation
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Warn("Job duplication detected", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
             return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
         }
         catch (Exception e)
         {
-            logger.Error("Failed to insert job; holding on master", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            logger.Error("Failed to insert job; holding on master", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
             jobRaw.MarkAsHeldOnMaster();
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
             return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
@@ -229,7 +229,7 @@ internal class JobSavePendingOperation
         
         try
         {
-            logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
+            logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
             
             var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
             
@@ -237,14 +237,14 @@ internal class JobSavePendingOperation
         }
         catch (PublishOutcomeUnknownException ex)
         { 
-            logger.Error("Publish outcome unknown for job; will hold on master", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+            logger.Error("Publish outcome unknown for job; will hold on master", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
             jobRaw.MarkAsHeldOnMaster();
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
             return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterPublishedUnknown, bucketId: selectedBucket.Id, publishedMessageId: ex.SupposedPublishedId, exception: ex);
         }
         catch (Exception e)
         { 
-            logger.Error("Failed to add job to processing", JobMasterLogSubjectType.Job, jobRaw.Id, exception: e);
+            logger.Error("Failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
             jobRaw.MarkAsHeldOnMaster();
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
             return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);

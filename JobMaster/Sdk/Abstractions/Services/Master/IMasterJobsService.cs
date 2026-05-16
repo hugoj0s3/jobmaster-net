@@ -8,8 +8,10 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
 {
     Task AddAsync(JobRawModel jobRaw);
     void Add(JobRawModel jobRaw);
-    Task UpsertAsync(JobRawModel jobRaw);
-    void Upsert(JobRawModel jobRaw);
+    Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    Task AddJobExecutionAsync(JobExecution jobExecution);
+    Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
     void ReleasePartitionLock(Guid jobId);
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);

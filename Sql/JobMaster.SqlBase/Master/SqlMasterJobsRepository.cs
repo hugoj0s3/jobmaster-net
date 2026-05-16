@@ -132,8 +132,115 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
     }
 
-    public abstract void Upsert(JobRawModel jobRaw);
-    public abstract Task UpsertAsync(JobRawModel jobRaw);
+    public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = conn.Execute(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = conn.ExecuteScalar<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            if (addJobExecution != null)
+            {
+                conn.Execute(BuildJobExecutionInsertSql(), BuildJobExecutionParams(addJobExecution), trans);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = await conn.ExecuteAsync(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = await conn.ExecuteScalarAsync<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            if (addJobExecution != null)
+            {
+                await conn.ExecuteAsync(BuildJobExecutionInsertSql(), BuildJobExecutionParams(addJobExecution), trans);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task AddJobExecutionAsync(JobExecution jobExecution)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            await conn.ExecuteAsync(BuildJobExecutionInsertSql(), BuildJobExecutionParams(jobExecution), trans);
+            trans.Commit();
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId)
+    {
+        var t = JobExecutionTableName();
+        var sqlText = $@"
+SELECT cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome
+FROM {t}
+WHERE cluster_id = @ClusterId AND job_id = @JobId
+ORDER BY started_at DESC";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var rows = (await conn.QueryAsync<JobExecutionPersistenceRecord>(sqlText,
+            new { ClusterId = ClusterConnConfig.ClusterId, JobId = jobId })).ToList();
+
+        return rows.Select(JobExecution.RecoverFromDb).ToList();
+    }
 
     public bool Exists(Guid jobId)
     {
@@ -243,7 +350,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
 
         if (request.ExcludeStatuses is { Count: > 0 })
         {
-            args.Add("ExcludeStatuses", request.ExcludeStatuses);
+            args.Add("ExcludeStatuses", request.ExcludeStatuses.Select(x => (int)x).ToList());
             var notIn = sql.InClauseFor(Col(x => x.Status), "@ExcludeStatuses");
             whereSql += $" AND NOT ({notIn})";
         }
@@ -703,6 +810,39 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         return sql.TableNameFor<Job>(additionalConnConfig);
     }
 
+    private string JobExecutionTableName()
+    {
+        var prefix = sql.GetTablePrefix(additionalConnConfig);
+        return $"{prefix}job_execution";
+    }
+
+    private string BuildJobExecutionInsertSql()
+    {
+        var t = JobExecutionTableName();
+        return $@"INSERT INTO {t}
+            (cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome)
+            VALUES
+            (@ClusterId, @Id, @JobId, @StartedAt, @AgentConnectionId, @AgentWorkerId, @BucketId, @HostId, @HostDisplayName, @FinalizedAt, @OutcomeMessage, @Outcome)";
+    }
+
+    private static DynamicParameters BuildJobExecutionParams(JobExecution execution)
+    {
+        var p = new DynamicParameters();
+        p.Add("ClusterId", execution.ClusterId);
+        p.Add("Id", execution.Id);
+        p.Add("JobId", execution.JobId);
+        p.Add("StartedAt", execution.StartedAt);
+        p.Add("AgentConnectionId", execution.AgentConnectionId?.IdValue);
+        p.Add("AgentWorkerId", execution.AgentWorkerId);
+        p.Add("BucketId", execution.BucketId);
+        p.Add("HostId", execution.HostId?.IdValue);
+        p.Add("HostDisplayName", execution.HostId?.HostDisplayName);
+        p.Add("FinalizedAt", execution.FinalizedAt);
+        p.Add("OutcomeMessage", execution.OutcomeMessage);
+        p.Add("Outcome", (int)execution.Outcome);
+        return p;
+    }
+
     protected (string Columns, string ValuesParams) InsertColumnsAndParams()
     {
         var cols = new[]
@@ -728,6 +868,20 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             "@WorkerLane", "@Version", "@HostId", "@HostDisplayName"
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
+    }
+
+    private string BuildUpdateSql()
+    {
+        var t = TableName();
+        var cVersion = Col(x => x.Version);
+        var cClusterId = Col(x => x.ClusterId);
+        var cId = Col(x => x.Id);
+        return $@"
+UPDATE {t} SET
+    {UpdateSetClause()}
+WHERE {cClusterId} = @ClusterId
+  AND {cId} = @Id
+  AND {cVersion} = @ExpectedVersion;";
     }
 
     protected string UpdateSetClause()

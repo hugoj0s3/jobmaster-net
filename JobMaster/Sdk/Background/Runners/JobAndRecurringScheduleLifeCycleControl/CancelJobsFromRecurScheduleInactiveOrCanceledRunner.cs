@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -97,7 +97,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         {
             if (cutOffTime <= DateTime.UtcNow)
             {
-                logger.Warn($"Runner timeout {durationToLock}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                logger.Warn($"Runner timeout {durationToLock}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 break;
             }
             

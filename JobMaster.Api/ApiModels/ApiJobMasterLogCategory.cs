@@ -1,6 +1,6 @@
-﻿namespace JobMaster.Api.ApiModels;
+namespace JobMaster.Api.ApiModels;
 
-public enum ApiJobMasterLogSubjectType
+public enum ApiJobMasterLogCategory
 {
     Job = 1,
     JobExecution = 2,

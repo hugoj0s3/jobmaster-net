@@ -711,7 +711,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 }
                 await Task.Delay(200);
             }
-
+            
             Assert.NotNull(executionCount);
             var executedTotal = executionCount.JobExecutionCounts.Count;
             var maxExecCount = executionCount.JobExecutionCounts.Count == 0 ? 0 : executionCount.JobExecutionCounts.Values.Max();
@@ -752,23 +752,36 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             var dbValidationResults = new Dictionary<string, (int succeeded, int other)>();
             var allJobsFromDb = new List<Guid>();
             
-            foreach (var clusterId in fixture.ClusterIds)
+            var dbPollDeadline = DateTime.UtcNow.AddMinutes(timeoutInMinutes / 2.0);
+            while (true)
             {
-                var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
-                var masterJobsService = factory.GetComponent<IMasterJobsService>();
+                dbValidationResults.Clear();
+                allJobsFromDb.Clear();
 
-                var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
+                foreach (var clusterId in fixture.ClusterIds)
                 {
-                    MetadataFilters = sessionMetadataFilters,
-                    CountLimit = int.MaxValue,
-                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                });
+                    var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
+                    var masterJobsService = factory.GetComponent<IMasterJobsService>();
 
-                var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
-                var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded);
+                    var allJobs = await masterJobsService.QueryAsync(new JobQueryCriteria
+                    {
+                        MetadataFilters = sessionMetadataFilters,
+                        CountLimit = int.MaxValue,
+                        ReadIsolationLevel = ReadIsolationLevel.FastSync,
+                    });
 
-                dbValidationResults[clusterId] = (succeeded, other);
-                allJobsFromDb.AddRange(allJobs.Select(j => j.Id));
+                    var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
+                    var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded);
+
+                    dbValidationResults[clusterId] = (succeeded, other);
+                    allJobsFromDb.AddRange(allJobs.Select(j => j.Id));
+                }
+
+                if (allJobsFromDb.Count >= expectedTotal || DateTime.UtcNow >= dbPollDeadline)
+                    break;
+
+                output.WriteLine($"[DB Poll] Found {allJobsFromDb.Count}/{expectedTotal} – retrying in 1s…");
+                await Task.Delay(TimeSpan.FromSeconds(1));
             }
 
             var totalSucceededInDb = dbValidationResults.Sum(x => x.Value.succeeded);

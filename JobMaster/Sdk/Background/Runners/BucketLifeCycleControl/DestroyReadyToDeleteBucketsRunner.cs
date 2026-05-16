@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -72,7 +72,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
 
                     if (freshBucket.DeletesAt is null)
                     {
-                        logger.Error($"Bucket {freshBucket.Id} has been marked as ready to delete but has no delete time", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                        logger.Error($"Bucket {freshBucket.Id} has been marked as ready to delete but has no delete time", JobMasterLogCategory.Bucket, freshBucket.Id);
                         freshBucket.MarkAsLost();
                         await masterBucketsService.UpdateAsync(freshBucket);
                         continue;
@@ -80,7 +80,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
                     
                     if (await agentJobsDispatcherService.HasJobsAsync(freshBucket.AgentConnectionId, freshBucket.Id))
                     {
-                        logger.Warn($"Bucket {freshBucket.Id} has been marked as ready to delete but has jobs", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                        logger.Warn($"Bucket {freshBucket.Id} has been marked as ready to delete but has jobs", JobMasterLogCategory.Bucket, freshBucket.Id);
                         freshBucket.MarkAsLost();
                         await masterBucketsService.UpdateAsync(freshBucket);
                         continue;
@@ -91,7 +91,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
                         continue;
                     }
 
-                    logger.Info($"Destroying bucket {freshBucket.Id}", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                    logger.Info($"Destroying bucket {freshBucket.Id}", JobMasterLogCategory.Bucket, freshBucket.Id);
                     await masterBucketsService.DestroyAsync(freshBucket.Id);
                 }
                 finally

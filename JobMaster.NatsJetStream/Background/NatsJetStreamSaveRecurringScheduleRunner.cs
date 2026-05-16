@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Background.SavePendingRecurringSchedules;
@@ -51,7 +51,7 @@ internal class NatsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBas
         }
         catch (Exception e)
         {
-            this.logger.Error($"{GetRunnerDescription()} - Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, payload.Id, e);
+            this.logger.Error($"{GetRunnerDescription()} - Failed to save recurring schedule", JobMasterLogCategory.RecurringSchedule, payload.Id, e);
             throw;
         }
     }

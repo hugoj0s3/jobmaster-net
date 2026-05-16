@@ -8,16 +8,16 @@ internal interface IJobMasterLogger : IJobMasterClusterAwareService
     void Log(
         JobMasterLogLevel level,
         string message,
-        JobMasterLogSubjectType? subjectType = null,
-        string? subjectId = null,
+        JobMasterLogCategory? category = null,
+        string? referenceId = null,
         Exception? exception = null,
         string? sourceMember = null,
         string? sourceFile = null,
         int? sourceLine = null);
-    
+
     Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria);
-    
+
     Task<int> CountAsync(LogItemQueryCriteria criteria);
-    
+
     Task<LogItem?> GetAsync(Guid id);
 }

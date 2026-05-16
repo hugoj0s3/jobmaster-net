@@ -36,11 +36,37 @@ internal class JobExecution : JobMasterBaseModel
         FinalizedAt = DateTime.UtcNow;
         OutcomeMessage = message;
     }
-    
+
     public void Succeed()
     {
         FinalizedAt = DateTime.UtcNow;
         Outcome = JobExecutionOutcomeStatus.Succeeded;
         OutcomeMessage = "Job execution completed successfully.";
+    }
+
+    internal static JobExecution RecoverFromDb(JobExecutionPersistenceRecord rec)
+    {
+        var ex = new JobExecution();
+        ex.ClusterId = rec.ClusterId;
+        ex.Id = rec.Id;
+        ex.JobId = rec.JobId;
+        ex.StartedAt = rec.StartedAt;
+        ex.AgentWorkerId = rec.AgentWorkerId;
+        ex.BucketId = rec.BucketId;
+        ex.FinalizedAt = rec.FinalizedAt;
+        ex.OutcomeMessage = rec.OutcomeMessage;
+        ex.Outcome = (JobExecutionOutcomeStatus)rec.Outcome;
+
+        if (!string.IsNullOrEmpty(rec.AgentConnectionId))
+        {
+            ex.AgentConnectionId = new AgentConnectionId(rec.AgentConnectionId);
+        }
+
+        if (!string.IsNullOrEmpty(rec.HostId))
+        {
+            ex.HostId = HostId.Recover(rec.HostDisplayName ?? string.Empty, rec.HostId);
+        }
+
+        return ex;
     }
 }

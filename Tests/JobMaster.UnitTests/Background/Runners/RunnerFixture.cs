@@ -25,6 +25,7 @@ internal sealed record RunnerFixture(
     RunnerFakes.FakeClusterConfigService ClusterConfig,
     RunnerFakes.FakeJobsRepository JobsRepository,
     RunnerFakes.FakeGenericRecordRepository GenericRecords,
+    RunnerFakes.FakeLogsRepository LogsRepository,
     RunnerFakes.FakeRecurringSchedulesRepository RecurringSchedules,
     RunnerFakes.FakeAgentJobsDispatcherService JobsDispatcher,
     RunnerFakes.FakeHeartbeatService HeartbeatService,
@@ -54,6 +55,7 @@ internal sealed record RunnerFixture(
         var clusterConfig = new RunnerFakes.FakeClusterConfigService();
         var jobsRepository = new RunnerFakes.FakeJobsRepository();
         var genericRecords = new RunnerFakes.FakeGenericRecordRepository();
+        var logsRepository = new RunnerFakes.FakeLogsRepository();
         var recurringSchedules = new RunnerFakes.FakeRecurringSchedulesRepository();
         var jobsDispatcher = new RunnerFakes.FakeAgentJobsDispatcherService();
         var heartbeatService = new RunnerFakes.FakeHeartbeatService();
@@ -125,6 +127,7 @@ internal sealed record RunnerFixture(
         // repositories
         worker.Setup(x => x.GetClusterAwareRepository<IMasterJobsRepository>()).Returns(jobsRepository);
         worker.Setup(x => x.GetClusterAwareRepository<IMasterGenericRecordRepository>()).Returns(genericRecords);
+        worker.Setup(x => x.GetClusterAwareRepository<IMasterLogsRepository>()).Returns(logsRepository);
         worker.Setup(x => x.GetClusterAwareRepository<IMasterRecurringSchedulesRepository>()).Returns(recurringSchedules);
 
         return new RunnerFixture(
@@ -136,6 +139,7 @@ internal sealed record RunnerFixture(
             clusterConfig,
             jobsRepository,
             genericRecords,
+            logsRepository,
             recurringSchedules,
             jobsDispatcher,
             heartbeatService,

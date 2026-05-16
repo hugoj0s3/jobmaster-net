@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -99,7 +99,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                 {
                     hasFailed = true;
                     
-                    logger.Error("Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e);
+                    logger.Error("Failed to save recurring schedule", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
                     // Failure: Attempt to re-queue immediately in memory
                     try 
                     {
@@ -110,7 +110,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                     {
                         logger.Critical(
                             $"Failed to add recurring schedule to queue recurring. Data: {schedule.ToLogSummary()}", 
-                            JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e2);
+                            JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e2);
                     }
                     
                     return;
@@ -130,7 +130,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                 catch
                 {
                     // Log Critical
-                    logger.Critical($"Failed to add recurring schedule to queue. Data: {schedule.ToLogSummary()}", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
+                    logger.Critical($"Failed to add recurring schedule to queue. Data: {schedule.ToLogSummary()}", JobMasterLogCategory.RecurringSchedule, schedule.Id);
                 }
             }
         }

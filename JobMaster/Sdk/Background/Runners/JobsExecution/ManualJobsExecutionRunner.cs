@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -108,7 +108,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         foreach (var job in jobs)
         {
             var result = await jobExecutionEngine.TryOnBoardingJobAsync(job, forceIfNoCapacity: true);
-            logger.Debug($"JobId {job.Id} OnBoardingResult {result} ", JobMasterLogSubjectType.Job, job.Id);
+            logger.Debug($"JobId {job.Id} OnBoardingResult {result} ", JobMasterLogCategory.Job, job.Id);
             if (result == OnBoardingResult.Accepted)
             {
                 continue;
@@ -117,8 +117,8 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             if (result == OnBoardingResult.TooEarly)
             {
                 job.MarkAsHeldOnMaster();
-                await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpsertAsync(job));
-                logger.Warn($"JobId {job.Id} TooEarly {job.NextPlanExecutionAt:O} now {DateTime.UtcNow:O}", JobMasterLogSubjectType.Job, job.Id);
+                await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
+                logger.Warn($"JobId {job.Id} TooEarly {job.NextPlanExecutionAt:O} now {DateTime.UtcNow:O}", JobMasterLogCategory.Job, job.Id);
                 continue;
             }
             
@@ -128,9 +128,9 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
                 continue;
             }
             
-            logger.Error($"Unexpected OnBoardingResult. JobId {job.Id} OnBoardingResult {result}", JobMasterLogSubjectType.Job, job.Id);
+            logger.Error($"Unexpected OnBoardingResult. JobId {job.Id} OnBoardingResult {result}", JobMasterLogCategory.Job, job.Id);
             job.MarkAsHeldOnMaster();
-            await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpsertAsync(job));
+            await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
         }
     }
 
@@ -151,6 +151,6 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         this.BucketId = bucketId;
         this.Priority = priority;
         
-        logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogSubjectType.Bucket, bucketId);
+        logger.Debug($"Bucket defined. bucketId {bucketId}, priority {priority}", JobMasterLogCategory.Bucket, bucketId);
     }
 }

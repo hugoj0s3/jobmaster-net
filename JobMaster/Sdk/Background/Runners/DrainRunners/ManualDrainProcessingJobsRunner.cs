@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -55,7 +55,7 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
             }
             catch (Exception e)
             {
-                logger.Error($"Drain: failed to bulk mark jobs as HeldOnMaster. PartitionSize={partition.Count}", JobMasterLogSubjectType.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
+                logger.Error($"Drain: failed to bulk mark jobs as HeldOnMaster. PartitionSize={partition.Count}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
                 hasFailed = true;
             }
         }
