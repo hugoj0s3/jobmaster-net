@@ -462,8 +462,8 @@ internal static class RunnerFakes
 
         public void Add(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
         public Task AddAsync(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
-        public void Upsert(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
-        public Task UpsertAsync(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
+        public void Update(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
+        public Task UpdateAsync(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
         public bool Exists(Guid recurringScheduleId) => throw new NotImplementedException();
         public Task<bool> ExistsAsync(Guid recurringScheduleId) => throw new NotImplementedException();
         public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();
@@ -518,9 +518,9 @@ internal static class RunnerFakes
             return Task.FromResult<IList<JobRawModel>>(pulled);
         }
 
-        public string AddSavePendingJob(JobRawModel jobRaw) { PendingQueue.Add(jobRaw); return "ok"; }
+        public string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true) { PendingQueue.Add(jobRaw); return "ok"; }
 
-        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw)
+        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true)
         {
             RequeuedJobs.Add(jobRaw);
             return Task.FromResult("ok");
@@ -714,6 +714,26 @@ internal static class RunnerFakes
         }
 
         public void Upsert(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
+        public Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Update(RecurringScheduleRawModel scheduleRaw)
+        {
+            throw new NotImplementedException();
+        }
+
+        public Task AddAsync(RecurringScheduleRawModel scheduleRaw)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void Add(RecurringScheduleRawModel scheduleRaw)
+        {
+            throw new NotImplementedException();
+        }
+
         public void UpsertStatic(StaticRecurringScheduleDefinition definition) => throw new NotImplementedException();
         public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();
         public Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();

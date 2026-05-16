@@ -67,7 +67,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         {
             logger.Debug($"Skipping: EndBefore ({scheduleRawModel.EndBefore:O}) is in the past", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             scheduleRawModel.TryEnded();
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
+            await masterRecurringSchedulesService.UpdateAsync(scheduleRawModel);
             return;
         }
         
@@ -101,7 +101,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             
             // Avoid keep get this schedule again and again. Delay the next attempt.
             scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             
             return;
         }
@@ -137,7 +137,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
                 scheduleRawModel.HasFailedOnLastPlanExecution = false;
                 scheduleRawModel.LastPlanCoverageUntil = checkTime;
                 scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-                await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+                await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
                 return;
             }
             
@@ -149,7 +149,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.HasFailedOnLastPlanExecution = false;
             scheduleRawModel.LastPlanCoverageUntil = checkTime;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
 
@@ -174,14 +174,14 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.HasFailedOnLastPlanExecution = true;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
             
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
        
         scheduleRawModel.HasFailedOnLastPlanExecution = false;
         scheduleRawModel.LastPlanCoverageUntil = lastPlanCoverageUntilUtc;
         scheduleRawModel.LastExecutedPlan = lastPlanCoverageUntilUtc;
-        await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+        await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
     }
 
     internal (DateTime? lastSchedule, IList<DateTime> nextDates, DateTime planningHorizon) PlanNextDates(
@@ -284,11 +284,11 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         return (lastScheduleAt, results, stopAt);
     }
     
-    private async Task UpsertAndReleasePlanLockAsync(RecurringScheduleRawModel scheduleRawModel, string lockToken)
+    private async Task UpdateAndReleasePlanLockAsync(RecurringScheduleRawModel scheduleRawModel, string lockToken)
     {
         try
         {
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
+            await masterRecurringSchedulesService.UpdateAsync(scheduleRawModel);
         }
         finally
         {

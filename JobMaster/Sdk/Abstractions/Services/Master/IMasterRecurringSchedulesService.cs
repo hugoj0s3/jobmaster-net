@@ -6,8 +6,10 @@ namespace JobMaster.Sdk.Abstractions.Services.Master;
 
 internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareService
 {
-    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
-    void Upsert(RecurringScheduleRawModel scheduleRaw);
+    Task UpdateAsync(RecurringScheduleRawModel scheduleRaw);
+    void Update(RecurringScheduleRawModel scheduleRaw);
+    Task AddAsync(RecurringScheduleRawModel scheduleRaw);
+    void Add(RecurringScheduleRawModel scheduleRaw);
     void UpsertStatic(StaticRecurringScheduleDefinition definition);
     IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);

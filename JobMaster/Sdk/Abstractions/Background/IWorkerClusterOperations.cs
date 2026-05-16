@@ -18,7 +18,7 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     
     Task AddJobExecutionAsync(JobExecution jobExecution);
     
-    void Upsert(RecurringScheduleRawModel jobRawModel);
+    void Upsert(RecurringScheduleRawModel recurringScheduleRawModel);
     Task MarkBucketAsLostAsync(BucketModel bucket);
     Task MarkBucketAsLostAsync(string bucketId);
     Task MarkBucketAsLostIfNotDrainingAsync(string bucketId);

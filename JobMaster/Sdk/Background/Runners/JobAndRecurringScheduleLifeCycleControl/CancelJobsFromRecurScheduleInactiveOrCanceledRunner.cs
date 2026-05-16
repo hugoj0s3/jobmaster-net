@@ -156,7 +156,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         if (jobIdsToCancel.Count <= 0)
         {
             recurringScheduleRawModel.HasCancelJobsFinish();
-            await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
+            await masterRecurringSchedulesService.UpdateAsync(recurringScheduleRawModel);
             return;
         }
         
@@ -164,7 +164,7 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
         await masterJobsService.BulkUpdateAsync(bulkUpdateRequest);
 
         recurringScheduleRawModel.HasCancelJobsFinish();
-        await masterRecurringSchedulesService.UpsertAsync(recurringScheduleRawModel);
+        await masterRecurringSchedulesService.UpdateAsync(recurringScheduleRawModel);
     }
     
 

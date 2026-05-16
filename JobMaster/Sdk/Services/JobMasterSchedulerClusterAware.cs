@@ -52,7 +52,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
     
-    public async Task ScheduleAsync(JobRawModel rawModel)
+    public async Task ScheduleAsync(JobRawModel rawModel, bool notifyAgent = true)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -71,7 +71,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel);
+        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, notifyAgent);
     }
     
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
@@ -120,7 +120,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             EnforceMasterStoreSizeLimit(rawModel);
             rawModel.Active(); 
-            masterRecurringSchedulesService.Upsert(rawModel);
+            masterRecurringSchedulesService.Add(rawModel);
             return;
         }
 
@@ -128,7 +128,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         agentJobsDispatcherService.AddSavePendingRecur(rawModel);
     }
 
-    public void Schedule(JobRawModel job)
+    public void Schedule(JobRawModel job, bool notifyAgent = true)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -147,7 +147,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         job.AssignSavePendingJobToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingJob(job);
+        agentJobsDispatcherService.AddSavePendingJob(job, notifyAgent);
     }
 
     public async Task ScheduleAsync(RecurringScheduleRawModel rawModel)
@@ -163,7 +163,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             EnforceMasterStoreSizeLimit(rawModel);
             rawModel.Active();
-            await masterRecurringSchedulesService.UpsertAsync(rawModel);
+            await masterRecurringSchedulesService.AddAsync(rawModel);
             return;
         }
 
@@ -218,7 +218,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
         
-        await masterRecurringSchedulesService.UpsertAsync(recurringScheduleEntity);
+        await masterRecurringSchedulesService.UpdateAsync(recurringScheduleEntity);
         return true;
     }
 
@@ -235,7 +235,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
         
-        masterRecurringSchedulesService.Upsert(recurringScheduleEntity);
+        masterRecurringSchedulesService.Update(recurringScheduleEntity);
         return true;
     }
 

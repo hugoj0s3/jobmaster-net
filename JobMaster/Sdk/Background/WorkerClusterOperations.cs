@@ -191,9 +191,29 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         return masterJobsService.AddJobExecutionAsync(jobExecution);
     }
 
-    public void Upsert(RecurringScheduleRawModel jobRawModel)
+    public void Upsert(RecurringScheduleRawModel recurringScheduleRawModel)
     {
-        masterRecurringSchedulesService.Upsert(jobRawModel);
+        if (recurringScheduleRawModel.Version is null)
+        {
+            this.masterRecurringSchedulesService.Add(recurringScheduleRawModel);
+            return;
+        }
+        
+        if (ExistsRecurringSchedule(recurringScheduleRawModel.Id))
+        {
+            this.masterRecurringSchedulesService.Update(recurringScheduleRawModel);
+            return;
+        }
+
+        try
+        {
+            this.masterRecurringSchedulesService.Add(recurringScheduleRawModel);
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            logger.Error($"Job was added by another process or thread", exception: e);
+            this.masterRecurringSchedulesService.Update(recurringScheduleRawModel);
+        }
     }
 
     public async Task MarkBucketAsLostAsync(BucketModel bucket)
@@ -298,7 +318,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         if (recurringScheduleRawModel?.TryToCancel() == true)
         {
-            masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+            masterRecurringSchedulesService.UpdateAsync(recurringScheduleRawModel);
         }
     }
 
@@ -429,6 +449,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     {
         var job = masterJobsService.Get(jobId);
         return job != null;
+    }
+    
+    private bool ExistsRecurringSchedule(Guid id)
+    {
+        var recurringSchedule = masterRecurringSchedulesService.Get(id);
+        return recurringSchedule != null;
     }
 
     private async Task<bool> ExistsJobAsync(Guid jobId)

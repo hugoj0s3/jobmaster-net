@@ -31,7 +31,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         this.logger = logger;
     }
 
-    public string AddSavePendingJob(JobRawModel jobRaw)
+    public string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
@@ -39,7 +39,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         return repository.PushSavePendingJob(jobRaw);
     }
 
-    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw)
+    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true)
     {
         ValidateJobAssignedToBucket(jobRaw);
 

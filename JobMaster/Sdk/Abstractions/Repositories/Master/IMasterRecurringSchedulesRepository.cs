@@ -8,8 +8,8 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     void Add(RecurringScheduleRawModel scheduleRaw);
     Task AddAsync(RecurringScheduleRawModel scheduleRaw);
 
-    void Upsert(RecurringScheduleRawModel scheduleRaw);
-    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
+    void Update(RecurringScheduleRawModel scheduleRaw);
+    Task UpdateAsync(RecurringScheduleRawModel scheduleRaw);
 
     bool Exists(Guid recurringScheduleId);
     Task<bool> ExistsAsync(Guid recurringScheduleId);

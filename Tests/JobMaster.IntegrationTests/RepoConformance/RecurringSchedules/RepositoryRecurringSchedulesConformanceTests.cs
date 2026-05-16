@@ -72,7 +72,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Upsert_ShouldPersistChanges()
+    public async Task Update_ShouldPersistChanges()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-upd-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
@@ -84,7 +84,6 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.RecurringScheduleType = RecurringScheduleType.Dynamic;
         updated.TerminatedAt = DateTime.UtcNow;
         updated.MsgData = "{\"y\":2}";
-        updated.Metadata = "{\"color\":\"red\"}";
         updated.Priority = JobMasterPriority.Low;
         updated.MaxNumberOfRetries = 2;
         updated.Timeout = TimeSpan.FromSeconds(9);
@@ -103,7 +102,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.StaticDefinitionLastEnsured = DateTime.UtcNow.AddMinutes(-1);
         updated.WorkerLane = "LANE_UPD";
 
-        await Fixture.MasterRecurringSchedules.UpsertAsync(updated);
+        await Fixture.MasterRecurringSchedules.UpdateAsync(updated);
 
         var fromDb = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(fromDb);
@@ -111,29 +110,29 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
+    public async Task Update_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
-        // Load two separate copies to simulate concurrent upserts
+        // Load two separate copies to simulate concurrent updates
         var copyA = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         var copyB = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(copyA);
         Assert.NotNull(copyB);
 
-        // First upsert succeeds and advances the version
+        // First update succeeds and advances the version
         copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
-        await Fixture.MasterRecurringSchedules.UpsertAsync(copyA);
+        await Fixture.MasterRecurringSchedules.UpdateAsync(copyA);
 
-        // Second upsert uses stale version — should throw
+        // Second update uses stale version — should throw
         copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterRecurringSchedules.UpsertAsync(copyB));
+            Fixture.MasterRecurringSchedules.UpdateAsync(copyB));
     }
 
     [Fact]
-    public async Task Upsert_ShouldThrow_WhenVersionMismatch()
+    public async Task Update_ShouldThrow_WhenVersionMismatch()
     {
         var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
@@ -146,7 +145,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterRecurringSchedules.UpsertAsync(stale));
+            Fixture.MasterRecurringSchedules.UpdateAsync(stale));
     }
 
     [Fact]

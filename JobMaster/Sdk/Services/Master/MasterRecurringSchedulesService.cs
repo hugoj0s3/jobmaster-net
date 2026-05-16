@@ -47,11 +47,53 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         retryDeadlockPolicy = new RetryDeadlockPolicy(this.exceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
     }
 
-    public async Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
+    public async Task AddAsync(RecurringScheduleRawModel scheduleRaw)
+    {
+        await operationThrottler.ExecAsync(async () =>
+        {
+            try
+            {
+                await masterRecurringSchedulesRepository.AddAsync(scheduleRaw);
+            }
+            catch (JobMasterDuplicationException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                if (await masterRecurringSchedulesRepository.ExistsAsync(scheduleRaw.Id))
+                {
+                    throw new JobMasterDuplicationException(scheduleRaw.Id, "RecurringSchedule", ex);
+                }
+                throw;
+            }
+        });
+    }
+
+    public void Add(RecurringScheduleRawModel scheduleRaw)
+    {
+        operationThrottler.Exec(() =>
+        {
+            try
+            {
+                masterRecurringSchedulesRepository.Add(scheduleRaw);
+            }
+            catch (Exception ex)
+            {
+                if (masterRecurringSchedulesRepository.Exists(scheduleRaw.Id))
+                {
+                    throw new JobMasterDuplicationException(scheduleRaw.Id, "RecurringSchedule", ex);
+                }
+                throw;
+            }
+        });
+    }
+
+    public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
     {
         try
         {
-            await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpsertAsync(scheduleRaw));
+            await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.UpdateAsync(scheduleRaw));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -60,11 +102,11 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         }
     }
 
-    public void Upsert(RecurringScheduleRawModel scheduleRaw)
+    public void Update(RecurringScheduleRawModel scheduleRaw)
     {
         try
         {
-            operationThrottler.Exec(() => { masterRecurringSchedulesRepository.Upsert(scheduleRaw); return true; });
+            operationThrottler.Exec(() => masterRecurringSchedulesRepository.Update(scheduleRaw));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -102,7 +144,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
             else
             {
                 rawModel.UpdateStaticFromDefinition(definition);
-                masterRecurringSchedulesRepository.Upsert(rawModel);
+                masterRecurringSchedulesRepository.Update(rawModel);
             }
             return true;
         });

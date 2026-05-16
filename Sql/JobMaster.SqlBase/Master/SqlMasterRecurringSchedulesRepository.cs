@@ -186,8 +186,73 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
         return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
     }
 
-    public abstract void Upsert(RecurringScheduleRawModel scheduleRaw);
-    public abstract Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
+    public void Update(RecurringScheduleRawModel scheduleRaw)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = conn.Execute(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = conn.ExecuteScalar<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
+            }
+
+            trans.Commit();
+            scheduleRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = await conn.ExecuteAsync(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = await conn.ExecuteScalarAsync<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(scheduleRaw.Id, "RecurringSchedule", expectedVersion);
+            }
+
+            trans.Commit();
+            scheduleRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
 
     public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria)
     {
@@ -762,6 +827,15 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
             { "ClusterId", ClusterConnConfig.ClusterId },
             { "RecurringScheduleType", (int) RecurringScheduleType.Static }
         });
+    }
+
+    private string BuildUpdateSql()
+    {
+        var t = TableName();
+        var cClusterId = Col(x => x.ClusterId);
+        var cId = Col(x => x.Id);
+        var cVersion = Col(x => x.Version);
+        return $"UPDATE {t} SET {UpdateSetClause()} WHERE {cClusterId} = @ClusterId AND {cId} = @Id AND {cVersion} = @ExpectedVersion";
     }
 
     protected string Col(Expression<Func<RecurringSchedulePersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
