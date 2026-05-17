@@ -52,5 +52,14 @@ internal class NatsJetStreamConstants
         TimeSpan.FromSeconds(75),
         TimeSpan.FromMinutes(3)
     ];
+
+    // How often a jm-heartbeat message is published to each bucket's subject.
+    // Keeps lastMessageReceivedAt fresh so idle buckets aren't marked Lost by the 90s unresponsive check.
+    public static readonly TimeSpan HeartbeatPublishInterval = TimeSpan.FromSeconds(10);
+
+    // NATS-level idle heartbeat sent by the server when no messages are available.
+    // Keeps the pull subscription open during idle periods so ConsumeAsync doesn't need to restart.
+    // Tuned independently of HeartbeatPublishInterval.
+    public static readonly TimeSpan ConsumerIdleHeartbeat = TimeSpan.FromSeconds(5);
 }
 

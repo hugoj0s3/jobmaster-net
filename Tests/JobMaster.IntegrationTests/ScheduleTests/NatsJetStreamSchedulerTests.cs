@@ -15,7 +15,7 @@ public class NatsJetStreamSchedulerTests : JobMasterSchedulerTestsBase<NatsJetSt
     [InlineData(250, true, 4)]
     // 1000 jobs
     [InlineData(1000, false, 4)]
-    [InlineData(1000, true, 6)]
+    [InlineData(1000, true, 10)]
     // 2500 jobs
     [InlineData(2500, false, 6)]
     [InlineData(2500, true, 10)]

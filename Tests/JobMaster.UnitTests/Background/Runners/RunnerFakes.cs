@@ -674,14 +674,6 @@ internal static class RunnerFakes
             => Task.FromResult<IList<RecurringScheduleRawModel>>(
                 Schedules.Where(s => ids.Contains(s.Id)).ToList());
 
-        public Task UpsertAsync(RecurringScheduleRawModel scheduleRaw)
-        {
-            var idx = Schedules.FindIndex(s => s.Id == scheduleRaw.Id);
-            if (idx >= 0) Schedules[idx] = scheduleRaw;
-            else Schedules.Add(scheduleRaw);
-            return Task.CompletedTask;
-        }
-
         public void BulkUpdateStaticDefinitionLastEnsured(IList<string> staticDefinitionIds, DateTime ensuredAt)
             => BulkUpdateLastEnsuredCalls.Add((staticDefinitionIds, ensuredAt));
 

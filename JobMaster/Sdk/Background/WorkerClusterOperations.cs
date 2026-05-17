@@ -318,7 +318,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         if (recurringScheduleRawModel?.TryToCancel() == true)
         {
-            masterRecurringSchedulesService.UpdateAsync(recurringScheduleRawModel);
+            masterRecurringSchedulesService.Update(recurringScheduleRawModel);
         }
     }
 

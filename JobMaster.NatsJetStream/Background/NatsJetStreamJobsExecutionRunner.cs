@@ -18,6 +18,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
     private IJobsExecutionEngine? jobsExecutionEngine;
     private readonly Stopwatch lifetimeSw = new();
     private readonly Dictionary<string, int> busyRetryCount = new();
+    private TaskCompletionSource<bool> pulseSignal = new();
     
     public NatsJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
@@ -38,6 +39,16 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
     }
 
     protected override async Task ProcessPayloadAsync(JobRawModel payload, MsgAckGuard ackGuard)
+    {
+        // Wait for the next pulse cycle to fully complete before processing — ensures flush has run and
+        // slots may have been freed. Triggered when the engine is full, or randomly (5%) as light backpressure.
+        if (jobsExecutionEngine?.HasOnBoardingAvailability() == false || JobMasterRandomUtil.GetBoolean(0.05))
+            await Task.WhenAny(pulseSignal.Task, Task.Delay(TimeSpan.FromMilliseconds(1500)));
+
+        await DoProcessPayloadAsync(payload, ackGuard);
+    }
+
+    private async Task DoProcessPayloadAsync(JobRawModel payload, MsgAckGuard ackGuard)
     {
         logger.Debug($"Processing payload: JobId={payload.Id}");
         
@@ -81,8 +92,23 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
                 : TimeSpan.Zero;
 
             await ackGuard.TryNakAsync(delay + jitter);
-            
+
             logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
+            return;
+        }
+
+        if (onBoardingResult == OnBoardingResult.MovedToMaster)
+        {
+            logger.Debug($"{GetRunnerDescription()}: MovedToMaster. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
+            return;
+        }
+
+        if (onBoardingResult == OnBoardingResult.Invalid)
+        {
+            logger.Warn($"{GetRunnerDescription()}: Invalid onboarding result. JobId={payload.Id} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
+            payload.MarkAsHeldOnMaster();
+            await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
+            return;
         }
 
         if (onBoardingResult == OnBoardingResult.Busy)
@@ -110,11 +136,14 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         }
     }
 
-    protected override async Task OnTickAfterSetupAsync(CancellationToken ct)
+    protected override async Task DoOnTickAsync(CancellationToken ct)
     {
         if (jobsExecutionEngine is null) return;
         
         await jobsExecutionEngine.PulseAsync();
+        
+        var prev = Interlocked.Exchange(ref pulseSignal, new TaskCompletionSource<bool>());
+        prev.TrySetResult(true);
     }
 
     protected override Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct) => Task.FromResult(true);
@@ -142,5 +171,8 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
     public JobMasterPriority Priority { get; internal set; }
 
-    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(1);
+    public override TimeSpan WarmUpInterval => TimeSpan.FromMilliseconds(125);
+    
+    public override TimeSpan SucceedInterval => TimeSpan.FromMilliseconds(250);
+
 }

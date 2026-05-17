@@ -251,11 +251,6 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             }
         }
 
-        if (bucket?.Status != BucketStatus.Active)
-        {
-            return;
-        }
-
         if (TaskQueueControl.CountAvailability() <= 0)
         {
             return;
@@ -375,17 +370,17 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
            var shouldFlush = DateTime.UtcNow - lastFlushedAtUtc >= TimeSpan.FromSeconds(10)
                           || jobsToFlush.Count >= backgroundAgentWorker.BucketBufferSize;
            
-            if (!shouldFlush) 
+            if (!shouldFlush)
             {
                 return;
             }
-            
-            lastFlushedAtUtc = DateTime.UtcNow;
-            
+
             if (jobsToFlush.Count == 0)
             {
                 return;
             }
+
+            lastFlushedAtUtc = DateTime.UtcNow;
             
             var take = Math.Min(jobsToFlush.Count, backgroundAgentWorker.BucketBufferSize);
             batch = jobsToFlush.GetRange(0, take);

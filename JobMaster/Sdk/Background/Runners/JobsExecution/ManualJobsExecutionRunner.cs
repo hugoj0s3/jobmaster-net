@@ -127,6 +127,12 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
                 await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
                 continue;
             }
+
+            if (result == OnBoardingResult.Cancelled)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+                continue;
+            }
             
             logger.Error($"Unexpected OnBoardingResult. JobId {job.Id} OnBoardingResult {result}", JobMasterLogCategory.Job, job.Id);
             job.MarkAsHeldOnMaster();
