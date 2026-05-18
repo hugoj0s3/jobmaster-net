@@ -12,7 +12,7 @@ using NATS.Client.JetStream.Models;
 using Nito.AsyncEx;
 
 internal sealed class NatsJetStreamConnector
-#if NET8_0_OR_GREATER
+#if NET6_0_OR_GREATER
     : IAsyncDisposable
 #else
     : System.IDisposable
@@ -47,7 +47,7 @@ internal sealed class NatsJetStreamConnector
     public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, CancellationToken ct)
         => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, ct);
 
-#if NET8_0_OR_GREATER
+#if NET6_0_OR_GREATER
     public static ValueTask DisposeAllAsync() => Instance.DisposeAsync();
     public static ValueTask DisposeOneAsync(string agentConnectionId) => Instance.DisposeOneInternalAsync(agentConnectionId);
 #else
@@ -302,7 +302,7 @@ internal sealed class NatsJetStreamConnector
     }
 
 
-#if NET8_0_OR_GREATER
+#if NET6_0_OR_GREATER
     public async ValueTask DisposeAsync()
     {
         foreach (var kv in entries)

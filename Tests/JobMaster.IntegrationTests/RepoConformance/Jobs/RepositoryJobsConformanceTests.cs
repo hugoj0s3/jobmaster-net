@@ -60,6 +60,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     public async Task Update_ShouldPersistChanges()
     {
         var job = NewJob();
+        job.Metadata = "{\"original\":\"meta\"}";
         await Fixture.MasterJobs.AddAsync(job);
 
         var updated = Clone(job);
@@ -81,7 +82,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         updated.ProcessStartedAt = DateTime.UtcNow.AddMinutes(-10);
         updated.FinalizedAt = DateTime.UtcNow.AddMinutes(-1);
         updated.MsgData = "{\"x\":\"y\"}";
-        updated.Metadata = "{\"k\":\"v\"}";
+        updated.Metadata = "{\"should\":\"not-persist\"}";
         updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "updated-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
         await Fixture.MasterJobs.UpdateAsync(updated);
@@ -89,8 +90,16 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
 
         Assert.NotNull(fromDb);
+
+        // Metadata is immutable through UpdateAsync — original value must be preserved
+        AssertJsonEquivalent(job.Metadata, fromDb!.Metadata);
+        Assert.NotEqual(updated.Metadata, fromDb!.Metadata);
+
+        // Restore metadata to original for the full equivalence check on all other fields
+        updated.Metadata = job.Metadata;
         AssertJobEquivalent(updated, fromDb!);
-        // Version should change on upsert
+
+        // Version should change on update
         Assert.False(string.IsNullOrEmpty(fromDb!.Version));
         Assert.NotEqual(originalVersion, fromDb!.Version);
     }
@@ -600,6 +609,69 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task Query_ShouldReturn_ActivelyLockedJobs()
+    {
+        // Regression: QueryAsync defaulted to isLocked=false, silently hiding locked jobs.
+        var def = "defQueryLocked-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var locked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster);
+        locked.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        locked.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var unlocked = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster);
+
+        await Fixture.MasterJobs.AddAsync(locked);
+        await Fixture.MasterJobs.AddAsync(unlocked);
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        Assert.Contains(queried, j => j.Id == locked.Id);
+        Assert.Contains(queried, j => j.Id == unlocked.Id);
+    }
+
+    [Fact]
+    public async Task Query_ShouldReturn_JobsWithExpiredLocks()
+    {
+        var def = "defQueryExpiredLock-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var expiredLock = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster);
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
+        await Fixture.MasterJobs.AddAsync(expiredLock);
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        Assert.Contains(queried, j => j.Id == expiredLock.Id);
+    }
+
+    [Fact]
+    public async Task Query_ShouldReturn_SucceededJob_AfterPartitionLockCleared()
+    {
+        // Regression: MarkAsSucceeded did not clear PartitionLockId/PartitionLockExpiresAt,
+        // so a succeeded job with an active lock was invisible to QueryAsync.
+        var def = "defSucceededLock-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var job = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster);
+        job.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        job.PartitionLockExpiresAt = now.AddMinutes(30);
+        await Fixture.MasterJobs.AddAsync(job);
+
+        job.MarkAsSucceeded();
+        await Fixture.MasterJobs.UpdateAsync(job);
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        var fromDb = Assert.Single(queried, j => j.Id == job.Id);
+        Assert.Equal(JobMasterJobStatus.Succeeded, fromDb.Status);
+        Assert.Null(fromDb.PartitionLockId);
+        Assert.Null(fromDb.PartitionLockExpiresAt);
+    }
+
+    [Fact]
     public async Task AcquireAndFetch_ShouldLockAndReturnMatchingJobs()
     {
         var def = "defAcquire-" + JobMasterRandomUtil.NewGuid4();
@@ -768,6 +840,235 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var firstIds = acquired.Select(x => x.Id).ToHashSet();
         var secondIds = second.Select(x => x.Id).ToHashSet();
         Assert.Empty(firstIds.Intersect(secondIds));
+    }
+
+    // -----------------------------------------------------------------------
+    // Query criteria conformance: one shared dataset, one Theory per criteria
+    // -----------------------------------------------------------------------
+
+    private sealed record QueryDataset(
+        string Def,
+        JobRawModel Unlocked,
+        JobRawModel ActiveLock,
+        JobRawModel ExpiredLock,
+        JobRawModel InBucketHigh,
+        JobRawModel ProcessingLow,
+        JobRawModel Succeeded,
+        JobRawModel Failed,
+        JobRawModel Cancelled,
+        JobRawModel CriticalA,
+        JobRawModel OnMasterB,
+        JobRawModel WithSource,
+        JobRawModel FarFuture,
+        JobRawModel WithDeadline,
+        Guid SpecificSourceId);
+
+    private async Task<QueryDataset> CreateQueryDatasetAsync()
+    {
+        var def = "defQ-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        var specificSourceId = JobMasterRandomUtil.NewGuid4();
+
+        var unlocked = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_A");
+
+        var activeLock = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2), "LANE_A");
+        activeLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        activeLock.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var expiredLock = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(3), "LANE_A");
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
+        var inBucketHigh = NewJob(def, JobMasterJobStatus.InBucket, now.AddMinutes(1), "LANE_A");
+        inBucketHigh.Priority = JobMasterPriority.High;
+        inBucketHigh.BucketId = "bucket-q1";
+        inBucketHigh.AgentConnectionId = Fixture.AgentConnectionId;
+        inBucketHigh.AgentWorkerId = "worker-q1";
+
+        var processingLow = NewJob(def, JobMasterJobStatus.Processing, now.AddMinutes(1), "LANE_B");
+        processingLow.Priority = JobMasterPriority.Low;
+        processingLow.BucketId = "bucket-q1";
+        processingLow.AgentConnectionId = Fixture.AgentConnectionId;
+        processingLow.AgentWorkerId = "worker-q1";
+        processingLow.ProcessDeadline = now.AddMinutes(5);
+
+        var succeeded = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_A");
+        succeeded.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        succeeded.PartitionLockExpiresAt = now.AddMinutes(30);
+        succeeded.MarkAsSucceeded();
+
+        var failed = NewJob(def, JobMasterJobStatus.Failed, now.AddMinutes(1), "LANE_A");
+        var cancelled = NewJob(def, JobMasterJobStatus.Cancelled, now.AddMinutes(1), "LANE_A");
+
+        var criticalA = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_A");
+        criticalA.Priority = JobMasterPriority.Critical;
+
+        var onMasterB = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_B");
+
+        var withSource = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_A");
+        withSource.SourceId = specificSourceId;
+
+        var farFuture = NewJob(def, JobMasterJobStatus.OnMaster, now.AddHours(2), "LANE_A");
+
+        var withDeadline = NewJob(def, JobMasterJobStatus.Processing, now.AddMinutes(1), "LANE_B");
+        withDeadline.BucketId = "bucket-q2";
+        withDeadline.AgentConnectionId = Fixture.AgentConnectionId;
+        withDeadline.AgentWorkerId = "worker-q2";
+        withDeadline.ProcessDeadline = now.AddMinutes(2);
+
+        foreach (var j in new[] { unlocked, activeLock, expiredLock, inBucketHigh, processingLow, succeeded, failed, cancelled, criticalA, onMasterB, withSource, farFuture, withDeadline })
+            await Fixture.MasterJobs.AddAsync(j);
+
+        return new QueryDataset(def, unlocked, activeLock, expiredLock, inBucketHigh, processingLow, succeeded, failed, cancelled, criticalA, onMasterB, withSource, farFuture, withDeadline, specificSourceId);
+    }
+
+    [Theory]
+    [InlineData("NoFilter")]
+    [InlineData("Status_OnMaster")]
+    [InlineData("Status_InBucket")]
+    [InlineData("Status_Processing")]
+    [InlineData("Status_Succeeded")]
+    [InlineData("Status_Failed")]
+    [InlineData("Status_Cancelled")]
+    [InlineData("Priority_High")]
+    [InlineData("Priority_Critical")]
+    [InlineData("Priority_Low")]
+    [InlineData("WorkerLane_A")]
+    [InlineData("WorkerLane_B")]
+    [InlineData("BucketId")]
+    [InlineData("SourceId")]
+    [InlineData("NextPlanAt_To")]
+    [InlineData("NextPlanAt_From")]
+    [InlineData("ProcessDeadlineTo")]
+    public async Task Query_AllCriteria(string testCase)
+    {
+        var d = await CreateQueryDatasetAsync();
+        var now = DateTime.UtcNow;
+
+        var (criteria, mustContain, mustNotContain) = testCase switch
+        {
+            // Regression: QueryAsync must return locked jobs — default isLocked=false was wrong
+            "NoFilter" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, CountLimit = 100 },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id, d.ExpiredLock.Id, d.Succeeded.Id },
+                Array.Empty<Guid>()),
+
+            "Status_OnMaster" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id, d.ExpiredLock.Id, d.CriticalA.Id, d.OnMasterB.Id },
+                new[] { d.InBucketHigh.Id, d.ProcessingLow.Id, d.Succeeded.Id, d.Failed.Id, d.Cancelled.Id }),
+
+            "Status_InBucket" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.InBucket, CountLimit = 100 },
+                new[] { d.InBucketHigh.Id },
+                new[] { d.Unlocked.Id, d.ProcessingLow.Id, d.Succeeded.Id }),
+
+            "Status_Processing" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.Processing, CountLimit = 100 },
+                new[] { d.ProcessingLow.Id, d.WithDeadline.Id },
+                new[] { d.Unlocked.Id, d.InBucketHigh.Id, d.Succeeded.Id }),
+
+            "Status_Succeeded" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.Succeeded, CountLimit = 100 },
+                new[] { d.Succeeded.Id },
+                new[] { d.Unlocked.Id, d.Failed.Id, d.Cancelled.Id }),
+
+            "Status_Failed" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.Failed, CountLimit = 100 },
+                new[] { d.Failed.Id },
+                new[] { d.Unlocked.Id, d.Succeeded.Id, d.Cancelled.Id }),
+
+            "Status_Cancelled" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Status = JobMasterJobStatus.Cancelled, CountLimit = 100 },
+                new[] { d.Cancelled.Id },
+                new[] { d.Unlocked.Id, d.Succeeded.Id, d.Failed.Id }),
+
+            "Priority_High" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Priority = JobMasterPriority.High, CountLimit = 100 },
+                new[] { d.InBucketHigh.Id },
+                new[] { d.Unlocked.Id, d.CriticalA.Id, d.ProcessingLow.Id }),
+
+            "Priority_Critical" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Priority = JobMasterPriority.Critical, CountLimit = 100 },
+                new[] { d.CriticalA.Id },
+                new[] { d.Unlocked.Id, d.InBucketHigh.Id, d.ProcessingLow.Id }),
+
+            "Priority_Low" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, Priority = JobMasterPriority.Low, CountLimit = 100 },
+                new[] { d.ProcessingLow.Id },
+                new[] { d.Unlocked.Id, d.InBucketHigh.Id, d.CriticalA.Id }),
+
+            "WorkerLane_A" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, WorkerLane = "LANE_A", CountLimit = 100 },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id, d.ExpiredLock.Id, d.InBucketHigh.Id, d.CriticalA.Id },
+                new[] { d.OnMasterB.Id, d.ProcessingLow.Id, d.WithDeadline.Id }),
+
+            "WorkerLane_B" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, WorkerLane = "LANE_B", CountLimit = 100 },
+                new[] { d.OnMasterB.Id, d.ProcessingLow.Id, d.WithDeadline.Id },
+                new[] { d.Unlocked.Id, d.InBucketHigh.Id, d.CriticalA.Id }),
+
+            "BucketId" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, BucketId = "bucket-q1", CountLimit = 100 },
+                new[] { d.InBucketHigh.Id, d.ProcessingLow.Id },
+                new[] { d.Unlocked.Id, d.WithDeadline.Id }),
+
+            "SourceId" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, SourceId = d.SpecificSourceId, CountLimit = 100 },
+                new[] { d.WithSource.Id },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id }),
+
+            "NextPlanAt_To" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, NextPlanExecutionAtTo = now.AddMinutes(90), CountLimit = 100 },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id, d.ExpiredLock.Id },
+                new[] { d.FarFuture.Id }),
+
+            "NextPlanAt_From" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, NextPlanExecutionAtFrom = now.AddMinutes(90), CountLimit = 100 },
+                new[] { d.FarFuture.Id },
+                new[] { d.Unlocked.Id, d.ActiveLock.Id }),
+
+            "ProcessDeadlineTo" => (
+                new JobQueryCriteria { JobDefinitionId = d.Def, ProcessDeadlineTo = now.AddMinutes(3), CountLimit = 100 },
+                new[] { d.WithDeadline.Id },
+                new[] { d.ProcessingLow.Id }),
+
+            _ => throw new ArgumentException($"Unknown test case: {testCase}")
+        };
+
+        var results = await Fixture.MasterJobs.QueryAsync(criteria);
+        var ids = results.Select(j => j.Id).ToHashSet();
+
+        foreach (var id in mustContain)
+            Assert.Contains(id, ids);
+        foreach (var id in mustNotContain)
+            Assert.DoesNotContain(id, ids);
+    }
+
+    [Fact]
+    public async Task ProbeForBucketAssignment_ShouldExclude_ActivelyLockedJobs_And_Include_ExpiredLocks()
+    {
+        // ProbeForBucketAssignment intentionally uses isLocked=false — verify it counts correctly
+        var def = "defProbe-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var unlocked = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1));
+        var activeLock = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2));
+        activeLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        activeLock.PartitionLockExpiresAt = now.AddMinutes(30);
+        var expiredLock = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(3));
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
+        await Fixture.MasterJobs.AddAsync(unlocked);
+        await Fixture.MasterJobs.AddAsync(activeLock);
+        await Fixture.MasterJobs.AddAsync(expiredLock);
+
+        var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        var probe = await Fixture.MasterJobs.ProbeForBucketAssignmentAsync(criteria);
+
+        Assert.Equal(2, probe.Count);
+        Assert.NotNull(probe.MinNextPlanExecutionAt);
     }
 
     private static JobRawModel Clone(JobRawModel job)

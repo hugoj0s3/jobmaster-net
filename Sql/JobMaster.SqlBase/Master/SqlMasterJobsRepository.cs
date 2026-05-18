@@ -807,11 +807,23 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("WorkerLane", c.WorkerLane);
         }
 
+        if (!string.IsNullOrEmpty(c.BucketId))
+        {
+            where.Add($"j.{Col(x => x.BucketId)} = @BucketId");
+            args.Add("BucketId", c.BucketId);
+        }
+
         if (c.ExcludeBucketIds is { Count: > 0 })
         {
             var notInClause = sql.InClauseFor($"j.{Col(x => x.BucketId)}", "@ExcludeBucketIds");
             where.Add($"NOT ({notInClause})");
             args.Add("ExcludeBucketIds", c.ExcludeBucketIds.ToArray());
+        }
+
+        if (c.Priority.HasValue)
+        {
+            where.Add($"j.{Col(x => x.Priority)} = @Priority");
+            args.Add("Priority", (int)c.Priority.Value);
         }
 
         var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.JobMetadata);

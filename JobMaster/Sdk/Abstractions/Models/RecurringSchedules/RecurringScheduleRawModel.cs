@@ -162,16 +162,18 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         {
             return false;
         }
-        
+
         Status = RecurringScheduleStatus.Canceled;
         TerminatedAt = DateTime.UtcNow;
-        
+
         BucketId = null;
         AgentConnectionId = null;
         AgentWorkerId = null;
-        
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
+
         IsJobCancellationPending = true;
-        
+
         return true;
     }
 
@@ -181,14 +183,16 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         {
             return;
         }
-        
+
         Status = RecurringScheduleStatus.Inactive;
         TerminatedAt = DateTime.UtcNow;
-        
+
         BucketId = null;
         AgentConnectionId = null;
         AgentWorkerId = null;
-        
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
+
         IsJobCancellationPending = false;
     }
 
@@ -198,14 +202,16 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         {
             return;
         }
-        
+
         Status = RecurringScheduleStatus.Inactive;
         TerminatedAt = terminatedAt ?? DateTime.UtcNow;
-        
+
         BucketId = null;
         AgentConnectionId = null;
         AgentWorkerId = null;
-        
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
+
         IsJobCancellationPending = false;
     }
 

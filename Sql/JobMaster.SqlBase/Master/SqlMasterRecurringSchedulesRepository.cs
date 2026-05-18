@@ -58,8 +58,12 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
         {
             var t = TableName();
             var (whereSql, args) = BuildWhere(queryCriteria);
+            // Exclude actively locked records from the IDs subquery so CountLimit correctly
+            // bounds acquirable candidates rather than including rows the UPDATE guard will reject.
+            args["LockNowUtc"] = nowUtcWithSkew;
+            var acquireWhereSql = whereSql + $" AND (s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
             var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
-            var queryIdsSql = BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
+            var queryIdsSql = BuildQueryIdsToLockSql(acquireWhereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
 
             var updateSql = $@"
 UPDATE {t} {UpdateToLockTableHint}

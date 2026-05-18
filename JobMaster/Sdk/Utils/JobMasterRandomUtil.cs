@@ -1,6 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
-#if NET
+#if NET6_0_OR_GREATER
 using SecurityDriven.Core;
 #endif
 
@@ -22,7 +22,7 @@ internal static class JobMasterRandomUtil
     private static Random Rnd => ThreadLocalRandom.Value;
 #endif
 
-#if NET
+#if NET6_0_OR_GREATER
     private static readonly CryptoRandom Rnd = new();
 #endif
     public static int GetInt() => Rnd.Next();
@@ -36,7 +36,7 @@ internal static class JobMasterRandomUtil
     public static bool GetBoolean() => Rnd.Next() % 2 == 0;
 
     
-#if NET
+#if NET6_0_OR_GREATER
     public static void FillBytes(byte[] buffer) => Rnd.NextBytes(buffer);
     public static void FillBytes(Span<byte> buffer) => Rnd.NextBytes(buffer);
 #endif

@@ -23,13 +23,13 @@ internal class PostgresDbConnectionManager : DbConnectionManager, IDbConnectionM
     }
 
     public override async Task<IDbConnection> OpenAsync(
-        string connectionString, 
+        string connectionString,
         JobMasterConfigDictionary? additionalConnConfig = null,
         ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent)
     {
         var conn = new NpgsqlConnection(connectionString);
         await conn.OpenAsync();
-        
+
         return conn;
     }
 }
