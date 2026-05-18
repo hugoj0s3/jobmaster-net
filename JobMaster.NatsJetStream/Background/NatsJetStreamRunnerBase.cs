@@ -23,7 +23,6 @@ namespace JobMaster.NatsJetStream.Background;
 internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
-    private OperationThrottler ackThrottler = null!;
 
     private bool hasInitialized;
     private Task? consumptionTask;
@@ -61,17 +60,17 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             {
                 invalidBucketStatusTickCount++;
                 
-                if (invalidBucketStatusTickCount >= 2)
-                {
-                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogCategory.Bucket, BucketId);
-                    consumerCts?.Cancel();
-                }
-                else if (invalidBucketStatusTickCount >= 6)
+                if (invalidBucketStatusTickCount >= 6)
                 {
                     logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status still invalid after {invalidBucketStatusTickCount} ticks, disposing CTS", JobMasterLogCategory.Bucket, BucketId);
                     consumerCts?.SafeDispose();
                     consumerCts = null;
                     invalidBucketStatusTickCount = 0;
+                }
+                else if (invalidBucketStatusTickCount >= 2)
+                {
+                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogCategory.Bucket, BucketId);
+                    consumerCts?.Cancel();
                 }
             }
             return OnTickResult.Skipped(TimeSpan.FromSeconds(5));
@@ -94,10 +93,6 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 BackgroundAgentWorker.BucketBufferLeadTime,
                 ct);
             hasInitialized = true;
-            ackThrottler =
-                BackgroundAgentWorker
-                    .Runtime!
-                    .GetOperationLimiterForAgent(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.ClusterId, this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.Id);
         }
 
         // 4. Subscriber Startup & Watchdog
@@ -111,7 +106,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             await PublishHeartbeatAsync(fullBucketAddressId, ct);
             lastHeartbeatPublishedAt = DateTime.UtcNow;
 
-            consumptionTask = Task.Run(async () => await ListenMsgsAsync(consumerToken, consumer!), consumerToken);
+            consumptionTask = Task.Run(async () => await ListenMsgsAsync(consumerToken, consumer!));
 
             taskCreatedAt = DateTime.UtcNow;
             lastReportedTaskStatus = null;
@@ -311,7 +306,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)
     {
         var (signature, correlationId, referenceTimeUtc, messageId) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
-        var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString());
+        using var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString());
         var attempts = ackGuard.FailureCount;
         var natsDeliveryCount = msg.Metadata?.NumDelivered ?? 0;
         
@@ -362,12 +357,11 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // In-memory duplicate detection: if already processing this message, NAK it
         if (!lockMessages.TryAdd(messageId!, 0))
         {
-            bool shouldAck = false;
-            shouldAck = await ShouldAckAfterLockAsync(payload, ct).ConfigureAwait(false);
+            var shouldAck = await ShouldAckAfterLockAsync(payload, ct).ConfigureAwait(false);
 
             if (shouldAck)
             {
-                await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
+                await ackGuard.TryAckSuccessAsync().ConfigureAwait(false);
                 logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
                 return;
             }
@@ -379,6 +373,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
         Stopwatch? sw = null;
         bool success = false;
+        
         var keepAliveInterval = NatsJetStreamConstants.CalcAckProgressKeepAliveInterval(BackgroundAgentWorker.BucketBufferLeadTime);
         using var keepAliveCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         var keepAliveTask = Task.Run(async () =>
@@ -396,15 +391,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
                 try
                 {
-                    using var kaCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
-                    await msg.AckProgressAsync(cancellationToken: kaCts.Token).ConfigureAwait(false);
+                    await ackGuard.TryAckProgressAsync();
                 }
                 catch (Exception)
                 {
                     // AckProgress failed — continue loop so next attempt still fires
                 }
             }
-        }, keepAliveCts.Token);
+        });
 
         try
         {
@@ -418,7 +412,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
             await ProcessPayloadAsync(payload, ackGuard).ConfigureAwait(false);
 
-            await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
+            await ackGuard.TryAckSuccessAsync().ConfigureAwait(false);
             success = true;
             logger.Debug($"{GetRunnerDescription()} acked CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
         }
@@ -439,14 +433,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
             this.logger.Error($"{GetRunnerDescription()}: failure (failureAttempts={ackGuard.FailureCount}). CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", JobMasterLogCategory.Bucket, BucketId, ex);
 
-            await ackGuard.TryNakFailAsync(messageId!).ConfigureAwait(false);
+            await ackGuard.TryNakFailAsync().ConfigureAwait(false);
             this.logger.Debug($"{GetRunnerDescription()}: nak-fail requested (failureAttempts={ackGuard.FailureCount}) with delay CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
         }
         finally
         {
             // Stop keep-alive before unlock/logging — ensures no AckProgress fires after the final ack/nak
             keepAliveCts.Cancel();
-            await keepAliveTask.ConfigureAwait(false);
+            await keepAliveTask;
 
             if (ackGuard.Outcome == AckOutcome.Ack)
             {
@@ -500,6 +494,8 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     {
         this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogCategory.Bucket, BucketId);
 
+        consumerCts?.Cancel();
+
         if (consumptionTask != null)
         {
             using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(7));
@@ -507,6 +503,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             {
                 await consumptionTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
                 this.logger.Info($"{GetRunnerDescription()} subscriber task stopped gracefully for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
             }
             catch (TimeoutException)
             {

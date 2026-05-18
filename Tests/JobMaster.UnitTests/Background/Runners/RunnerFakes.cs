@@ -171,6 +171,19 @@ internal static class RunnerFakes
         public long Count(JobQueryCriteria criteria)
             => ApplyFiltersNoPage(Jobs, criteria).LongCount();
 
+        public Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria criteria)
+        {
+            var filtered = ApplyFiltersNoPage(Jobs, criteria);
+            if (criteria.NextPlanExecutionAtTo.HasValue)
+                filtered = filtered.Where(j => j.NextPlanExecutionAt <= criteria.NextPlanExecutionAtTo);
+            var list = filtered.ToList();
+            return Task.FromResult(new JobProbeResult
+            {
+                Count = list.Count,
+                MinNextPlanExecutionAt = list.Count > 0 ? list.Min(j => j.NextPlanExecutionAt) : null,
+            });
+        }
+
         public IList<JobRawModel> Query(JobQueryCriteria criteria)
             => ApplyFilters(Jobs, criteria).ToList();
 
@@ -345,6 +358,7 @@ internal static class RunnerFakes
         public IList<JobRawModel> Query(JobQueryCriteria criteria) => throw new NotImplementedException();
         public Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
         public long Count(JobQueryCriteria criteria) => throw new NotImplementedException();
+        public Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
         public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
         public Task BulkUpdateAsync(BulkJobUpdateRequest request) => throw new NotImplementedException();
         public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels) => throw new NotImplementedException();

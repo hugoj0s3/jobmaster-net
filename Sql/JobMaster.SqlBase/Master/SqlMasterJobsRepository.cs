@@ -309,6 +309,22 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         return conn.ExecuteScalar<long>(sqlText, args);
     }
 
+    public async Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria)
+    {
+        if (queryCriteria.MetadataFilters.Count > 0)
+            throw new NotSupportedException("ProbeForBucketAssignment does not support MetadataFilters.");
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        
+        var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
+        var t = TableName();
+        var sqlText = @$"
+SELECT COUNT(*) as Count, MIN(j.{Col(x => x.NextPlanExecutionAt)}) as MinNextPlanExecutionAt
+FROM {t} j
+{whereSql}";
+        return await conn.QuerySingleAsync<JobProbeResult>(sqlText, args);
+    }
+
     public void ReleasePartitionLock(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -631,7 +647,7 @@ FROM {TableName()} j
     }
 
 
-    private (string, object) BuildQuerySql(JobQueryCriteria c, int? partitionLockId = null, bool? isLocked = false)
+    private (string, object) BuildQuerySql(JobQueryCriteria c, int? partitionLockId = null, bool? isLocked = null)
     {
         var t = TableName();
         var selectCols = SelectProjection();

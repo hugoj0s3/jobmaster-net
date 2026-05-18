@@ -274,6 +274,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         ProcessDeadline = null;
         NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
         NumberOfFailures++;
         FinalizedAt = DateTime.UtcNow;
     }
@@ -287,6 +289,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         ProcessDeadline = null;
         NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
     }
     
     public void ReSchedule(DateTime scheduledAt)

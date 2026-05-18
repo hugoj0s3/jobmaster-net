@@ -148,6 +148,11 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return operationThrottler.Exec(() => masterJobsRepository.Count(queryCriteria));
     }
 
+    public Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria)
+    {
+        return operationThrottler.ExecAsync(() => masterJobsRepository.ProbeForBucketAssignmentAsync(queryCriteria));
+    }
+
     public JobRawModel? Get(Guid jobId)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Get(jobId));

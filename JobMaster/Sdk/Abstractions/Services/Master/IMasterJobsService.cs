@@ -20,6 +20,12 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc);
     
     long Count(JobQueryCriteria queryCriteria);
+    /// <summary>
+    /// Cheap probe: returns the count of unacquired <c>OnMaster</c> jobs and the earliest
+    /// <c>NextPlanExecutionAt</c>, used by <c>AssignJobsToBucketsRunner</c> to decide
+    /// whether to run the imminent or scan-plan assignment path.
+    /// </summary>
+    Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria);
     bool CheckVersion(Guid jobId, string? version);
     Task<bool> CheckVersionAsync(Guid jobId, string? version);
     JobRawModel? Get(Guid jobId);

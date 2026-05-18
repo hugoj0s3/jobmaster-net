@@ -1005,7 +1005,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     {
         await singleJobUpdateThrottler.ExecAsync(() =>
             this.backgroundAgentWorker.WorkerClusterOperations
-                .ExecWithRetryAsync(o => o.UpdateAsync(jobRawModel, execution), millisecondsToDelay: 50));
+                .ExecWithRetryAsync(async o => await o.UpdateAsync(jobRawModel, execution), millisecondsToDelay: 50));
     }
 
     private void UpdateSingleJob(JobRawModel jobRawModel)

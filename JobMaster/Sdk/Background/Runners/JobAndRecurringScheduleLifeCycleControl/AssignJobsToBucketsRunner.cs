@@ -20,11 +20,13 @@ namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleContr
 /// <summary>
 /// Acquires <c>OnMaster</c> jobs not yet past the transient threshold and assigns them to
 /// the best available bucket, then dispatches each job to its target bucket. Uses a
-/// scan-plan with slot-based distributed locking to coordinate across multiple coordinator
-/// workers. Only runs when the cluster is in <c>ClusterMode.Active</c>. If no bucket can
-/// be found for a job beyond <c>NoBucketFallbackThreshold</c>, a temporary fallback bucket
-/// is created locally to prevent job starvation.
-/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
+/// two-tier probe/execute pattern: every <see cref="SucceedInterval"/> a cheap
+/// <c>COUNT + MIN(NextPlanExecutionAt)</c> probe determines whether to run immediately
+/// (imminent path, time-bucketed distributed lock) or defer to the scan-plan interval
+/// (scan-plan path, slot-based distributed lock). Only runs when the cluster is in
+/// <c>ClusterMode.Active</c>. If no bucket can be found for a job beyond
+/// <c>NoBucketFallbackThreshold</c>, a temporary fallback bucket is created locally
+/// to prevent job starvation.
 /// </summary>
 internal class AssignJobsToBucketsRunner : JobMasterRunner
 {
@@ -35,17 +37,24 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
 
 
-    private ScanPlanResult? lastScanPlanResult;
+    private static readonly int ProbeWindowInSeconds = 10;
+
+    private static string GetProbeWindowKey(DateTime utcNow) =>
+        $"{utcNow:yyyyMMddHHmm}{utcNow.Second / ProbeWindowInSeconds}";
 
     private readonly JobMasterLockKeys lockKeys;
 
     private ManualJobsExecutionRunner? fallBackRunner;
     private FallbackBucketJobsOnboardingSource? fallbackOnboardingSource;
     private BucketModel? fallbackBucket;
+    
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
     private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
 
-    public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(5);
+    private DateTime LastAssignExecution = DateTime.MinValue;
+
+    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(ProbeWindowInSeconds / 2);
+    public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(ProbeWindowInSeconds);
 
     public AssignJobsToBucketsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(
         backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
@@ -93,21 +102,21 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             },
         };
 
-        var scanPlanResult = await ComputeScanPlanAsync(jobQueryCriteria, transferBatchSize, transientThreshold);
-        jobQueryCriteria.CountLimit = scanPlanResult.BatchSize;
+        var probeDiagnosticResult = await ProbeDiagnosticAsync(jobQueryCriteria, transientThreshold);
+        if (probeDiagnosticResult.Action == ProbeDiagnosticAction.Skip)
+            return OnTickResult.Skipped(this);
+        if (probeDiagnosticResult.Action == ProbeDiagnosticAction.Lock)
+            return OnTickResult.Locked(TimeSpan.FromSeconds(ProbeWindowInSeconds));
+        if (probeDiagnosticResult.Action == ProbeDiagnosticAction.Assign && !probeDiagnosticResult.IsImminent)
+            LastAssignExecution = DateTime.UtcNow;
 
-        var bucketAssignerSlot = JobMasterRandomUtil.GetInt(scanPlanResult.LockerMin, scanPlanResult.LockerMax + 1);
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketAssignerLock(bucketAssignerSlot ), durationToLock.Add(TimeSpan.FromMinutes(1)));
-        if (lockToken == null)
-        {
-            return OnTickResult.Locked(TimeSpan.FromSeconds(10));
-        }
+        jobQueryCriteria.CountLimit = probeDiagnosticResult.BatchSize;
 
         var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, startTimeUtc.Add(durationToLock));
         if (jobs.Count <= 0)
         {
-            masterDistributedLockerService.ReleaseLock(lockKeys.BucketAssignerLock(bucketAssignerSlot ), lockToken);
-            return OnTickResult.Skipped(scanPlanResult.Interval);
+            masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
+            return OnTickResult.Skipped(this);
         }
 
         logger.Debug(
@@ -169,14 +178,9 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
             JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
-        masterDistributedLockerService.ReleaseLock(lockKeys.BucketAssignerLock(bucketAssignerSlot ), lockToken);
+        masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
 
-        if (BackgroundAgentWorker.IsOnWarmUpTime() && WarmUpInterval < scanPlanResult.Interval)
-        {
-            return OnTickResult.Success(WarmUpInterval);
-        }
-
-        return OnTickResult.Success(scanPlanResult.Interval);
+        return OnTickResult.Success(this);
     }
     
     public override async Task OnStopAsync()
@@ -222,29 +226,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         }
     }
 
-    private async Task<ScanPlanResult> ComputeScanPlanAsync(JobQueryCriteria jobQueryCriteria, int transferBatchSize,
-        TimeSpan transientThreshold)
-    {
-        if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
-        {
-            var countJobs = masterJobsService.Count(jobQueryCriteria);
-            var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
-            if (workerCount <= 0)
-            {
-                workerCount = 1;
-            }
-
-            lastScanPlanResult = ScanPlanner.ComputeScanPlanHalfWindow(
-                countJobs,
-                workerCount,
-                transferBatchSize,
-                transientThreshold,
-                lockerLane: 0);
-        }
-        
-        return lastScanPlanResult;
-    }
-    
     private async Task<(HandleJobBucketAssignmentResult, BucketModel?)> HandleJobBucketAssignmentAsync(
         JobRawModel job,
         CancellationToken ct)
@@ -311,8 +292,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         masterJobsService.ReleasePartitionLock(job.Id);
     }
 
-    public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(30);
-
     private async Task<BucketModel?> GetBucketAvailableForJobAsync(JobRawModel job)
     {
         return await masterBucketsService.SelectBucketAsync(
@@ -378,5 +357,54 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         FallbackAssignment,
         Failed,
         Canceled
+    }
+
+    private async Task<ProbeDiagnosticResult> ProbeDiagnosticAsync(JobQueryCriteria jobQueryCriteria, TimeSpan transientThreshold)
+    {
+        var durationToLock = JobMasterConstants.DurationToLockRecords.Add(TimeSpan.FromMinutes(1));
+        var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;
+        var probeResult = await this.masterJobsService.ProbeForBucketAssignmentAsync(jobQueryCriteria);
+
+        if (probeResult.MinNextPlanExecutionAt.HasValue &&
+            probeResult.MinNextPlanExecutionAt <= DateTime.UtcNow.AddSeconds(ProbeWindowInSeconds))
+        {
+            var windowKey = GetProbeWindowKey(probeResult.MinNextPlanExecutionAt.Value);
+            var lockKey = lockKeys.BucketAssignerImminentLock(windowKey);
+            var token = this.masterDistributedLockerService.TryLock(lockKey, durationToLock);
+            if (!string.IsNullOrEmpty(token))
+            {
+                return ProbeDiagnosticResult.AssignImminent(transferBatchSize, lockKey, token!);
+            }
+
+            return ProbeDiagnosticResult.Locked();
+        }
+
+        var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
+        if (workerCount <= 0)
+        {
+            workerCount = 1;
+        }
+
+        var scanResult = ScanPlanner.ComputeScanPlanHalfWindow(
+            probeResult.Count,
+            workerCount,
+            transferBatchSize,
+            transientThreshold,
+            lockerLane: 0);
+
+        if ((DateTime.UtcNow - LastAssignExecution) < scanResult.Interval)
+        {
+            return ProbeDiagnosticResult.Skip();
+        }
+
+        var randomKey = JobMasterRandomUtil.GetInt(scanResult.LockerMin, scanResult.LockerMax + 1);
+        var lockKey2 = lockKeys.BucketAssignerLock(randomKey);
+        var token2 = this.masterDistributedLockerService.TryLock(lockKey2, durationToLock);
+        if (!string.IsNullOrEmpty(token2))
+        {
+            return ProbeDiagnosticResult.Assign(transferBatchSize, lockKey2, token2!);
+        }
+
+        return ProbeDiagnosticResult.Locked();
     }
 }

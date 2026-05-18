@@ -780,8 +780,8 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 if (allJobsFromDb.Count >= expectedTotal || DateTime.UtcNow >= dbPollDeadline)
                     break;
 
-                output.WriteLine($"[DB Poll] Found {allJobsFromDb.Count}/{expectedTotal} – retrying in 1s…");
-                await Task.Delay(TimeSpan.FromSeconds(1));
+                output.WriteLine($"[DB Poll] Found {allJobsFromDb.Count}/{expectedTotal} – retrying in 15s…");
+                await Task.Delay(TimeSpan.FromSeconds(15));
             }
 
             var totalSucceededInDb = dbValidationResults.Sum(x => x.Value.succeeded);
