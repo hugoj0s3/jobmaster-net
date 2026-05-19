@@ -1,4 +1,4 @@
-using System.Text;
+﻿using System.Text;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Utils;
@@ -9,25 +9,25 @@ using NATS.Client.KeyValueStore;
 
 namespace JobMaster.NatsJetStream.Agents;
 
-internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResolver
+internal sealed class NatsJetStreamAgentFingerprintResolver : IAgentFingerprintResolver
 {
     private NatsConnection? natsConnection;
     private INatsJSContext? kvContext;
     private JobMasterAgentConnectionConfig? config;
-    private const string KvSuffixStoreName = "agent_footprints";
+    private const string KvSuffixStoreName = "agent_fingerprints";
     public string AgentRepoTypeId => NatsJetStreamConstants.RepositoryTypeId;
 
-    public async ValueTask<string> GiveYourFootprintAsync(string clusterId, string agentConnectionId)
+    public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
         if (natsConnection == null)
-            throw new InvalidOperationException("NatsJetStreamAgentFootprintResolver not initialized. Call Initialize first.");
+            throw new InvalidOperationException("NatsJetStreamAgentFingerprintResolver not initialized. Call Initialize first.");
 
         var kvStore = await EnsureKvStoreAsync(clusterId);
 
         var key = agentConnectionId;
         key = key.Replace("-", "_").Replace(".", "_").Replace(":", "_");
 
-        // 1. Try get existing footprint
+        // 1. Try get existing fingerprint
         try
         {
             var entry = await kvStore!.GetEntryAsync<string>(key);
@@ -41,14 +41,14 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
             // Key doesn't exist, continue to create
         }
 
-        // 2. Generate new footprint
-        var footprint = JobMasterRandomUtil.NewGuid4().ToString("N");
+        // 2. Generate new fingerprint
+        var fingerprint = JobMasterRandomUtil.NewGuid4().ToString("N");
 
         // 3. Try to create (insert only if missing)
         try
         {
-            await kvStore!.CreateAsync(key, footprint);
-            return footprint;
+            await kvStore!.CreateAsync(key, fingerprint);
+            return fingerprint;
         }
         catch (NatsKVCreateException)
         {
@@ -70,10 +70,10 @@ internal sealed class NatsJetStreamAgentFootprintResolver : IAgentFootprintResol
         }
         catch (NatsKVKeyNotFoundException)
         {
-            // Shouldn't happen, but fallback to generated footprint
+            // Shouldn't happen, but fallback to generated fingerprint
         }
 
-        return footprint;
+        return fingerprint;
     }
     
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)

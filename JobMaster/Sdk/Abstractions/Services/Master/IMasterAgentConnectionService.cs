@@ -8,7 +8,7 @@ internal interface IMasterAgentConnectionService : IJobMasterClusterAwareService
     Task<AgentConnectionModel> SaveConnectionAsync(
         AgentConnectionId agentConnectionId, 
         string repositoryTypeId, 
-        string footprint,
+        string fingerprint,
         bool protectChanges);
     Task<IList<AgentConnectionModel>> QueryAllAsync(bool useCache = true);
     Task<bool> SafeDeleteConnectionAsync(AgentConnectionId agentConnectionId);

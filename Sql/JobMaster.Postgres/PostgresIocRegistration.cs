@@ -1,4 +1,4 @@
-using JobMaster.Postgres.Agents;
+﻿using JobMaster.Postgres.Agents;
 using JobMaster.Postgres.Exceptions;
 using JobMaster.Postgres.Master;
 using JobMaster.SqlBase.Connections;
@@ -31,7 +31,7 @@ internal static class PostgresIocRegistration
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
         registration.ClusterServices.AddKeyedSingleton<IDbConnectionManager, PostgresDbConnectionManager>(RepositoryType);
-        registration.AddFootprintResolver<PostgresAgentFootprintResolver>(RepositoryType);
+        registration.AddFingerprintResolver<PostgresAgentFingerprintResolver>(RepositoryType);
         registration.AddRepositoryDispatcher<PostgresJobsDispatcherRepository, PostgresRawMessagesDispatcherRepository, PostgresRawMessagesDispatcherRepository>(PostgresRepositoryConstants.RepositoryTypeId);
     }
 }

@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions.Background;
+﻿using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -29,7 +29,7 @@ internal class CleanupDeadAgentConnectionsRunner : JobMasterRunner
             var allConnections = await masterAgentConnectionService.QueryAllAsync(useCache: false);
             
             var connectionsToDelete = allConnections
-                .Where(c => (c.LastHeartbeatAt ?? c.FootprintCreatedAt) < DateTime.UtcNow - DeadAgentConnectionThreshold)
+                .Where(c => (c.LastHeartbeatAt ?? c.FingerprintCreatedAt) < DateTime.UtcNow - DeadAgentConnectionThreshold)
                 .Where(c => !c.ProtectConnectionChanges)
                 .ToList();
             

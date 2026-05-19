@@ -1,4 +1,4 @@
-using JobMaster.Abstractions;
+﻿using JobMaster.Abstractions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -60,10 +60,10 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         ClusterServices.AddSingleton(factory);
     }
     
-    public void AddFootprintResolver<TFootprintResolver>(string repositoryTypeId) 
-        where TFootprintResolver : class, IAgentFootprintResolver
+    public void AddFingerprintResolver<TFingerprintResolver>(string repositoryTypeId) 
+        where TFingerprintResolver : class, IAgentFingerprintResolver
     {
-        ClusterServices.AddKeyedTransient<IAgentFootprintResolver, TFootprintResolver>(ClusterServiceKeys.GetFootprintResolverKey(repositoryTypeId));
+        ClusterServices.AddKeyedTransient<IAgentFingerprintResolver, TFingerprintResolver>(ClusterServiceKeys.GetFingerprintResolverKey(repositoryTypeId));
     }
     
     public void AddRepositoryDispatcher<TRepositoryDispatcher, TSavePendingRepository, TProcessingRepository>(string repositoryTypeId) 

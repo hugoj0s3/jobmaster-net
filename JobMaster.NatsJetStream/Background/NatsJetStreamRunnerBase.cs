@@ -95,7 +95,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             hasInitialized = true;
         }
 
-        // 4. Subscriber Startup & Watchdog
+        // 3. Subscriber Startup & Watchdog
         if (consumptionTask == null)
         {
             logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogCategory.Bucket, BucketId);

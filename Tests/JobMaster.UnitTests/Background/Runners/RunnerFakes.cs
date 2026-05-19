@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
@@ -19,7 +19,7 @@ namespace JobMaster.UnitTests.Background.Runners;
 
 internal static class RunnerFakes
 {
-    // ── FakeDistributedLocker ─────────────────────────────────────────────────
+    // â”€â”€ FakeDistributedLocker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeDistributedLocker : IMasterDistributedLockerService
     {
@@ -67,7 +67,7 @@ internal static class RunnerFakes
             => _locks.Remove(key);
     }
 
-    // ── FakeAgentWorkersService ───────────────────────────────────────────────
+    // â”€â”€ FakeAgentWorkersService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeAgentWorkersService : IMasterAgentWorkersService
     {
@@ -106,7 +106,7 @@ internal static class RunnerFakes
             => throw new NotImplementedException();
     }
 
-    // ── FakeJobsService ───────────────────────────────────────────────────────
+    // â”€â”€ FakeJobsService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeJobsService : IMasterJobsService
     {
@@ -229,7 +229,7 @@ internal static class RunnerFakes
         public Task<JobRawModel?> GetAsync(Guid jobId) => Task.FromResult(Get(jobId));
     }
 
-    // ── FakeBucketsService ────────────────────────────────────────────────────
+    // â”€â”€ FakeBucketsService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeBucketsService : IMasterBucketsService
     {
@@ -306,7 +306,7 @@ internal static class RunnerFakes
         public int Count(MasterBucketQueryCriteria criteria) => throw new NotImplementedException();
     }
 
-    // ── FakeClusterConfigService ──────────────────────────────────────────────
+    // â”€â”€ FakeClusterConfigService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeClusterConfigService : IMasterClusterConfigurationService
     {
@@ -320,7 +320,7 @@ internal static class RunnerFakes
         public bool IsSaved() => Config != null;
     }
 
-    // ── FakeJobsRepository ────────────────────────────────────────────────────
+    // â”€â”€ FakeJobsRepository â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeJobsRepository : IMasterJobsRepository
     {
@@ -368,7 +368,7 @@ internal static class RunnerFakes
             => throw new NotImplementedException();
     }
 
-    // ── FakeGenericRecordRepository ───────────────────────────────────────────
+    // â”€â”€ FakeGenericRecordRepository â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeGenericRecordRepository : IMasterGenericRecordRepository
     {
@@ -423,7 +423,7 @@ internal static class RunnerFakes
         public Task<int> CountAsync(string groupId, GenericRecordQueryCriteria? criteria = null) => throw new NotImplementedException();
     }
 
-    // ── FakeLogsRepository ───────────────────────────────────────────────────
+    // â”€â”€ FakeLogsRepository â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeLogsRepository : IMasterLogsRepository
     {
@@ -454,7 +454,7 @@ internal static class RunnerFakes
         public Task<LogItem?> GetAsync(Guid id) => throw new NotImplementedException();
     }
 
-    // ── FakeRecurringSchedulesRepository ─────────────────────────────────────
+    // â”€â”€ FakeRecurringSchedulesRepository â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeRecurringSchedulesRepository : IMasterRecurringSchedulesRepository
     {
@@ -499,7 +499,7 @@ internal static class RunnerFakes
             => throw new NotImplementedException();
     }
 
-    // ── FakeAgentJobsDispatcherService ────────────────────────────────────────
+    // â”€â”€ FakeAgentJobsDispatcherService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeAgentJobsDispatcherService : IAgentJobsDispatcherService
     {
@@ -577,7 +577,7 @@ internal static class RunnerFakes
             => throw new NotImplementedException();
     }
 
-    // ── FakeHeartbeatService ──────────────────────────────────────────────────
+    // â”€â”€ FakeHeartbeatService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeHeartbeatService : IMasterHeartbeatService
     {
@@ -595,7 +595,7 @@ internal static class RunnerFakes
             => new Dictionary<string, DateTime?>();
     }
 
-    // ── FakeHostService ───────────────────────────────────────────────────────
+    // â”€â”€ FakeHostService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeHostService : IMasterHostService
     {
@@ -624,7 +624,7 @@ internal static class RunnerFakes
         public Task<HostId> RegisterNewHostAsync() => throw new NotImplementedException();
     }
 
-    // ── FakeAgentConnectionService ────────────────────────────────────────────
+    // â”€â”€ FakeAgentConnectionService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeAgentConnectionService : IMasterAgentConnectionService
     {
@@ -633,7 +633,7 @@ internal static class RunnerFakes
         public List<AgentConnectionModel> Connections { get; } = new();
         public List<string> DeletedConnectionIds { get; } = new();
 
-        /// <summary>Key = AgentConnectionId.IdValue → whether connection owns buckets.</summary>
+        /// <summary>Key = AgentConnectionId.IdValue â†’ whether connection owns buckets.</summary>
         public Dictionary<string, bool> HasBucketsMap { get; } = new();
 
         public Task<IList<AgentConnectionModel>> QueryAllAsync(bool useCache = true)
@@ -654,14 +654,14 @@ internal static class RunnerFakes
         }
 
         public Task<AgentConnectionModel> SaveConnectionAsync(
-            AgentConnectionId agentConnectionId, string repositoryTypeId, string footprint, bool protectChanges)
+            AgentConnectionId agentConnectionId, string repositoryTypeId, string fingerprint, bool protectChanges)
             => throw new NotImplementedException();
 
         public Task<AgentConnectionModel?> GetConnectionAsync(AgentConnectionId agentConnectionId, bool useCache = true)
             => throw new NotImplementedException();
     }
 
-    // ── FakeMasterRecurringSchedulesService ──────────────────────────────────
+    // â”€â”€ FakeMasterRecurringSchedulesService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeMasterRecurringSchedulesService : IMasterRecurringSchedulesService
     {
@@ -751,7 +751,7 @@ internal static class RunnerFakes
         public Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId) => throw new NotImplementedException();
     }
 
-    // ── FakeRecurringSchedulePlanner ──────────────────────────────────────────
+    // â”€â”€ FakeRecurringSchedulePlanner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeRecurringSchedulePlanner : IRecurringSchedulePlanner
     {
@@ -767,7 +767,7 @@ internal static class RunnerFakes
         }
     }
 
-    // ── FakeRecentlyInsertedRecurringScheduleQueue ────────────────────────────
+    // â”€â”€ FakeRecentlyInsertedRecurringScheduleQueue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     internal sealed class FakeRecentlyInsertedRecurringScheduleQueue : IRecentlyInsertedRecurringScheduleQueue
     {

@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -47,7 +47,7 @@ internal sealed record RunnerFixture(
         var clusterConnConfig = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);
         clusterConnConfig.MarkAsReady();
 
-        // ── fakes ──────────────────────────────────────────────────────────────
+        // â”€â”€ fakes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var locker = new RunnerFakes.FakeDistributedLocker();
         var agentWorkers = new RunnerFakes.FakeAgentWorkersService();
         var jobsService = new RunnerFakes.FakeJobsService();
@@ -65,7 +65,7 @@ internal sealed record RunnerFixture(
         var recurringSchedulePlanner = new RunnerFakes.FakeRecurringSchedulePlanner();
         var recentlyInsertedQueue = new RunnerFakes.FakeRecentlyInsertedRecurringScheduleQueue();
 
-        // ── mocks ──────────────────────────────────────────────────────────────
+        // â”€â”€ mocks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var workerClusterOps = new Mock<IWorkerClusterOperations>(MockBehavior.Loose);
         var logger = new Mock<IJobMasterLogger>(MockBehavior.Loose);
 
@@ -89,7 +89,7 @@ internal sealed record RunnerFixture(
             .Returns<Func<IWorkerClusterOperations, Task>, int, int>(
                 (func, _, _) => func(workerClusterOps.Object));
 
-        // ── background worker ──────────────────────────────────────────────────
+        // â”€â”€ background worker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         var worker = new Mock<IJobMasterBackgroundAgentWorker>(MockBehavior.Loose);
         worker.SetupGet(x => x.ClusterConnConfig).Returns(clusterConnConfig);
         worker.SetupGet(x => x.AgentWorkerId).Returns(workerId);
@@ -153,7 +153,7 @@ internal sealed record RunnerFixture(
             clusterId);
     }
 
-    // ── bucket helpers ─────────────────────────────────────────────────────────
+    // â”€â”€ bucket helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public static BucketModel ActiveBucket(string clusterId, string bucketId, string workerId = "fake-worker")
         => new(clusterId)
@@ -205,7 +205,7 @@ internal sealed record RunnerFixture(
             LastStatusChangeAt = DateTime.UtcNow.AddSeconds(-30),
         };
 
-    // ── job helpers ────────────────────────────────────────────────────────────
+    // â”€â”€ job helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public static JobRawModel FinalizedJob(DateTime finalizedAt, JobMasterJobStatus status = JobMasterJobStatus.Succeeded)
         => new()
@@ -215,14 +215,14 @@ internal sealed record RunnerFixture(
             FinalizedAt = finalizedAt,
         };
 
-    // ── connection helpers ─────────────────────────────────────────────────────
+    // â”€â”€ connection helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public static AgentConnectionModel AliveAgentConnection(string clusterId, string name = "fake-agent")
         => new(clusterId)
         {
             Id = new AgentConnectionId(clusterId, name),
             LastHeartbeatAt = DateTime.UtcNow,
-            FootprintCreatedAt = DateTime.UtcNow,
+            FingerprintCreatedAt = DateTime.UtcNow,
         };
 
     public static AgentConnectionModel DeadAgentConnection(
@@ -233,11 +233,11 @@ internal sealed record RunnerFixture(
         {
             Id = new AgentConnectionId(clusterId, name),
             LastHeartbeatAt = DateTime.UtcNow.AddMinutes(-10),
-            FootprintCreatedAt = DateTime.UtcNow.AddHours(-1),
+            FingerprintCreatedAt = DateTime.UtcNow.AddHours(-1),
             ProtectConnectionChanges = protectChanges,
         };
 
-    // ── host helpers ───────────────────────────────────────────────────────────
+    // â”€â”€ host helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public static HostModel AliveHost(string clusterId, string hostName = "fake-host")
         => new(clusterId)
@@ -253,7 +253,7 @@ internal sealed record RunnerFixture(
             LastHeartbeat = DateTime.UtcNow.AddMinutes(-10),
         };
 
-    // ── recurring schedule helpers ─────────────────────────────────────────────
+    // â”€â”€ recurring schedule helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     public static RecurringScheduleRawModel ActiveSchedule(string clusterId)
         => new(clusterId)

@@ -1027,6 +1027,43 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task AcquireAndFetch_ConcurrentCalls_ShouldNotDoubleAcquire_AnySchedule()
+    {
+        var def = "defAcquireConcurrent-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        const int scheduleCount = 100;
+        const int callers = 10;
+
+        for (var i = 0; i < scheduleCount; i++)
+        {
+            var s = NewSchedule(jobDefinitionId: def);
+            s.LastPlanCoverageUntil = now.AddHours(i);
+            await Fixture.MasterRecurringSchedules.AddAsync(s);
+        }
+
+        var lockIds = Enumerable.Range(0, callers).Select(_ => JobMasterRandomUtil.NewGuid4()).ToArray();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = scheduleCount };
+
+        var tasks = lockIds.Select(id => Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, id, now.AddMinutes(30))).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        var allAcquiredIds = results.SelectMany(r => r.Select(s => s.Id)).ToList();
+
+        // No schedule must appear in more than one caller's result
+        Assert.Equal(allAcquiredIds.Count, allAcquiredIds.Distinct().Count());
+
+        // Together all callers must have claimed every schedule exactly once
+        Assert.Equal(scheduleCount, allAcquiredIds.Count);
+
+        // Each returned schedule must carry the lockId of the caller that acquired it
+        for (var c = 0; c < callers; c++)
+        {
+            var expectedLockId = lockIds[c];
+            Assert.All(results[c], s => Assert.Equal(expectedLockId, s.PartitionLockId));
+        }
+    }
+
+    [Fact]
     public async Task AcquireAndFetch_ShouldRespectCountLimit()
     {
         var def = "defAcquireLimit-" + JobMasterRandomUtil.NewGuid4();

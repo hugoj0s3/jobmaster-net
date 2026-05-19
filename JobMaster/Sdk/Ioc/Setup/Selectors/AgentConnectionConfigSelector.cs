@@ -22,6 +22,13 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         def.AgentConnectionName = agentConnName;
         return this;
     }
+    
+    public IAgentConnectionConfigSelector ProtectConnectionChanges(bool protectConnectionChanges)
+    {
+        def.ProtectConnectionChanges = protectConnectionChanges;
+        return this;
+    }
+
 
     public IAgentConnectionConfigSelector AgentRepoType(string repoType)
     {
@@ -57,16 +64,10 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         def.AgentAdditionalConnConfig.SetValue(namespaceKey, key, value);
         return this;
     }
-
+    
     public IAgentConnectionConfigSelector AgentRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
         def.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
-        return this;
-    }
-    
-    public IAgentConnectionConfigSelector ProtectConnectionChanges(bool protectConnectionChanges)
-    {
-        def.ProtectConnectionChanges = protectConnectionChanges;
         return this;
     }
 }

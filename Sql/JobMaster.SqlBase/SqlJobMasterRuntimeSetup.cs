@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
@@ -182,13 +182,13 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
             }
 
-            // agent_conn_footprint
-            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_footprint");
-            var footprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(footprintTableExistsSql, transaction: agentTransaction);
-            if (!footprintTableExists)
+            // agent_conn_fingerprint
+            var fingerprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_fingerprint");
+            var fingerprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(fingerprintTableExistsSql, transaction: agentTransaction);
+            if (!fingerprintTableExists)
             {
-                var footprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFootprint(agentSql, agentTablePrefix);
-                await agentDbConnection.ExecuteAsync(footprintTableScript, transaction: agentTransaction);
+                var fingerprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFingerprint(agentSql, agentTablePrefix);
+                await agentDbConnection.ExecuteAsync(fingerprintTableScript, transaction: agentTransaction);
             }
                 
             agentTransaction.Commit();

@@ -1,4 +1,4 @@
-using FluentAssertions;
+﻿using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Background.Runners;
@@ -21,7 +21,7 @@ public class CleanupDeadAgentConnectionsRunnerTests
         {
             Id = new AgentConnectionId(clusterId, name),
             LastHeartbeatAt = DateTime.UtcNow,
-            FootprintCreatedAt = DateTime.UtcNow,
+            FingerprintCreatedAt = DateTime.UtcNow,
         };
 
     private static AgentConnectionModel StaleConnection(string clusterId, string name, bool protect = false)
@@ -29,11 +29,11 @@ public class CleanupDeadAgentConnectionsRunnerTests
         {
             Id = new AgentConnectionId(clusterId, name),
             LastHeartbeatAt = DateTime.UtcNow.AddMinutes(-(DeadThresholdMinutes + 1)),
-            FootprintCreatedAt = DateTime.UtcNow.AddHours(-2),
+            FingerprintCreatedAt = DateTime.UtcNow.AddHours(-2),
             ProtectConnectionChanges = protect,
         };
 
-    // ── OnTickAsync ────────────────────────────────────────────────────────────
+    // â”€â”€ OnTickAsync â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     [Fact]
     public async Task OnTickAsync_WhenAllConnectionsAlive_ShouldReturnSuccess()
@@ -95,12 +95,12 @@ public class CleanupDeadAgentConnectionsRunnerTests
     public async Task OnTickAsync_WhenConnectionIsRecentlyStale_ShouldNotDeleteIt()
     {
         var f = RunnerFixture.Create();
-        // Heartbeat is just 2 minutes ago — within the 10-minute threshold.
+        // Heartbeat is just 2 minutes ago â€” within the 10-minute threshold.
         var recent = new AgentConnectionModel(f.ClusterId)
         {
             Id = new AgentConnectionId(f.ClusterId, "recent-conn"),
             LastHeartbeatAt = DateTime.UtcNow.AddMinutes(-2),
-            FootprintCreatedAt = DateTime.UtcNow.AddHours(-1),
+            FingerprintCreatedAt = DateTime.UtcNow.AddHours(-1),
         };
         f.AgentConnectionService.Connections.Add(recent);
 

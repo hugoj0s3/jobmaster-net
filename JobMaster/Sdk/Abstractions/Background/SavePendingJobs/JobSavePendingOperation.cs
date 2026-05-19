@@ -150,7 +150,7 @@ internal class JobSavePendingOperation
         {
             jobRaw.AssignToBucket(currentBucket);
             
-            logger.Debug("Short-circuit adding direct into the execution engine", JobMasterLogCategory.Job, jobRaw.Id);
+            logger.Debug("Short-circuit: adding directly into the execution engine", JobMasterLogCategory.Job, jobRaw.Id);
             try
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
@@ -163,7 +163,7 @@ internal class JobSavePendingOperation
             
             try
             {
-                // It better force for short-circuit and it check earlier.
+                // Force is safe here; capacity was already checked above.
                 var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                 if (result == OnBoardingResult.Accepted)
                 {

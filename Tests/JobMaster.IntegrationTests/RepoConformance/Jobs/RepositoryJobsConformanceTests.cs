@@ -812,6 +812,42 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task AcquireAndFetch_ConcurrentCalls_ShouldNotDoubleAcquire_AnyJob()
+    {
+        var def = "defAcquireConcurrent-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        const int jobCount = 100;
+        const int callers = 10;
+
+        for (var i = 0; i < jobCount; i++)
+        {
+            var j = NewJob(jobDefinitionId: def, status: JobMasterJobStatus.OnMaster, scheduledAt: now.AddMinutes(i + 1));
+            await Fixture.MasterJobs.AddAsync(j);
+        }
+
+        var lockIds = Enumerable.Range(0, callers).Select(_ => JobMasterRandomUtil.NewGuid4()).ToArray();
+        var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = jobCount };
+
+        var tasks = lockIds.Select(id => Fixture.MasterJobs.AcquireAndFetchAsync(criteria, id, now.AddMinutes(30))).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        var allAcquiredIds = results.SelectMany(r => r.Select(j => j.Id)).ToList();
+
+        // No job must appear in more than one caller's result
+        Assert.Equal(allAcquiredIds.Count, allAcquiredIds.Distinct().Count());
+
+        // Together all callers must have claimed every job exactly once
+        Assert.Equal(jobCount, allAcquiredIds.Count);
+
+        // Each returned job must carry the lockId of the caller that acquired it
+        for (var c = 0; c < callers; c++)
+        {
+            var expectedLockId = lockIds[c];
+            Assert.All(results[c], j => Assert.Equal(expectedLockId, j.PartitionLockId));
+        }
+    }
+
+    [Fact]
     public async Task AcquireAndFetch_ShouldRespectCountLimit()
     {
         var def = "defAcquireLimit-" + JobMasterRandomUtil.NewGuid4();
@@ -840,6 +876,258 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var firstIds = acquired.Select(x => x.Id).ToHashSet();
         var secondIds = second.Select(x => x.Id).ToHashSet();
         Assert.Empty(firstIds.Intersect(secondIds));
+    }
+
+    // -----------------------------------------------------------------------
+    // BulkUpdate (BulkJobUpdateRequest) conformance tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task BulkUpdate_Request_ShouldApply_SpecifiedFields_ToTargetedJobs_Only()
+    {
+        var def = "defBulkReq-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var j1 = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_A");
+        var j2 = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2), "LANE_A");
+        var j3 = NewJob(def, JobMasterJobStatus.InBucket, now.AddMinutes(3), "LANE_B");
+        j3.BucketId = "bucket-x";
+        j3.AgentConnectionId = Fixture.AgentConnectionId;
+        j3.AgentWorkerId = "worker-x";
+
+        await Fixture.MasterJobs.AddAsync(j1);
+        await Fixture.MasterJobs.AddAsync(j2);
+        await Fixture.MasterJobs.AddAsync(j3);
+
+        var request = BulkJobUpdateRequest.Cancel(new[] { j1.Id, j2.Id });
+        await Fixture.MasterJobs.BulkUpdateAsync(request);
+
+        var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
+        var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+        var fromDb3 = await Fixture.MasterJobs.GetAsync(j3.Id);
+
+        Assert.Equal(JobMasterJobStatus.Cancelled, fromDb1!.Status);
+        Assert.Equal(JobMasterJobStatus.Cancelled, fromDb2!.Status);
+        // j3 was not in the target set — must be unchanged
+        Assert.Equal(JobMasterJobStatus.InBucket, fromDb3!.Status);
+        Assert.Equal("bucket-x", fromDb3!.BucketId);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Request_ShouldNotChange_NonSpecifiedFields()
+    {
+        var def = "defBulkReqFields-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var job = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(1), "LANE_KEEP");
+        job.Priority = JobMasterPriority.Critical;
+        job.Timeout = TimeSpan.FromSeconds(77);
+        job.MaxNumberOfRetries = 5;
+        job.NumberOfFailures = 2;
+        await Fixture.MasterJobs.AddAsync(job);
+
+        // Only update Status; all other fields must survive untouched
+        var request = BulkJobUpdateRequest.For(
+            new[] { job.Id },
+            BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.Cancelled));
+        await Fixture.MasterJobs.BulkUpdateAsync(request);
+
+        var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
+
+        Assert.Equal(JobMasterJobStatus.Cancelled, fromDb!.Status);
+        Assert.Equal("LANE_KEEP", fromDb.WorkerLane);
+        Assert.Equal(JobMasterPriority.Critical, fromDb.Priority);
+        Assert.Equal(TimeSpan.FromSeconds(77), fromDb.Timeout);
+        Assert.Equal(5, fromDb.MaxNumberOfRetries);
+        Assert.Equal(2, fromDb.NumberOfFailures);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Request_ShouldRespect_ExcludeStatuses()
+    {
+        var def = "defBulkExclude-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var onMaster  = NewJob(def, JobMasterJobStatus.OnMaster,   now.AddMinutes(1));
+        var succeeded = NewJob(def, JobMasterJobStatus.Succeeded,  now.AddMinutes(2));
+        var failed    = NewJob(def, JobMasterJobStatus.Failed,     now.AddMinutes(3));
+        var cancelled = NewJob(def, JobMasterJobStatus.Cancelled,  now.AddMinutes(4));
+
+        await Fixture.MasterJobs.AddAsync(onMaster);
+        await Fixture.MasterJobs.AddAsync(succeeded);
+        await Fixture.MasterJobs.AddAsync(failed);
+        await Fixture.MasterJobs.AddAsync(cancelled);
+
+        // Cancel excludes all final statuses (Succeeded, Failed, Cancelled)
+        var request = BulkJobUpdateRequest.Cancel(new[] { onMaster.Id, succeeded.Id, failed.Id, cancelled.Id });
+        await Fixture.MasterJobs.BulkUpdateAsync(request);
+
+        Assert.Equal(JobMasterJobStatus.Cancelled,  (await Fixture.MasterJobs.GetAsync(onMaster.Id))!.Status);
+        Assert.Equal(JobMasterJobStatus.Succeeded,  (await Fixture.MasterJobs.GetAsync(succeeded.Id))!.Status);
+        Assert.Equal(JobMasterJobStatus.Failed,     (await Fixture.MasterJobs.GetAsync(failed.Id))!.Status);
+        Assert.Equal(JobMasterJobStatus.Cancelled,  (await Fixture.MasterJobs.GetAsync(cancelled.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Request_ShouldBumpVersion()
+    {
+        var def = "defBulkVersion-" + JobMasterRandomUtil.NewGuid4();
+
+        var job = NewJob(def, JobMasterJobStatus.OnMaster);
+        await Fixture.MasterJobs.AddAsync(job);
+        var versionBefore = (await Fixture.MasterJobs.GetAsync(job.Id))!.Version;
+
+        var request = BulkJobUpdateRequest.For(
+            new[] { job.Id },
+            BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.Cancelled));
+        await Fixture.MasterJobs.BulkUpdateAsync(request);
+
+        var versionAfter = (await Fixture.MasterJobs.GetAsync(job.Id))!.Version;
+        Assert.False(string.IsNullOrEmpty(versionAfter));
+        Assert.NotEqual(versionBefore, versionAfter);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Request_HeldOnMaster_ShouldSkip_AlreadyOnMasterJobs()
+    {
+        var def = "defBulkHeld-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        // j1 InBucket — should be moved to OnMaster and have fields cleared
+        var j1 = NewJob(def, JobMasterJobStatus.InBucket, now.AddMinutes(1));
+        j1.BucketId = "bucket-held";
+        j1.AgentConnectionId = Fixture.AgentConnectionId;
+        j1.AgentWorkerId = "worker-held";
+        j1.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        j1.PartitionLockExpiresAt = now.AddMinutes(30);
+        j1.ProcessDeadline = now.AddMinutes(10);
+
+        // j2 OnMaster with a ProcessDeadline set — should NOT be touched (excluded by HeldOnMaster)
+        var j2 = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2));
+        j2.ProcessDeadline = now.AddMinutes(20);
+
+        await Fixture.MasterJobs.AddAsync(j1);
+        await Fixture.MasterJobs.AddAsync(j2);
+        var j2VersionBefore = (await Fixture.MasterJobs.GetAsync(j2.Id))!.Version;
+
+        var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id });
+        await Fixture.MasterJobs.BulkUpdateAsync(request);
+
+        var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
+        var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+
+        Assert.Equal(JobMasterJobStatus.OnMaster, fromDb1!.Status);
+        Assert.Null(fromDb1.BucketId);
+        Assert.Null(fromDb1.AgentConnectionId);
+        Assert.Null(fromDb1.AgentWorkerId);
+        Assert.Null(fromDb1.PartitionLockId);
+        Assert.Null(fromDb1.PartitionLockExpiresAt);
+        Assert.Null(fromDb1.ProcessDeadline);
+
+        // j2 was OnMaster — excluded, version and ProcessDeadline must be unchanged
+        Assert.Equal(j2VersionBefore, fromDb2!.Version);
+        Assert.NotNull(fromDb2.ProcessDeadline);
+    }
+
+    // -----------------------------------------------------------------------
+    // BulkUpdate (IList<JobRawModel>) conformance tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task BulkUpdate_Models_ShouldPersist_AllChanges()
+    {
+        var def = "defBulkModels-" + JobMasterRandomUtil.NewGuid4();
+
+        var j1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        j1.Metadata = "{\"original\":\"meta\"}";
+        var j2 = NewJob(def, JobMasterJobStatus.OnMaster);
+        j2.Metadata = "{\"original\":\"meta2\"}";
+
+        await Fixture.MasterJobs.AddAsync(j1);
+        await Fixture.MasterJobs.AddAsync(j2);
+
+        j1.Status = JobMasterJobStatus.Succeeded;
+        j1.WorkerLane = "LANE_UPD";
+        j1.NumberOfFailures = 1;
+        j1.Metadata = "{\"should\":\"not-persist\"}";
+
+        j2.Status = JobMasterJobStatus.Failed;
+        j2.WorkerLane = "LANE_FAIL";
+        j2.Metadata = "{\"should\":\"not-persist2\"}";
+
+        var returned = await Fixture.MasterJobs.BulkUpdateAsync(new[] { j1, j2 });
+
+        Assert.Equal(2, returned.Count);
+        var returnedIds = returned.Select(x => x.Id).ToHashSet();
+        Assert.Contains(j1.Id, returnedIds);
+        Assert.Contains(j2.Id, returnedIds);
+
+        var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
+        var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+
+        Assert.Equal(JobMasterJobStatus.Succeeded, fromDb1!.Status);
+        Assert.Equal("LANE_UPD", fromDb1.WorkerLane);
+        Assert.Equal(1, fromDb1.NumberOfFailures);
+
+        Assert.Equal(JobMasterJobStatus.Failed, fromDb2!.Status);
+        Assert.Equal("LANE_FAIL", fromDb2.WorkerLane);
+
+        // Metadata is immutable through BulkUpdateAsync(models) — original must be preserved
+        AssertJsonEquivalent("{\"original\":\"meta\"}", fromDb1.Metadata);
+        AssertJsonEquivalent("{\"original\":\"meta2\"}", fromDb2.Metadata);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Models_ShouldBumpVersion_OnEachJob()
+    {
+        var def = "defBulkModelsVer-" + JobMasterRandomUtil.NewGuid4();
+
+        var j1 = NewJob(def);
+        var j2 = NewJob(def);
+        await Fixture.MasterJobs.AddAsync(j1);
+        await Fixture.MasterJobs.AddAsync(j2);
+
+        var verBefore1 = (await Fixture.MasterJobs.GetAsync(j1.Id))!.Version;
+        var verBefore2 = (await Fixture.MasterJobs.GetAsync(j2.Id))!.Version;
+
+        j1.Status = JobMasterJobStatus.Cancelled;
+        j2.Status = JobMasterJobStatus.Cancelled;
+
+        var returned = await Fixture.MasterJobs.BulkUpdateAsync(new[] { j1, j2 });
+
+        Assert.Equal(2, returned.Count);
+        // Returned models have the new version assigned
+        Assert.All(returned, j => Assert.False(string.IsNullOrEmpty(j.Version)));
+        Assert.NotEqual(verBefore1, returned.First(x => x.Id == j1.Id).Version);
+        Assert.NotEqual(verBefore2, returned.First(x => x.Id == j2.Id).Version);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Models_ShouldReturn_OnlyRows_ThatExist()
+    {
+        var def = "defBulkModelsExist-" + JobMasterRandomUtil.NewGuid4();
+
+        var real = NewJob(def);
+        await Fixture.MasterJobs.AddAsync(real);
+
+        // ghost has a valid model but a random ID that does not exist in DB
+        var ghost = NewJob(def);
+        ghost.Id = JobMasterRandomUtil.NewGuid4();
+
+        real.Status = JobMasterJobStatus.Cancelled;
+        ghost.Status = JobMasterJobStatus.Cancelled;
+
+        var returned = await Fixture.MasterJobs.BulkUpdateAsync(new[] { real, ghost });
+
+        Assert.Single(returned);
+        Assert.Equal(real.Id, returned[0].Id);
+    }
+
+    [Fact]
+    public async Task BulkUpdate_Models_ShouldHandle_EmptyList()
+    {
+        var returned = await Fixture.MasterJobs.BulkUpdateAsync(Array.Empty<JobRawModel>());
+        Assert.Empty(returned);
     }
 
     // -----------------------------------------------------------------------

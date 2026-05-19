@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+﻿using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
 namespace JobMaster.SqlBase.Scripts;
 
@@ -72,10 +72,10 @@ internal class AgentTableCreatorScripts
         return $"{create}\n{idxBucket}\n{idxBucketRef}\n{idxBucketRefMsg}\n{idxBucketEnqAt}";
     }
 
-    public static string CreateAgentConnectionFootprint(ISqlGenerator sqlGenerator, string tablePrefix)
+    public static string CreateAgentConnectionFingerprint(ISqlGenerator sqlGenerator, string tablePrefix)
     {
         var prefix = tablePrefix == string.Empty ? string.Empty : tablePrefix;
-        var tableName = $"{prefix}agent_conn_footprint";
+        var tableName = $"{prefix}agent_conn_fingerprint";
 
         // Reuse cluster_id type from GenericRecordEntry for consistency
         var clusterIdCol = sqlGenerator.ColumnNameFor<GenericRecordEntry>(x => x.ClusterId);
@@ -84,8 +84,8 @@ internal class AgentTableCreatorScripts
         var agentConnectionIdCol = "agent_connection_id";
         var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
-        var footprintCol = "footprint";
-        var footprintType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+        var fingerprintCol = "fingerprint";
+        var fingerprintType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
         var lastUpdatedAtCol = "last_updated_at";
         var lastUpdatedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
@@ -94,11 +94,11 @@ internal class AgentTableCreatorScripts
         {
             $"{clusterIdCol} {clusterIdType}",
             $"{agentConnectionIdCol} {agentConnectionIdType}",
-            $"{footprintCol} {footprintType}",
+            $"{fingerprintCol} {fingerprintType}",
             $"{lastUpdatedAtCol} {lastUpdatedAtType}"
         };
 
-        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_conn_footprint");
+        var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}agent_conn_fingerprint");
         var pk = $" CONSTRAINT {pkName} PRIMARY KEY ({clusterIdCol}, {agentConnectionIdCol})";
 
         var create = $"CREATE TABLE {tableName} ({string.Join(", \n ", columns)}, \n {pk});";

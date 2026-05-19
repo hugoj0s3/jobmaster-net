@@ -11,15 +11,15 @@ internal class AgentConnectionModel : JobMasterBaseModel
     }
 
     public AgentConnectionId Id { get; set; } = null!;
-    public string Footprint { get; set; } = string.Empty;
+    public string Fingerprint { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; }
-    public DateTime FootprintCreatedAt { get; set; }
+    public DateTime FingerprintCreatedAt { get; set; }
     public DateTime? LastHeartbeatAt { get; set; }
     
     public string RepositoryTypeId { get; set; } = string.Empty;
     
     public bool ProtectConnectionChanges { get; set; }
     
-    public bool IsAlive() => (LastHeartbeatAt ?? FootprintCreatedAt) > DateTime.UtcNow.AddMinutes(-1).AddSeconds(-30);
+    public bool IsAlive() => (LastHeartbeatAt ?? FingerprintCreatedAt) > DateTime.UtcNow.AddMinutes(-1).AddSeconds(-30);
 }

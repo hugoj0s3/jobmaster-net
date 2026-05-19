@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions;
+﻿using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -55,7 +55,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
     public async Task<AgentConnectionModel> SaveConnectionAsync(
         AgentConnectionId agentConnectionId,
         string repositoryTypeId,
-        string footprint,
+        string fingerprint,
         bool protectChanges)
     {
         var agentConnectionRecord = await GetRecordAsync(agentConnectionId);
@@ -64,17 +64,17 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
             agentConnectionRecord = new AgentConnectionRecord(ClusterConnConfig.ClusterId)
             {
                 Id = agentConnectionId.IdValue,
-                Footprint = footprint,
+                Fingerprint = fingerprint,
                 CreatedAt = DateTime.UtcNow,
-                FootprintCreatedAt = DateTime.UtcNow,
+                FingerprintCreatedAt = DateTime.UtcNow,
                 RepositoryTypeId = repositoryTypeId
             };
         }
 
-        if (agentConnectionRecord.Footprint != footprint)
+        if (agentConnectionRecord.Fingerprint != fingerprint)
         {
-            agentConnectionRecord.Footprint = footprint;
-            agentConnectionRecord.FootprintCreatedAt = DateTime.UtcNow;
+            agentConnectionRecord.Fingerprint = fingerprint;
+            agentConnectionRecord.FingerprintCreatedAt = DateTime.UtcNow;
         }
 
         var record = GenericRecordEntry
@@ -183,9 +183,9 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         return new AgentConnectionModel(ClusterConnConfig.ClusterId)
         {
             Id = agentConnectionId,
-            Footprint = agentConnectionRecord.Footprint,
+            Fingerprint = agentConnectionRecord.Fingerprint,
             CreatedAt = agentConnectionRecord.CreatedAt,
-            FootprintCreatedAt = agentConnectionRecord.FootprintCreatedAt,
+            FingerprintCreatedAt = agentConnectionRecord.FingerprintCreatedAt,
             LastHeartbeatAt = lastHeartbeatAt,
             RepositoryTypeId = agentConnectionRecord.RepositoryTypeId,
             ProtectConnectionChanges = agentConnectionRecord.ProtectConnectionChanges,
@@ -218,9 +218,9 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         }
 
         public string Id { get; set; } = string.Empty;
-        public string Footprint { get; set; } = string.Empty;
+        public string Fingerprint { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
-        public DateTime FootprintCreatedAt { get; set; }
+        public DateTime FingerprintCreatedAt { get; set; }
         public string RepositoryTypeId { get; set; } = string.Empty;
         public bool ProtectConnectionChanges { get; set; }
     }

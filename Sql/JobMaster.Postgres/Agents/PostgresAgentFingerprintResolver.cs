@@ -6,9 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Postgres.Agents;
 
-internal class PostgresAgentFootprintResolver : SqlAgentFootprintResolver
+internal class PostgresAgentFingerprintResolver : SqlAgentFingerprintResolver
 {
-    public PostgresAgentFootprintResolver(IServiceProvider serviceProvider) : 
+    public PostgresAgentFingerprintResolver(IServiceProvider serviceProvider) : 
         base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(PostgresRepositoryConstants.RepositoryTypeId))
     {
     }

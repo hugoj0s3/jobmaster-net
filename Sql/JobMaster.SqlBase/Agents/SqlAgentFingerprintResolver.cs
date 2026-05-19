@@ -10,7 +10,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Agents;
 
-internal abstract class SqlAgentFootprintResolver : IAgentFootprintResolver
+internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
 {
     private readonly IDbConnectionManager dbConnectionManager;
 
@@ -18,60 +18,60 @@ internal abstract class SqlAgentFootprintResolver : IAgentFootprintResolver
     private string connString = string.Empty;
     private ISqlGenerator sql = null!;
 
-    protected SqlAgentFootprintResolver(IDbConnectionManager dbConnectionManager)
+    protected SqlAgentFingerprintResolver(IDbConnectionManager dbConnectionManager)
     {
         this.dbConnectionManager = dbConnectionManager;
     }
-    
-    public async ValueTask<string> GiveYourFootprintAsync(string clusterId, string agentConnectionId)
+
+    public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
         using var connection = await dbConnectionManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
-        var footprint = await connection.QueryFirstOrDefaultAsync<string>(@$"
-SELECT footprint 
-FROM {FootprintTableName()} 
-where cluster_id = @clusterId and 
+        var fingerprint = await connection.QueryFirstOrDefaultAsync<string>(@$"
+SELECT fingerprint
+FROM {FingerprintTableName()}
+where cluster_id = @clusterId and
       agent_connection_id = @agentConnectionId", new { clusterId, agentConnectionId });
-        
-        if (!string.IsNullOrEmpty(footprint))
+
+        if (!string.IsNullOrEmpty(fingerprint))
         {
-            return footprint!;
+            return fingerprint!;
         }
 
-        footprint = JobMasterRandomUtil.NewGuid4().ToString();
-        
-        // insert footprint 
+        fingerprint = JobMasterRandomUtil.NewGuid4().ToString();
+
+        // insert fingerprint
         await connection.ExecuteAsync($@"
-INSERT INTO {FootprintTableName()} (cluster_id, agent_connection_id, footprint, last_updated_at)
-SELECT @clusterId, @agentConnectionId, @footprint, @lastUpdatedAt
+INSERT INTO {FingerprintTableName()} (cluster_id, agent_connection_id, fingerprint, last_updated_at)
+SELECT @clusterId, @agentConnectionId, @fingerprint, @lastUpdatedAt
 WHERE NOT EXISTS (
     SELECT 1
-    FROM {FootprintTableName()}
+    FROM {FingerprintTableName()}
     WHERE cluster_id = @clusterId
       AND agent_connection_id = @agentConnectionId
 );
 
-UPDATE {FootprintTableName()}
-SET footprint = @footprint,
+UPDATE {FingerprintTableName()}
+SET fingerprint = @fingerprint,
     last_updated_at = @lastUpdatedAt
 WHERE cluster_id = @clusterId
   AND agent_connection_id = @agentConnectionId;
 ",
-            new { clusterId, agentConnectionId, footprint, lastUpdatedAt = DateTime.UtcNow });
+            new { clusterId, agentConnectionId, fingerprint, lastUpdatedAt = DateTime.UtcNow });
 
-        return footprint;
+        return fingerprint;
     }
-    
+
     public void Initialize(JobMasterAgentConnectionConfig config)
     {
-        this.connString = config.ConnectionString;    
+        this.connString = config.ConnectionString;
         this.additionalConnConfig = config.AdditionalConnConfig;
         this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
     }
 
     public abstract string AgentRepoTypeId { get; }
 
-    private string FootprintTableName()
+    private string FingerprintTableName()
     {
-        return $"{sql.GetTablePrefix(additionalConnConfig)}agent_conn_footprint";
+        return $"{sql.GetTablePrefix(additionalConnConfig)}agent_conn_fingerprint";
     }
 }

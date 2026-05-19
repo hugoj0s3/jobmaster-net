@@ -1,13 +1,13 @@
-using JobMaster.Sdk.Abstractions.Repositories.Agent;
+﻿using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.SqlBase.Agents;
 using JobMaster.SqlBase.Connections;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlServer.Agents;
 
-internal class SqlServerAgentFootprintResolver : SqlAgentFootprintResolver
+internal class SqlServerAgentFingerprintResolver : SqlAgentFingerprintResolver
 {
-    public SqlServerAgentFootprintResolver(IServiceProvider serviceProvider) : 
+    public SqlServerAgentFingerprintResolver(IServiceProvider serviceProvider) : 
         base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(SqlServerRepositoryConstants.RepositoryTypeId))
     {
     }

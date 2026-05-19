@@ -354,13 +354,13 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     public IAgentWorkerSelector AddWorker(
         string? workerName = null, 
         string? agentConnectionName = null, 
-        int batchSize = 1000)
+        int transferBatchSize = 1000)
     {
         var def = new WorkerDefinition
         {
             AgentConnectionName = agentConnectionName ?? string.Empty,
             WorkerName = workerName ?? string.Empty,
-            TransferBatchSize = batchSize,
+            TransferBatchSize = transferBatchSize,
         };
         clusterDefinition.Workers.Add(def);
         return new AgentWorkerSelector(this, def);
