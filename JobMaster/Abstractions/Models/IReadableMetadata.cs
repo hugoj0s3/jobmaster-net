@@ -1,5 +1,13 @@
 namespace JobMaster.Abstractions.Models;
 
+/// <summary>
+/// Read-only typed access to the key-value metadata attached to a job or recurring schedule.
+/// Available via <see cref="JobContext.Metadata"/> and <see cref="RecurringScheduleContext.Metadata"/> inside a handler.
+/// <para>
+/// <c>TryGet*</c> methods return <c>null</c> when the key does not exist.
+/// <c>Get*</c> methods throw when the key is missing or the type does not match.
+/// </para>
+/// </summary>
 public interface IReadableMetadata
 {
     public string GetStringValue(string key);
@@ -14,10 +22,8 @@ public interface IReadableMetadata
     public short GetShortValue(string key);
     public byte GetByteValue(string key);
     public Guid GetGuidValue(string key);
-    
     public TEnum GetEnumValue<TEnum>(string key) where TEnum : struct, Enum;
-    
-    
+
     public string? TryGetStringValue(string key);
     public int? TryGetIntValue(string key);
     public long? TryGetLongValue(string key);
@@ -30,8 +36,8 @@ public interface IReadableMetadata
     public short? TryGetShortValue(string key);
     public byte? TryGetByteValue(string key);
     public Guid? TryGetGuidValue(string key);
-    
     public TEnum? TryGetEnumValue<TEnum>(string key) where TEnum : struct, Enum;
-    
+
+    /// <summary>Returns all entries as a dictionary.</summary>
     public IDictionary<string, object?> ToDictionary();
 }

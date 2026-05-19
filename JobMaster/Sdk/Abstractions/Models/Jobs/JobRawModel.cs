@@ -317,7 +317,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public bool CanReSchedule()
     {
-        if (this.Status.IsFinalStatus())
+        if (!this.Status.IsFinalStatus())
         {
             return false;
         }

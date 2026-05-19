@@ -3,6 +3,12 @@ using System.Reflection;
 
 namespace JobMaster.Abstractions.Models.Attributes;
 
+/// <summary>
+/// Assigns a stable, human-readable ID to a job handler class.
+/// The runtime uses this ID to locate the correct handler when a job is dispatched.
+/// If omitted, the handler's full type name (<see cref="Type.FullName"/>) is used as the ID.
+/// Prefer setting an explicit ID to avoid breakage if the class is renamed or moved.
+/// </summary>
 [AttributeUsage(AttributeTargets.Class)]
 public class JobMasterDefinitionIdAttribute : Attribute
 {
@@ -12,7 +18,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
     }
 
     public string JobDefinitionId { get; }
-    
+
     private static readonly ConcurrentDictionary<string, Type> JobDefinitionIdMap = new();
     public static Type? GetJobHandlerTypeFromId(string jobdefinitionId)
     {
@@ -39,7 +45,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
 
         return result;
     }
-    
+
     public static string GetJobDefinitionId(Type type)
     {
         return type.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? type.FullName!;

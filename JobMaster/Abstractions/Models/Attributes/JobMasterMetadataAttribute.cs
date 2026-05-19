@@ -1,10 +1,15 @@
 namespace JobMaster.Abstractions.Models.Attributes;
 
+/// <summary>
+/// Attaches a default metadata key-value pair to all jobs scheduled for this handler.
+/// Apply multiple times to set more than one entry.
+/// Metadata set at scheduling time is merged with (and takes precedence over) attribute-level metadata.
+/// </summary>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true)]
 public class JobMasterMetadataAttribute : Attribute
 {
     public string Key { get; set; }
-    
+
     public string? StringValue { get; set; }
     public int? IntValue { get; set; }
     public long? LongValue { get; set; }
@@ -14,19 +19,19 @@ public class JobMasterMetadataAttribute : Attribute
     public decimal? DecimalValue { get; set; }
     public bool? BoolValue { get; set; }
     public char? CharValue { get; set; }
-    
+
     public JobMasterMetadataAttribute(string key, string value)
     {
         Key = key;
         StringValue = value;
     }
-    
+
     public  JobMasterMetadataAttribute(string key, int value)
     {
         Key = key;
         IntValue = value;
     }
-    
+
     public JobMasterMetadataAttribute(string key, long value)
     {
         Key = key;
@@ -44,19 +49,19 @@ public class JobMasterMetadataAttribute : Attribute
         Key = key;
         ByteValue = value;
     }
-    
+
     public JobMasterMetadataAttribute(string key, double value)
     {
         Key = key;
         DoubleValue = value;
     }
-    
+
     public JobMasterMetadataAttribute(string key, decimal value)
     {
         Key = key;
         DecimalValue = value;
     }
-    
+
     public JobMasterMetadataAttribute(string key, bool value)
     {
         Key = key;
@@ -68,7 +73,7 @@ public class JobMasterMetadataAttribute : Attribute
         Key = key;
         CharValue = value;
     }
-    
+
     public KeyValuePair<string, object?> ToKeyValuePair()
     {
         object? objVal =

@@ -1,5 +1,13 @@
 namespace JobMaster.Abstractions.Models;
 
+/// <summary>
+/// Read-only typed access to the message data payload attached to a job.
+/// Available via <see cref="JobContext.MsgData"/> inside a handler.
+/// <para>
+/// <c>TryGet*</c> methods return <c>null</c> when the key does not exist.
+/// <c>Get*</c> methods throw when the key is missing or the type does not match.
+/// </para>
+/// </summary>
 public interface IReadableMessageData
 {
     public string? TryGetStringValue(string key);
@@ -31,6 +39,7 @@ public interface IReadableMessageData
     public byte GetByteValue(string key);
     public Guid GetGuidValue(string key);
     public T GetJson<T>(string key) where T : new();
-    
+
+    /// <summary>Returns all entries as a dictionary.</summary>
     public IDictionary<string, object?> ToDictionary();
 }
