@@ -6,8 +6,10 @@ using Microsoft.Extensions.Options;
 
 namespace JobMaster.Api.AspNetCore;
 
+/// <summary>Extension methods for mapping the JobMaster API endpoints onto an ASP.NET Core <see cref="WebApplication"/>.</summary>
 public static class JobMasterApiWebApplicationExtensions
 {
+    /// <summary>Maps all JobMaster API endpoints and configures Swagger if enabled.</summary>
     public static WebApplication MapJobMasterApi(this WebApplication app)
     {
         if (app == null) throw new ArgumentNullException(nameof(app));

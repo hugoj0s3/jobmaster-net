@@ -8,10 +8,12 @@ namespace JobMaster.Abstractions.Models.Attributes;
 [AttributeUsage(AttributeTargets.Class)]
 public class JobMasterWorkerLaneAttribute : Attribute
 {
+    /// <summary>Initializes the attribute with the specified worker lane name.</summary>
     public JobMasterWorkerLaneAttribute(string workerLane)
     {
         this.WorkerLane = workerLane;
     }
 
+    /// <summary>The worker lane that jobs scheduled for this handler will be routed to by default.</summary>
     public string WorkerLane { get; }
 }

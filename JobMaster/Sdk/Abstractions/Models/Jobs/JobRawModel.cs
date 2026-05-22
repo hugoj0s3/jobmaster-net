@@ -156,7 +156,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public bool Onboard()
     {
-        if (!this.Status.IsBucketStatus())
+        if (!this.Status.IsPreExecutionBucketStatus())
         {
             return false;
         }
@@ -167,7 +167,7 @@ internal class JobRawModel : JobMasterBaseModel
 
     public bool Enqueue()
     {
-        if (!this.Status.IsBucketStatus())
+        if (!this.Status.IsPreExecutionBucketStatus())
         {
             return false;
         }
@@ -207,27 +207,17 @@ internal class JobRawModel : JobMasterBaseModel
 
     public bool TryToCancel(bool ignoreOnBoarding = false)
     {
-        if (Status != JobMasterJobStatus.Processing && 
-            Status != JobMasterJobStatus.Succeeded && 
-            Status != JobMasterJobStatus.Failed && 
-            Status != JobMasterJobStatus.Cancelled && 
-            Status != JobMasterJobStatus.Queued)
-        {
-            
-            // If it is onboarding can not be cancelled
-            if (IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding) 
-            {
-                return false;
-            }
-            
-            Status = JobMasterJobStatus.Cancelled;
-            ProcessDeadline = null;
-            NextPlanExecutionAt = null;
-            FinalizedAt = DateTime.UtcNow;
-            return true;
-        }
-        
-        return false;
+        if (Status != JobMasterJobStatus.OnMaster && Status != JobMasterJobStatus.InBucket)
+            return false;
+
+        if (IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding)
+            return false;
+
+        Status = JobMasterJobStatus.Cancelled;
+        ProcessDeadline = null;
+        NextPlanExecutionAt = null;
+        FinalizedAt = DateTime.UtcNow;
+        return true;
     }
     
     public void DelayNextExecutionPlan(TimeSpan delay)
@@ -349,13 +339,8 @@ internal class JobRawModel : JobMasterBaseModel
             AgentWorkerId = this.AgentWorkerId!,
             BucketId = this.BucketId!,
             HostId = this.HostId!,
-            Outcome = JobExecutionOutcomeStatus.Succeeded,
         };
-        
-        AgentConnectionId = null;
-        AgentWorkerId = null;
-        BucketId = null;
-        
+
         return execution;
     }
     

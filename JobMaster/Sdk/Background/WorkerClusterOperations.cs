@@ -72,13 +72,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
                 if (result == OnBoardingResult.MovedToMaster)
                 {
-                    logger.Warn($"Short-cut failed moved to master", JobMasterLogCategory.Job, jobRaw.Id);
+                    logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                     return;
                 }
 
                 if (result == OnBoardingResult.Cancelled)
                 {
-                    logger.Warn($"Short-circuit failed job or recurring scheduled was cancelled", JobMasterLogCategory.Job, jobRaw.Id);
+                    logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                     return;
                 }
 
@@ -145,11 +145,10 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread", exception: e);
-            this.masterJobsService.Update(jobRawModel);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
-    
+
     public async Task UpsertAsync(JobRawModel jobRawModel)
     {
         if (jobRawModel.Version is null)
@@ -170,11 +169,8 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread", exception: e);
-            await this.masterJobsService.UpdateAsync(jobRawModel);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
-        
-        await Task.Delay(TimeSpan.FromMilliseconds(250));   
     }
     public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null)
     {
@@ -211,8 +207,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread", exception: e);
-            this.masterRecurringSchedulesService.Update(recurringScheduleRawModel);
+            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
         }
     }
 
@@ -279,6 +274,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         if (!bucket.ReadyToDrainFromCompleting())
         {
+            logger.Debug($"MarkBucketAsReadyToDrainAsync: skipped — bucket {bucketId} is not in a valid state for this transition. Status={bucket.Status}", JobMasterLogCategory.Bucket, bucketId);
             return;
         }
 
@@ -287,16 +283,16 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
     public void MarkBucketAsLost(BucketModel bucket)
     {
-        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.MarkBucketAsLostLock(bucket.Id), TimeSpan.FromSeconds(10));
+        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
         if (lockToken == null)
         {
             return;
         }
-            
+
         bucket.MarkAsLost();
         masterBucketsService.Update(bucket);
-            
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.MarkBucketAsLostLock(bucket.Id), lockToken);
+
+        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
     }
     
     public async Task<int> CountActiveCoordinatorWorkersAsync()
@@ -342,7 +338,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     throw;
                 }
 
-                logger.Error("Failed to execute function", exception: e);
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
                 if (attempt >= maxRetries)
                 {
                     throw;
@@ -381,7 +377,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     throw;
                 }
 
-                logger.Error("Failed to execute function", exception: e);
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
                 if (attempt >= maxRetries)
                 {
                     throw;
@@ -416,7 +412,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             {
                 if (e is JobMasterDuplicationException or JobMasterVersionConflictException) throw;
 
-                logger.Error("Failed to execute function", exception: e);
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
                 if (attempt >= maxRetries) throw;
 
                 attempt++;

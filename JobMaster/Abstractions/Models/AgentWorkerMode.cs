@@ -1,5 +1,6 @@
 namespace JobMaster.Abstractions.Models;
 
+/// <summary>Controls the operational role of an agent worker process within the cluster.</summary>
 public enum AgentWorkerMode
 {
     /// <summary>

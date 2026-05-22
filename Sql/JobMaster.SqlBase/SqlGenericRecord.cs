@@ -1,23 +1,21 @@
- 
-
 namespace JobMaster.SqlBase;
 
-public class SqlGenericRecordEntry
+internal class SqlGenericRecordEntry
 {
     public string RecordUniqueId { get; set; } = string.Empty;
-    public string ClusterId { get; set; } = string.Empty;   
+    public string ClusterId { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
     public string EntryId { get; set; } = string.Empty;
     public Guid? EntryIdGuid { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
-    
+
     public bool IsReady { get; set; }
     public IList<SqlGenericRecordEntryValue> Values { get; set; } = new List<SqlGenericRecordEntryValue>();
 }
 
-public class SqlGenericRecordEntryValue
+internal class SqlGenericRecordEntryValue
 {
     public string RecordUniqueId { get; set; } = string.Empty;
     public string KeyName { get; set; } = string.Empty;
@@ -30,10 +28,10 @@ public class SqlGenericRecordEntryValue
     public byte[]? ValueBinary { get; set; }
 }
 
-public class SqlGenericRecordEntryLinearDto
+internal class SqlGenericRecordEntryLinearDto
 {
     public string RecordUniqueId { get; set; } = string.Empty;
-    public string ClusterId { get; set; } = string.Empty;   
+    public string ClusterId { get; set; } = string.Empty;
     public string GroupId { get; set; } = string.Empty;
     public string EntryId { get; set; } = string.Empty;
 
@@ -42,7 +40,7 @@ public class SqlGenericRecordEntryLinearDto
     public bool IsReady { get; set; }
 
     public string KeyName { get; set; } = string.Empty;
-    
+
     public long? ValueInt64 { get; set; }
     public decimal? ValueDecimal { get; set; }
     public string? ValueText { get; set; }

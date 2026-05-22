@@ -1,5 +1,10 @@
 ﻿namespace JobMaster.Api.AspNetCore.Auth.UsersAndPasswords;
 
+/// <summary>
+/// Fluent configuration for username/password authentication on the JobMaster HTTP API.
+/// Use this selector to register fixed user identities or a custom credential provider.
+/// All methods return void; call them in sequence during DI setup.
+/// </summary>
 public interface IApiUserPwdAuthConfigSelector
 {
     /// <summary>

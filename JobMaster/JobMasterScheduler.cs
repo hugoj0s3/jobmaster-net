@@ -11,14 +11,19 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster;
 
+/// <summary>
+/// Singleton implementation of <see cref="IJobMasterScheduler"/>.
+/// Prefer injecting <see cref="IJobMasterScheduler"/> from the DI container over using <see cref="Instance"/> directly.
+/// </summary>
 public class JobMasterScheduler : IJobMasterScheduler
 {
     private static IJobMasterRuntime JobMasterRuntime => JobMasterRuntimeSingleton.Instance;
-    
+
     private JobMasterScheduler()
     {
     }
-    
+
+    /// <summary>The global singleton instance of the scheduler.</summary>
     public static IJobMasterScheduler Instance { get; } = new JobMasterScheduler();
     
     public JobContext OnceNow<T>(

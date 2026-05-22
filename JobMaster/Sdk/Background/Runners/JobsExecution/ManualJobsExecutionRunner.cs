@@ -108,7 +108,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         foreach (var job in jobs)
         {
             var result = await jobExecutionEngine.TryOnBoardingJobAsync(job, forceIfNoCapacity: true);
-            logger.Debug($"JobId {job.Id} OnBoardingResult {result} ", JobMasterLogCategory.Job, job.Id);
+            logger.Debug($"JobId={job.Id} OnBoardingResult={result}", JobMasterLogCategory.Job, job.Id);
             if (result == OnBoardingResult.Accepted)
             {
                 continue;
@@ -118,7 +118,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
             {
                 job.MarkAsHeldOnMaster();
                 await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
-                logger.Warn($"JobId {job.Id} TooEarly {job.NextPlanExecutionAt:O} now {DateTime.UtcNow:O}", JobMasterLogCategory.Job, job.Id);
+                logger.Warn($"Job is too early to onboard. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O} Now={DateTime.UtcNow:O}", JobMasterLogCategory.Job, job.Id);
                 continue;
             }
             
@@ -134,7 +134,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
                 continue;
             }
             
-            logger.Error($"Unexpected OnBoardingResult. JobId {job.Id} OnBoardingResult {result}", JobMasterLogCategory.Job, job.Id);
+            logger.Error($"Unexpected OnBoardingResult. JobId={job.Id} Result={result}", JobMasterLogCategory.Job, job.Id);
             job.MarkAsHeldOnMaster();
             await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
         }

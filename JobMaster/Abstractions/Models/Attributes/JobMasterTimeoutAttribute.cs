@@ -8,10 +8,12 @@ namespace JobMaster.Abstractions.Models.Attributes;
 [AttributeUsage(AttributeTargets.Class)]
 public class JobMasterTimeoutAttribute : Attribute
 {
+    /// <summary>Initializes the attribute with the specified timeout in seconds.</summary>
     public JobMasterTimeoutAttribute(double timeoutInSeconds)
     {
         this.TimeoutInSeconds = timeoutInSeconds;
     }
 
+    /// <summary>The default execution timeout in seconds for jobs scheduled for this handler.</summary>
     public double TimeoutInSeconds { get; }
 }

@@ -152,7 +152,6 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
-        clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
         clusterServiceRegistration.AddJobMasterComponent<IHostStatsProvider, NullHostStatsProvider>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
 

@@ -7,9 +7,7 @@ using JobMaster.Sdk.Abstractions.LocalCache;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
-using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
-using JobMaster.Sdk.Services;
 using Moq;
 using JobMaster.Sdk.Services.Master;
 using JobMaster.Sdk.Utils;
@@ -31,7 +29,6 @@ public class MasterAgentWorkersServiceTests
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
         var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
-        var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
         var sut = new MasterAgentWorkersService(
             clusterConfig,
@@ -41,8 +38,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object,
             knownEx.Object,
-            hostService.Object,
-            randomFriendlyNameService.Object);
+            hostService.Object);
 
         var act = async () =>
             await sut.RegisterWorkerAsync("agent", "invalid name", workerLane: null, mode: AgentWorkerMode.Full, parallelismFactor: 1);
@@ -64,7 +60,6 @@ public class MasterAgentWorkersServiceTests
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
         var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Strict);
-        var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
         var expectedSentinelKey = new JobMasterSentinelKeys(clusterId).AgentsAndWorkers();
         sentinel.Setup(x => x.NotifyChanges(expectedSentinelKey));
@@ -90,8 +85,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object,
             knownEx.Object,
-            hostService.Object,
-            new RandomFriendlyNameService(clusterConfig));
+            hostService.Object);
 
         var (workerId, hostId) = await sut.RegisterWorkerAsync(
             $"{clusterId}:agent",
@@ -125,7 +119,6 @@ public class MasterAgentWorkersServiceTests
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
         var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
-        var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
         repo.Setup(x => x.Query(MasterGenericRecordGroupIds.AgentWorker, null))
             .Returns(new List<GenericRecordEntry>());
@@ -138,8 +131,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object,
             knownEx.Object,
-            hostService.Object,
-            randomFriendlyNameService.Object);
+            hostService.Object);
 
         sut.DeleteWorker("missing");
 
@@ -159,7 +151,6 @@ public class MasterAgentWorkersServiceTests
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
         var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
         var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
-        var randomFriendlyNameService = new Mock<IRandomFriendlyNameService>(MockBehavior.Loose);
 
         var createdAt = DateTime.UtcNow.AddHours(-1);
         var workerId = "w1";
@@ -196,8 +187,7 @@ public class MasterAgentWorkersServiceTests
             heartbeat.Object,
             repo.Object,
             knownEx.Object,
-            hostService.Object,
-            randomFriendlyNameService.Object);
+            hostService.Object);
         var act = () => sut.DeleteWorker(workerId);
         act.Should().Throw<InvalidOperationException>();
 

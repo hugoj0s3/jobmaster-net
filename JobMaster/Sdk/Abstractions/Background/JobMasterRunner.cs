@@ -13,6 +13,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     private CancellationTokenSource? cts;
     private Task? taskRunner;
     private const int MaxOfConsecutiveFails = 15;
+    private const int StopTimeoutSeconds = 10;
     public double ConsecutiveFailedCount { get; private set; }
 
     private const int MaxOfConsecutiveToDelay = 3;
@@ -86,13 +87,13 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
             try
             {
                 // Wait for runner to stop, but with a timeout to prevent hanging
-                var timeout = Task.Delay(TimeSpan.FromSeconds(10));
+                var timeout = Task.Delay(TimeSpan.FromSeconds(StopTimeoutSeconds));
                 var completedTask = await Task.WhenAny(taskRunner, timeout);
-                
+
                 if (completedTask == timeout)
                 {
                     // Runner didn't stop in time, likely not respecting cancellation token
-                    logger.Warn($"Runner {this.GetType().Name} did not stop within 10 seconds. Forcing shutdown.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                    logger.Warn($"Runner {this.GetType().Name} did not stop within {StopTimeoutSeconds} seconds. Forcing shutdown.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 }
                 else
                 {
@@ -212,7 +213,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 plannedDelay = this.FailedInterval;
                 plannedEarlyReleaseChance = 0.0;
 
-                logger.Error($"Runner {this.GetType().Name} failed {ConsecutiveFailedCount} times in a row.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
+                logger.Error($"Runner {this.GetType().Name} failure score: {ConsecutiveFailedCount:F2} / {MaxOfConsecutiveFails} (deadlocks and version conflicts are weighted less).", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
             }
             finally
             {
@@ -243,7 +244,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
         {
             try
             {
-                await OnTerminateFailureAsync(lastFailureException ?? new Exception($"Runner {this.GetType().Name} terminated after {ConsecutiveFailedCount} consecutive failures."));
+                await OnTerminateFailureAsync(lastFailureException ?? new Exception($"Runner {this.GetType().Name} terminated: failure score {ConsecutiveFailedCount:F2} reached threshold {MaxOfConsecutiveFails}."));
             }
             catch (Exception terminateEx)
             {

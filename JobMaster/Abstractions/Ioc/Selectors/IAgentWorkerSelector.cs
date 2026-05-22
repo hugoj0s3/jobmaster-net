@@ -21,9 +21,9 @@ public interface IAgentWorkerSelector
     /// <summary>
     /// Sets a display name for this worker instance.
     /// Useful for identifying the worker in logs and dashboards when multiple workers are running.
-    /// If not specified, a name is auto-generated from the host machine name and a random friendly name
-    /// (e.g. "myserver-bold-tiger"). When specified, the host name and a random animal are still appended
-    /// to guarantee uniqueness (e.g. "myworker-myserver-tiger").
+    /// If not specified, the name is auto-generated as <c>{hostname}-{timestampId}</c>
+    /// (e.g. <c>myserver-3c1a8b2</c>). When specified, the same timestamp suffix is appended
+    /// to guarantee uniqueness across restarts (e.g. <c>payroll-01-3c1a8b2</c>).
     /// </summary>
     /// <param name="workerName">A human-readable name for this worker (letters, numbers, hyphens, underscores; max 25 chars).</param>
     IAgentWorkerSelector WorkerName(string workerName);

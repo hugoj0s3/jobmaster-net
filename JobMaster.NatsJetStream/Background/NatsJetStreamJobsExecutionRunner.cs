@@ -17,7 +17,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 {
     private IJobsExecutionEngine? jobsExecutionEngine;
     private readonly Stopwatch lifetimeSw = new();
-    private TaskCompletionSource<bool> pulseSignal = new();
+    private volatile TaskCompletionSource<bool> pulseSignal = new();
     
     public NatsJetStreamJobsExecutionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {

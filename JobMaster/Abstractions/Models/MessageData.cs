@@ -69,7 +69,9 @@ internal class MessageData : IReadableMessageData, IWriteableMessageData
     public IReadableMessageData ToReadable() => new MessageData(this.ToDictionary());
 }
 
+/// <summary>Factory for creating <see cref="IWriteableMessageData"/> instances.</summary>
 public static class WriteableMessageData
 {
+    /// <summary>Creates a new empty message data builder.</summary>
     public static IWriteableMessageData New() => new MessageData();
 }

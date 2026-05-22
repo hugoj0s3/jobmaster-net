@@ -8,8 +8,10 @@ namespace JobMaster.Abstractions.Models.Attributes;
 [AttributeUsage(AttributeTargets.Class)]
 public class JobMasterPriorityAttribute : Attribute
 {
+    /// <summary>The default priority assigned to jobs scheduled for this handler.</summary>
     public JobMasterPriority Priority { get; }
 
+    /// <summary>Initializes the attribute with the specified priority.</summary>
     public JobMasterPriorityAttribute(JobMasterPriority priority)
     {
         Priority = priority;

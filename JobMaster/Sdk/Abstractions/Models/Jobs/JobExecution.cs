@@ -44,6 +44,16 @@ internal class JobExecution : JobMasterBaseModel
         OutcomeMessage = "Job execution completed successfully.";
     }
 
+    /// <summary>
+    /// Throws if <see cref="Succeed"/> or <see cref="Fail"/> was never called.
+    /// Called by the service layer before persisting the record.
+    /// </summary>
+    public void EnsureFinalized()
+    {
+        if ((int)Outcome == 0)
+            throw new InvalidOperationException($"JobExecution {Id} has no outcome set. Call Succeed() or Fail() before persisting.");
+    }
+
     internal static JobExecution RecoverFromDb(JobExecutionPersistenceRecord rec)
     {
         var ex = new JobExecution();

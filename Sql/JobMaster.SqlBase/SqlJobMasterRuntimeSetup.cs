@@ -11,9 +11,18 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlBase;
 
+/// <summary>
+/// Abstract base class for SQL-provider runtime setup. Handles automatic schema provisioning
+/// (tables for jobs, recurring schedules, generic records, distributed locks, and agent buckets)
+/// on first startup, and sets provider-specific defaults such as DB operation throttle limits
+/// and table prefixes.
+/// </summary>
 public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
-    
+    /// <summary>
+    /// Validates the SQL configuration before startup. Override to add provider-specific checks.
+    /// Returns a list of validation error messages; an empty list means validation passed.
+    /// </summary>
     public virtual Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
         return Task.FromResult<IList<string>>(new List<string>());
@@ -23,6 +32,10 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
     protected abstract int DefaultDbOperationThrottleLimitForAgent { get; }
     
 
+    /// <summary>
+    /// Applies provider defaults (table prefix, throttle limits) and provisions the schema on first startup
+    /// if auto-provisioning is enabled.
+    /// </summary>
     public virtual async Task OnStartingAsync(IServiceProvider mainServiceProvider)
     {
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
@@ -195,5 +208,6 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         }
     }
 
+    /// <summary>The repository type identifier used to match SQL configurations and keyed services.</summary>
     public abstract string RepositoryTypeId { get; }
 }

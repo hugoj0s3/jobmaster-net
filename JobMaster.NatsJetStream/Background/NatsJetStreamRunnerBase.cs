@@ -223,10 +223,8 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                             var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
                             if (isHeartbeat)
                             {
-                                var signatureIsTaken =
-                                    msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
-
-                                if ((signatureIsTaken == true && signatureValue != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
+                                msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
+                                if (!IsSignatureValid(signatureValue))
                                 {
                                     LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
 
@@ -331,7 +329,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
 
         var json = Encoding.UTF8.GetString(msg.Data);
-        if (signature is null || signature != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString())
+        if (!IsSignatureValid(signature))
         {
             var preview = NatsJetStreamUtils.LogPreview(json, 128);
             LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch. Preview: {preview} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}");
@@ -481,6 +479,9 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         await StopConsumptionTaskAsync();
     }
 
+
+    private static bool IsSignatureValid(string? signature) =>
+        signature == NatsJetStreamConfigKey.NamespaceUniqueKey.ToString();
 
     protected void LogCriticalOrError(string message, Exception? ex = null)
     {

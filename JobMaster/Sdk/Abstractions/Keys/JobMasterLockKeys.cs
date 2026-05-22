@@ -12,8 +12,6 @@ internal class JobMasterLockKeys : JobMasterKeyManager
     public string BucketAssignerLock(int lockId) => CreateKey($"BucketAssignerLock:{lockId}");
     public string BucketAssignerImminentLock(string windowKey) => CreateKey($"BucketAssignerImminent:{windowKey}");
     
-    public string MarkBucketAsLostLock(string bucketId) => CreateKey($"MarkBucketAsLost:{bucketId}");
-    
     public string BucketRunnerLock() => CreateKey($"BucketRunnerLock");
     public string BucketLock(string bucketId) => CreateKey($"BucketLock:{bucketId}");
     

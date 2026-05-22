@@ -53,7 +53,12 @@ internal class JobSavePendingOperation
             try
             {
                 var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
-                job.AssignToBucket(bucket!);
+                if (bucket is null)
+                {
+                    logger.Error("No bucket available to reassign job during drain safeguard.", JobMasterLogCategory.Job, job.Id);
+                    return SaveDrainResultCode.Failed;
+                }
+                job.AssignToBucket(bucket);
                 await agentJobsDispatcherService.AddSavePendingJobAsync(job);
                 return SaveDrainResultCode.Failed;
             }
@@ -123,7 +128,7 @@ internal class JobSavePendingOperation
             }
             catch (Exception ex)
             {
-                logger.Error("Failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
+                logger.Error("Failed to persist job as HeldOnMaster.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 throw;
             }
             
@@ -157,10 +162,10 @@ internal class JobSavePendingOperation
             }
             catch (JobMasterDuplicationException e)
             {
-                logger.Error("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
+                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
-            
+
             try
             {
                 // Force is safe here; capacity was already checked above.
@@ -176,10 +181,21 @@ internal class JobSavePendingOperation
                     return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
                 }
                 
-                logger.Error($"Unexpected OnBoardingResult. JobId {jobRaw.Id} OnBoardingResult {result}", JobMasterLogCategory.Job, jobRaw.Id);
+                if (result == OnBoardingResult.Cancelled)
+                {
+                    // Engine already updated the job state (cancelled or failed by recurring schedule check).
+                    return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
+                }
+
+                // TooEarly, Busy, Invalid: job is persisted as InBucket but engine rejected it.
+                // Hold on master so the master runner can reassign it on the next cycle.
+                logger.Error($"Unexpected OnBoardingResult. JobId={jobRaw.Id} Result={result}", JobMasterLogCategory.Job, jobRaw.Id);
+                jobRaw.MarkAsHeldOnMaster();
+                await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
+                return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
             }
             catch (Exception e)
-            { 
+            {
                 logger.Error("Short-circuit failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
                 jobRaw.MarkAsHeldOnMaster();
                 await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
@@ -199,16 +215,15 @@ internal class JobSavePendingOperation
             {
                 await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
             }
-            catch (JobMasterDuplicationException)
+            catch (JobMasterDuplicationException e)
             {
-                logger.Error("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id);
+                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
                 return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
             }
             
             return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterNoBucket);
         }
 
-        var agentWorkerId = selectedBucket.AgentWorkerId!;
         jobRaw.AssignToBucket(selectedBucket);
         try
         {
@@ -226,10 +241,10 @@ internal class JobSavePendingOperation
             await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
             return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
         }
-        
+
         try
         {
-            logger.Debug($"Publishing job {jobRaw.Id} to agent {agentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+            logger.Debug($"Publishing job {jobRaw.Id} to agent {jobRaw.AgentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
             
             var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
             

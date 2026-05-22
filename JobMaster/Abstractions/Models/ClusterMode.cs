@@ -1,5 +1,8 @@
 namespace JobMaster.Abstractions.Models;
 
+/// <summary>
+/// Defines the operational mode of a JobMaster cluster.
+/// </summary>
 public enum ClusterMode
 {
     /// <summary>Normal operation — the cluster schedules and dispatches jobs.</summary>

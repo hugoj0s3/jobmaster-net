@@ -7,18 +7,31 @@ namespace JobMaster.Abstractions.Models;
 /// </summary>
 public interface IWritableMetadata
 {
+    /// <summary>Stores a <see cref="string"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetStringValue(string key, string value);
+    /// <summary>Stores an <see cref="int"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetIntValue(string key, int value);
+    /// <summary>Stores a <see cref="long"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetLongValue(string key, long value);
+    /// <summary>Stores a <see cref="char"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetCharValue(string key, char value);
+    /// <summary>Stores a <see cref="bool"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetBoolValue(string key, bool value);
+    /// <summary>Stores a <see cref="double"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetDoubleValue(string key, double value);
+    /// <summary>Stores a <see cref="DateTime"/> value (converted to UTC) under <paramref name="key"/>.</summary>
     public IWritableMetadata SetUtcDateTimeValue(string key, DateTime value);
+    /// <summary>Stores a <see cref="byte"/> array value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetByteArrayValue(string key, byte[] value);
+    /// <summary>Stores a <see cref="decimal"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetDecimalValue(string key, decimal value);
+    /// <summary>Stores a <see cref="short"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetShortValue(string key, short value);
+    /// <summary>Stores a <see cref="byte"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetByteValue(string key, byte value);
+    /// <summary>Stores a <see cref="Guid"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetGuidValue(string key, Guid value);
+    /// <summary>Stores an enum value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetEnumValue<TEnum>(string key, TEnum value) where TEnum : struct, Enum;
 
     /// <summary>Returns all entries as a dictionary.</summary>

@@ -3,11 +3,15 @@ using Microsoft.AspNetCore.Http;
 
 namespace JobMaster.Api.ApiModels;
 
+/// <summary>Specifies the property and direction to use when sorting query results.</summary>
 public class ApiSortByCriteria
 {
+    /// <summary>Name of the property to sort by.</summary>
     public string Property { get; set; } = string.Empty;
+    /// <summary><c>true</c> for ascending order; <c>false</c> for descending.</summary>
     public bool Ascending { get; set; }
 
+    /// <summary>Minimal API model binder that reads sort parameters from query-string key variants.</summary>
     public static ValueTask<ApiSortByCriteria?> BindAsync(HttpContext context, ParameterInfo parameter)
     {
         var query = context.Request.Query;

@@ -114,6 +114,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
 
     public Task AddJobExecutionAsync(JobExecution jobExecution)
     {
+        jobExecution.EnsureFinalized();
         return operationThrottler.ExecAsync(() => masterJobsRepository.AddJobExecutionAsync(jobExecution));
     }
 
@@ -231,5 +232,7 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         {
             throw new ArgumentException("Job execution outcome must be succeeded or failed when job status is not failed.");
         }
+        
+        addJobExecution?.EnsureFinalized();
     }
 }

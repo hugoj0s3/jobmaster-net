@@ -26,6 +26,12 @@
   from TooEarly redeliveries). After 3 retries the job is redirected to master.
 
 ### Changes
+- **Worker auto-name simplified**
+  Auto-generated names are now `{hostname}-{timestampId}` (e.g. `myserver-3c1a8b2`).
+  Explicit names follow the same pattern: `{workerName}-{timestampId}` (e.g. `payroll-01-3c1a8b2`).
+  The `workerId` for explicit names is now derived from `workerName` instead of `hostId`, making it stable and predictable.
+  See [WorkersConfiguration](docs/WorkersConfiguration.md) for naming guidance.
+
 - **Deadline runner is now a safety net only**: `HeldOnMasterDeadlineTimeoutJobsRunner`
   excludes jobs whose bucket is Active or Completing via `ExcludeBucketIds`. The drain
   path inside the engine is the primary mechanism; the deadline runner only intervenes when

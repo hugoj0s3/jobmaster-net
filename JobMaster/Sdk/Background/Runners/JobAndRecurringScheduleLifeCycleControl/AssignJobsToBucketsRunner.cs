@@ -166,7 +166,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             async (job, _) => {
                 if (cutOffTime <= DateTime.UtcNow)
                 {
-                    logger.Warn($"Take too long to assign jobs to buckets.", JobMasterLogCategory.AgentWorker,
+                    logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.", JobMasterLogCategory.AgentWorker,
                         BackgroundAgentWorker.AgentWorkerId);
                     return;
                 }
@@ -270,7 +270,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         if (elapsed >= JobMasterConstants.NoBucketFallbackThreshold)
         {
             logger.Warn(
-                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). ",
+                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Using fallback bucket.",
                 JobMasterLogCategory.Job, job.Id);
 
             var fallbackSource = await EnsureFallbackOnboardingSourceAsync();
@@ -285,7 +285,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             job.DelayNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold.Add(TimeSpan.FromMinutes(1)));
             await masterJobsService.UpdateAsync(job);
             logger.Warn(
-                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Retrying in {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes:F1} mins",
+                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Retrying in {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes:F1} minutes.",
                 JobMasterLogCategory.Job, job.Id);
         }
 

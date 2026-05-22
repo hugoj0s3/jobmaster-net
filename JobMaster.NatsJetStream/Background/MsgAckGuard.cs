@@ -23,7 +23,7 @@ internal sealed class MsgAckGuard : IDisposable
     {
         this.Msg = msg;
         this.messageId = messageId;
-        this.FailureCount = FailureAttempts.GetOrAdd(messageId, 0);
+        this.FailureCount = FailureAttempts.TryGetValue(messageId, out var fc) ? fc : 0;
     }
 
     public async Task<bool> TryAckSuccessAsync()

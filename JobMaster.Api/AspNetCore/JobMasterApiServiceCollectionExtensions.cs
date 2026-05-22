@@ -13,6 +13,7 @@ using Microsoft.AspNetCore.Builder;
 
 namespace JobMaster.Api.AspNetCore;
 
+/// <summary>Extension methods for registering the JobMaster API into the ASP.NET Core service collection.</summary>
 public static class JobMasterApiServiceCollectionExtensions
 {
     /// <summary>

@@ -72,21 +72,39 @@ public enum JobMasterJobStatus
     Aborted = 9,
 }
 
-public static class JobMasterJobStatusUtil
+internal static class JobMasterJobStatusUtil
 {
     public static bool IsFinalStatus(this JobMasterJobStatus jobStatus) => GetFinalStatuses().Contains(jobStatus);
-    
+
+    /// <summary>Job is assigned to a bucket (has BucketId set), including actively running ones.</summary>
     public static bool IsBucketStatus(this JobMasterJobStatus jobStatus) => GetBucketStatuses().Contains(jobStatus);
-    
-    public static IList<JobMasterJobStatus> GetFinalStatuses() => 
+
+    /// <summary>Job is in a bucket but not yet executing — eligible for transitions (onboard, enqueue, flush).</summary>
+    public static bool IsPreExecutionBucketStatus(this JobMasterJobStatus jobStatus) => GetPreExecutionBucketStatuses().Contains(jobStatus);
+
+    public static IList<JobMasterJobStatus> GetFinalStatuses() =>
         new List<JobMasterJobStatus>
         {
-            JobMasterJobStatus.Succeeded, 
-            JobMasterJobStatus.Failed, 
-            JobMasterJobStatus.Cancelled, 
+            JobMasterJobStatus.Succeeded,
+            JobMasterJobStatus.Failed,
+            JobMasterJobStatus.Cancelled,
             JobMasterJobStatus.Aborted
         };
-    
-    public static IList<JobMasterJobStatus> GetBucketStatuses() => 
-        new List<JobMasterJobStatus> { JobMasterJobStatus.InBucket, JobMasterJobStatus.Onboarded, JobMasterJobStatus.Queued };
+
+    public static IList<JobMasterJobStatus> GetBucketStatuses() =>
+        new List<JobMasterJobStatus>
+        {
+            JobMasterJobStatus.InBucket,
+            JobMasterJobStatus.Onboarded,
+            JobMasterJobStatus.Queued,
+            JobMasterJobStatus.Processing,
+        };
+
+    public static IList<JobMasterJobStatus> GetPreExecutionBucketStatuses() =>
+        new List<JobMasterJobStatus>
+        {
+            JobMasterJobStatus.InBucket,
+            JobMasterJobStatus.Onboarded,
+            JobMasterJobStatus.Queued,
+        };
 }
