@@ -1,0 +1,232 @@
+# ChangeLog
+
+> **Audience: framework contributors.**
+> Documents implementation details, class-level changes, architectural decisions, and bug root causes for each release.
+> This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
+
+### 0.0.7-alpha
+#### Added
+- **`Onboarded` job status** (`= 10`, between `InBucket` and `Queued`): marks a job that
+  has been accepted into a bucket's onboarding buffer and had its `ProcessDeadline` set to
+  `UtcNow` as an instant recovery signal — if the bucket goes Lost, the deadline runner
+  picks it up immediately without waiting for a natural expiry.
+
+- **`BulkJobUpdateRequest.HeldOnMaster(ids)` factory**: single-call shorthand for the
+  standard HeldOnMaster bulk update (clears `Status`, `AgentConnectionId`, `AgentWorkerId`,
+  `BucketId`, `ProcessDeadline`, `PartitionLockId`, `PartitionLockExpiresAt`). Adopted
+  across all drain and deadline paths.
+
+- **`JobMasterConstants.DefaultCacheEntryExpiry` (`8h`)**: single source of truth for
+  sentinel-backed cache TTLs. Sentinel invalidation handles freshness; this is the
+  safety-net expiry in case a notification is missed. Applied to `MasterBucketService`,
+  `MasterAgentWorkersService`, `MasterClusterConfigurationService`, and
+  `JobMasterInMemoryCache` default.
+
+- **`ExcludeBucketIds` SQL support**: `SqlMasterJobsRepository.BuildWhere` now generates a
+  `NOT IN` clause for `ExcludeBucketIds`, allowing runners to exclude jobs by bucket at the
+  DB level.
+
+- **NATS JetStream busy-retry**: when onboarding is full the runner NAKs with increasing
+  delays (30s → 75s → 3 min) tracked via an in-memory counter (avoids `NumDelivered` noise
+  from TooEarly redeliveries). After 3 retries the job is redirected to master.
+
+- **`JobMasterDefaults` static class**: centralises all default configuration values that
+  were previously scattered as magic numbers — `DefaultJobTimeout` (1 min),
+  `TransientThreshold` (10 min), `MaxRetryCount` (3), `MaxMessageByteSize` (128 KB),
+  `DataRetentionTtl` (30 days), and nested `Worker` defaults: `TransferBatchSize` (1000),
+  `BucketBufferSize` (250), `BucketBufferLeadTime` (15 s), `ParallelismFactor` (1.0),
+  `BucketQtyPerPriority` (1), `DefaultMode` (Full).
+
+- **`MsgAckGuard.TryAckProgressAsync()`**: new method that sends a NATS `AckProgress`
+  to reset `AckWait` without committing a final outcome — used by the per-message
+  keep-alive loop in `NatsJetStreamRunnerBase`.
+
+- **`MsgAckGuard` hourly cleanup timer**: background timer evicts entries older than 2 h
+  from `FailureAttempts`, `BusyRetryCount`, and `LastUpdatedAt` dictionaries, preventing
+  unbounded memory growth in long-running agents.
+
+- **`IJobMasterSchedulerClusterAware.Schedule`/`ScheduleAsync` `notifyAgent` parameter**:
+  new optional `bool notifyAgent = true` flag lets callers suppress the agent notification
+  (useful for bulk/batch scheduling paths).
+
+- **`JobMasterJobStatus` helpers**: new `GetPreExecutionBucketStatuses()` (InBucket,
+  Onboarded, Queued) and `IsPreExecutionBucketStatus()` extension method.
+  `JobMasterJobStatusUtil` changed from `public` to `internal`.
+
+- **`UseNatsJetStream` multi-server overloads**: two new `ConfigExtensions` overloads accept
+  a `string[]` of pre-built connection strings or a `(url, userName, password)[]` tuple array,
+  joining them into a single cluster connection string. URL normalisation (`nats://` prefix,
+  credentials embedding) is handled internally so callers pass plain host:port values.
+
+- **`ApiJobExecution` enriched response**: three new fields — `AgentConnectionName`
+  (display name of the agent connection), `HostId`, and `HostDisplayName` — are now
+  included in every job execution record returned by the API.
+
+- **`ApiJobQueryCriteria` new filters**: `HostId`, `BucketId`, `WorkerLane`,
+  `AgentConnectionId`, and `WorkerId` filter parameters added to the jobs query endpoint.
+
+- **`ApiRecurringScheduleModel.IsStaticIdle`**: new boolean field indicating the schedule
+  is static (startup-defined) but not currently Active.
+
+### Changes
+- **Worker auto-name simplified**
+  Auto-generated names are now `{hostname}-{timestampId}` (e.g. `myserver-3c1a8b2`).
+  Explicit names follow the same pattern: `{workerName}-{timestampId}` (e.g. `payroll-01-3c1a8b2`).
+  The `workerId` for explicit names is now derived from `workerName` instead of `hostId`, making it stable and predictable.
+  See [WorkersConfiguration](docs/WorkersConfiguration.md) for naming guidance.
+
+- **Deadline runner is now a safety net only**: `HeldOnMasterDeadlineTimeoutJobsRunner`
+  excludes jobs whose bucket is Active or Completing via `ExcludeBucketIds`. The drain
+  path inside the engine is the primary mechanism; the deadline runner only intervenes when
+  a bucket is lost or the drain fails.
+
+- **Unified `AllBuckets` cache**: `MasterBucketService` now uses a single sentinel-backed
+  `AllBuckets` cache for both `Query`/`QueryAsync` (when `allowedDiscrepancy` is provided)
+  and `SelectBucketForJob`. `NotifyChanges` is always called before the DB operation, and
+  both `AllBuckets()` and `Bucket(id)` sentinel keys are notified on every mutation.
+  `IMasterBucketsService.Query`/`QueryAsync` now accept an optional `allowedDiscrepancy`
+  parameter.
+
+- **`MasterAgentWorkersService`**: `NotifyChanges` moved before DB operations in all
+  mutating methods; missing notifications added to both `Delete` variants.
+
+- **`JobsExecutionEngine` refactor**: extracted `FlushAuthorizedJobsAsync`,
+  `EnqueueJobsAsync`, and `PullPendingJobsAsync` from `PulseAsync`; moved `shouldSkip`
+  check after the Completing drain block; removed stale `ExceedProcessDeadline` guard
+  inside `ExecuteJobAsync` (with `ProcessDeadline = UtcNow` set by `Onboard()` it would
+  drop every job); `FlushToMasterAsync` uses `BulkJobUpdateRequest.HeldOnMaster`.
+
+- **`ManualDrainProcessingJobsRunner`**: uses `BulkJobUpdateRequest.HeldOnMaster`.
+
+- **`IOnBoardingControl` cleanup**: removed unused `Contains`, `Push`, `Count`,
+  `PruneDeadlinedItems`, and `GetNextDepartureTime`; renamed `PruneOldDepartureItems` →
+  `PullPending`.
+
+- **`ITaskQueueControl` cleanup**: removed `AbortTimeoutTasks()` — superseded by
+  `CancelAfter(Timeout)` in `TaskQueueItem.Start()`.
+
+- **`JobRawModel`**: added `Onboard()` method; renamed `Enqueued()` → `Enqueue()`.
+
+- **`MsgAckGuard` thread-safety overhaul**: all ack/nak methods now acquire a
+  `SemaphoreSlim(1,1)` before checking `Outcome`, preventing double-ack/nak races when two
+  concurrent threads handle the same message. `messageId` is now stored as an instance field
+  (was passed as a parameter to every call). `MsgAckGuard` now implements `IDisposable`.
+
+- **`NatsJetStreamRunnerBase` per-message AckProgress keep-alive**: a background task
+  started in `ProcessMessageAsync` periodically calls `TryAckProgressAsync()` at
+  `CalcAckProgressKeepAliveInterval(BucketBufferLeadTime)` intervals. The task is cancelled
+  and awaited in the `finally` block before the final ACK/NAK to avoid a stale progress
+  signal after the message is finalised.
+
+- **`NatsJetStreamJobsExecutionRunner` backpressure pulse signal**: a `volatile
+  TaskCompletionSource<bool>` `pulseSignal` gates `ProcessPayloadAsync` when the engine is
+  near capacity (or randomly at 5 %), creating light backpressure that prevents the NATS
+  consumer from pulling faster than handlers can process.
+
+- **`NatsJetStreamJobsExecutionRunner` new `OnBoardingResult` handling**:
+  `MovedToMaster` (debug log + return), `Invalid` (warning log, marks job `HeldOnMaster`,
+  persists), and `Busy` (delegates to `TryNakBusyAsync` with exhaustion escalation).
+
+- **`NatsJetStreamConstants` centralised timing helpers**: `CalcAckWait`,
+  `CalcAckProgressKeepAliveInterval`, and `CalcMessageLockDuration` replace duplicated
+  inline calculations. New constants: `AckOperationTimeout` (5 s), `HeartbeatPublishInterval`
+  (10 s), `ConsumerIdleHeartbeat` (5 s), `BusyRetryDelays` ([30 s, 75 s, 3 min]).
+  `DefaultDbOperationThrottleLimitForAgent` lowered from 1000 → 250.
+
+- **`NatsJetStreamConnector` AckWait refactor**: `ackWait` now calculated via
+  `NatsJetStreamConstants.CalcAckWait(bucketBufferLeadTime)` instead of a local formula.
+
+- **`JobsExecutionEngine` staging buffer + engine lock**: `TryOnBoardingJobAsync` now
+  appends to a `jobsToFlush` list (guarded by `jobsToFlushLock`); `FlushToOnBoardingControlAsync`
+  batch-persists them as `Onboarded` on each pulse. A `SemaphoreSlim engineLock` serialises
+  all pulse work in `PulseAsync`. A `recentlyHeldOnMasterIdsGuard` (version-matched, expires
+  after `ErrorHoldDuration`) prevents re-onboarding a job just moved to master, avoiding DB
+  version conflicts. `Completing` buckets immediately redirect jobs to master at onboard time.
+  `PreEnqueuedAsync` (async) changed to `PreEnqueue` (sync), removing an async dependency
+  from the enqueue hot path.
+
+- **`TaskQueueControl.ShutdownAsync` race fix**: snapshot of `Tasks` now taken inside a
+  lock before iteration. Boolean condition in `while` changed from `||` to `&&`.
+  New `GetRunningTimeouts()` returns all running task `Timeout` values.
+  New `GetIds()` returns a snapshot of all tracked IDs (waiting + running).
+
+- **`OnBoardingControl` API simplification**: `Push` no longer takes a `departureDeadline`
+  parameter — deadline enforcement moved to the engine layer. `ForcePush` removed (folded
+  into the staging buffer). `PruneDeadlinedItems` removed. New `GetIds()` method returns a
+  snapshot of all tracked IDs.
+
+- **Heartbeat publisher decoupled from data messages**: `NatsJetStreamRunnerBase` now
+  tracks `lastHeartbeatPublishedAt` independently and fires on `HeartbeatPublishInterval`
+  (10 s) regardless of data message throughput — previously a quiet stream could delay
+  heartbeat publication.
+
+- **GUID v7 for all entity IDs** (breaking schema change): jobs, recurring schedules,
+  job executions, and distributed lock records now use time-ordered GUID v7
+  (`Guid.CreateVersion7()`) instead of random v4 GUIDs. Time-ordered IDs eliminate index
+  page splits on insert-heavy workloads. `JobMasterRandomUtil` updated; all three SQL
+  provider repositories (MySQL, Postgres, SQL Server) updated to generate v7 IDs.
+
+- **Execution table separated from generic records** (breaking schema change):
+  `MasterJobExecutionService` and `IMasterJobExecutionService` removed entirely.
+  Job execution rows are now written to a dedicated `job_execution` table via a new
+  `IMasterLogsRepository`; `JobMasterLogger` switched from `IMasterGenericRecordRepository`
+  to `IMasterLogsRepository`. `LogPayload` helper removed. `JobExecutionPersistenceRecord`
+  added as the flat DTO for the new table. All job execution and recurring schedule writes
+  now use `UPDATE` instead of `UPSERT` — the execution record is created on start and
+  updated on finalisation; recurring schedule writes avoid overwriting concurrently modified
+  fields. This reduces contention on the generic record tables and simplifies the
+  log/execution query path.
+
+- **`AssignJobsToBucketsRunner` probe mechanism**: a lightweight `JobProbeResult`
+  (Count + MinNextPlanExecutionAt) query runs before the full dispatch scan, enabling a
+  two-tier pattern — skip the expensive scan entirely when the count is zero or the earliest
+  job is not yet due. `ProbeDiagnosticResult` captures timing for observability.
+  `IMasterJobsRepository` and `IMasterJobsService` gained the corresponding probe methods.
+
+### Fixed
+
+- **Critical: `NatsJetStreamRunnerBase` NATS consumer restart loop**: `ListenMsgsAsync`
+  is now wrapped in `while (!ct.IsCancellationRequested)` so `ConsumeAsync` is automatically
+  restarted if the server closes the subscription (heartbeat expiry, server restart, etc.).
+  `IdleHeartbeat = 5 s` added to `NatsJSConsumeOpts` to keep the pull subscription alive
+  during idle periods. This was the root cause of the 63–81 lost jobs observed in
+  `SchedulerTest(1000)` — see `project_nats_ackwait_root_cause.md` for the original analysis.
+
+- **`NatsJetStreamRunnerBase` `OperationCanceledException` handling**: a cancelled
+  `ConsumeAsync` that is not a user-requested shutdown now logs and continues the restart
+  loop instead of propagating. `StopConsumptionTaskAsync` catches both `TimeoutException`
+  and `OperationCanceledException when timeoutCts.IsCancellationRequested`.
+
+- **`NatsJetStreamRunnerBase` bad heartbeat no longer kills the subscription**: a
+  heartbeat signature mismatch now `continue`s the inner loop instead of `return`ing, so
+  a single malformed heartbeat cannot tear down the entire consumer.
+
+- **`NatsJetStreamConnector` .NET 6 compatibility**: `#if NET8_0_OR_GREATER` changed to
+  `#if NET6_0_OR_GREATER` for the `IAsyncDisposable` code path — previously the connector
+  would not dispose correctly on .NET 6 or .NET 7.
+
+- **`AckProgress` CTS independence**: the per-message `AckProgress` cancellation token
+  source is now independent of the consumer lifecycle token, fixing a potential issue where
+  cancelling the consumer would also cancel an in-flight `AckProgressAsync` call.
+
+- **`TaskQueueControl` `IsTaskDead` completion treated as dead**: `RanToCompletion` is
+  now included alongside `Faulted`/`Cancelled` in the dead-task check, since
+  `ListenMsgsAsync` should never exit normally.
+
+- **`ComputePostponeDuration` missing `PostponeFactor` multiplier**: the average running
+  job timeout was not being scaled by `PostponeFactor` before adding `MinPostponeDuration`,
+  causing the postpone window to be shorter than intended and re-triggering jobs too soon.
+
+### Renamed
+
+- **`footprint` → `fingerprint`** (pervasive, breaking change): `IAgentFootprintResolver`
+  → `IAgentFingerprintResolver`, `GiveYourFootprintAsync` → `GiveYourFingerprintAsync`,
+  `NatsJetStreamAgentFootprintResolver` → `NatsJetStreamAgentFingerprintResolver`, NATS KV
+  key suffix `agent_footprints` → `agent_fingerprints`, SQL table `agent_conn_footprint` →
+  `agent_conn_fingerprint`, SQL column `footprint` → `fingerprint`.
+
+- **`JobMasterLogSubjectType` → `JobMasterLogCategory`** (pervasive, breaking change):
+  enum `ApiJobMasterLogSubjectType` deleted; new `ApiJobMasterLogCategory` added with the
+  same integer values (Job=1…Api=7). `ApiLogItem.SubjectType` → `Category` (type updated),
+  `ApiLogItem.SubjectId` → `ReferenceId`. Same renames applied to
+  `ApiLogItemQueryCriteria` and all internal usages in runners and engine.
