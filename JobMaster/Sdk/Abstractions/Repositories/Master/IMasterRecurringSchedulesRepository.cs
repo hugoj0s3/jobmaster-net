@@ -24,6 +24,12 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     
     long Count(RecurringScheduleQueryCriteria queryCriteria);
 
+    /// <summary>
+    /// Returns the count of acquirable (not actively locked) recurring schedules matching the criteria.
+    /// MetadataFilters are not supported and will throw.
+    /// </summary>
+    Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria);
+
     Task<int> PurgeTerminatedAsync(DateTime cutoffUtc, int limit);
 
     void BulkUpdateStaticDefinitionLastEnsuredByStaticIds(IList<string> staticDefinitionIds, DateTime ensuredAt);

@@ -189,7 +189,6 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         {
             Ids = ids,
             Status = RecurringScheduleStatus.Active,
-            IsLocked = false,
             CountLimit = ids.Count,
         };
         return retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.AcquireAndFetchAsync(criteria, partitionLockId, expiresAtUtc)));
@@ -203,6 +202,11 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     public long Count(RecurringScheduleQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterRecurringSchedulesRepository.Count(queryCriteria));
+    }
+
+    public Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria)
+    {
+        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.ProbeCountForAcquireAsync(queryCriteria));
     }
 
     public RecurringScheduleRawModel? Get(Guid recurringScheduleId)

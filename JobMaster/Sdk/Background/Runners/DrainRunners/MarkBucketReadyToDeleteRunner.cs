@@ -14,7 +14,7 @@ namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 /// Calls <c>ReadyToDelete()</c> on the bucket model and stops itself after the transition.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
-internal class DrainBucketReadyToDeleteRunner : BucketAwareRunner
+internal class MarkBucketReadyToDeleteRunner : BucketAwareRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
     private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
@@ -25,7 +25,7 @@ internal class DrainBucketReadyToDeleteRunner : BucketAwareRunner
 
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(10);
 
-    public DrainBucketReadyToDeleteRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public MarkBucketReadyToDeleteRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();

@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.ScanPlans;
@@ -65,11 +66,17 @@ internal class RecentlyInsertedScheduleRecurringJobsRunner : JobMasterRunner
             return OnTickResult.Locked(TimeSpan.FromSeconds(1));
         }
 
-        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchByIdsAsync(
-            ids.ToList(),
-            utcNow.Add(durationToLock));
-
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
+        IList<RecurringScheduleRawModel> recurringSchedules;
+        try
+        {
+            recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchByIdsAsync(
+                ids.ToList(),
+                utcNow.Add(durationToLock));
+        }
+        finally
+        {
+            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
+        }
 
         foreach (var schedule in recurringSchedules)
         {

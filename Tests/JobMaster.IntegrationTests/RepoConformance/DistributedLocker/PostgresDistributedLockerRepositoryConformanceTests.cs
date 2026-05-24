@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;
 
 [Collection("PostgresRepositoryConformance")]
+[Trait("DB", "Postgres")]
 public sealed class PostgresDistributedLockerRepositoryConformanceTests
     : RepositoryDistributedLockerConformanceTests<PostgresRepositoryFixture>
 {

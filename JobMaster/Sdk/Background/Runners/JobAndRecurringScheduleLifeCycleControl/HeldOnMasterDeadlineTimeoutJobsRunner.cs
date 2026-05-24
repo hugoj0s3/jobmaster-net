@@ -106,38 +106,42 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, utcNow.Add(durationToLock));
-        if (jobs.Count <= 0)
+        try
         {
-            masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
-            return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
-        }
-
-        var eligibleJobs = jobs
-            .Where(j => !j.Status.IsFinalStatus())
-            .ToList();
-
-        if (eligibleJobs.Count < jobs.Count)
-        {
-            logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-        }
-
-        logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-
-        var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
-        foreach (var partition in partitions)
-        {
-            if (ct.IsCancellationRequested || cutOffTime <= DateTime.UtcNow)
+            var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, utcNow.Add(durationToLock));
+            if (jobs.Count <= 0)
             {
-                logger.Warn($"Runner timeout or cancellation — stopping bulk update early.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-                break;
+                return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
             }
 
-            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()));
+            var eligibleJobs = jobs
+                .Where(j => !j.Status.IsFinalStatus())
+                .ToList();
+
+            if (eligibleJobs.Count < jobs.Count)
+            {
+                logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+            }
+
+            logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+
+            var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+            foreach (var partition in partitions)
+            {
+                if (ct.IsCancellationRequested || cutOffTime <= DateTime.UtcNow)
+                {
+                    logger.Warn($"Runner timeout or cancellation — stopping bulk update early.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                    break;
+                }
+
+                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()));
+            }
+
+            return OnTickResult.Success(lastScanPlanResult.Interval);
         }
-
-        masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
-
-        return OnTickResult.Success(lastScanPlanResult.Interval);
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.ProcessDeadlineTimeoutLock(lockSlot), lockToken);
+        }
     }
 }

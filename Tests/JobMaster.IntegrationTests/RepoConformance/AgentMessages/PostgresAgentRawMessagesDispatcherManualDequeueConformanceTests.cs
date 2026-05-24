@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
 [Collection("PostgresRepositoryConformance")]
+[Trait("DB", "Postgres")]
 public sealed class PostgresAgentRawMessagesDispatcherManualDequeueConformanceTests
     : RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests<PostgresRepositoryFixture>
 {

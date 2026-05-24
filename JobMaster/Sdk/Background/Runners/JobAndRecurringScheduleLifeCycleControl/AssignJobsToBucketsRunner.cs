@@ -112,75 +112,82 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
         jobQueryCriteria.CountLimit = probeDiagnosticResult.BatchSize;
 
-        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, startTimeUtc.Add(durationToLock));
-        if (jobs.Count <= 0)
+        try
         {
-            masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
-            return OnTickResult.Skipped(this);
-        }
-
-        logger.Debug(
-            $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
-            JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-
-        var bucketAssignments = new Dictionary<Guid, BucketModel>();
-        foreach (var job in new List<JobRawModel>(jobs))
-        {
-            var (result, bucket) = await HandleJobBucketAssignmentAsync(job, ct);
-            if (result == HandleJobBucketAssignmentResult.Canceled)
+            var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, startTimeUtc.Add(durationToLock));
+            if (jobs.Count <= 0)
             {
-                break;
+                return OnTickResult.Skipped(this);
             }
 
-            if (result == HandleJobBucketAssignmentResult.Failed ||
-                result == HandleJobBucketAssignmentResult.FallbackAssignment)
-            {
-                jobs.Remove(job);
-            }
-            
-            if (bucket != null)
-            {
-                bucketAssignments[job.Id] = bucket;
-            }
-        }
+            logger.Debug(
+                $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
+                JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
-        var updatedJobs = new List<JobRawModel>();
-        foreach (var partition in jobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
-        {
-            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList());
-            updatedJobs.AddRange(updated);
-        }
-
-        var timeRemaining = cutOffTime - DateTime.UtcNow;
-        using var batchTimeoutCts =
-            new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5) ? timeRemaining : TimeSpan.FromSeconds(5));
-        var parallelOptions = new ParallelOptions()
-        {
-            CancellationToken = batchTimeoutCts.Token,
-            MaxDegreeOfParallelism = 5,
-        };
-        
-        await JobMasterParallelUtil.ForEachAsync(
-            updatedJobs, 
-            parallelOptions, 
-            async (job, _) => {
-                if (cutOffTime <= DateTime.UtcNow)
+            var bucketAssignments = new Dictionary<Guid, BucketModel>();
+            foreach (var job in new List<JobRawModel>(jobs))
+            {
+                var (result, bucket) = await HandleJobBucketAssignmentAsync(job, ct);
+                if (result == HandleJobBucketAssignmentResult.Canceled)
                 {
-                    logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.", JobMasterLogCategory.AgentWorker,
-                        BackgroundAgentWorker.AgentWorkerId);
-                    return;
+                    break;
                 }
 
-                await DispatchJobToBucketAsync(bucketAssignments, job);
-            });
+                if (result == HandleJobBucketAssignmentResult.Failed ||
+                    result == HandleJobBucketAssignmentResult.FallbackAssignment)
+                {
+                    jobs.Remove(job);
+                }
 
-        logger.Debug(
-            $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
-            JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                if (bucket != null)
+                {
+                    bucketAssignments[job.Id] = bucket;
+                }
+            }
 
-        masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
+            var updatedJobs = new List<JobRawModel>();
+            foreach (var partition in jobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+            {
+                var updated = await masterJobsService.BulkUpdateAsync(partition.ToList());
+                updatedJobs.AddRange(updated);
+            }
 
-        return OnTickResult.Success(this);
+            var timeRemaining = cutOffTime - DateTime.UtcNow;
+            using var batchTimeoutCts =
+                new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5) ? timeRemaining : TimeSpan.FromSeconds(5));
+            var parallelOptions = new ParallelOptions()
+            {
+                CancellationToken = batchTimeoutCts.Token,
+                MaxDegreeOfParallelism = 5,
+            };
+
+            await JobMasterParallelUtil.ForEachAsync(
+                updatedJobs,
+                parallelOptions,
+                async (job, _) => {
+                    if (cutOffTime <= DateTime.UtcNow)
+                    {
+                        logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.", JobMasterLogCategory.AgentWorker,
+                            BackgroundAgentWorker.AgentWorkerId);
+                        return;
+                    }
+
+                    await DispatchJobToBucketAsync(bucketAssignments, job);
+                });
+
+            logger.Debug(
+                $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
+                JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+
+            return OnTickResult.Success(this);
+        }
+        finally
+        {
+            if (probeDiagnosticResult.LockToken != null)
+            {
+                masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
+            }
+        }
     }
     
     public override async Task OnStopAsync()
@@ -363,7 +370,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     {
         var durationToLock = JobMasterConstants.DurationToLockRecords.Add(TimeSpan.FromMinutes(1));
         var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;
-        var probeResult = await this.masterJobsService.ProbeForBucketAssignmentAsync(jobQueryCriteria);
+        var probeResult = await this.masterJobsService.ProbeForAcquireAsync(jobQueryCriteria);
 
         if (probeResult.MinNextPlanExecutionAt.HasValue &&
             probeResult.MinNextPlanExecutionAt <= DateTime.UtcNow.AddSeconds(ProbeWindowInSeconds))

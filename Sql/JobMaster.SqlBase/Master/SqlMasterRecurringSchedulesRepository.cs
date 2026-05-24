@@ -392,6 +392,18 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
         return conn.ExecuteScalar<long>(sqlText, args);
     }
 
+    public async Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria)
+    {
+        if (queryCriteria.MetadataFilters.Count > 0)
+            throw new NotSupportedException("ProbeCountForAcquire does not support MetadataFilters.");
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
+        var t = TableName();
+        var sqlText = $"SELECT COUNT(*) FROM {t} s {whereSql}";
+        return await conn.ExecuteScalarAsync<long>(sqlText, args);
+    }
+
     public async Task<int> PurgeTerminatedAsync(DateTime cutoffUtc, int limit)
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
@@ -586,7 +598,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         return (sb.ToString(), concatedArgs);
     }
 
-    protected (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c)
+    protected (string, Dictionary<string, object?>) BuildWhere(RecurringScheduleQueryCriteria c, bool? isLocked = null)
     {
         var where = new List<string> { $"s.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();
@@ -597,22 +609,16 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             where.Add($"s.{Col(x => x.Status)} = @Status");
             args.Add("Status", (int)c.Status.Value);
         }
-        
-        if (c.IsLocked.HasValue)
+
+        if (isLocked.HasValue)
         {
-            where.Add(c.IsLocked.Value ? 
-                $"(s.{Col(x => x.PartitionLockId)} IS NOT NULL AND s.{Col(x => x.PartitionLockExpiresAt)} > @NowUtc)" : 
-                $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @NowUtcWithSkewPadding)");
+            where.Add(isLocked.Value
+                ? $"(s.{Col(x => x.PartitionLockId)} IS NOT NULL AND s.{Col(x => x.PartitionLockExpiresAt)} > @NowUtc)"
+                : $"(s.{Col(x => x.PartitionLockId)} IS NULL OR s.{Col(x => x.PartitionLockExpiresAt)} < @NowUtcWithSkewPadding)");
             args.Add("NowUtc", DateTime.UtcNow);
             args.Add("NowUtcWithSkewPadding", JobMasterConstants.NowUtcWithSkewTolerance());
         }
-        
-        if (c.PartitionLockId.HasValue)
-        {
-            where.Add($"s.{Col(x => x.PartitionLockId)} = @PartitionLockId");
-            args.Add("PartitionLockId", c.PartitionLockId.Value);
-        }
-        
+
         if (c.StartAfterTo.HasValue)
         {
             where.Add($"(s.{Col(x => x.StartAfter)} <= @StartAfterTo OR s.{Col(x => x.StartAfter)} IS NULL)");
@@ -814,22 +820,27 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
         });
     }
     
-    protected (string sqlText, Dictionary<string, object?> args) BuildGetByStaticIdSql(string staticId)
+    protected (string sqlText, Dictionary<string, object?>) BuildGetByStaticIdSql(string staticId)
     {
         var t = TableName();
+        var selectCols = SelectProjection("s", "e", "v");
         var sqlText = $@"
-SELECT * 
-FROM {t} s 
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)} 
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
-WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId 
-  and s.{Col(x => x.ClusterId)} = @ClusterId
-  and s.{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType";
+SELECT {selectCols}
+FROM {t} s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e
+    ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)}
+    AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v
+    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
+  AND s.{Col(x => x.ClusterId)} = @ClusterId
+  AND s.{Col(x => x.RecurringScheduleType)} = @RecurringScheduleType";
         return (sqlText, new Dictionary<string, object?>
         {
+            { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata },
             { "StaticDefinitionId", staticId },
             { "ClusterId", ClusterConnConfig.ClusterId },
-            { "RecurringScheduleType", (int) RecurringScheduleType.Static }
+            { "RecurringScheduleType", (int)RecurringScheduleType.Static }
         });
     }
 

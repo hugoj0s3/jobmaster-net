@@ -1334,7 +1334,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task ProbeForBucketAssignment_ShouldExclude_ActivelyLockedJobs_And_Include_ExpiredLocks()
+    public async Task ProbeForAcquire_ShouldExclude_ActivelyLockedJobs_And_Include_ExpiredLocks()
     {
         // ProbeForBucketAssignment intentionally uses isLocked=false — verify it counts correctly
         var def = "defProbe-" + JobMasterRandomUtil.NewGuid4();
@@ -1353,7 +1353,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(expiredLock);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
-        var probe = await Fixture.MasterJobs.ProbeForBucketAssignmentAsync(criteria);
+        var probe = await Fixture.MasterJobs.ProbeForAcquireAsync(criteria);
 
         Assert.Equal(2, probe.Count);
         Assert.NotNull(probe.MinNextPlanExecutionAt);

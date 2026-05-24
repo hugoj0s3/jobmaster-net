@@ -232,46 +232,29 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Query_ShouldSupport_IsLocked_And_PartitionLockId()
+    public async Task ProbeCountForAcquire_ShouldExclude_ActivelyLockedSchedules_And_Include_ExpiredLocks()
     {
-        var def = "defLock-" + JobMasterRandomUtil.NewGuid4();
+        var def = "defProbe-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
-        var lockedLockId = JobMasterRandomUtil.NewGuid4();
-        var expiredLockId = JobMasterRandomUtil.NewGuid4();
-
-        var locked = NewSchedule(jobDefinitionId: def);
-        locked.PartitionLockId = lockedLockId;
-        locked.PartitionLockExpiresAt = now.AddMinutes(30);
-
-        var expired = NewSchedule(jobDefinitionId: def);
-        expired.PartitionLockId = expiredLockId;
-        expired.PartitionLockExpiresAt = now.AddMinutes(-30);
-
         var unlocked = NewSchedule(jobDefinitionId: def);
-        unlocked.PartitionLockId = null;
-        unlocked.PartitionLockExpiresAt = null;
 
-        await Fixture.MasterRecurringSchedules.AddAsync(locked);
-        await Fixture.MasterRecurringSchedules.AddAsync(expired);
+        var activeLock = NewSchedule(jobDefinitionId: def);
+        activeLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        activeLock.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var expiredLock = NewSchedule(jobDefinitionId: def);
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
         await Fixture.MasterRecurringSchedules.AddAsync(unlocked);
+        await Fixture.MasterRecurringSchedules.AddAsync(activeLock);
+        await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
 
-        var cLocked = new RecurringScheduleQueryCriteria { JobDefinitionId = def, IsLocked = true, CountLimit = 100 };
-        var qLocked = await Fixture.MasterRecurringSchedules.QueryAsync(cLocked);
-        Assert.Contains(qLocked, x => x.Id == locked.Id);
-        Assert.DoesNotContain(qLocked, x => x.Id == expired.Id);
-        Assert.DoesNotContain(qLocked, x => x.Id == unlocked.Id);
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var count = await Fixture.MasterRecurringSchedules.ProbeCountForAcquireAsync(criteria);
 
-        var cUnlocked = new RecurringScheduleQueryCriteria { JobDefinitionId = def, IsLocked = false, CountLimit = 100 };
-        var qUnlocked = await Fixture.MasterRecurringSchedules.QueryAsync(cUnlocked);
-        Assert.Contains(qUnlocked, x => x.Id == expired.Id);
-        Assert.Contains(qUnlocked, x => x.Id == unlocked.Id);
-        Assert.DoesNotContain(qUnlocked, x => x.Id == locked.Id);
-
-        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = expiredLockId, CountLimit = 100 };
-        var qLockId = await Fixture.MasterRecurringSchedules.QueryAsync(cLockId);
-        Assert.Contains(qLockId, x => x.Id == expired.Id);
-        Assert.DoesNotContain(qLockId, x => x.Id == locked.Id);
+        Assert.Equal(2, count);
     }
 
     [Fact]

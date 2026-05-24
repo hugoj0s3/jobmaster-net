@@ -33,49 +33,54 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
     
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(5));
+        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(2.5));
         if (lockToken == null)
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
         
-        var buckets = await masterBucketsService.QueryAllNoCacheAsync();
-        var bucketsToEvaluate = buckets.Where(
-            b => b.AgentWorkerId != BackgroundAgentWorker.AgentWorkerId
-            && b.Status != BucketStatus.Lost);
-        
-        var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
-        var bucketsToMarkAsLost = new List<BucketModel>();
-        foreach (var bucket in bucketsToEvaluate)
+        try
         {
-            ct.ThrowIfCancellationRequested();
-            
-            if (bucket.AgentWorkerId == null)
+            var buckets = await masterBucketsService.QueryAllNoCacheAsync();
+            var bucketsToEvaluate = buckets.Where(
+                b => b.AgentWorkerId != BackgroundAgentWorker.AgentWorkerId
+                && b.Status != BucketStatus.Lost);
+
+            var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
+            var bucketsToMarkAsLost = new List<BucketModel>();
+            foreach (var bucket in bucketsToEvaluate)
             {
-                bucketsToMarkAsLost.Add(bucket);
-                continue;
+                ct.ThrowIfCancellationRequested();
+
+                if (bucket.AgentWorkerId == null)
+                {
+                    bucketsToMarkAsLost.Add(bucket);
+                    continue;
+                }
+
+                var agentWorker = workers.FirstOrDefault(x => x.Id == bucket.AgentWorkerId);
+                if (agentWorker == null)
+                {
+                    bucketsToMarkAsLost.Add(bucket);
+                    continue;
+                }
+
+                if (!agentWorker.IsAlive)
+                {
+                    bucketsToMarkAsLost.Add(bucket);
+                }
             }
-            
-            var agentWorker = workers.FirstOrDefault(x => x.Id == bucket.AgentWorkerId);
-            if (agentWorker == null) 
+
+            foreach (var bucket in bucketsToMarkAsLost)
             {
-                bucketsToMarkAsLost.Add(bucket);
-                continue;
+                await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(bucket.Id);
             }
-            
-            if (!agentWorker.IsAlive) 
-            {
-                bucketsToMarkAsLost.Add(bucket);
-            }
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
         }
 
-        foreach (var bucket in bucketsToMarkAsLost)
-        {
-            await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(bucket.Id);
-        }
-        
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
-        
         return OnTickResult.Success(this);
     }
 

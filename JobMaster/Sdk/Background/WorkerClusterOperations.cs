@@ -216,13 +216,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
         if (lockToken == null)
         {
+            logger.Debug($"MarkBucketAsLostAsync: failed to acquire lock for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
             return;
         }
-            
-        bucket.MarkAsLost();
-        await masterBucketsService.UpdateAsync(bucket);
-            
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+
+        try
+        {
+            bucket.MarkAsLost();
+            await masterBucketsService.UpdateAsync(bucket);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+        }
     }
 
     public async Task MarkBucketAsLostAsync(string bucketId)
@@ -289,10 +295,15 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             return;
         }
 
-        bucket.MarkAsLost();
-        masterBucketsService.Update(bucket);
-
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+        try
+        {
+            bucket.MarkAsLost();
+            masterBucketsService.Update(bucket);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+        }
     }
     
     public async Task<int> CountActiveCoordinatorWorkersAsync()

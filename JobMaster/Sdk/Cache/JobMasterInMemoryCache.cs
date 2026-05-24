@@ -72,7 +72,7 @@ internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
             {
                 cacheItem = Get<T>(key);
                 if (cacheItem is not null) return cacheItem;
-                
+
                 return Set(key, valueFactory(), durationToExpire);
             }
             finally
@@ -81,10 +81,21 @@ internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
             }
         }
 
+        // Lock timed out — the lock holder will populate the cache when it finishes.
+        // Do NOT call Set here: writing without the lock can overwrite the lock holder's
+        // result with a value read from an older DB snapshot, bypassing sentinel detection.
         cacheItem = Get<T>(key);
         if (cacheItem is not null) return cacheItem;
 
-        return Set(key, valueFactory(), durationToExpire);
+        var freshValue = valueFactory();
+        cacheItem = Get<T>(key);
+        if (cacheItem is not null) return cacheItem;
+
+        var utcNow = DateTime.UtcNow;
+        return new JobMasterInMemoryCacheItem<T>(
+            utcNow,
+            utcNow.Add(durationToExpire ?? JobMasterConstants.DefaultCacheEntryExpiry),
+            freshValue);
     }
 
     public async Task<JobMasterInMemoryCacheItem<T>> GetOrSetAsync<T>(
@@ -114,10 +125,21 @@ internal class JobMasterInMemoryCache : IJobMasterInMemoryCache
             }
         }
 
+        // Lock timed out — the lock holder will populate the cache when it finishes.
+        // Do NOT call Set here: writing without the lock can overwrite the lock holder's
+        // result with a value read from an older DB snapshot, bypassing sentinel detection.
         cacheItem = Get<T>(key);
         if (cacheItem is not null) return cacheItem;
 
-        return Set(key, await valueFactory(), durationToExpire);
+        var freshValue = await valueFactory();
+        cacheItem = Get<T>(key);
+        if (cacheItem is not null) return cacheItem;
+
+        var utcNow = DateTime.UtcNow;
+        return new JobMasterInMemoryCacheItem<T>(
+            utcNow,
+            utcNow.Add(durationToExpire ?? JobMasterConstants.DefaultCacheEntryExpiry),
+            freshValue);
     }
     
     public bool Exists(string key)

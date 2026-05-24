@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
 [Collection("MySqlRepositoryConformance")]
+[Trait("DB", "MySql")]
 public sealed class MySqlAgentRawMessagesDispatcherManualDequeueConformanceTests
     : RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests<MySqlRepositoryFixture>
 {

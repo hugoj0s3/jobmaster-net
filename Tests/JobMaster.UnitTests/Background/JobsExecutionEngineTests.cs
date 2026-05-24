@@ -101,44 +101,6 @@ public class JobsExecutionEngineTests
     }
 
     [Fact]
-    public async Task TryOnBoardingJobAsync_WhenRecurringScheduleNotFound_ShouldFailJobAndReturnCancelled()
-    {
-        var f = JobsExecutionEngineFixture.Create();
-        var sourceId = JobMasterRandomUtil.NewGuid4();
-        var job = JobsExecutionEngineFixture.CreateRecurringJob(sourceId);
-
-        f.Schedules.Setup(x => x.GetAsync(sourceId)).ReturnsAsync((RecurringScheduleRawModel?)null);
-
-        var result = await f.Engine.TryOnBoardingJobAsync(job);
-
-        result.Should().Be(OnBoardingResult.Cancelled);
-        job.Status.Should().Be(JobMasterJobStatus.Failed);
-        f.SingleUpdateWatcher.Should().ContainSingle(j => j.Id == job.Id);
-    }
-
-    [Fact]
-    public async Task TryOnBoardingJobAsync_WhenRecurringScheduleTerminated_ShouldCancelJobAndReturnCancelled()
-    {
-        var f = JobsExecutionEngineFixture.Create();
-        var sourceId = JobMasterRandomUtil.NewGuid4();
-        var job = JobsExecutionEngineFixture.CreateRecurringJob(sourceId);
-
-        var schedule = new RecurringScheduleRawModel
-        {
-            Id = sourceId,
-            Status = RecurringScheduleStatus.Canceled,
-            TerminatedAt = DateTime.UtcNow.AddHours(-2),
-        };
-        f.Schedules.Setup(x => x.GetAsync(sourceId)).ReturnsAsync(schedule);
-
-        var result = await f.Engine.TryOnBoardingJobAsync(job);
-
-        result.Should().Be(OnBoardingResult.Cancelled);
-        job.Status.Should().Be(JobMasterJobStatus.Cancelled);
-        f.SingleUpdateWatcher.Should().ContainSingle(j => j.Id == job.Id);
-    }
-
-    [Fact]
     public async Task TryOnBoardingJobAsync_WhenRecurringScheduleStaticIdle_ShouldMoveToMasterAndReturnMovedToMaster()
     {
         var f = JobsExecutionEngineFixture.Create();

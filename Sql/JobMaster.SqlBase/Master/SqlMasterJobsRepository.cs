@@ -309,10 +309,10 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         return conn.ExecuteScalar<long>(sqlText, args);
     }
 
-    public async Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria)
+    public async Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria)
     {
         if (queryCriteria.MetadataFilters.Count > 0)
-            throw new NotSupportedException("ProbeForBucketAssignment does not support MetadataFilters.");
+            throw new NotSupportedException("ProbeForAcquire does not support MetadataFilters.");
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
         
@@ -520,7 +520,11 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
         try
         {
             var t = TableName();
-            var (whereSql, args) = BuildWhere(queryCriteria);
+            // isLocked: false restricts the inner SELECT to unlocked rows only, so the
+            // LIMIT picks genuinely acquirable candidates. Without it, already-locked rows
+            // fill the LIMIT and the outer unlockedGuard discards them silently, returning
+            // 0 rows even when unlocked rows exist further in the result set.
+            var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
             var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
             var queryIdsSql = 
                 BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
@@ -695,7 +699,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
     protected (string whereSql, Dictionary<string, object?> args) BuildWhere(
         JobQueryCriteria c, 
         int? partitionLockId = null, 
-        bool? isLocked = false)
+        bool? isLocked = null)
     {
         var where = new List<string> { $"j.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();

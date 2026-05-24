@@ -62,6 +62,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
     public string CurrentTestExecutionId { get; set; } = string.Empty;
     
     private readonly ConcurrentDictionary<string, DateTime> lastFlushTime = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, object> fileWriteLocks = new(StringComparer.OrdinalIgnoreCase);
     private readonly System.Threading.Timer flushTimer;
     private const int FlushIntervalSeconds = 10;
     private const int FlushThresholdCount = 1000;
@@ -76,7 +77,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
     {
         // Start periodic flush timer
         flushTimer = new System.Threading.Timer(
-            _ => FlushAllLogs(),
+            _ => { try { FlushAllLogs(); } catch { /* swallow - test logging only */ } },
             null,
             TimeSpan.FromSeconds(FlushIntervalSeconds),
             TimeSpan.FromSeconds(FlushIntervalSeconds)
@@ -428,15 +429,20 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
         var logsByLevel = logsToFlush.GroupBy(l => l.Level);
         var rootDir = Path.Combine(AppContext.BaseDirectory, "jobmaster-test-logs", CurrentTestExecutionId);
         Directory.CreateDirectory(rootDir);
-        
-        foreach (var levelGroup in logsByLevel)
+
+        var writeLock = fileWriteLocks.GetOrAdd(clusterId, _ => new object());
+        lock (writeLock)
         {
-            var level = levelGroup.Key.ToString().ToLower();
-            var filePath = Path.Combine(rootDir, $"{clusterId}-{level}.log");
-            
-            var logLines = levelGroup.Select(l => l.ToString());
-            
-            File.AppendAllLines(filePath, logLines);
+            foreach (var levelGroup in logsByLevel)
+            {
+                var level = levelGroup.Key.ToString().ToLower();
+                var filePath = Path.Combine(rootDir, $"{clusterId}-{level}.log");
+
+                using var stream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+                using var writer = new StreamWriter(stream, System.Text.Encoding.UTF8);
+                foreach (var line in levelGroup.Select(l => l.ToString()))
+                    writer.WriteLine(line);
+            }
         }
     }
 

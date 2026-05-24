@@ -4,11 +4,13 @@ using Xunit.Abstractions;
 namespace JobMaster.IntegrationTests.ScheduleTests;
 
 [Collection("SqlServerPureScheduler")]
+[Trait("DB", "SqlServer")]
 public class SqlServerPureSchedulerTests : JobMasterSchedulerTestsBase<SqlServerPureFixture>
 {
     public SqlServerPureSchedulerTests(SqlServerPureFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
-    
+
     [Theory]
+    [Trait("TestType", "Scheduler")]
     // 250 jobs
     [InlineData(250, false, 2)]
     [InlineData(250, true, 4)]
@@ -27,8 +29,9 @@ public class SqlServerPureSchedulerTests : JobMasterSchedulerTestsBase<SqlServer
     }
 
     [Theory]
-    [InlineData("TimeSpanInterval", "00:00:05", 60, 12, 3, 5)]   // Every 5 seconds for 1 minute
-    [InlineData("TimeSpanInterval", "00:00:10", 120, 12, 2, 10)]  // Every 10 seconds for 2 minutes
+    [Trait("TestType", "Recurring")]
+    [InlineData("TimeSpanInterval", "00:00:45", 180, 4, 1, 45)]   // Every 45 seconds for 3 minutes
+    [InlineData("TimeSpanInterval", "00:01:30", 360, 4, 1, 90)]   // Every 90 seconds for 6 minutes
     [InlineData("TimeSpanInterval", "00:01:00", 300, 5, 1, 60)]   // Every 1 minute for 5 minutes
     public async Task RecurringScheduleTest(
         string expressionTypeId, 

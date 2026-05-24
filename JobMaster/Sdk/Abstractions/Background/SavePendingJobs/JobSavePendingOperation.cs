@@ -10,6 +10,15 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
+/// <summary>
+/// Encapsulates the logic for persisting a <see cref="JobRawModel"/> that arrives in the
+/// <c>PendingSave</c> state, covering both normal ingestion and bucket-drain scenarios.
+/// <para>
+/// Depending on context, the operation either: holds the job on the master (HeldOnMaster),
+/// short-circuits it directly into the local <c>JobsExecutionEngine</c>, or assigns it to a
+/// selected bucket and publishes it to the agent dispatcher for remote execution.
+/// </para>
+/// </summary>
 internal class JobSavePendingOperation
 {
     
@@ -21,6 +30,17 @@ internal class JobSavePendingOperation
     protected readonly IJobMasterBackgroundAgentWorker backgroundAgentWorker;
     private readonly string bucketId;
 
+    /// <summary>
+    /// Initializes the operation by resolving all required cluster-aware services from the
+    /// supplied <paramref name="backgroundAgentWorker"/> and binding it to the given
+    /// <paramref name="bucketId"/>.
+    /// </summary>
+    /// <param name="backgroundAgentWorker">
+    /// The background agent worker that provides cluster-scoped service resolution and engine access.
+    /// </param>
+    /// <param name="bucketId">
+    /// The bucket this operation is associated with, used for engine look-ups and fallback bucket retrieval.
+    /// </param>
     public JobSavePendingOperation(IJobMasterBackgroundAgentWorker backgroundAgentWorker, string bucketId)
     {
         
@@ -34,6 +54,23 @@ internal class JobSavePendingOperation
         this.bucketId = bucketId;
     }
     
+    /// <summary>
+    /// Persists a job as <c>HeldOnMaster</c> during a bucket drain, with a fallback safe-guard
+    /// that re-enqueues the job via the agent dispatcher if the primary upsert fails.
+    /// </summary>
+    /// <remarks>
+    /// On a duplication exception the job is considered already handled and
+    /// <see cref="SaveDrainResultCode.AlreadyExists"/> is returned without re-enqueuing.
+    /// On any other failure the safe-guard attempts to reassign the job to the current bucket
+    /// and dispatch it; if that also fails the result is <see cref="SaveDrainResultCode.Failed"/>.
+    /// </remarks>
+    /// <param name="job">The job to persist.</param>
+    /// <returns>
+    /// <see cref="SaveDrainResultCode.Success"/> on a clean persist;
+    /// <see cref="SaveDrainResultCode.AlreadyExists"/> on duplication;
+    /// <see cref="SaveDrainResultCode.FailedSafeGuarded"/> when the primary write failed but the
+    /// safe-guard dispatch succeeded; or <see cref="SaveDrainResultCode.Failed"/> when both paths fail.
+    /// </returns>
     public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainWithSafeGuardAsync(JobRawModel job)
     {
         try
@@ -55,12 +92,12 @@ internal class JobSavePendingOperation
                 var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
                 if (bucket is null)
                 {
-                    logger.Error("No bucket available to reassign job during drain safeguard.", JobMasterLogCategory.Job, job.Id);
+                    logger.Critical($"No bucket available to reassign job during drain safeguard. Job: {job.ToLogSummary()}", JobMasterLogCategory.Job, job.Id);
                     return SaveDrainResultCode.Failed;
                 }
-                job.AssignToBucket(bucket);
+                job.AssignSavePendingJobToBucket(bucket);
                 await agentJobsDispatcherService.AddSavePendingJobAsync(job);
-                return SaveDrainResultCode.Failed;
+                return SaveDrainResultCode.FailedSafeGuarded;
             }
             catch (Exception e)
             {
@@ -70,6 +107,17 @@ internal class JobSavePendingOperation
         }
     }
     
+    /// <summary>
+    /// Persists a job as <c>HeldOnMaster</c> during a bucket drain using an insert (not upsert).
+    /// Unlike <see cref="AddPendingSaveJobForDrainWithSafeGuardAsync"/>, this method has no
+    /// fallback re-dispatch path on failure.
+    /// </summary>
+    /// <param name="job">The job to persist.</param>
+    /// <returns>
+    /// <see cref="SaveDrainResultCode.Success"/> on a clean insert;
+    /// <see cref="SaveDrainResultCode.AlreadyExists"/> on duplication;
+    /// or <see cref="SaveDrainResultCode.Failed"/> on any other error.
+    /// </returns>
     public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainAsync(JobRawModel job)
     {
         try
@@ -90,6 +138,17 @@ internal class JobSavePendingOperation
         }
     }
     
+    /// <summary>
+    /// Transitions a job to <c>HeldOnMaster</c> via an upsert during bucket drain processing.
+    /// A version-conflict exception is treated as a benign race — another runner already claimed
+    /// or updated the job — and returns <see cref="SaveDrainResultCode.Skipped"/>.
+    /// </summary>
+    /// <param name="job">The job to mark as held on master.</param>
+    /// <returns>
+    /// <see cref="SaveDrainResultCode.Success"/> on a clean upsert;
+    /// <see cref="SaveDrainResultCode.Skipped"/> on a version conflict;
+    /// or <see cref="SaveDrainResultCode.Failed"/> on any other error.
+    /// </returns>
     public async Task<SaveDrainResultCode> HeldOnMasterProcessingForDrainAsync(JobRawModel job)
     {
         try
@@ -110,6 +169,44 @@ internal class JobSavePendingOperation
         }
     }
     
+    /// <summary>
+    /// Main ingestion path for a <c>PendingSave</c> job. Routes the job through one of three paths
+    /// depending on its next-execution time, the local engine state, and bucket availability:
+    /// <list type="number">
+    ///   <item>
+    ///     <description>
+    ///       <b>HeldOnMaster (future job):</b> if <c>NextPlanExecutionAt</c> is beyond
+    ///       <paramref name="cutOffDate"/> the job is inserted directly as <c>HeldOnMaster</c>
+    ///       so the master scheduler can re-evaluate it later.
+    ///     </description>
+    ///   </item>
+    ///   <item>
+    ///     <description>
+    ///       <b>Short-circuit into local engine:</b> if the job falls within the onboarding window,
+    ///       the owning bucket is active, and the local <c>JobsExecutionEngine</c> has onboarding
+    ///       capacity, the job is persisted and injected directly — skipping the NATS publish round-trip.
+    ///     </description>
+    ///   </item>
+    ///   <item>
+    ///     <description>
+    ///       <b>Bucket selection + publish:</b> a target bucket is selected via
+    ///       <see cref="IMasterBucketsService"/>, the job is assigned and persisted, then published
+    ///       to the agent dispatcher for remote execution.
+    ///     </description>
+    ///   </item>
+    /// </list>
+    /// In all failure paths the job is held on master so it can be reassigned on the next cycle.
+    /// </summary>
+    /// <param name="jobRaw">The pending-save job to process.</param>
+    /// <param name="cutOffDate">
+    /// The horizon beyond which a job's next execution is considered too far in the future to
+    /// dispatch now; jobs past this threshold are held on master.
+    /// </param>
+    /// <returns>
+    /// An <see cref="AddSavePendingResult"/> describing the outcome code, the bucket the job was
+    /// assigned to (if any), the published message ID (if dispatched), and any exception that
+    /// occurred during a failed publish attempt.
+    /// </returns>
     public async Task<AddSavePendingResult> AddSavePendingJobAsync(JobRawModel jobRaw, DateTime cutOffDate)
     {
         

@@ -180,6 +180,9 @@ internal static class MasterTableCreatorScripts
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_partition_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_partition_lock_expires", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_last_plan", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (lastPlanCoverageUntilCol, false, (int?)null)));
+        // Extends last_plan index with partition lock columns so the acquire scan can filter already-locked
+        // rows at the index level, avoiding a PK lookup per candidate row and reducing lock contention.
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_last_plan_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (lastPlanCoverageUntilCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_start_after", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (startAfterCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_end_before", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (endBeforeCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}_cluster_status_worker_lane", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (workerLaneCol, false, 250)));
@@ -322,6 +325,9 @@ internal static class MasterTableCreatorScripts
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_id", (clusterIdCol, false, 250)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status", (clusterIdCol, false, 250), (statusCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_next_plan", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (nextPlanExecutionAtCol, false, (int?)null)));
+        // Extends the next_plan index with partition lock columns so the acquire scan can filter already-locked
+        // rows at the index level, avoiding a PK lookup per candidate row and reducing lock contention.
+        indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_next_plan_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (nextPlanExecutionAtCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_process_deadline", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (processDeadlineCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_partition_lock", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null)));
         indexes.Add(sqlGenerator.CreateIndex($"{tableName}", $"idx_{tableName}job_cluster_status_partition_lock_expires", (clusterIdCol, false, 250), (statusCol, false, (int?)null), (partitionLockIdCol, false, (int?)null), (partitionLockExpiresAtCol, false, (int?)null)));

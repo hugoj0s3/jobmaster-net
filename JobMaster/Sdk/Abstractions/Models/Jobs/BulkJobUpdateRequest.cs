@@ -29,10 +29,12 @@ internal sealed class BulkJobUpdateRequest
 
     public static BulkJobUpdateRequest Cancel(IList<Guid> jobIds)
     {
-        var finalStatuses = JobMasterJobStatusUtil.GetFinalStatuses().ToList();
+        var excludeStatuses = JobMasterJobStatusUtil.GetFinalStatuses().ToList();
+        excludeStatuses.Add(JobMasterJobStatus.Processing);
+        
         return For(
             jobIds,
-            excludeStatuses: finalStatuses,
+            excludeStatuses: excludeStatuses,
             BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.Cancelled),
             BulkJobUpdateProperty.For(j => j.AgentConnectionId, null),
             BulkJobUpdateProperty.For(j => j.AgentWorkerId, null),

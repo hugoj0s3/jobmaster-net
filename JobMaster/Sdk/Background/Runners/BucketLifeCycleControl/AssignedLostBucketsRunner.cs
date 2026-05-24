@@ -47,61 +47,68 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
         {
             return OnTickResult.Skipped(this);
         }
-        
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(5));
+
+        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(2.5));
         if (lockToken == null)
         {
             return OnTickResult.Locked(this);
         }
-        
-        var buckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.Lost);
-        var lostBuckets = buckets
-            .Where(b => b.Status == BucketStatus.Lost);
-        
-        var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
-        var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
-        
-        foreach (var bucket in lostBuckets)
-        {
-            ct.ThrowIfCancellationRequested();
-            
-            var bucketLockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
-            if (bucketLockToken == null)
-            {
-                continue;
-            }
-            
-            var workerToSelect = workersAlive
-                .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
-                .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
-                .ToList();
-            
-            if (!workerToSelect.Any())
-            {
-                logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
-                this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
-                continue;
-            }
-                
-            if (workerToSelect.Any(x => x.Mode == AgentWorkerMode.Drain) && JobMasterRandomUtil.GetBoolean(0.75))
-            {
-                workerToSelect = workerToSelect.Where(x => x.Mode == AgentWorkerMode.Drain).ToList();
-            }
-            
-            var worker = workerToSelect.Random()!;
 
-            if (bucket.ReadyToDrain(worker.Id))
+        try
+        {
+            var buckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.Lost);
+            var lostBuckets = buckets.Where(b => b.Status == BucketStatus.Lost);
+
+            var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
+            var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
+
+            foreach (var bucket in lostBuckets)
             {
-                logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogCategory.Bucket, bucket.Id);
-                await masterBucketsService.UpdateAsync(bucket);
+                ct.ThrowIfCancellationRequested();
+
+                var bucketLockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
+                if (bucketLockToken == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var workerToSelect = workersAlive
+                        .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
+                        .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
+                        .ToList();
+
+                    if (!workerToSelect.Any())
+                    {
+                        logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
+                        continue;
+                    }
+
+                    if (workerToSelect.Any(x => x.Mode == AgentWorkerMode.Drain) && JobMasterRandomUtil.GetBoolean(0.75))
+                    {
+                        workerToSelect = workerToSelect.Where(x => x.Mode == AgentWorkerMode.Drain).ToList();
+                    }
+
+                    var worker = workerToSelect.Random()!;
+
+                    if (bucket.ReadyToDrain(worker.Id))
+                    {
+                        logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogCategory.Bucket, bucket.Id);
+                        await masterBucketsService.UpdateAsync(bucket);
+                    }
+                }
+                finally
+                {
+                    masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+                }
             }
-            
-            this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
         }
-        
-        
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
-        
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
+        }
+
         return OnTickResult.Success(this);
     }
 

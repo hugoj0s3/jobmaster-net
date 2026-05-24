@@ -25,7 +25,7 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     /// <c>NextPlanExecutionAt</c>, used by <c>AssignJobsToBucketsRunner</c> to decide
     /// whether to run the imminent or scan-plan assignment path.
     /// </summary>
-    Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria);
+    Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria);
     bool CheckVersion(Guid jobId, string? version);
     Task<bool> CheckVersionAsync(Guid jobId, string? version);
     JobRawModel? Get(Guid jobId);

@@ -154,30 +154,19 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             return OnBoardingResult.MovedToMaster;
         }
 
-        // Check if job belongs to a cancelled recurring schedule
-        if (payload.SourceId.HasValue && payload.TriggerSourceType.IsRecurringTrigger())
+        // For static recurring jobs only: hold on master if the schedule is currently idle.
+        // Terminated/cancelled schedules are handled at execution time (see further below)
+        // and in bulk by CancelJobsFromRecurScheduleInactiveOrCanceledRunner.
+        if (payload.SourceId.HasValue && payload.TriggerSourceType == JobMasterTriggerSourceType.StaticRecurring)
         {
-            var (validationResult, _) = await ValidateRecurringScheduleAsync(
-                payload.SourceId.Value,
-                payload.GetSafeNextPlanExecutionAt(),
-                payload.Id);
-
-            switch (validationResult)
+            var schedule = await masterRecurringSchedulesService.GetAsync(payload.SourceId.Value);
+            if (schedule is not null &&
+                !schedule.Status.IsFinalStatus() &&
+                schedule.IsStaticIdle(JobMasterRuntimeSingleton.Instance?.StartingAt))
             {
-                case RecurringScheduleValidationResult.NotFound:
-                    payload.MarkAsFailed();
-                    await this.UpdateSingleJobAsync(payload);
-                    return OnBoardingResult.Cancelled;
-
-                case RecurringScheduleValidationResult.Terminated:
-                    payload.TryToCancel(ignoreOnBoarding: true);
-                    await this.UpdateSingleJobAsync(payload);
-                    return OnBoardingResult.Cancelled;
-
-                case RecurringScheduleValidationResult.StaticIdle:
-                    payload.MarkAsHeldOnMaster();
-                    await this.UpdateSingleJobAsync(payload);
-                    return OnBoardingResult.MovedToMaster;
+                payload.MarkAsHeldOnMaster();
+                await this.UpdateSingleJobAsync(payload);
+                return OnBoardingResult.MovedToMaster;
             }
         }
 

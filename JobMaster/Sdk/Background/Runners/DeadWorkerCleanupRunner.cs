@@ -64,11 +64,21 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
                     continue;
                 }
                 
-                masterDistributedLockerService
+                var workerLockToken = masterDistributedLockerService
                     .TryLock(lockKeys.WorkerImmediateStopLock(deadWorker.Id), TimeSpan.FromHours(1));
-                
-                // Delete the dead worker record
-                await masterAgentWorkersService.DeleteWorkerAsync(deadWorker.Id);
+                if (workerLockToken == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    await masterAgentWorkersService.DeleteWorkerAsync(deadWorker.Id);
+                }
+                finally
+                {
+                    masterDistributedLockerService.ReleaseLock(lockKeys.WorkerImmediateStopLock(deadWorker.Id), workerLockToken);
+                }
             }
             
             if (deadWorkers.Any())

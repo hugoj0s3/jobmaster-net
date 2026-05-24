@@ -7,18 +7,18 @@ using JobMaster.Sdk.Background.Runners.DrainRunners;
 namespace JobMaster.UnitTests.Background.Runners;
 
 /// <summary>
-/// Unit tests for <see cref="DrainBucketReadyToDeleteRunner"/>.
+/// Unit tests for <see cref="MarkBucketReadyToDeleteRunner"/>.
 /// Covers: skip when no bucket ID is set, skip when the bucket is not in Draining status,
 /// waiting while jobs remain, waiting while the idle period has not elapsed, and
 /// transitioning to ReadyToDelete once the bucket has been job-free long enough.
 /// </summary>
-public class DrainBucketReadyToDeleteRunnerTests
+public class MarkBucketReadyToDeleteRunnerTests
 {
     private const string TestBucketId = "drain-bucket";
 
-    private static DrainBucketReadyToDeleteRunner CreateRunner(RunnerFixture f, string? bucketId = TestBucketId)
+    private static MarkBucketReadyToDeleteRunner CreateRunner(RunnerFixture f, string? bucketId = TestBucketId)
     {
-        var runner = new DrainBucketReadyToDeleteRunner(f.Worker.Object);
+        var runner = new MarkBucketReadyToDeleteRunner(f.Worker.Object);
         if (bucketId != null)
             runner.DefineBucketId(bucketId);
         return runner;
@@ -30,7 +30,7 @@ public class DrainBucketReadyToDeleteRunnerTests
     public async Task OnTickAsync_WhenBucketIdNotDefined_ShouldReturnSkipped()
     {
         var f = RunnerFixture.Create();
-        var runner = new DrainBucketReadyToDeleteRunner(f.Worker.Object); // no DefineBucketId
+        var runner = new MarkBucketReadyToDeleteRunner(f.Worker.Object); // no DefineBucketId
 
         var result = await runner.OnTickAsync(CancellationToken.None);
 
@@ -110,7 +110,7 @@ public class DrainBucketReadyToDeleteRunnerTests
         await runner.OnTickAsync(CancellationToken.None);
 
         // Use reflection to backdate the noJobsSinceUtc field so the idle period appears elapsed.
-        var field = typeof(DrainBucketReadyToDeleteRunner)
+        var field = typeof(MarkBucketReadyToDeleteRunner)
             .GetField("noJobsSinceUtc", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         field.SetValue(runner, DateTime.UtcNow.AddMinutes(-15));
 
@@ -138,7 +138,7 @@ public class DrainBucketReadyToDeleteRunnerTests
         await runner.OnTickAsync(CancellationToken.None);
 
         // Check that noJobsSinceUtc was cleared.
-        var field = typeof(DrainBucketReadyToDeleteRunner)
+        var field = typeof(MarkBucketReadyToDeleteRunner)
             .GetField("noJobsSinceUtc", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!;
         field.GetValue(runner).Should().BeNull();
     }

@@ -19,8 +19,6 @@ namespace JobMaster.UnitTests.Background.Runners;
 
 internal static class RunnerFakes
 {
-    // â”€â”€ FakeDistributedLocker â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
     internal sealed class FakeDistributedLocker : IMasterDistributedLockerService
     {
         private readonly Dictionary<string, (string Token, DateTime ExpiresAt)> _locks = new();
@@ -105,9 +103,7 @@ internal static class RunnerFakes
         public Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null)
             => throw new NotImplementedException();
     }
-
-    // â”€â”€ FakeJobsService â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
+    
     internal sealed class FakeJobsService : IMasterJobsService
     {
         public JobMasterClusterConnectionConfig ClusterConnConfig { get; } = null!;
@@ -171,7 +167,7 @@ internal static class RunnerFakes
         public long Count(JobQueryCriteria criteria)
             => ApplyFiltersNoPage(Jobs, criteria).LongCount();
 
-        public Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria criteria)
+        public Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria criteria)
         {
             var filtered = ApplyFiltersNoPage(Jobs, criteria);
             if (criteria.NextPlanExecutionAtTo.HasValue)
@@ -358,7 +354,7 @@ internal static class RunnerFakes
         public IList<JobRawModel> Query(JobQueryCriteria criteria) => throw new NotImplementedException();
         public Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
         public long Count(JobQueryCriteria criteria) => throw new NotImplementedException();
-        public Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
+        public Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
         public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
         public Task BulkUpdateAsync(BulkJobUpdateRequest request) => throw new NotImplementedException();
         public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels) => throw new NotImplementedException();
@@ -462,6 +458,11 @@ internal static class RunnerFakes
         public string MasterRepoTypeId { get; } = "fake";
 
         public List<RecurringScheduleRawModel> Schedules { get; } = new();
+
+        public Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria)
+        {
+            throw new NotImplementedException();
+        }
 
         public Task<int> PurgeTerminatedAsync(DateTime cutoffUtc, int limit)
         {
@@ -677,6 +678,9 @@ internal static class RunnerFakes
 
         public long Count(RecurringScheduleQueryCriteria queryCriteria)
             => ApplyFilters(Schedules, queryCriteria).LongCount();
+
+        public Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria)
+            => Task.FromResult(Count(queryCriteria));
 
         public Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(
             RecurringScheduleQueryCriteria queryCriteria, DateTime expiresAtUtc)

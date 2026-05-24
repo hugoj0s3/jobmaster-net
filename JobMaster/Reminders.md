@@ -4,10 +4,14 @@
 - **Locking strategy**: Re‑evaluate the locker usage (we probably no longer need the “saving” locks). Ideal design is per-resource locking; keep the current action-level approach only if the refactor is too costly right now.
 - **Missing handler fallout (`RecurringSchedulePlanner.ScheduleNextJobsAsync`)**: Current guard just logs and skips when a handler is gone; add logic to automatically terminate the recurring schedule after X consecutive errors or a time threshold so logs don’t spam forever.
 
+## Repository / Persistence
+- **`BulkUpdateAsync` — single SQL round-trip**: The current implementation issues one SQL statement per job. Replace with a single batched statement (e.g. a `VALUES` list joined to the target table) that atomically checks the row version, applies the update, and returns only the rows that were actually changed. This will likely require DB-specific SQL (e.g. PostgreSQL `UPDATE … FROM (VALUES …)` or SQL Server `MERGE`), so abstract behind the existing db-provider pattern.
+
 ## Runners
 - **Graceful stop**: Review and refine the shutdown sequence—the current implementation is unreliable.
 - **Immediate stop**: Improve the hard-stop path as well; it still behaves awkwardly.
 - **ScanPlanner**: move LockerSlot selection into ComputeScanPlanHalfWindow result reuse across the runners.
+- **Cache for bucket and worker reads**: Runners currently call `QueryAllNoCacheAsync` for buckets (and workers) on every tick, causing redundant DB round-trips. Evaluate switching to the in-memory cache (`QueryAllAsync` or a dedicated cache key) so hot reads are served from memory. Invalidate on write so correctness is preserved; profile the cache-miss rate before deciding on TTL vs. event-driven invalidation.
 
 ## Ideas & Experiments
 

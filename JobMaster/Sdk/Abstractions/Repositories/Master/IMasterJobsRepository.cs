@@ -28,7 +28,7 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     /// Returns the count of unacquired <c>OnMaster</c> jobs matching the criteria and the earliest
     /// <c>NextPlanExecutionAt</c> among them. MetadataFilters are not supported and will throw.
     /// </summary>
-    Task<JobProbeResult> ProbeForBucketAssignmentAsync(JobQueryCriteria queryCriteria);
+    Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria);
     
     void ReleasePartitionLock(Guid jobId);
     
