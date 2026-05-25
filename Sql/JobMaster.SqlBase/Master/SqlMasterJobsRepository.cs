@@ -492,6 +492,12 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
 
                 var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
+
+                // Delete Job Executions
+                var execTable = JobExecutionTableName();
+                var execInClause = sql.InClauseFor("job_id", "@Ids");
+                var deleteExecSql = $"DELETE FROM {execTable} WHERE {cClusterId} = @ClusterId AND {execInClause}";
+                await conn.ExecuteAsync(deleteExecSql, new { ClusterId = ClusterConnConfig.ClusterId, Ids = idsPartition }, tx);
             }
 
             tx.Commit();

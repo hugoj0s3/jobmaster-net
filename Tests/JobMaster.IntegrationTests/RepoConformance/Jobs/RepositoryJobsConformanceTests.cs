@@ -503,6 +503,16 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(recentSucceeded);
         await Fixture.MasterJobs.AddAsync(heldOnMaster);
 
+        var execution = new JobExecution(Fixture.ClusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobId = oldSucceeded.Id,
+            StartedAt = baseTime.AddMinutes(1),
+            FinalizedAt = baseTime.AddMinutes(1),
+            Outcome = JobExecutionOutcomeStatus.Succeeded
+        };
+        await Fixture.MasterJobs.AddJobExecutionAsync(execution);
+
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
 
@@ -516,6 +526,9 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.DoesNotContain(remaining, j => j.Id == oldFailed.Id);
         Assert.Contains(remaining, j => j.Id == recentSucceeded.Id);
         Assert.Contains(remaining, j => j.Id == heldOnMaster.Id);
+
+        var executions = await Fixture.MasterJobs.QueryJobExecutionsAsync(oldSucceeded.Id);
+        Assert.Empty(executions);
     }
 
     [Fact]

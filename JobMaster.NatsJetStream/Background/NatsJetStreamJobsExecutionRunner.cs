@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Abstractions;
