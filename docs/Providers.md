@@ -9,8 +9,8 @@ JobMaster separates the Master database (authoritative state) from the Agent tra
 - Use when you want transactional semantics with good throughput and simple ops.
 - Install:
 ```bash
-dotnet add package JobMaster --version 0.0.6-alpha
-dotnet add package JobMaster.Postgres --version 0.0.6-alpha
+dotnet add package JobMaster
+dotnet add package JobMaster.Postgres
 ```
 - Setup:
 ```csharp
@@ -35,8 +35,8 @@ builder.Services.AddJobMasterCluster(config =>
 - Use when your infra standardizes on MySQL-compatible engines.
 - Install:
 ```bash
-dotnet add package JobMaster --version 0.0.6-alpha
-dotnet add package JobMaster.MySql --version 0.0.6-alpha
+dotnet add package JobMaster
+dotnet add package JobMaster.MySql
 ```
 - Setup:
 ```csharp
@@ -63,8 +63,8 @@ builder.Services.AddJobMasterCluster(config =>
 - Use when your environment is Microsoft-first or needs SQL Server features.
 - Install:
 ```bash
-dotnet add package JobMaster --version 0.0.6-alpha
-dotnet add package JobMaster.SqlServer --version 0.0.6-alpha
+dotnet add package JobMaster
+dotnet add package JobMaster.SqlServer
 ```
 - Setup:
 ```csharp
@@ -112,8 +112,8 @@ builder.Services.AddJobMasterCluster(config =>
 - Use for ultra-low latency, high fan-out, or ephemeral workloads.
 - Install:
 ```bash
-dotnet add package JobMaster --version 0.0.6-alpha
-dotnet add package JobMaster.NatsJetStream --version 0.0.6-alpha
+dotnet add package JobMaster
+dotnet add package JobMaster.NatsJetStream
 ```
 - Setup:
 ```csharp

@@ -159,46 +159,7 @@ With `.BucketQtyConfig()`, you define how many buckets this worker should own fo
 
 ---
 
-## Runner Resilience & Failure Policy
-
-Every internal sub-process of a worker runs as an independent background loop called a _runner_. Runners are self-healing by design — transient issues such as database deadlocks or network blips are absorbed without destabilizing the cluster.
-
-### Weighted Failure Scoring
-
-Rather than a simple failure counter, each runner tracks a weighted score that discounts expected database noise:
-
-| Failure Type | Weight | Points Needed to Terminate |
-| :--- | :---: | :---: |
-| Database deadlock | 0.25 | 60 |
-| Optimistic lock / version conflict | 0.50 | 30 |
-| Any other exception | 1.00 | 15 |
-
-A single successful tick **resets the score to zero**.
-
-### Consecutive Failure Backoff
-
-After **3 consecutive failures** the runner inserts a **30-second cooling period** before resuming. This absorbs transient overloads — a DB under heavy load, a brief network interruption — without immediately escalating toward the termination threshold.
-
-### Termination & Worker Stop
-
-When a runner's failure score reaches **15**, it is permanently terminated:
-
-- **Critical runners** (those bound to the main worker lifecycle) stop the entire worker when they terminate.
-- **Bucket-level runners** stop only themselves; the rest of the worker continues.
-
-If a worker stops unexpectedly, check the logs for the runner that accumulated the score. The log line reports the current score and the exception type, making it straightforward to distinguish sustained real failures (score rises quickly) from transient DB noise (score rises slowly, resets often).
-
-### KeepAlive Runners
-
-Three runners — **Worker heartbeat**, **Host heartbeat**, and **Agent Connection heartbeat** — are exempt from failure-based termination. They run continuously regardless of error count so the cluster's topology remains observable even when the underlying store is temporarily unavailable.
-
----
-
 ## Throughput & Batch Optimization
-
-In 0.0.6, the old single `BatchSize` setting was split into three distinct knobs, each controlling a different layer of the pipeline. Mixing them into one value led to hard trade-offs; keeping them separate lets you tune each concern independently.
-
----
 
 ### 1. TransferBatchSize — DB Fetch Efficiency
 
