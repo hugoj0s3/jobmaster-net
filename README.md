@@ -192,6 +192,10 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
   - One-off and recurring scheduling, `IJobHandler`, attributes and metadata
   - See: [docs/Scheduling.md](docs/Scheduling.md)
 
+- **Architecture Overview**
+  - Core concepts, planes (Orchestration & Durable Storage vs. Transport Layer), and standard assignment vs. high-speed SavePending shortcut flows.
+  - See: [docs/ArchitectureOverview.md](docs/ArchitectureOverview.md)
+
 - **Cluster, Agent Connections, and Workers Configuration**
   - Cluster setup, agent connections, workers, lanes, buckets, batch sizing
   - See:
@@ -199,10 +203,6 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
     - [docs/WorkersConfiguration.md](docs/WorkersConfiguration.md)
     - [docs/AgentsConfiguration.md](docs/AgentsConfiguration.md)
     - [docs/ClusterConfiguration.md](docs/ClusterConfiguration.md)
-
-- **Architecture Overview**
-  - Core concepts, planes (Orchestration & Durable Storage vs. Transport Layer), and standard assignment vs. high-speed SavePending shortcut flows.
-  - See: [docs/ArchitectureOverview.md](docs/ArchitectureOverview.md)
 
 - **Architecture & Performance Tuning Guide**
   - Tuning JobMaster like a database: sizing coordinators, workers, lanes, and bucket partitions.
