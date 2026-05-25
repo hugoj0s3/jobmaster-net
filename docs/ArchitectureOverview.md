@@ -31,6 +31,11 @@ JobMaster allows you to **scale across multiple different transport layers simul
 * Route high-velocity, lightweight jobs (e.g., real-time webhooks, emails) to a high-speed **NATS JetStream** transport layer.
 * Route long-running, resource-intensive analytics tasks to an **RDBMS** transport layer (e.g. PostgreSQL or SQL Server).
 
+### Decoupled Architecture Diagram
+Here is how JobMaster decouples coordination (brains) from execution (muscle), separating operational responsibilities into independent planes to optimize scale and avoid database write constraints:
+
+![JobMaster — Decoupled Architecture Topology](img/decoupled-topology.svg)
+
 ---
 
 ## 3. Standard Flow: Assigning Jobs to Buckets
@@ -47,7 +52,7 @@ The standard execution flow partitions workload queues so that multiple workers 
 ### Standard Flow Diagram
 Here is how jobs flow from the Master DB through the Coordinator and into the Worker Buckets:
 
-![JobMaster — Assign Jobs to Buckets](../img/assign-jobs-to-buckets-simple.svg)
+![JobMaster — Assign Jobs to Buckets](img/job-assignment.svg)
 
 ---
 
@@ -64,7 +69,7 @@ To avoid overloading the Master DB during high-volume bursts (e.g., an API recei
 ### SavePending Flow Diagram
 Here is how the API producer schedules jobs and how they are routed based on their planned execution time:
 
-![JobMaster — SavePending: Decoupled Buffer & Execution Shortcut](../img/savepending-shortcut.svg)
+![JobMaster — SavePending: Decoupled Buffer & Execution Shortcut](img/savepending-flow.svg)
 
 ---
 
@@ -81,7 +86,7 @@ If an **Agent Worker** crashes, stops heartbeating, or loses network connectivit
 ### Self-Healing & Orphan Recovery Diagram
 Here is how the active worker adopts the lost bucket and redirects both unfinished and unsaved jobs back to the Master DB:
 
-![JobMaster — Self-Healing & Orphan Bucket Recovery](../img/lost-bucket-recovery.svg)
+![JobMaster — Self-Healing & Orphan Bucket Recovery](img/orphan-recovery.svg)
 
 ---
 

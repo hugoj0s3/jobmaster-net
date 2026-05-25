@@ -12,27 +12,10 @@ This guide provides the architectural blueprints and tuning formulas to help you
 
 In a large-scale cluster, JobMaster separates operational responsibilities into independent, specialized modes. This decoupling ensures that database query bottlenecks never starve your compute resources, and heavy execution workloads never choke your orchestration plane.
 
-```
-       [ Client / API DTOs ]
-                 │
-                 ▼ (Fast Ephemeral Writes / SavePending)
-       ┌───────────────────┐
-       │  Agent Ephemeral  │
-       │  Transport Layer  │◄─────────────────┐
-       └─────────┬─────────┘                  │
-                 │                            │ (Executor pull / InBucket)
-                 ▼ (Batch Async Sync-Back)    │
-       ┌───────────────────┐        ┌─────────┴─────────┐
-       │     Master DB     │◄───────┤   Agent Worker    │
-       │ (Orchestration &  │        │ (Executor Mode)   │
-       │  Durable Storage) │        └───────────────────┘
-       └─────────┬─────────┘
-                 │
-                 ▼ (Acquire & Batch Onboard)
-       ┌───────────────────┐
-       │    Coordinator    │
-       └───────────────────┘
-```
+### Decoupled Topology Diagram
+Here is how JobMaster separates responsibilities into independent, specialized planes to scale compute horizontally without overloading the central database:
+
+![JobMaster — Decoupled Architecture Topology](img/decoupled-topology.svg)
 
 ### Orchestration & Durable Storage (Master DB)
 * **Role**: The source of truth for orchestration, topological health, policies, and detailed job execution audit trails to facilitate debugging and manual/historical executions.
@@ -59,10 +42,10 @@ JobMaster allows you to **scale across multiple different transport layers simul
 
 ## 2. Configuring and Tuning Cluster Settings: Sizing Your Configurations
 
-When scaling your cluster, you have five major parameters to adjust. Here is how to toggle them to fit your workload:
+When scaling your cluster, you have six major parameters to adjust. Here is how to toggle them to fit your workload:
 
 ### Parameter 1: How many Coordinators do I need?
-Under normal conditions, **1 or 2 Coordinators** are enough for the entire cluster (using 2 provides active-passive High Availability / Failover).
+Under normal conditions, **no more than 5 Coordinators** are enough for the entire cluster (using 2 or more provides active-passive High Availability / Failover).
 
 * **Why**: A Coordinator's job is extremely fast. It queries, acquires, and pushes.
 * **Tuning `TransferBatchSize`**: 
@@ -96,6 +79,48 @@ Think of Lanes as **physically isolated queues** or dedicated execution zones. B
 * **Solution**: 
   * Dedicate a worker fleet to `.WorkerLane("Critical-Emails")` with many buckets.
   * Dedicate a separate, low-priority worker fleet on cheap instances to `.WorkerLane("Heavy-Analytics")` with few buckets.
+* **Database vs. Message Broker Isolation for Long-Running Tasks**:
+  * **Guidelines**: For jobs that take longer than 30 seconds to execute, prefer using a **database-backed transport layer** (RDBMS like PostgreSQL or SQL Server) rather than an ephemeral message broker (like NATS JetStream). 
+  * **Why**: Message brokers are designed for sub-second, high-velocity streaming tasks. Holding long-running jobs in broker channels can exceed consumer timeout thresholds, leading to duplicate execution attempts. A database transport handles long durations gracefully.
+  * **Implementation**: Create a dedicated database agent connection, and configure a specialized worker pool using a dedicated `WorkerLane` connected to that database transport.
+  
+  ```csharp
+  // Registering Isolated Broker vs. Database Transport Connections & Worker Fleets
+  builder.Services.AddJobMasterCluster(config =>
+  {
+      config.ClusterId("SMB-Enterprise-Cluster");
+
+      // 1. Register Connections
+      // Fast Ephemeral Transport for real-time webhooks & emails
+      config.AddAgentConnection("Fast-Broker-Connection")
+          .UseNatsJetStream("nats://localhost:4222");
+
+      // Durable Database-backed Transport for heavy/long analytics
+      config.AddAgentConnection("Durable-Db-Connection")
+          .UsePostgresTransport("Host=localhost;Database=jobmaster_transport;...");
+          
+      // 2. Define Isolated Worker Fleets
+      
+      // Fleet A: Fast-Velocity Message Broker Workers (Pulls from NATS JetStream)
+      config.AddWorker()
+          .WorkerName("Broker-Executor")
+          .SetWorkerMode(AgentWorkerMode.Execution)
+          .AgentConnectionId("Fast-Broker-Connection") // Uses fast message broker
+          .WorkerLane("Default") // Processes transactional, sub-second jobs
+          .BucketQtyConfig(JobMasterPriority.Critical, 20)
+          .ParallelismFactor(4.0); // Highly concurrent execution
+
+      // Fleet B: Slow-Running RDBMS Workers (Pulls from Postgres Database Transport)
+      config.AddWorker()
+          .WorkerName("Long-Running-Executor")
+          .SetWorkerMode(AgentWorkerMode.Execution)
+          .AgentConnectionId("Durable-Db-Connection") // Connects to the database transport
+          .WorkerLane("Slow-Analytics-Lane") // Dedicated lane for long executions (>30s)
+          .BucketQtyConfig(JobMasterPriority.Medium, 1) // 1 bucket = Strict sequential order
+          .ParallelismFactor(1.0) // Low concurrency per node to shield CPU
+          .BucketBufferSize(5); // Prevents pre-fetching heavy tasks into memory
+  });
+  ```
 
 ---
 
@@ -139,6 +164,23 @@ $$\text{Waiting Queue Capacity} = \text{Run Capacity} \times 5$$
 
 ---
 
+### Parameter 6: Sizing the Look-Ahead Window (`TransientThreshold`)
+The `TransientThreshold` (Default: `10 minutes`) is a global cluster setting that defines the look-ahead time window for scheduling and fast execution routing.
+
+It governs two critical parts of the JobMaster lifecycle:
+1. **Coordinator Scan Lookahead**: The Coordinator queries the Master DB for future scheduled jobs whose execution time falls within this window, reserving them in bulk and assigning them to active worker buckets.
+2. **Immediate Execution decision (SavePending)**: When a new job is scheduled, the write buffer compares the job's planned start time against this threshold. If it falls **within** the window, the job uses the immediate **YES path** execution shortcut (bypassing normal scanning queues to execute instantly in the worker's active bucket). If it is scheduled **outside** the window, it takes the **NO path** (saved to the Master DB and scheduled to be acquired later).
+
+#### Sizing Scenarios for `TransientThreshold`:
+* **High-Throughput, Stable Environments**:
+  * *Tuning Strategy*: Increase the threshold (e.g., `15` to `30` minutes).
+  * *Why*: A larger look-ahead window allows the Coordinator to prefetch and onboard larger batches of future tasks in fewer database sweeps. This significantly reduces the polling overhead and query load on the Master DB.
+* **Highly Dynamic or Auto-scaling Environments (e.g., Kubernetes)**:
+  * *Tuning Strategy*: Decrease the threshold (e.g., `1` to `5` minutes).
+  * *Why*: If worker pods scale down or restart frequently, pre-allocating jobs too far in advance increases the volume of "orphaned" tasks that must undergo self-healing recovery when a worker goes offline. A shorter threshold keeps task distribution highly dynamic and minimizes recovery overhead.
+
+---
+
 ## 3. Self-Healing & Orphan Recovery (The Lost Bucket Rescue)
 
 If an **Agent Worker** crashes or loses connectivity, JobMaster automatically recovers the orphaned work without losing a single job:
@@ -150,7 +192,7 @@ If an **Agent Worker** crashes or loses connectivity, JobMaster automatically re
 ### Self-Healing & Orphan Recovery Diagram
 Here is how the active worker adopts the lost bucket and redirects both unfinished and unsaved jobs back to the Master DB:
 
-![JobMaster — Self-Healing & Orphan Bucket Recovery](../img/lost-bucket-recovery.svg)
+![JobMaster — Self-Healing & Orphan Bucket Recovery](img/orphan-recovery.svg)
 
 ---
 
