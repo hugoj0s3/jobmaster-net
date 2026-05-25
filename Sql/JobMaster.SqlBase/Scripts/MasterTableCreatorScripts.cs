@@ -407,7 +407,9 @@ internal static class MasterTableCreatorScripts
         var indexes = new List<string>
         {
             sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_job_id",
-                (clusterIdCol, false, 250), (jobIdCol, false, (int?)null))
+                (clusterIdCol, false, 250), (jobIdCol, false, null)),
+            sqlGenerator.CreateIndex(tableName, $"idx_{tableName}_cluster_id",
+                (clusterIdCol, false, 250))
         };
 
         return $"{create}\n{string.Join("\n", indexes)}";

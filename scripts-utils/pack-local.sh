@@ -1,6 +1,8 @@
 #!/bin/bash
 set -e
 
+cd "$(dirname "$0")/.."
+
 OUTPUT_DIR="./nupkgs"
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
