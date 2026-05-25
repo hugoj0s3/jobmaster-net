@@ -37,7 +37,7 @@ Example: `myserver-3c1a8b2`
 The timestamp suffix guarantees uniqueness across process restarts on the same host.
 
 > [!WARNING]
-> Auto-generated names are **intentionally disposable**. They work for development and quick prototyping, but a new suffix appears on every restart, making it hard to correlate the same logical worker across restarts in dashboards and logs.
+> Auto-generated names are **ephemeral by design**. While convenient for local development and rapid prototyping, the randomized suffix changes on every restart. This makes it difficult to track and correlate the same logical worker across deployments in dashboards and audit logs.
 
 **Provided**
 

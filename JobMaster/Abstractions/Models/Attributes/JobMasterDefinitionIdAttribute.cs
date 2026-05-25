@@ -7,7 +7,7 @@ namespace JobMaster.Abstractions.Models.Attributes;
 /// Assigns a stable, human-readable ID to a job handler class.
 /// The runtime uses this ID to locate the correct handler when a job is dispatched.
 /// If omitted, the handler's full type name (<see cref="Type.FullName"/>) is used as the ID.
-/// Prefer setting an explicit ID to avoid breakage if the class is renamed or moved.
+/// Prefer setting an explicit ID to avoid breakage if the class is renamed or moved to different namespace.
 /// </summary>
 [AttributeUsage(AttributeTargets.Class)]
 public class JobMasterDefinitionIdAttribute : Attribute

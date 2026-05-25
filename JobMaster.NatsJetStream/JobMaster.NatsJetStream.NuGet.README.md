@@ -35,7 +35,7 @@ builder.Services.AddJobMasterCluster(config =>
 
     // Agent can use NATS JetStream for high-performance message transport
     config.AddAgentConnectionConfig("NATS-Transport")
-          .UseNatsJetStreamForAgent("nats://localhost:4222");
+          .UseNatsJetStream("nats://localhost:4222");
     
     // Attach a worker to the NATS transport
     config.AddWorker()

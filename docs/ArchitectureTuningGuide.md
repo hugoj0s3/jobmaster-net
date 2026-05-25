@@ -97,7 +97,7 @@ Think of Lanes as **logically isolated queues** or dedicated execution zones. By
 
       // Durable Database-backed Transport for heavy/long analytics
       config.AddAgentConnectionConfig("Durable-Db-Connection")
-          .UsePostgresTransport("Host=localhost;Database=jobmaster_transport;...");
+          .UsePostgresForAgent("Host=localhost;Database=jobmaster_transport;...");
           
       // 2. Define Isolated Worker Fleets
       
