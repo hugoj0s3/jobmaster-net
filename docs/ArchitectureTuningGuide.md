@@ -2,7 +2,7 @@
 
 Think of **JobMaster** not just as a library, but as a **distributed, highly tunable background task execution engine**.
 
-Just as a modern storage engine has transaction journals, partitions, query caches, and replica pools that you configure to balance read/write latency, JobMaster has **Coordinators, Workers, Buckets, Lanes, and Prefetch Buffers** that you configure and tune to your specific business requirements.
+Just as a modern storage engine has components you configure to balance read/write latency — partitions to reduce contention, read-ahead caches to eliminate fetch gaps, and replica pools for high availability — JobMaster has **Buckets** (contention partitioning), **Prefetch Buffers** (read-ahead caching), **Coordinators** (HA orchestration), **Workers**, and **Lanes** that you tune to your specific business requirements.
 
 This guide provides the architectural blueprints and tuning formulas to help you confidently size your cluster, optimize throughput, isolate workloads, and shield your **Master DB** (Orchestration & Durable Storage) from contention.
 
@@ -72,7 +72,7 @@ Buckets are the fundamental unit of concurrency partitioning. They act like **lo
 ---
 
 ### Parameter 3: When should I create a separate Worker Lane (`WorkerLane`)?
-Think of Lanes as **physically isolated queues** or dedicated execution zones. By default, all workers and jobs operate in the `Default` lane.
+Think of Lanes as **logically isolated queues** or dedicated execution zones. By default, all workers and jobs operate in the `Default` lane.
 
 * **When to isolate**: Create a separate lane when you have a mixed workload of **Fast/Critical** jobs and **Slow/Heavy** jobs.
 * **Why**: If they share a lane, long-running analytics jobs (taking 10 minutes each) will fill up all available bucket slots, causing high-priority transactional emails (taking 50ms) to starve in the queue.
@@ -81,7 +81,7 @@ Think of Lanes as **physically isolated queues** or dedicated execution zones. B
   * Dedicate a separate, low-priority worker fleet on cheap instances to `.WorkerLane("Heavy-Analytics")` with few buckets.
 * **Database vs. Message Broker Isolation for Long-Running Tasks**:
   * **Guidelines**: For jobs that take longer than 30 seconds to execute, prefer using a **database-backed transport layer** (RDBMS like PostgreSQL or SQL Server) rather than an ephemeral message broker (like NATS JetStream). 
-  * **Why**: Message brokers are designed for sub-second, high-velocity streaming tasks. Holding long-running jobs in broker channels can exceed consumer timeout thresholds, leading to duplicate execution attempts. A database transport handles long durations gracefully.
+  * **Why**: Message brokers are optimized for high-velocity, sub-second streaming. Directing long-running workloads through message broker channels can saturate dispatch/onboarding buffers and trigger consumer acknowledgement timeouts. A database-backed transport is designed to handle sustained, long-duration tasks gracefully and with full durability.
   * **Implementation**: Create a dedicated database agent connection, and configure a specialized worker pool using a dedicated `WorkerLane` connected to that database transport.
   
   ```csharp
