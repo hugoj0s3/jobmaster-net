@@ -293,6 +293,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         if (!string.IsNullOrEmpty(criteria.WorkerLane))
             query = query.Where(b => b.WorkerLane == criteria.WorkerLane);
 
+        if (criteria.BucketType.HasValue)
+            query = query.Where(b => b.BucketType == criteria.BucketType.Value);
+
         return query.ToList();
     }
 
@@ -413,6 +416,16 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                 Key = nameof(BucketModel.WorkerLane),
                 Operation = GenericFilterOperation.Eq,
                 Value = criteria.WorkerLane,
+            });
+        }
+
+        if (criteria.BucketType.HasValue)
+        {
+            genericRecordQueryCriteria.Filters.Add(new()
+            {
+                Key = nameof(BucketModel.BucketType),
+                Operation = GenericFilterOperation.Eq,
+                Value = (int)criteria.BucketType.Value,
             });
         }
 

@@ -19,6 +19,8 @@ public class ApiMasterBucketQueryCriteria
     public string? AgentWorkerId { get; set; }
     /// <summary>Filter by worker lane.</summary>
     public string? WorkerLane { get; set; }
+    /// <summary>Filter by bucket type.</summary>
+    public BucketType? BucketType { get; set; }
     /// <summary>Maximum number of results to return.</summary>
     public int? CountLimit { get; set; }
     /// <summary>Number of results to skip before returning.</summary>
@@ -35,6 +37,7 @@ public class ApiMasterBucketQueryCriteria
             Priority = Priority,
             Status = Status,
             WorkerLane = WorkerLane,
+            BucketType = BucketType,
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }

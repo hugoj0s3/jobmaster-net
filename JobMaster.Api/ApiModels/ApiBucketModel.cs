@@ -34,6 +34,8 @@ public class ApiBucketModel : ApiClusterBaseModel
     public string? WorkerLane { get; set; }
     /// <summary>UTC timestamp of the last bucket status change.</summary>
     public DateTime LastStatusChangeAt { get; set; }
+    /// <summary>Classification of this bucket (Standard or Fallback).</summary>
+    public BucketType BucketType { get; set; }
 
     internal static ApiBucketModel FromDomain(BucketModel model)
     {
@@ -58,6 +60,7 @@ public class ApiBucketModel : ApiClusterBaseModel
             CreatedAt = model.CreatedAt,
             Color = model.Color.ToBucketColorHex(),
             LastStatusChangeAt = model.LastStatusChangeAt,
+            BucketType = model.BucketType,
             ClusterId = model.ClusterId,
             RepositoryTypeId = model.RepositoryTypeId,
         };
