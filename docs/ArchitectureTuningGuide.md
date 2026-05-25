@@ -92,11 +92,11 @@ Think of Lanes as **physically isolated queues** or dedicated execution zones. B
 
       // 1. Register Connections
       // Fast Ephemeral Transport for real-time webhooks & emails
-      config.AddAgentConnection("Fast-Broker-Connection")
+      config.AddAgentConnectionConfig("Fast-Broker-Connection")
           .UseNatsJetStream("nats://localhost:4222");
 
       // Durable Database-backed Transport for heavy/long analytics
-      config.AddAgentConnection("Durable-Db-Connection")
+      config.AddAgentConnectionConfig("Durable-Db-Connection")
           .UsePostgresTransport("Host=localhost;Database=jobmaster_transport;...");
           
       // 2. Define Isolated Worker Fleets
@@ -105,7 +105,7 @@ Think of Lanes as **physically isolated queues** or dedicated execution zones. B
       config.AddWorker()
           .WorkerName("Broker-Executor")
           .SetWorkerMode(AgentWorkerMode.Execution)
-          .AgentConnectionId("Fast-Broker-Connection") // Uses fast message broker
+          .AgentConnName("Fast-Broker-Connection") // Uses fast message broker
           .WorkerLane("Default") // Processes transactional, sub-second jobs
           .BucketQtyConfig(JobMasterPriority.Critical, 20)
           .ParallelismFactor(4.0); // Highly concurrent execution
@@ -114,7 +114,7 @@ Think of Lanes as **physically isolated queues** or dedicated execution zones. B
       config.AddWorker()
           .WorkerName("Long-Running-Executor")
           .SetWorkerMode(AgentWorkerMode.Execution)
-          .AgentConnectionId("Durable-Db-Connection") // Connects to the database transport
+          .AgentConnName("Durable-Db-Connection") // Connects to the database transport
           .WorkerLane("Slow-Analytics-Lane") // Dedicated lane for long executions (>30s)
           .BucketQtyConfig(JobMasterPriority.Medium, 1) // 1 bucket = Strict sequential order
           .ParallelismFactor(1.0) // Low concurrency per node to shield CPU
