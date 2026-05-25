@@ -200,6 +200,14 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
     - [docs/AgentsConfiguration.md](docs/AgentsConfiguration.md)
     - [docs/ClusterConfiguration.md](docs/ClusterConfiguration.md)
 
+- **Architecture Overview**
+  - Core concepts, planes (Orchestration & Durable Storage vs. Transport Layer), and standard assignment vs. high-speed SavePending shortcut flows.
+  - See: [docs/ArchitectureOverview.md](docs/ArchitectureOverview.md)
+
+- **Architecture & Performance Tuning Guide**
+  - Tuning JobMaster like a database: sizing coordinators, workers, lanes, and bucket partitions.
+  - See: [docs/ArchitectureTuningGuide.md](docs/ArchitectureTuningGuide.md)
+
 - **Repositories / Transport Providers**
   - Postgres, MySQL, SQL Server, NATS JetStream
   - See: [docs/Providers.md](docs/Providers.md)

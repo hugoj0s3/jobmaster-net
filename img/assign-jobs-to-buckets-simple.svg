@@ -1,0 +1,267 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="550" viewBox="0 0 1200 550">
+<defs>
+  <marker id="ao" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#f59e0b"/>
+  </marker>
+  <marker id="ac" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#06b6d4"/>
+  </marker>
+  <filter id="sh">
+    <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.45"/>
+  </filter>
+  <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+    <circle cx="14" cy="14" r="0.7" fill="#ffffff0d"/>
+  </pattern>
+</defs>
+
+<!-- Background -->
+<rect width="1200" height="550" fill="#09111f"/>
+<rect width="1200" height="550" fill="url(#dots)"/>
+
+<!-- Title -->
+<text x="600" y="36" fill="#e2e8f0" font-family="'Segoe UI',Arial,sans-serif" font-size="22" font-weight="700" text-anchor="middle" letter-spacing="0.5">JobMaster — Assign Jobs to Buckets</text>
+<line x1="80" y1="50" x2="1120" y2="50" stroke="#1e3a5f" stroke-width="1"/>
+
+<!-- ═══════════════════ MASTER DB (left) ═══════════════════ -->
+<rect x="30" y="66" width="228" height="430" rx="14" fill="#0c1d38" stroke="#1e4080" stroke-width="1.5" filter="url(#sh)"/>
+<text x="144" y="92" fill="#60a5fa" font-family="'Segoe UI',Arial,sans-serif" font-size="17" font-weight="700" text-anchor="middle">Master DB</text>
+<text x="144" y="107" fill="#3b82f6" font-family="Arial" font-size="11" text-anchor="middle">Source of Truth</text>
+
+<!-- DB Icon: all geometry first, text painted last so it sits above every ellipse -->
+<!-- Tier 1 -->
+<ellipse cx="144" cy="138" rx="52" ry="9" fill="#1e4585" stroke="#3b82f6" stroke-width="1.5"/>
+<rect x="92" y="138" width="104" height="20" fill="#16316b"/>
+<line x1="92" y1="138" x2="92" y2="158" stroke="#3b82f6" stroke-width="1.5"/>
+<line x1="196" y1="138" x2="196" y2="158" stroke="#3b82f6" stroke-width="1.5"/>
+<line x1="100" y1="148" x2="188" y2="148" stroke="#3b82f6" stroke-width="0.7" opacity="0.4"/>
+<!-- Tier 2 (middle) -->
+<ellipse cx="144" cy="158" rx="52" ry="9" fill="#1e4585" stroke="#3b82f6" stroke-width="1.5"/>
+<rect x="92" y="158" width="104" height="20" fill="#162d5a"/>
+<line x1="92" y1="158" x2="92" y2="178" stroke="#3b82f6" stroke-width="1.5"/>
+<line x1="196" y1="158" x2="196" y2="178" stroke="#3b82f6" stroke-width="1.5"/>
+<!-- Tier 3 -->
+<ellipse cx="144" cy="178" rx="52" ry="9" fill="#1e4585" stroke="#3b82f6" stroke-width="1.5"/>
+<rect x="92" y="178" width="104" height="20" fill="#16316b"/>
+<line x1="92" y1="178" x2="92" y2="198" stroke="#3b82f6" stroke-width="1.5"/>
+<line x1="196" y1="178" x2="196" y2="198" stroke="#3b82f6" stroke-width="1.5"/>
+<line x1="100" y1="188" x2="188" y2="188" stroke="#3b82f6" stroke-width="0.7" opacity="0.4"/>
+<ellipse cx="144" cy="198" rx="52" ry="9" fill="#1e4585" stroke="#3b82f6" stroke-width="1.5"/>
+<!-- "jobs" painted after all geometry so it is never hidden by an ellipse -->
+<text x="144" y="168" dominant-baseline="central" fill="#dbeafe" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle">jobs</text>
+
+<text x="144" y="228" fill="#64748b" font-family="Arial" font-size="10.5" font-weight="bold" text-anchor="middle">STATUS = OnMaster</text>
+
+<!-- Job rows -->
+<rect x="46" y="234" width="196" height="20" rx="4" fill="#1a2e4e"/>
+<circle cx="60" cy="244" r="5" fill="#ef4444"/>
+<text x="73" y="248" fill="#e2e8f0" font-family="Arial" font-size="11">Job #1  ·  Critical  ·  T+0:45</text>
+
+<rect x="46" y="257" width="196" height="20" rx="4" fill="#16284a"/>
+<circle cx="60" cy="267" r="5" fill="#ef4444"/>
+<text x="73" y="271" fill="#e2e8f0" font-family="Arial" font-size="11">Job #5  ·  Critical  ·  T+1:20</text>
+
+<rect x="46" y="280" width="196" height="20" rx="4" fill="#1a2e4e"/>
+<circle cx="60" cy="290" r="5" fill="#f97316"/>
+<text x="73" y="294" fill="#e2e8f0" font-family="Arial" font-size="11">Job #2  ·  High  ·  T+2:10</text>
+
+<rect x="46" y="303" width="196" height="20" rx="4" fill="#16284a"/>
+<circle cx="60" cy="313" r="5" fill="#f97316"/>
+<text x="73" y="317" fill="#e2e8f0" font-family="Arial" font-size="11">Job #6  ·  High  ·  T+2:45</text>
+
+<rect x="46" y="326" width="196" height="20" rx="4" fill="#1a2e4e"/>
+<circle cx="60" cy="336" r="5" fill="#22c55e"/>
+<text x="73" y="340" fill="#e2e8f0" font-family="Arial" font-size="11">Job #3  ·  Medium  ·  T+3:30</text>
+
+<rect x="46" y="349" width="196" height="20" rx="4" fill="#16284a"/>
+<circle cx="60" cy="359" r="5" fill="#22c55e"/>
+<text x="73" y="363" fill="#e2e8f0" font-family="Arial" font-size="11">Job #4  ·  Medium  ·  T+4:55</text>
+
+<!-- Threshold separator -->
+<line x1="46" y1="376" x2="242" y2="376" stroke="#166534" stroke-width="1" stroke-dasharray="4,3"/>
+
+<!-- Window label -->
+<rect x="35" y="381" width="220" height="24" rx="5" fill="#0e2010" stroke="#166534" stroke-width="1"/>
+<text x="144" y="397" fill="#4ade80" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle">Jobs within TransientThreshold (5min)</text>
+
+<!-- Held job -->
+<rect x="46" y="412" width="196" height="20" rx="4" fill="#0e1420"/>
+<circle cx="60" cy="422" r="5" fill="#374151"/>
+<text x="73" y="426" fill="#374151" font-family="Arial" font-size="11">Job #7  ·  T+9:00  (held)</text>
+
+<!-- ═══════════════════ CENTER ARROWS & COORDINATOR ═══════════════════ -->
+<!-- Gap between DB (ends 258) and Workers (starts 748) = 490px → center = 503 -->
+
+<!-- Left dashed arrow: DB → Coordinator (tip lands 8px before coordinator x=438) -->
+<line x1="261" y1="270" x2="430" y2="270" stroke="#f59e0b" stroke-width="2.5" stroke-dasharray="8,4" marker-end="url(#ao)"/>
+
+<!-- Coordinator box — centered in gap (x=438, w=130 → center=503) -->
+<rect x="438" y="200" width="130" height="110" rx="12" fill="#120830" stroke="#5b21b6" stroke-width="1.5" filter="url(#sh)"/>
+<text x="503" y="222" fill="#a78bfa" font-family="'Segoe UI',Arial,sans-serif" font-size="15" font-weight="700" text-anchor="middle">Coordinator</text>
+
+<!-- Gear icon (cx=503) -->
+<circle cx="503" cy="256" r="16" fill="#1a0f3e" stroke="#5b21b6" stroke-width="2"/>
+<circle cx="503" cy="256" r="9" fill="#2d1b69" stroke="#7c3aed" stroke-width="1.5"/>
+<circle cx="503" cy="256" r="3.5" fill="#1a0f3e"/>
+<line x1="503" y1="234" x2="503" y2="239" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="503" y1="273" x2="503" y2="278" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="481" y1="256" x2="486" y2="256" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="520" y1="256" x2="525" y2="256" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="487" y1="240" x2="491" y2="244" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="515" y1="268" x2="519" y2="272" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="487" y1="272" x2="491" y2="268" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+<line x1="515" y1="244" x2="519" y2="240" stroke="#7c3aed" stroke-width="3" stroke-linecap="round"/>
+
+<text x="503" y="288" fill="#c4b5fd" font-family="Arial" font-size="10" text-anchor="middle">Priority + WorkerLane</text>
+<text x="503" y="301" fill="#7c3aed" font-family="Arial" font-size="9.5" text-anchor="middle">match &amp; assign</text>
+
+<!-- Exclusive reservation badge — same center x=503 -->
+<rect x="396" y="318" width="215" height="55" rx="6" fill="#110900" stroke="#d97706" stroke-width="1.2"/>
+<text x="503" y="341" fill="#fbbf24" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Exclusive reservation (Transfer Batch Size)</text>
+<text x="503" y="351" fill="#d97706" font-family="Arial" font-size="9" text-anchor="middle">jobs pulled in bulk, ahead of time</text>
+
+<!-- Right solid arrow: Coordinator (ends 568) → Workers (starts 748) -->
+<line x1="570" y1="270" x2="740" y2="270" stroke="#f59e0b" stroke-width="2.5" marker-end="url(#ao)"/>
+
+<!-- Labels on left arrow — midpoint (261+430)/2 = 345 -->
+<text x="346" y="254" fill="#fbbf24" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle">OnMaster jobs</text>
+<text x="346" y="285" fill="#78350f" font-family="Arial" font-size="10" text-anchor="middle">within TransientThreshold</text>
+
+<!-- Labels on right arrow — midpoint (570+740)/2 = 655 -->
+<text x="655" y="250" fill="#fbbf24" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle">Dispatch</text>
+<text x="655" y="263" fill="#78350f" font-family="Arial" font-size="10" text-anchor="middle">Status → InBucket</text>
+
+<!-- ═══════════════════ WORKERS + MULTIPLE BUCKETS (right) ═══════════════════ -->
+<rect x="748" y="66" width="424" height="430" rx="14" fill="#10181e" stroke="#1e3a3a" stroke-width="1.5" filter="url(#sh)"/>
+<text x="960" y="92" fill="#e2e8f0" font-family="'Segoe UI',Arial,sans-serif" font-size="17" font-weight="700" text-anchor="middle">Agent Workers</text>
+<text x="960" y="107" fill="#475569" font-family="Arial" font-size="12" text-anchor="middle">Jobs are reserved in buckets, ensuring zero lock contention for the execution.</text>
+
+<!-- ── WORKER A ── -->
+<rect x="760" y="118" width="400" height="102" rx="8" fill="#0c1a30" stroke="#1e40af" stroke-width="1.5"/>
+<rect x="772" y="130" width="30" height="24" rx="4" fill="#1e40af"/>
+<rect x="778" y="135" width="6" height="5" rx="1" fill="#93c5fd"/>
+<rect x="789" y="135" width="6" height="5" rx="1" fill="#93c5fd"/>
+<rect x="773" y="144" width="28" height="7" rx="2" fill="#1d4ed8"/>
+<text x="812" y="138" fill="#93c5fd" font-family="Arial" font-size="12" font-weight="700">Worker A</text>
+<text x="812" y="151" fill="#475569" font-family="Arial" font-size="10">3 buckets owned</text>
+
+<!-- Bucket A-1 Critical -->
+<rect x="772" y="162" width="124" height="48" rx="6" fill="#1a0808" stroke="#ef4444" stroke-width="1.5"/>
+<rect x="772" y="162" width="124" height="6" rx="3" fill="#ef4444"/>
+<text x="834" y="178" fill="#fca5a5" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-A1  ·  Critical</text>
+<rect x="780" y="184" width="38" height="12" rx="4" fill="#ef4444"/>
+<text x="799" y="194" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #1</text>
+<rect x="822" y="184" width="30" height="12" rx="4" fill="#1e3050"/>
+<text x="837" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="856" y="184" width="28" height="12" rx="4" fill="#1e3050"/>
+<text x="870" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- Bucket A-2 High -->
+<rect x="904" y="162" width="124" height="48" rx="6" fill="#1a0e00" stroke="#f97316" stroke-width="1.5"/>
+<rect x="904" y="162" width="124" height="6" rx="3" fill="#f97316"/>
+<text x="966" y="178" fill="#fed7aa" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-A2  ·  High</text>
+<rect x="912" y="184" width="38" height="12" rx="4" fill="#1e3050"/>
+<text x="931" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="954" y="184" width="38" height="12" rx="4" fill="#1e3050"/>
+<text x="973" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="996" y="184" width="22" height="12" rx="4" fill="#1e3050"/>
+<text x="1007" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">…</text>
+
+<!-- Bucket A-3 Medium — Job #3 -->
+<rect x="1036" y="162" width="124" height="48" rx="6" fill="#0a1e0a" stroke="#22c55e" stroke-width="1.5"/>
+<rect x="1036" y="162" width="124" height="6" rx="3" fill="#22c55e"/>
+<text x="1098" y="178" fill="#bbf7d0" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-A3  ·  Medium</text>
+<rect x="1044" y="184" width="46" height="12" rx="4" fill="#22c55e"/>
+<text x="1067" y="194" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #3</text>
+<rect x="1094" y="184" width="46" height="12" rx="4" fill="#1e3050"/>
+<text x="1117" y="194" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- ── WORKER B ── -->
+<rect x="760" y="232" width="400" height="102" rx="8" fill="#0c2010" stroke="#15803d" stroke-width="1.5"/>
+<rect x="772" y="244" width="30" height="24" rx="4" fill="#15803d"/>
+<rect x="778" y="249" width="6" height="5" rx="1" fill="#86efac"/>
+<rect x="789" y="249" width="6" height="5" rx="1" fill="#86efac"/>
+<rect x="773" y="258" width="28" height="7" rx="2" fill="#166534"/>
+<text x="812" y="252" fill="#86efac" font-family="Arial" font-size="12" font-weight="700">Worker B</text>
+<text x="812" y="265" fill="#475569" font-family="Arial" font-size="10">3 buckets owned</text>
+
+<!-- Bucket B-1 Critical -->
+<rect x="772" y="276" width="124" height="48" rx="6" fill="#1a0808" stroke="#ef4444" stroke-width="1.5"/>
+<rect x="772" y="276" width="124" height="6" rx="3" fill="#ef4444"/>
+<text x="834" y="292" fill="#fca5a5" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-B1  ·  Critical</text>
+<rect x="780" y="298" width="38" height="12" rx="4" fill="#1e3050"/>
+<text x="799" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="822" y="298" width="30" height="12" rx="4" fill="#1e3050"/>
+<text x="837" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="856" y="298" width="28" height="12" rx="4" fill="#1e3050"/>
+<text x="870" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- Bucket B-2 High — Job #2 -->
+<rect x="904" y="276" width="124" height="48" rx="6" fill="#1a0e00" stroke="#f97316" stroke-width="1.5"/>
+<rect x="904" y="276" width="124" height="6" rx="3" fill="#f97316"/>
+<text x="966" y="292" fill="#fed7aa" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-B2  ·  High</text>
+<rect x="912" y="298" width="38" height="12" rx="4" fill="#f97316"/>
+<text x="931" y="308" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #2</text>
+<rect x="954" y="298" width="38" height="12" rx="4" fill="#1e3050"/>
+<text x="973" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="996" y="298" width="22" height="12" rx="4" fill="#1e3050"/>
+<text x="1007" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">…</text>
+
+<!-- Bucket B-3 Medium — Job #4 -->
+<rect x="1036" y="276" width="124" height="48" rx="6" fill="#0a1e0a" stroke="#22c55e" stroke-width="1.5"/>
+<rect x="1036" y="276" width="124" height="6" rx="3" fill="#22c55e"/>
+<text x="1098" y="292" fill="#bbf7d0" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-B3  ·  Medium</text>
+<rect x="1044" y="298" width="46" height="12" rx="4" fill="#22c55e"/>
+<text x="1067" y="308" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #4</text>
+<rect x="1094" y="298" width="46" height="12" rx="4" fill="#1e3050"/>
+<text x="1117" y="308" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- ── WORKER C ── -->
+<rect x="760" y="346" width="400" height="102" rx="8" fill="#180c30" stroke="#6d28d9" stroke-width="1.5"/>
+<rect x="772" y="358" width="30" height="24" rx="4" fill="#6d28d9"/>
+<rect x="778" y="363" width="6" height="5" rx="1" fill="#c4b5fd"/>
+<rect x="789" y="363" width="6" height="5" rx="1" fill="#c4b5fd"/>
+<rect x="773" y="372" width="28" height="7" rx="2" fill="#5b21b6"/>
+<text x="812" y="366" fill="#c4b5fd" font-family="Arial" font-size="12" font-weight="700">Worker C</text>
+<text x="812" y="379" fill="#475569" font-family="Arial" font-size="10">3 buckets owned</text>
+
+<!-- Bucket C-1 Critical — Job #5 -->
+<rect x="772" y="390" width="124" height="48" rx="6" fill="#1a0808" stroke="#ef4444" stroke-width="1.5"/>
+<rect x="772" y="390" width="124" height="6" rx="3" fill="#ef4444"/>
+<text x="834" y="406" fill="#fca5a5" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-C1  ·  Critical</text>
+<rect x="780" y="412" width="38" height="12" rx="4" fill="#ef4444"/>
+<text x="799" y="422" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #5</text>
+<rect x="822" y="412" width="30" height="12" rx="4" fill="#1e3050"/>
+<text x="837" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="856" y="412" width="28" height="12" rx="4" fill="#1e3050"/>
+<text x="870" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- Bucket C-2 High — Job #6 -->
+<rect x="904" y="390" width="124" height="48" rx="6" fill="#1a0e00" stroke="#f97316" stroke-width="1.5"/>
+<rect x="904" y="390" width="124" height="6" rx="3" fill="#f97316"/>
+<text x="966" y="406" fill="#fed7aa" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-C2  ·  High</text>
+<rect x="912" y="412" width="38" height="12" rx="4" fill="#f97316"/>
+<text x="931" y="422" fill="white" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Job #6</text>
+<rect x="954" y="412" width="38" height="12" rx="4" fill="#1e3050"/>
+<text x="973" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="996" y="412" width="22" height="12" rx="4" fill="#1e3050"/>
+<text x="1007" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">…</text>
+
+<!-- Bucket C-3 Medium -->
+<rect x="1036" y="390" width="124" height="48" rx="6" fill="#0a1e0a" stroke="#22c55e" stroke-width="1.5"/>
+<rect x="1036" y="390" width="124" height="6" rx="3" fill="#22c55e"/>
+<text x="1098" y="406" fill="#bbf7d0" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Bucket-C3  ·  Medium</text>
+<rect x="1044" y="412" width="46" height="12" rx="4" fill="#1e3050"/>
+<text x="1067" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+<rect x="1094" y="412" width="46" height="12" rx="4" fill="#1e3050"/>
+<text x="1117" y="422" fill="#475569" font-family="Arial" font-size="8.5" text-anchor="middle">empty</text>
+
+<!-- ═══════════════════ RETURN ARROW: Workers → Master DB ═══════════════════ -->
+<path d="M 960,497 L 960,516 Q 960,526 950,526 L 168,526 Q 158,526 158,516 L 158,497"
+      stroke="#06b6d4" stroke-width="2" fill="none" stroke-dasharray="6,3" marker-end="url(#ac)"/>
+
+<!-- Return badge — center x=503, aligned with Coordinator and Exclusive reservation -->
+<rect x="373" y="517" width="260" height="20" rx="7" fill="#021820" stroke="#0e7490" stroke-width="1"/>
+<text x="503" y="530" fill="#06b6d4" font-family="Arial" font-size="10.5" font-weight="bold" text-anchor="middle">Stores execution outcome  →  Succeeded / Failed</text>
+
+</svg>

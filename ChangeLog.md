@@ -40,6 +40,8 @@
   schedule API response — `true` when the schedule is static (startup-defined) but not
   currently active.
 
+- **Swagger OpenAPI Auto-Documentation**: fully annotated all HTTP API request, response, and authentication DTOs with XML documentation comments, enabling auto-generation of clean OpenAPI (Swagger) specifications inside integration portals.
+
 - **NATS busy-retry backoff**: when a bucket's onboarding buffer is full, the runner
   automatically retries with increasing delays (30 s → 75 s → 3 min). After three retries
   the job is returned to the master. No configuration required.
@@ -57,9 +59,7 @@
   random v4 GUIDs. This improves insert performance on large tables but requires a fresh
   database — existing v4 IDs are not migrated.
 
-- **Dedicated `job_execution` table** ⚠️ *breaking schema change*: job execution records
-  are now stored in a dedicated `job_execution` table instead of the generic record tables.
-  Requires a fresh database or a manual migration.
+- **Dedicated `job_execution` and `log` tables** ⚠️ *breaking schema change*: job execution history and system logs are now stored in dedicated, highly indexed database tables (`job_execution` and `log` respectively) rather than generic record tables. This dramatically reduces table contention, but requires a fresh database setup or manual migrations.
 
 - **Deadline runner is now a safety net only**: the deadline runner no longer races with
   the normal drain path. It only reclaims jobs when a bucket is lost or the drain fails.

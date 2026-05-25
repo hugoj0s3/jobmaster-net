@@ -6,10 +6,20 @@
 
 ### 0.0.7-alpha
 #### Added
+- **Swagger & Sdk XML Documentation on API & Core Abstractions**: Added extensive XML `<summary>` comments to all public models, properties, authentication interfaces (such as `IJobMasterUserPwdAuthProvider`, `IJobMasterJwtBearerAuthProvider`, and configuration selectors), and core Sdk interfaces (like `IJobMasterScheduler`, `IJobHandler`, and DI configuration builders) across the entire framework to enable a rich developer/IntelliSense experience and auto-generated OpenAPI documentation.
+
+- **Standardized Pagination & Sorting on API DTOs**: Standardized pagination (`CountLimit`, `Offset`) and sorting (`SortBy` of type `ApiSortByCriteria`) properties across all API query criteria models (`ApiAgentConnectionCriteria`, `ApiAgentWorkerCriteria`, `ApiLogItemQueryCriteria`, etc.).
+
 - **`Onboarded` job status** (`= 10`, between `InBucket` and `Queued`): marks a job that
   has been accepted into a bucket's onboarding buffer and had its `ProcessDeadline` set to
   `UtcNow` as an instant recovery signal — if the bucket goes Lost, the deadline runner
   picks it up immediately without waiting for a natural expiry.
+
+- **Type-Safe `BulkJobUpdateRequest` Pattern**: Introduced the `BulkJobUpdateRequest` and `BulkJobUpdateProperty` models, enabling type-safe LINQ-expression-driven property updates for batch database modifications (e.g. `Cancel` and `HeldOnMaster`), guaranteeing compile-time safety and safe refactoring.
+
+- **Expanded Repository Conformance Test Suites**: Significantly expanded database integration and conformance testing (specifically `RepositoryJobsConformanceTests.cs`), introducing multi-case testing across 17 distinct query criteria filters (resolving a query visibility regression where locked jobs were incorrectly omitted) and verifying that the `ProbeForAcquireAsync` lookup counts only genuinely acquirable candidates.
+
+- **Industrial-Grade Background Runtime Unit Test Harness**: Introduced a comprehensive unit test suite inside `Tests/JobMaster.UnitTests` covering all background operational layers. Includes rigorous validation of `OnBoardingControl` (deduplication, chronological sorting, and shutdown locks), `TaskQueueControl` (bounded capacities, promotional slots, and CPU backpressure), and dedicated mock-fixture testing (`RunnerFixture` and `RunnerFakes`) of all 20+ individual background runners (e.g. `AssignJobsToBucketsRunner`, `MarkBucketAsLostRunner`, etc.) to guarantee functional correctness.
 
 - **`BulkJobUpdateRequest.HeldOnMaster(ids)` factory**: single-call shorthand for the
   standard HeldOnMaster bulk update (clears `Status`, `AgentConnectionId`, `AgentWorkerId`,
@@ -69,6 +79,8 @@
   is static (startup-defined) but not currently Active.
 
 ### Changes
+- **`ApiLogItem` message truncation**: Added a `CutMessage()` utility to `ApiLogItem` as a payload-reduction strategy, truncating the log message to the first 100 characters when requested to reduce serialization overhead under high-volume logging.
+
 - **Worker auto-name simplified**
   Auto-generated names are now `{hostname}-{timestampId}` (e.g. `myserver-3c1a8b2`).
   Explicit names follow the same pattern: `{workerName}-{timestampId}` (e.g. `payroll-01-3c1a8b2`).
@@ -162,20 +174,22 @@
 
 - **GUID v7 for all entity IDs** (breaking schema change): jobs, recurring schedules,
   job executions, and distributed lock records now use time-ordered GUID v7
-  (`Guid.CreateVersion7()`) instead of random v4 GUIDs. Time-ordered IDs eliminate index
-  page splits on insert-heavy workloads. `JobMasterRandomUtil` updated; all three SQL
-  provider repositories (MySQL, Postgres, SQL Server) updated to generate v7 IDs.
+  instead of random v4 GUIDs. Time-ordered IDs eliminate index page splits on insert-heavy
+  workloads. `JobMasterRandomUtil` was updated with a cryptographic `NewGuid7()` implementation, and all three SQL provider repositories (MySQL, Postgres, SQL Server) were updated to generate v7 IDs.
 
-- **Execution table separated from generic records** (breaking schema change):
-  `MasterJobExecutionService` and `IMasterJobExecutionService` removed entirely.
-  Job execution rows are now written to a dedicated `job_execution` table via a new
-  `IMasterLogsRepository`; `JobMasterLogger` switched from `IMasterGenericRecordRepository`
-  to `IMasterLogsRepository`. `LogPayload` helper removed. `JobExecutionPersistenceRecord`
-  added as the flat DTO for the new table. All job execution and recurring schedule writes
-  now use `UPDATE` instead of `UPSERT` — the execution record is created on start and
-  updated on finalisation; recurring schedule writes avoid overwriting concurrently modified
-  fields. This reduces contention on the generic record tables and simplifies the
-  log/execution query path.
+- **`JobMasterRandomUtil` allocation optimizations**: Integrated a thread-safe nested generic `EnumCache<T>` inside `JobMasterRandomUtil.GetEnum<T>()` to cache enum value arrays, bypassing expensive reflection allocations during mock data generation on hot paths.
+
+- **Dedicated Log & Job Execution Tables (Database Decoupling)**: Completely decoupled logging and job execution tracking from the high-contention generic records database tables:
+  - **New Database Tables**: Introduced the dedicated `log` and `job_execution` tables, featuring concrete columns for properties (e.g. `level`, `category`, `reference_id`, `started_at`, `finalized_at`, `host_id`, `outcome`) and optimized compound indexes (`idx_log_cluster_level_timestamp`, `idx_log_cluster_category`, `idx_job_execution_cluster_job_id`) to accelerate query throughput and audit trail reads.
+  - **Decoupled Repositories**: Introduced the new `IMasterLogsRepository` and `SqlMasterLogsRepository` inside `JobMaster.SqlBase` (implemented across MySQL, PostgreSQL, and SQL Server) to manage the dedicated `log` table. `JobMasterLogger` was refactored to flush structured `LogItem` batches directly to this repository, discarding the heavy `LogPayload` and generic record transformations.
+  - **Transactional Execution Bindings**: Migrated `job_execution` writes directly into the `SqlMasterJobsRepository.UpdateAsync` database pipeline. Saving a job state change and appending its execution history (upon processing startup or completion) now occurs inside a **single, secure database transaction**, ensuring full atomicity and eliminating version-conflict split-states.
+  - **Service Consolidation**: Removed `MasterJobExecutionService` and `IMasterJobExecutionService` entirely; their query responsibilities were absorbed by `IMasterJobsService.QueryJobExecutionsAsync(guid)` and the underlying `IMasterJobsRepository`.
+
+- **NATS key generation standardization**: Refactored `NatsJetStreamAgentFingerprintResolver` and NATS dispatcher repositories to use the centralized framework utility `JobMasterRandomUtil.NewGuid4()` instead of raw `Guid.NewGuid()`.
+
+- **Redesign of `IMasterJobsRepository` contract (breaking change)**: Updated the master repository contract to completely replace legacy `Upsert` methods with `Update`/`UpdateAsync` (which support a single-transaction `JobExecution` payload to prevent split-state database bugs), replace hardcoded `BulkUpdateStatus` with the new type-safe `BulkUpdateAsync(BulkJobUpdateRequest)`, and add the `ProbeForAcquireAsync` lookup.
+
+- **Centralization of SQL Base Repositories**: Refactored the provider-specific databases (PostgreSQL, MySQL, SQL Server) to inherit directly from centralized base classes inside `JobMaster.SqlBase` (such as `SqlMasterJobsRepository` and `SqlMasterLogsRepository`). This fully eliminated thousands of lines of duplicated query-builder and DTO mapping code from individual provider repositories, ensuring high maintainability.
 
 - **`AssignJobsToBucketsRunner` probe mechanism**: a lightweight `JobProbeResult`
   (Count + MinNextPlanExecutionAt) query runs before the full dispatch scan, enabling a
