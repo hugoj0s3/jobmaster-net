@@ -55,8 +55,8 @@ public class ApiAgentWorker : ApiClusterBaseModel
             WorkerLane = model.WorkerLane,
             ParallelismFactor = model.ParallelismFactor,
             Status = model.Status(),
-            HostId = model.HostId.IdValue,
-            HostDisplayName = model.HostId.HostDisplayName,
+            HostId = model.HostId?.IdValue ?? string.Empty,
+            HostDisplayName = model.HostId?.HostDisplayName ?? string.Empty,
         };
     }
 }

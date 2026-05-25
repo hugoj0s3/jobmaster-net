@@ -58,7 +58,20 @@ public class ApiRecurringScheduleModel : ApiClusterBaseModel
 
     internal static ApiRecurringScheduleModel FromDomain(RecurringSchedule schedule)
     {
-        var isStaticIdle = schedule.RecurringScheduleType == RecurringScheduleType.Static && schedule.Status != RecurringScheduleStatus.Active;
+        var isStaticIdle = false;
+        if (schedule.RecurringScheduleType == RecurringScheduleType.Static)
+        {
+            if (schedule.Status != RecurringScheduleStatus.Active)
+            {
+                isStaticIdle = true;
+            }
+            else
+            {
+                var afterAt = DateTime.UtcNow.AddMinutes(-5);
+                isStaticIdle = schedule.StaticDefinitionLastEnsured < afterAt;
+            }
+        }
+
         return new ApiRecurringScheduleModel
         {
             ClusterId = schedule.ClusterId,

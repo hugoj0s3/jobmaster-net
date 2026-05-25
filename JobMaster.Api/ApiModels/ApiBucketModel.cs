@@ -39,19 +39,13 @@ public class ApiBucketModel : ApiClusterBaseModel
 
     internal static ApiBucketModel FromDomain(BucketModel model)
     {
-        // TODO: Mock host assignment until bucket-to-host mapping/telemetry is implemented.
-        var hostSeed = HashCode.Combine(model.ClusterId, model.Id);
-        var hostIndex = (Math.Abs(hostSeed) % 8) + 1;
-        var hostId = $"host-{hostIndex}";
-        var hostDisplayName = $"Host {hostIndex}";
-
         return new ApiBucketModel()
         {
             AgentConnectionId = model.AgentConnectionId.IdValue,
             AgentConnectionName = model.AgentConnectionId.Name,
             AgentWorkerId = model.AgentWorkerId,
-            HostId = hostId,
-            HostDisplayName = hostDisplayName,
+            HostId = model.HostId?.IdValue,
+            HostDisplayName = model.HostId?.HostDisplayName,
             Priority = model.Priority,
             Status = model.Status,
             WorkerLane = model.WorkerLane,
