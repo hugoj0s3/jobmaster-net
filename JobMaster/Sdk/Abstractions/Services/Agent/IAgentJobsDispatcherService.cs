@@ -7,9 +7,9 @@ namespace JobMaster.Sdk.Abstractions.Services.Agent;
 
 internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 {
-    string AddSavePendingJob(JobRawModel jobRaw);
+    string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true);
 
-    Task<string> AddSavePendingJobAsync(JobRawModel jobRaw);
+    Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true);
     
     Task<IList<string>> BulkAddSavePendingJobAsync(List<JobRawModel> jobRawModels);
     

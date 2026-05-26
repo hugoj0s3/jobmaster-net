@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Builder;
+﻿using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -81,16 +81,16 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
             if (logger == null) return;
 
             // 3. Build a structured log message
-            // TraceIdentifier is perfect here for the subjectId (links the log to the specific HTTP request)
+            // TraceIdentifier is perfect here for the referenceId (links the log to the specific HTTP request)
             var logMessage = 
                 $"API Access | {context.HttpContext.Request.Method} {context.HttpContext.Request.Path} | Subject: {identity.Subject ?? "Anonymous"}";
             
-            var subjectId = JobMasterStringUtils.SanitizeForId(context.HttpContext.TraceIdentifier);
+            var referenceId = JobMasterStringUtils.SanitizeForId(context.HttpContext.TraceIdentifier);
 
             logger.Info(
-                message: logMessage, 
-                subjectType: JobMasterLogSubjectType.Api, 
-                subjectId: subjectId
+                message: logMessage,
+                category: JobMasterLogCategory.Api,
+                referenceId: referenceId
             );
         }
         catch 

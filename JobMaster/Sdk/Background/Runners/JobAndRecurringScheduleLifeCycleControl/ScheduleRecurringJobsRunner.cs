@@ -11,6 +11,13 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Plans the next job occurrences for Active recurring schedules whose planning coverage
+/// is about to expire. Only runs when the cluster is in <c>ClusterMode.Active</c>.
+/// Uses a scan-plan with slot-based distributed locking to coordinate safely across
+/// multiple coordinator workers. Delegates to <c>IRecurringSchedulePlanner</c> per schedule.
+/// Runs approximately every <see cref="SucceedInterval"/>, adjusted by the scan plan.
+/// </summary>
 internal class ScheduleRecurringJobsRunner : JobMasterRunner
 {
     private IMasterRecurringSchedulesService masterRecurringSchedulesService;
@@ -49,7 +56,6 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
             CountLimit = BackgroundAgentWorker.TransferBatchSize,
             Status = RecurringScheduleStatus.Active,
             CoverageUntil = utcNow.Add(transientThreshold),
-            IsLocked = false,
             Offset = 0,
             SortBy = new SortByCriteria()
             {
@@ -57,10 +63,10 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
                 Ascending = false,
             }
         };
-        
+
         if (lastScanPlanResult == null || lastScanPlanResult.ShouldCalculateAgain())
         {
-            var count = masterRecurringSchedulesService.Count(recurringScheduleQueryCriteria);
+            var count = await masterRecurringSchedulesService.ProbeCountForAcquireAsync(recurringScheduleQueryCriteria);
             var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
             if (workerCount <= 0)
             {
@@ -84,31 +90,35 @@ internal class ScheduleRecurringJobsRunner : JobMasterRunner
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
 
-        var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, utcNow.Add(durationToLock));
-        if (recurringSchedules.Count <= 0)
+        try
         {
-            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
-            return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
-        }
-        
-        foreach (var recurringSchedule in recurringSchedules)
-        {
-            if (cutOffTime <= DateTime.UtcNow)
+            var recurringSchedules = await masterRecurringSchedulesService.AcquireAndFetchAsync(recurringScheduleQueryCriteria, utcNow.Add(durationToLock));
+            if (recurringSchedules.Count <= 0)
             {
-                break;
-            }
-            
-            if (ct.IsCancellationRequested)
-            {
-                break;
+                return OnTickResult.Skipped(TimeSpan.FromMinutes(2));
             }
 
-            await recurringSchedulePlanner.ScheduleNextJobsAsync(recurringSchedule);
+            foreach (var recurringSchedule in recurringSchedules)
+            {
+                if (cutOffTime <= DateTime.UtcNow)
+                {
+                    break;
+                }
+
+                if (ct.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                await recurringSchedulePlanner.ScheduleNextJobsAsync(recurringSchedule);
+            }
+
+            return OnTickResult.Success(lastScanPlanResult.Interval);
         }
-        
-        distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
-        
-        return OnTickResult.Success(lastScanPlanResult.Interval);
+        finally
+        {
+            distributedLockerService.ReleaseLock(lockKeys.RecurringSchedulerLock(lockSlot), lockToken);
+        }
     }
 
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(10);

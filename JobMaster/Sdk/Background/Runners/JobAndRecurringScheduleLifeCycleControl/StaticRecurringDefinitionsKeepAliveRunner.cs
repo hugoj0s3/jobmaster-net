@@ -5,6 +5,14 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
+/// <summary>
+/// Keeps in-process static recurring schedule definitions alive by refreshing their
+/// <c>LastEnsured</c> timestamp in bulk on every tick. Also inactivates any static
+/// definitions cluster-wide that have not been refreshed for over one hour, indicating
+/// the owning process is no longer running them. A distributed lock prevents concurrent
+/// execution across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class StaticRecurringDefinitionsKeepAliveRunner : JobMasterRunner
 {
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;

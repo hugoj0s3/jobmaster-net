@@ -66,7 +66,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             }
             
             // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
             
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
@@ -108,7 +108,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
             }
             
             // Generate initial version for new job
-            rec.Version = Guid.NewGuid().ToString("N").ToLowerInvariant();
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
             
             var (cols, vals) = InsertColumnsAndParams();
             var sqlText = $"INSERT INTO {t} ({cols}) VALUES ({vals});";
@@ -132,8 +132,115 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         }
     }
 
-    public abstract void Upsert(JobRawModel jobRaw);
-    public abstract Task UpsertAsync(JobRawModel jobRaw);
+    public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    {
+        using var conn = connManager.Open(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = conn.Execute(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = conn.ExecuteScalar<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            if (addJobExecution != null)
+            {
+                conn.Execute(BuildJobExecutionInsertSql(), BuildJobExecutionParams(addJobExecution), trans);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var rec = JobRawModel.ToPersistence(jobRaw);
+            var expectedVersion = rec.Version;
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            var t = TableName();
+            var dp = new DynamicParameters(rec);
+            dp.Add("ExpectedVersion", expectedVersion);
+            var rowsAffected = await conn.ExecuteAsync(BuildUpdateSql(), dp, trans);
+
+            if (rowsAffected == 0)
+            {
+                var exists = await conn.ExecuteScalarAsync<bool>(
+                    $"SELECT 1 FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id",
+                    new { rec.ClusterId, rec.Id }, trans);
+                if (exists)
+                    throw new JobMasterVersionConflictException(jobRaw.Id, "Job", expectedVersion);
+            }
+
+            if (addJobExecution != null)
+            {
+                await conn.ExecuteAsync(BuildJobExecutionInsertSql(), BuildJobExecutionParams(addJobExecution), trans);
+            }
+
+            trans.Commit();
+            jobRaw.SetVersion(rec.Version);
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task AddJobExecutionAsync(JobExecution jobExecution)
+    {
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            await conn.ExecuteAsync(BuildJobExecutionInsertSql(), BuildJobExecutionParams(jobExecution), trans);
+            trans.Commit();
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId)
+    {
+        var t = JobExecutionTableName();
+        var sqlText = $@"
+SELECT cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome
+FROM {t}
+WHERE cluster_id = @ClusterId AND job_id = @JobId
+ORDER BY started_at DESC";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var rows = (await conn.QueryAsync<JobExecutionPersistenceRecord>(sqlText,
+            new { ClusterId = ClusterConnConfig.ClusterId, JobId = jobId })).ToList();
+
+        return rows.Select(JobExecution.RecoverFromDb).ToList();
+    }
 
     public bool Exists(Guid jobId)
     {
@@ -202,6 +309,22 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         return conn.ExecuteScalar<long>(sqlText, args);
     }
 
+    public async Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria)
+    {
+        if (queryCriteria.MetadataFilters.Count > 0)
+            throw new NotSupportedException("ProbeForAcquire does not support MetadataFilters.");
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        
+        var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
+        var t = TableName();
+        var sqlText = @$"
+SELECT COUNT(*) as Count, MIN(j.{Col(x => x.NextPlanExecutionAt)}) as MinNextPlanExecutionAt
+FROM {t} j
+{whereSql}";
+        return await conn.QuerySingleAsync<JobProbeResult>(sqlText, args);
+    }
+
     public void ReleasePartitionLock(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -218,41 +341,98 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         conn.Execute(sqlText, new { ClusterId = this.ClusterConnConfig.ClusterId, JobId = jobId });
     }
 
-    public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null)
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig);
+        if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
+
+        var t = TableName();
+        var args = new DynamicParameters();
+        args.Add("ClusterId", ClusterConnConfig.ClusterId);
+        args.Add("JobIds", request.JobIds);
+
+        var setClauses = new List<string>(request.Properties.Count + 1);
+        for (var i = 0; i < request.Properties.Count; i++)
+        {
+            var field = request.Properties[i];
+            var colName = sql.ColumnNameFor(field.Expression);
+            var paramName = $"f{i}";
+            setClauses.Add($"{colName} = @{paramName}");
+            args.Add(paramName, field.Value);
+        }
+        setClauses.Add($"{Col(x => x.Version)} = {sql.GenerateVersionSql()}");
+
+        var inIds = sql.InClauseFor(Col(x => x.Id), "@JobIds");
+        var whereSql = $"{Col(x => x.ClusterId)} = @ClusterId AND {inIds}";
+
+        if (request.ExcludeStatuses is { Count: > 0 })
+        {
+            args.Add("ExcludeStatuses", request.ExcludeStatuses.Select(x => (int)x).ToList());
+            var notIn = sql.InClauseFor(Col(x => x.Status), "@ExcludeStatuses");
+            whereSql += $" AND NOT ({notIn})";
+        }
+
+        var sqlText = $"UPDATE {t} SET {string.Join(", ", setClauses)} WHERE {whereSql}";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = TableName();
-            var inIds = this.sql.InClauseFor(Col(x => x.Id), "@JobIds");
-            var where = inIds;
-            var hasExclude = excludeStatuses != null && excludeStatuses.Count > 0;
-            if (hasExclude)
-            {
-                var notInStatuses = this.sql.InClauseFor(Col(x => x.Status), "@NegateStatuses");
-                where += $" AND NOT ({notInStatuses})";
-            }
-
-            var sqlText =
-                $"UPDATE {t} SET {Col(x => x.Status)} = @Status, {Col(x => x.AgentConnectionId)} = @AgentConnectionId, {Col(x => x.AgentWorkerId)} = @AgentWorkerId, {Col(x => x.BucketId)} = @BucketId, {Col(x => x.Version)} = {sql.GenerateVersionSql()} WHERE {where}";
-            var args = new
-            {
-                JobIds = jobIds,
-                Status = status,
-                AgentConnectionId = agentConnectionId,
-                AgentWorkerId = agentWorkerId,
-                BucketId = bucketId,
-                NegateStatuses = hasExclude ? excludeStatuses!.Select(s => (int)s).ToList() : null
-            };
-            conn.Execute(sqlText, args, trans);
+            await conn.ExecuteAsync(sqlText, args, trans);
             trans.Commit();
         }
-        catch (Exception)
+        catch
         {
             trans.SafeRollback();
             throw;
         }
+    }
+
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
+
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+        var setClause = $"{UpdateSetClauseWithoutVersion()}, {Col(x => x.Version)} = @Version";
+        var sqlText = $"UPDATE {t} SET {setClause} WHERE {cClusterId} = @ClusterId AND {cId} = @Id";
+
+        var newVersions = new Dictionary<Guid, string>(jobs.Count);
+        foreach (var job in jobs)
+        {
+            newVersions[job.Id] = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+        }
+
+        var updated = new List<JobRawModel>(jobs.Count);
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            foreach (var job in jobs)
+            {
+                var rec = JobRawModel.ToPersistence(job);
+                rec.Version = newVersions[job.Id];
+                var rowsAffected = await conn.ExecuteAsync(sqlText, rec, trans);
+                if (rowsAffected > 0)
+                {
+                    updated.Add(job);
+                }
+            }
+            trans.Commit();
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
+
+        foreach (var job in updated)
+        {
+            job.SetVersion(newVersions[job.Id]);
+        }
+
+        return updated;
     }
 
     public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
@@ -312,6 +492,12 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
 
                 var deleteMetadataEntrySql = genericUtil.BuildDeleteEntryMultipleSql(MasterGenericRecordGroupIds.JobMetadata, "@metadataUniqueIds");
                 await conn.ExecuteAsync(deleteMetadataEntrySql, new { ClusterId = ClusterConnConfig.ClusterId, metadataUniqueIds }, tx);
+
+                // Delete Job Executions
+                var execTable = JobExecutionTableName();
+                var execInClause = sql.InClauseFor("job_id", "@Ids");
+                var deleteExecSql = $"DELETE FROM {execTable} WHERE {cClusterId} = @ClusterId AND {execInClause}";
+                await conn.ExecuteAsync(deleteExecSql, new { ClusterId = ClusterConnConfig.ClusterId, Ids = idsPartition }, tx);
             }
 
             tx.Commit();
@@ -340,7 +526,11 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
         try
         {
             var t = TableName();
-            var (whereSql, args) = BuildWhere(queryCriteria);
+            // isLocked: false restricts the inner SELECT to unlocked rows only, so the
+            // LIMIT picks genuinely acquirable candidates. Without it, already-locked rows
+            // fill the LIMIT and the outer unlockedGuard discards them silently, returning
+            // 0 rows even when unlocked rows exist further in the result set.
+            var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
             var needsMetadataJoin = queryCriteria.MetadataFilters is { Count: > 0 };
             var queryIdsSql = 
                 BuildQueryIdsToLockSql(whereSql, needsMetadataJoin, queryCriteria.CountLimit, queryCriteria.Offset, queryCriteria.SortBy);
@@ -467,7 +657,7 @@ FROM {TableName()} j
     }
 
 
-    private (string, object) BuildQuerySql(JobQueryCriteria c, int? partitionLockId = null, bool? isLocked = false)
+    private (string, object) BuildQuerySql(JobQueryCriteria c, int? partitionLockId = null, bool? isLocked = null)
     {
         var t = TableName();
         var selectCols = SelectProjection();
@@ -515,7 +705,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
     protected (string whereSql, Dictionary<string, object?> args) BuildWhere(
         JobQueryCriteria c, 
         int? partitionLockId = null, 
-        bool? isLocked = false)
+        bool? isLocked = null)
     {
         var where = new List<string> { $"j.{Col(x => x.ClusterId)} = @ClusterId" };
         var args = new Dictionary<string, object?>();
@@ -526,6 +716,13 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             var inClause = sql.InClauseFor(Col(x => x.Id), "@JobIds");
             where.Add(inClause);
             args.Add("JobIds", c.JobIds.ToArray());
+        }
+
+        if (c.ExcludeJobIds is { Count: > 0 })
+        {
+            var notInClause = sql.InClauseFor($"j.{Col(x => x.Id)}", "@ExcludeJobIds");
+            where.Add($"NOT ({notInClause})");
+            args.Add("ExcludeJobIds", c.ExcludeJobIds.ToArray());
         }
 
         if (c.Status.HasValue)
@@ -620,6 +817,25 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             args.Add("WorkerLane", c.WorkerLane);
         }
 
+        if (!string.IsNullOrEmpty(c.BucketId))
+        {
+            where.Add($"j.{Col(x => x.BucketId)} = @BucketId");
+            args.Add("BucketId", c.BucketId);
+        }
+
+        if (c.ExcludeBucketIds is { Count: > 0 })
+        {
+            var notInClause = sql.InClauseFor($"j.{Col(x => x.BucketId)}", "@ExcludeBucketIds");
+            where.Add($"NOT ({notInClause})");
+            args.Add("ExcludeBucketIds", c.ExcludeBucketIds.ToArray());
+        }
+
+        if (c.Priority.HasValue)
+        {
+            where.Add($"j.{Col(x => x.Priority)} = @Priority");
+            args.Add("Priority", (int)c.Priority.Value);
+        }
+
         var exists = genericUtil.BuildWhereClause(c.MetadataFilters, "e", "existsV", args, MasterGenericRecordGroupIds.JobMetadata);
         if (!string.IsNullOrEmpty(exists)) where.Add(exists);
 
@@ -630,6 +846,39 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
     protected string TableName()
     {
         return sql.TableNameFor<Job>(additionalConnConfig);
+    }
+
+    private string JobExecutionTableName()
+    {
+        var prefix = sql.GetTablePrefix(additionalConnConfig);
+        return $"{prefix}job_execution";
+    }
+
+    private string BuildJobExecutionInsertSql()
+    {
+        var t = JobExecutionTableName();
+        return $@"INSERT INTO {t}
+            (cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome)
+            VALUES
+            (@ClusterId, @Id, @JobId, @StartedAt, @AgentConnectionId, @AgentWorkerId, @BucketId, @HostId, @HostDisplayName, @FinalizedAt, @OutcomeMessage, @Outcome)";
+    }
+
+    private static DynamicParameters BuildJobExecutionParams(JobExecution execution)
+    {
+        var p = new DynamicParameters();
+        p.Add("ClusterId", execution.ClusterId);
+        p.Add("Id", execution.Id);
+        p.Add("JobId", execution.JobId);
+        p.Add("StartedAt", execution.StartedAt);
+        p.Add("AgentConnectionId", execution.AgentConnectionId?.IdValue);
+        p.Add("AgentWorkerId", execution.AgentWorkerId);
+        p.Add("BucketId", execution.BucketId);
+        p.Add("HostId", execution.HostId?.IdValue);
+        p.Add("HostDisplayName", execution.HostId?.HostDisplayName);
+        p.Add("FinalizedAt", execution.FinalizedAt);
+        p.Add("OutcomeMessage", execution.OutcomeMessage);
+        p.Add("Outcome", (int)execution.Outcome);
+        return p;
     }
 
     protected (string Columns, string ValuesParams) InsertColumnsAndParams()
@@ -657,6 +906,20 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             "@WorkerLane", "@Version", "@HostId", "@HostDisplayName"
         };
         return (string.Join(", ", cols), string.Join(", ", vals));
+    }
+
+    private string BuildUpdateSql()
+    {
+        var t = TableName();
+        var cVersion = Col(x => x.Version);
+        var cClusterId = Col(x => x.ClusterId);
+        var cId = Col(x => x.Id);
+        return $@"
+UPDATE {t} SET
+    {UpdateSetClause()}
+WHERE {cClusterId} = @ClusterId
+  AND {cId} = @Id
+  AND {cVersion} = @ExpectedVersion;";
     }
 
     protected string UpdateSetClause()

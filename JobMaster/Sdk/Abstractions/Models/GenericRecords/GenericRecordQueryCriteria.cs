@@ -3,10 +3,7 @@ namespace JobMaster.Sdk.Abstractions.Models.GenericRecords;
 internal sealed class GenericRecordQueryCriteria
 {
     public IList<string> EntryIds { get; set; } = new List<string>();
-    
-    public string? SubjectType { get; set; }
-    public IList<string> SubjectIds { get; set; } = new List<string>();
-    
+
     public bool IncludeExpired { get; set; } = false;
     
     public DateTime? CreatedAtFrom { get; set; }

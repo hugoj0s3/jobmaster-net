@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions;
+﻿using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -31,22 +31,20 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         this.logger = logger;
     }
 
-    public string AddSavePendingJob(JobRawModel jobRaw)
+    public string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        var throttler = GetOperationLimiter(jobRaw.AgentConnectionId!);
-        return throttler.Exec(() => repository.PushSavePendingJob(jobRaw));
+        return repository.PushSavePendingJob(jobRaw);
     }
 
-    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw)
+    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        var throttler = GetOperationLimiter(jobRaw.AgentConnectionId!);
-        return await throttler.ExecAsync(() => repository.PushSavePendingJobAsync(jobRaw));
+        return await repository.PushSavePendingJobAsync(jobRaw);
     }
 
     public async Task<IList<string>> BulkAddSavePendingJobAsync(List<JobRawModel> jobRawModels)
@@ -81,7 +79,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
             foreach (var partition in partitions)
             {
                 logger.Debug($"Bulk scheduling jobs. partition size: {partition.Count} for bucket {bucketId}",
-                    JobMasterLogSubjectType.Job, partition.First().Id);
+                    JobMasterLogCategory.Job, partition.First().Id);
                 var partitionResult = await throttler.ExecAsync(() =>
                     repository.BulkPushSavePendingJobAsync(bucketId, partition.ToList()));
                 results.AddRange(partitionResult);

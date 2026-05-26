@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
 [Collection("MySqlRepositoryConformance")]
+[Trait("DB", "MySql")]
 public sealed class MySqlJobsRepositoryConformanceTests
     : RepositoryJobsConformanceTests<MySqlRepositoryFixture>
 {

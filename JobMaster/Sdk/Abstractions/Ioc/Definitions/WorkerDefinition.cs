@@ -1,3 +1,4 @@
+using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
@@ -8,19 +9,19 @@ internal sealed class WorkerDefinition
     public string AgentConnectionName { get; set; } = string.Empty;
     public string? WorkerName { get; set; } = string.Empty;
     public string? WorkerLane { get; set; } = null;
-    public int TransferBatchSize { get; set; } = 1000;
-    public int BucketBufferSize { get; set; } = 250;
-    public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
-    public double ParallelismFactor { get; set; } = 1;
+    public int TransferBatchSize { get; set; } = JobMasterDefaults.Worker.TransferBatchSize;
+    public int BucketBufferSize { get; set; } = JobMasterDefaults.Worker.BucketBufferSize;
+    public AgentWorkerMode Mode { get; set; } = JobMasterDefaults.Worker.DefaultMode;
+    public double ParallelismFactor { get; set; } = JobMasterDefaults.Worker.ParallelismFactor;
     public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>()
     {
-        { JobMasterPriority.VeryLow, 1 },
-        { JobMasterPriority.Low, 1 },
-        { JobMasterPriority.Medium, 1 },
-        { JobMasterPriority.High, 1 },
-        { JobMasterPriority.Critical, 1 }
+        { JobMasterPriority.VeryLow,  JobMasterDefaults.Worker.BucketQtyPerPriority },
+        { JobMasterPriority.Low,      JobMasterDefaults.Worker.BucketQtyPerPriority },
+        { JobMasterPriority.Medium,   JobMasterDefaults.Worker.BucketQtyPerPriority },
+        { JobMasterPriority.High,     JobMasterDefaults.Worker.BucketQtyPerPriority },
+        { JobMasterPriority.Critical, JobMasterDefaults.Worker.BucketQtyPerPriority }
     };
 
     public bool SkipWarmUpTime { get; set; }
-    public TimeSpan BucketBufferLeadTime { get; set; } = TimeSpan.FromSeconds(30);
+    public TimeSpan BucketBufferLeadTime { get; set; } = JobMasterDefaults.Worker.BucketBufferLeadTime;
 }

@@ -1,19 +1,21 @@
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Keys;
-using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
 /// <summary>
-/// Periodically deletes old log records (GenericRecord group = Log) based on CreatedAt cutoff.
-/// Uses DataRetentionTtl from cluster configuration. Not bucket-aware.
+/// Deletes log entries from the log table that were created before <c>UtcNow − DataRetentionTtl</c>.
+/// Skipped when no TTL is configured. A distributed lock prevents concurrent deletes across
+/// coordinator workers. A <see cref="ConsecutiveBurstLimiter"/> shortens the next interval
+/// when a full batch was deleted, allowing the runner to drain large backlogs quickly before
+/// returning to its normal <see cref="SucceedInterval"/>
 /// </summary>
 internal sealed class DeleteOldLogsRunner : JobMasterRunner
 {
     private readonly IMasterClusterConfigurationService clusterConfigService;
-    private readonly IMasterGenericRecordRepository genericRepo;
+    private readonly IMasterLogsRepository logsRepo;
     private readonly IMasterDistributedLockerService locker;
     private readonly JobMasterLockKeys lockKeys;
     private readonly ConsecutiveBurstLimiter burstLimiter;
@@ -22,7 +24,7 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
         : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
         clusterConfigService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
-        genericRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterGenericRecordRepository>();
+        logsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterLogsRepository>();
         locker = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
@@ -54,7 +56,7 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await genericRepo.DeleteByCreatedAtAsync(MasterGenericRecordGroupIds.Log, cutoff, BackgroundAgentWorker.TransferBatchSize);
+            var deleted = await logsRepo.DeleteByTimestampAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

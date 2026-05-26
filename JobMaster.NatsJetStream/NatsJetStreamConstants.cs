@@ -6,7 +6,7 @@ namespace JobMaster.NatsJetStream;
 internal class NatsJetStreamConstants
 {
     public const string RepositoryTypeId = "NatsJetStream";
-    public const int DefaultDbOperationThrottleLimitForAgent = 1000;
+    public const int DefaultDbOperationThrottleLimitForAgent = 250;
     
     public const string Prefix = $"jobmaster.";
     
@@ -22,6 +22,7 @@ internal class NatsJetStreamConstants
 
     // Centralized timing configuration
     public static readonly TimeSpan MinConsumerAckWait = JobMasterConstants.ClockSkewPadding + TimeSpan.FromSeconds(30);
+    public static readonly TimeSpan AckOperationTimeout = TimeSpan.FromSeconds(5);
     
     public const int MinMaxAckPending = 100;
 
@@ -31,8 +32,34 @@ internal class NatsJetStreamConstants
         return Math.Max(maxAckPending, MinMaxAckPending);
     }
 
+    public static TimeSpan CalcAckWait(TimeSpan bucketBufferLeadTime) =>
+        bucketBufferLeadTime + MinConsumerAckWait;
+
+    public static TimeSpan CalcAckProgressKeepAliveInterval(TimeSpan bucketBufferLeadTime) =>
+        TimeSpan.FromTicks(CalcAckWait(bucketBufferLeadTime).Ticks / 3);
+    
+    public static TimeSpan CalcMessageLockDuration(TimeSpan bucketBufferLeadTime) => 
+        TimeSpan.FromMinutes(5) + NatsJetStreamConstants.CalcAckWait(bucketBufferLeadTime);
+
     // Maximum threshold beyond which scheduled jobs should be held on master instead of onboarded
     public static readonly TimeSpan MaxThreshold = TimeSpan.FromMinutes(2);
     public static uint MaxDeliver => 10000;
+
+    // Backoff delays when onboarding is busy. Length also drives the max retry count.
+    public static readonly TimeSpan[] BusyRetryDelays =
+    [
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromSeconds(75),
+        TimeSpan.FromMinutes(3)
+    ];
+
+    // How often a jm-heartbeat message is published to each bucket's subject.
+    // Keeps lastMessageReceivedAt fresh so idle buckets aren't marked Lost by the 90s unresponsive check.
+    public static readonly TimeSpan HeartbeatPublishInterval = TimeSpan.FromSeconds(10);
+
+    // NATS-level idle heartbeat sent by the server when no messages are available.
+    // Keeps the pull subscription open during idle periods so ConsumeAsync doesn't need to restart.
+    // Tuned independently of HeartbeatPublishInterval.
+    public static readonly TimeSpan ConsumerIdleHeartbeat = TimeSpan.FromSeconds(5);
 }
 

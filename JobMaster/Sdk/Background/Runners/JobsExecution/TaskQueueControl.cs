@@ -7,7 +7,7 @@ using JobMaster.Sdk.Abstractions.Background;
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
 /// <summary>
-/// Information about a task for monitoring and debugging purposes
+/// A point-in-time snapshot of a single running slot, used for monitoring and debugging.
 /// </summary>
 internal class TaskInfo
 {
@@ -19,26 +19,65 @@ internal class TaskInfo
     public TaskStatus TaskStatus { get; set; }
 }
 
+/// <summary>
+/// Concurrent execution manager for jobs inside a single bucket.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Maintains two layers:
+/// <list type="bullet">
+///   <item><term>Running slots (<c>Tasks[]</c>)</term>
+///   <description>Fixed-size array sized by priority and parallelism factor (see <see cref="Create"/>).
+///   Each slot holds one actively executing <see cref="ITaskQueueItem{T}"/>. Slots are freed lazily
+///   the next time <see cref="StartQueuedTasksIfHasSlotAvailable"/> is called.</description></item>
+///   <item><term>Waiting queue (<c>WaitingQueue</c>)</term>
+///   <description>Bounded FIFO queue (capacity = run slots × 5). Jobs sit here until a running slot
+///   opens up. <see cref="CountAvailability"/> measures remaining space in this queue, not in the
+///   running slots.</description></item>
+/// </list>
+/// </para>
+/// <para>
+/// This type is <b>thread-safe</b>: all state mutations are guarded by an internal lock.
+/// </para>
+/// </remarks>
+/// <typeparam name="T">The job value type stored in each queue item.</typeparam>
 internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
 {
     private ITaskQueueItem<T>?[] Tasks { get; set; }
-    
-    private Queue<ITaskQueueItem<T>> WaitingQueue { get; set; } = new();
-    
-    private readonly HashSet<string> itemIds = new HashSet<string>();
-    
-    public int WaitingQueueCapacity { get; private set; }
-    
-    private readonly object syncLock = new();
-    private readonly Func<T, Task<bool>>? preEnqueueAction;
-    
-    private bool isShuttingDown = false;
-    
 
+    private Queue<ITaskQueueItem<T>> WaitingQueue { get; set; } = new();
+
+    private readonly HashSet<string> itemIds = new HashSet<string>();
+
+    public int WaitingQueueCapacity { get; private set; }
+
+    private readonly object syncLock = new();
+    private readonly Func<T, bool>? preEnqueueAction;
+
+    private bool isShuttingDown = false;
+
+
+    /// <summary>
+    /// Creates a <see cref="TaskQueueControl{T}"/> sized for the given <paramref name="priority"/>
+    /// and optionally scaled by <paramref name="factor"/>.
+    /// </summary>
+    /// <param name="priority">
+    /// Determines the base number of concurrent running slots:
+    /// <c>VeryLow=2, Low=3, Medium=4, High=5, Critical=6</c>.
+    /// </param>
+    /// <param name="factor">
+    /// Multiplier applied to the base run capacity (rounded to nearest integer, minimum 1).
+    /// Defaults to <c>1.0</c> (no scaling). The waiting queue capacity is always
+    /// <c>runCapacity × 5</c>.
+    /// </param>
+    /// <param name="preEnqueueAction">
+    /// Optional callback invoked with the item's value just before it is added to the waiting queue.
+    /// Return <see langword="false"/> to reject the item. Not called for duplicate IDs.
+    /// </param>
     public static TaskQueueControl<T> Create(
-        JobMasterPriority priority, 
-        double factor = 1, 
-        Func<T, Task<bool>>? preEnqueueAction = null)
+        JobMasterPriority priority,
+        double factor = 1,
+        Func<T, bool>? preEnqueueAction = null)
     {
         var runCapacity = priority switch
         {
@@ -58,7 +97,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         return new TaskQueueControl<T>(runCapacity, waitingQueueCapacity,  preEnqueueAction);
     }
     
-    private TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, Task<bool>>? preEnqueueAction = null)
+    private TaskQueueControl(int runCapacity, int waitingQueueCapacity, Func<T, bool>? preEnqueueAction = null)
     {
         this.preEnqueueAction = preEnqueueAction;
         Tasks = new ITaskQueueItem<T>?[runCapacity];
@@ -66,6 +105,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         WaitingQueueCapacity = waitingQueueCapacity;
     }
     
+    /// <inheritdoc/>
     public bool StartQueuedTasksIfHasSlotAvailable()
     {
         lock (syncLock)
@@ -104,6 +144,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountRunning()
     {
         lock (syncLock)
@@ -113,6 +154,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountAvailability()
     {
         lock (syncLock)
@@ -122,6 +164,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
+    /// <inheritdoc/>
     public int CountWaiting()
     {
         lock (syncLock)
@@ -131,6 +174,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <inheritdoc/>
     public bool Contains(string id)
     {
         lock (syncLock)
@@ -139,81 +183,39 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
     
-    public async Task<bool> EnqueueAsync(ITaskQueueItem<T> queueItem)
+    /// <inheritdoc/>
+    public bool Enqueue(ITaskQueueItem<T> queueItem)
     {
-        // Check for duplicate first
         lock (syncLock)
         {
             if (isShuttingDown) return false;
-            
+
             if (itemIds.Contains(queueItem.Id))
             {
                 return true; // Already in queue or running, treat as success
             }
-        }
-        
-        if (WaitingQueue.Count >= WaitingQueueCapacity)
-        {
-            return false;
-        }
 
-        if (preEnqueueAction is not null && queueItem.Value is not null)
-        {
-            var result = await preEnqueueAction(queueItem.Value);
-            if (!result)
+            if (WaitingQueue.Count >= WaitingQueueCapacity)
             {
                 return false;
             }
-        }
-        
-        lock(syncLock)
-        {
-            // Double-check after preEnqueueAction (in case of race condition)
-            if (itemIds.Contains(queueItem.Id))
+
+            if (preEnqueueAction is not null && queueItem.Value is not null)
             {
-                return true; // Already in queue or running
+                var result = preEnqueueAction(queueItem.Value);
+                if (!result)
+                {
+                    return false;
+                }
             }
-            
+
             WaitingQueue.Enqueue(queueItem);
             itemIds.Add(queueItem.Id);
             return true;
         }
     }
 
-    /// <summary>
-    /// Aborts tasks that have exceeded their timeout duration
-    /// </summary>
-    /// <returns>The number of tasks that were aborted due to timeout</returns>
-    public int AbortTimeoutTasks()
-    {
-        lock (syncLock)
-        {
-            int abortedCount = 0;
-            
-            for (int i = 0; i < Tasks.Length; i++)
-            {
-                var task = Tasks[i];
-                if (task != null && task.IsTimedOut() && !task.Task.IsCompleted && !task.Task.IsCanceled && !task.Task.IsFaulted)
-                {
-                    try
-                    {
-                        task.Abort();
-                        // Remove ID from tracking when task is aborted
-                        itemIds.Remove(task.Id);
-                        abortedCount++;
-                    }
-                    catch (Exception)
-                    {
-                        // Log the exception if needed, but continue processing other tasks
-                        // The task will be cleaned up in the next DeallocateCompletedTasks call
-                    }
-                }
-            }
-            
-            return abortedCount;
-        }
-    }
-    
+    /// <inheritdoc/>
     public async Task<IList<T>> ShutdownAsync()
     {
         IList<T> result = new List<T>();
@@ -230,24 +232,29 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
             
         await Task.Delay(TimeSpan.FromSeconds(1));
 
-        var tasksToStop = Tasks.Where(x => x is not null).Select(x => x!).Where(x => !x!.Task.IsCompleted || !x!.Task.IsCanceled || !x!.Task.IsFaulted).ToList();
+        ITaskQueueItem<T>[] taskSnapshot;
+        lock (syncLock)
+        {
+            taskSnapshot = Tasks.Where(x => x is not null).Select(x => x!).ToArray();
+        }
+
+        var tasksToStop = taskSnapshot.Where(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted).ToList();
         if (tasksToStop.Count > 0)
         {
             var timeoutAt = DateTime.UtcNow.AddSeconds(5);
-            while(tasksToStop.Any(x => !x.Task.IsCompleted || !x.Task.IsCanceled || !x.Task.IsFaulted))
+            while (tasksToStop.Any(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted))
             {
                 if (DateTime.UtcNow >= timeoutAt)
                 {
                     // Timeout reached, stop waiting for tasks to complete
                     break;
                 }
-                
+
                 await Task.Delay(TimeSpan.FromMilliseconds(250));
-                AbortTimeoutTasks();
             }
-            
-            tasksToStop = tasksToStop.Where(x => !x.Task.IsCompleted || !x.Task.IsCanceled || !x.Task.IsFaulted).ToList();
-            
+
+            tasksToStop = tasksToStop.Where(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted).ToList();
+
             if (tasksToStop.Count > 0)
             {
                 tasksToStop.ForEach(x => x?.Dispose());
@@ -255,6 +262,27 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
         
         return result;
+    }
+
+    /// <inheritdoc/>
+    public IEnumerable<TimeSpan> GetRunningTimeouts()
+    {
+        lock (syncLock)
+        {
+            return Tasks
+                .Where(x => x is not null)
+                .Select(x => x!.Timeout)
+                .ToList();
+        }
+    }
+
+    /// <inheritdoc/>
+    public IList<string> GetIds()
+    {
+        lock (syncLock)
+        {
+            return new List<string>(itemIds);
+        }
     }
 
     /// <summary>
@@ -288,6 +316,11 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         }
     }
 
+    /// <summary>
+    /// Disposes all items currently held in running slots and clears all internal state.
+    /// Does not wait for running tasks to finish; use <see cref="ShutdownAsync"/> for a
+    /// graceful drain before calling this.
+    /// </summary>
     public void Dispose()
     {
         lock (syncLock)

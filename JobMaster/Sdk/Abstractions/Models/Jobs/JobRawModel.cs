@@ -101,7 +101,20 @@ internal class JobRawModel : JobMasterBaseModel
     {
         return Job.FromModel(this);
     }
-    
+
+    public string ToLogSummary()
+    {
+        var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Priority:{Priority} " +
+               $"NumberOfFailures:{NumberOfFailures} ScheduledAt:{ScheduledAt:O} BucketId:{BucketId}";
+        
+        result += $"\nMsgData:{(MsgData.Length > 500 ? MsgData.Substring(0, 500) + "...[truncated]" : MsgData)}";
+        result += $"\nMetadata:{(Metadata == null ? "[null]" : 
+            Metadata.Length > 500 ? Metadata.Substring(0, 500) + "..[truncated]" : Metadata)}";
+        
+        return result;
+    }
+
+
     public void AssignToBucket(BucketModel bucketModel)
     {
         if (!bucketModel.CanAssign())
@@ -119,7 +132,7 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = bucketId;
         HostId = hostId;
         Status = JobMasterJobStatus.InBucket;
-        RefreshDeadline();
+        RefreshDeadline(JobMasterConstants.JobProcessDeadlineDefaultDuration);
     }
 
     public void AssignSavePendingJobToBucket(BucketModel bucketModel) {
@@ -141,31 +154,26 @@ internal class JobRawModel : JobMasterBaseModel
         Status = JobMasterJobStatus.InBucket;
     }
     
-    public bool Enqueued()
+    public bool Onboard()
     {
-        if (!this.Status.IsBucketStatus())
+        if (!this.Status.IsPreExecutionBucketStatus())
         {
             return false;
         }
-        
-        Status = JobMasterJobStatus.Queued;
+
+        Status = JobMasterJobStatus.Onboarded;
         return true;
     }
-    
-    public void RefreshDeadline(TimeSpan? processDeadlineDuration = null)
+
+    public bool Enqueue()
     {
-        if (!processDeadlineDuration.HasValue)
+        if (!this.Status.IsPreExecutionBucketStatus())
         {
-            processDeadlineDuration = JobMasterConstants.JobProcessDeadlineDuration;
+            return false;
         }
-        
-        var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration.Value);
-        if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)
-        {
-            jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration.Value);
-        }
-        
-        this.ProcessDeadline = jobProcessDeadline;
+
+        Status = JobMasterJobStatus.Queued;
+        return true;
     }
     
     public void MarkAsHeldOnMaster()
@@ -184,7 +192,7 @@ internal class JobRawModel : JobMasterBaseModel
         Status = JobMasterJobStatus.OnMaster;
     } 
 
-    public bool IsOnBoarding(TimeSpan? extraWindow = null)
+    public bool IsWithinOnboardingWindow(TimeSpan? extraWindow = null)
     {
         var now = DateTime.UtcNow;
         var window = JobMasterConstants.ClockSkewPadding + JobMasterConstants.OnBoardingWindow;
@@ -199,27 +207,17 @@ internal class JobRawModel : JobMasterBaseModel
 
     public bool TryToCancel(bool ignoreOnBoarding = false)
     {
-        if (Status != JobMasterJobStatus.Processing && 
-            Status != JobMasterJobStatus.Succeeded && 
-            Status != JobMasterJobStatus.Failed && 
-            Status != JobMasterJobStatus.Cancelled && 
-            Status != JobMasterJobStatus.Queued)
-        {
-            
-            // If it is onboarding can not be cancelled
-            if (IsOnBoarding(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding) 
-            {
-                return false;
-            }
-            
-            Status = JobMasterJobStatus.Cancelled;
-            ProcessDeadline = null;
-            NextPlanExecutionAt = null;
-            FinalizedAt = DateTime.UtcNow;
-            return true;
-        }
-        
-        return false;
+        if (Status != JobMasterJobStatus.OnMaster && Status != JobMasterJobStatus.InBucket)
+            return false;
+
+        if (IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)) && !ignoreOnBoarding)
+            return false;
+
+        Status = JobMasterJobStatus.Cancelled;
+        ProcessDeadline = null;
+        NextPlanExecutionAt = null;
+        FinalizedAt = DateTime.UtcNow;
+        return true;
     }
     
     public void DelayNextExecutionPlan(TimeSpan delay)
@@ -245,7 +243,7 @@ internal class JobRawModel : JobMasterBaseModel
         
         var secondsToWait = 30 * Math.Pow(2, this.NumberOfFailures - 1);
         var timeToWait = TimeSpan.FromSeconds(secondsToWait);
-        timeToWait += JobMasterConstants.JobProcessDeadlineDuration;
+        timeToWait += JobMasterConstants.JobProcessDeadlineDefaultDuration;
         
         DelayNextExecutionPlan(timeToWait);
         ProcessDeadline = null;
@@ -266,6 +264,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         ProcessDeadline = null;
         NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
         NumberOfFailures++;
         FinalizedAt = DateTime.UtcNow;
     }
@@ -279,6 +279,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         ProcessDeadline = null;
         NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
     }
     
     public void ReSchedule(DateTime scheduledAt)
@@ -305,7 +307,7 @@ internal class JobRawModel : JobMasterBaseModel
     
     public bool CanReSchedule()
     {
-        if (this.Status.IsFinalStatus())
+        if (!this.Status.IsFinalStatus())
         {
             return false;
         }
@@ -315,7 +317,7 @@ internal class JobRawModel : JobMasterBaseModel
             return false;
         }
 
-        if (this.IsOnBoarding(TimeSpan.FromSeconds(5)))
+        if (this.IsWithinOnboardingWindow(TimeSpan.FromSeconds(5)))
         {
             return false;
         }
@@ -327,9 +329,9 @@ internal class JobRawModel : JobMasterBaseModel
     {
         Status = JobMasterJobStatus.Processing;
         ProcessStartedAt = DateTime.UtcNow;
-        RefreshDeadline(Timeout + JobMasterConstants.JobProcessDeadlineDuration);
+        RefreshDeadline(Timeout + TimeSpan.FromMinutes(1));
 
-        return new JobExecution(this.ClusterId)
+        var execution = new JobExecution(this.ClusterId)
         {
             JobId = this.Id,
             StartedAt = DateTime.UtcNow,
@@ -337,30 +339,21 @@ internal class JobRawModel : JobMasterBaseModel
             AgentWorkerId = this.AgentWorkerId!,
             BucketId = this.BucketId!,
             HostId = this.HostId!,
-            Outcome = JobExecutionOutcomeStatus.Processing,
         };
+
+        return execution;
     }
     
+    /// <summary>
+    /// Returns <c>true</c> if the job's ProcessDeadline is within the early-warning window
+    /// (<c>ProcessDeadline &lt; UtcNow + <see cref="JobMasterConstants.ProcessDeadlineEarlyWarning"/></c>).
+    /// Fires slightly before the hard deadline to give callers a chance to skip or defer
+    /// before <c>HeldOnMasterDeadlineTimeoutJobsRunner</c> bulk-recovers the job.
+    /// </summary>
     public bool ExceedProcessDeadline()
     {
-        return ProcessDeadline.HasValue && ProcessDeadline.Value < DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding).Add(TimeSpan.FromMinutes(1));
-    }
-    
-    public bool CanHeldOnMasterExceedDeadline()
-    {
-        if (this.Status == JobMasterJobStatus.OnMaster)
-        {
-            return false;
-        }
-
-        if (!this.ProcessDeadline.HasValue)
-        {
-            return false;
-        }
-
-        var nowWithSkew = DateTime.UtcNow.Add(JobMasterConstants.ClockSkewPadding);
-        var threshold = nowWithSkew.Add(TimeSpan.FromMinutes(1));
-        return this.ProcessDeadline.Value <= threshold;
+        return ProcessDeadline.HasValue &&
+               ProcessDeadline.Value < DateTime.UtcNow.Add(JobMasterConstants.ProcessDeadlineEarlyWarning);
     }
     
     public static JobRawModel RecoverFromDb(JobPersistenceRecord d)
@@ -368,4 +361,15 @@ internal class JobRawModel : JobMasterBaseModel
 
     public static JobPersistenceRecord ToPersistence(JobRawModel m)
         => JobConvertUtil.ToPersistence(m);
+    
+    public void RefreshDeadline(TimeSpan processDeadlineDuration)
+    {
+        var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration);
+        if (this.GetSafeNextPlanExecutionAt() < DateTime.UtcNow)
+        {
+            jobProcessDeadline = DateTime.UtcNow.Add(processDeadlineDuration);
+        }
+        
+        this.ProcessDeadline = jobProcessDeadline;
+    }
 }

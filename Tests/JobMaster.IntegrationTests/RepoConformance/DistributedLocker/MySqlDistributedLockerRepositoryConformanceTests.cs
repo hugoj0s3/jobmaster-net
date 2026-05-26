@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;
 
 [Collection("MySqlRepositoryConformance")]
+[Trait("DB", "MySql")]
 public sealed class MySqlDistributedLockerRepositoryConformanceTests
     : RepositoryDistributedLockerConformanceTests<MySqlRepositoryFixture>
 {

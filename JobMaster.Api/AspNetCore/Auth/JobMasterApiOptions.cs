@@ -24,6 +24,7 @@ public sealed class JobMasterApiOptions
     /// </summary>
     public bool EnableSwagger { get; set; } = false;
     
+    /// <summary>Returns the list of authentication types currently configured.</summary>
     public IList<JobMasterApiAuthenticationType> GetAuthenticationTypesSupported()
     {
         return AuthenticationTypesSupported.ToList();
@@ -107,5 +108,6 @@ public sealed class JobMasterApiOptions
     
     internal Type? JobMasterIdentityProviderType { get; set; }
     internal Type? JobMasterAuthorizationProviderType { get; set; }
+    /// <summary>When <c>true</c>, API access is logged to the cluster's structured logger.</summary>
     public bool EnableLogging { get; set; }
 }

@@ -23,6 +23,7 @@ public sealed class RecurringScheduleDefinitionCollection
     private readonly StaticRecurringSchedulesProfileInfo profile;
     private readonly string defaultClusterId;
 
+    /// <summary>Initializes the collection scoped to the given profile and default cluster.</summary>
     public RecurringScheduleDefinitionCollection(StaticRecurringSchedulesProfileInfo profile, string defaultClusterId)
     {
         if (string.IsNullOrWhiteSpace(defaultClusterId))
@@ -31,9 +32,21 @@ public sealed class RecurringScheduleDefinitionCollection
         this.defaultClusterId = defaultClusterId;
     }
 
+    /// <summary>Returns a read-only snapshot of all registered definitions.</summary>
     public IReadOnlyList<StaticRecurringScheduleDefinition> ToReadOnly() => items;
 
-
+    /// <summary>
+    /// Adds a recurring schedule for <typeparamref name="Th"/> using a text-based recurrence expression.
+    /// </summary>
+    /// <param name="expressionType">The recurrence compiler type ID (e.g. <c>"Cron"</c>).</param>
+    /// <param name="expression">The raw recurrence expression string.</param>
+    /// <param name="defId">Optional unique definition ID within this profile. Auto-generated when null.</param>
+    /// <param name="priority">Execution priority per occurrence. Defaults to the handler attribute or cluster default.</param>
+    /// <param name="timeout">Maximum execution time per occurrence. Defaults to the handler attribute or cluster default.</param>
+    /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
@@ -50,6 +63,17 @@ public sealed class RecurringScheduleDefinitionCollection
         return Add<Th>(compiled, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
     }
 
+    /// <summary>
+    /// Adds a recurring schedule for <typeparamref name="Th"/> using a pre-compiled recurrence expression.
+    /// </summary>
+    /// <param name="compiledExpr">The already-compiled recurrence expression.</param>
+    /// <param name="defId">Optional unique definition ID within this profile. Auto-generated when null.</param>
+    /// <param name="priority">Execution priority per occurrence.</param>
+    /// <param name="timeout">Maximum execution time per occurrence.</param>
+    /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,

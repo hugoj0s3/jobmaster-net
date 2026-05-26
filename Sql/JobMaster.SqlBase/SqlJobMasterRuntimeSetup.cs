@@ -1,4 +1,4 @@
-using System.Data;
+﻿using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
@@ -11,9 +11,18 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlBase;
 
+/// <summary>
+/// Abstract base class for SQL-provider runtime setup. Handles automatic schema provisioning
+/// (tables for jobs, recurring schedules, generic records, distributed locks, and agent buckets)
+/// on first startup, and sets provider-specific defaults such as DB operation throttle limits
+/// and table prefixes.
+/// </summary>
 public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
-    
+    /// <summary>
+    /// Validates the SQL configuration before startup. Override to add provider-specific checks.
+    /// Returns a list of validation error messages; an empty list means validation passed.
+    /// </summary>
     public virtual Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
         return Task.FromResult<IList<string>>(new List<string>());
@@ -23,6 +32,10 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
     protected abstract int DefaultDbOperationThrottleLimitForAgent { get; }
     
 
+    /// <summary>
+    /// Applies provider defaults (table prefix, throttle limits) and provisions the schema on first startup
+    /// if auto-provisioning is enabled.
+    /// </summary>
     public virtual async Task OnStartingAsync(IServiceProvider mainServiceProvider)
     {
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
@@ -104,7 +117,23 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 var recurringScheduleTableScript = MasterTableCreatorScripts.CreateRecurringScheduleTablesScript(sql, tablePrefix);
                 await conn.ExecuteAsync(recurringScheduleTableScript, transaction: transaction);
             }
-            
+
+            var jobExecutionTableExistsSql = sql.TableExistsSql(tablePrefix, "job_execution");
+            var jobExecutionTableExists = await conn.QueryFirstOrDefaultAsync<bool>(jobExecutionTableExistsSql, transaction: transaction);
+            if (!jobExecutionTableExists)
+            {
+                var jobExecutionTableScript = MasterTableCreatorScripts.CreateJobExecutionTableScript(sql, tablePrefix);
+                await conn.ExecuteAsync(jobExecutionTableScript, transaction: transaction);
+            }
+
+            var logTableExistsSql = sql.TableExistsSql(tablePrefix, "log");
+            var logTableExists = await conn.QueryFirstOrDefaultAsync<bool>(logTableExistsSql, transaction: transaction);
+            if (!logTableExists)
+            {
+                var logTableScript = MasterTableCreatorScripts.CreateLogTableScript(sql, tablePrefix);
+                await conn.ExecuteAsync(logTableScript, transaction: transaction);
+            }
+
             transaction.Commit();
         }
     }
@@ -166,18 +195,19 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
             }
 
-            // agent_conn_footprint
-            var footprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_footprint");
-            var footprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(footprintTableExistsSql, transaction: agentTransaction);
-            if (!footprintTableExists)
+            // agent_conn_fingerprint
+            var fingerprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_fingerprint");
+            var fingerprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(fingerprintTableExistsSql, transaction: agentTransaction);
+            if (!fingerprintTableExists)
             {
-                var footprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFootprint(agentSql, agentTablePrefix);
-                await agentDbConnection.ExecuteAsync(footprintTableScript, transaction: agentTransaction);
+                var fingerprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFingerprint(agentSql, agentTablePrefix);
+                await agentDbConnection.ExecuteAsync(fingerprintTableScript, transaction: agentTransaction);
             }
                 
             agentTransaction.Commit();
         }
     }
 
+    /// <summary>The repository type identifier used to match SQL configurations and keyed services.</summary>
     public abstract string RepositoryTypeId { get; }
 }

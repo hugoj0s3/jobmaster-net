@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
@@ -155,7 +155,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
             }
             catch (JsonException e)
             {
-                logger.Critical($"Failed to deserialize recurring schedule. Payload: {message.Payload}", JobMasterLogSubjectType.Bucket, bucketId, exception: e);
+                logger.Critical($"Failed to deserialize recurring schedule. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
@@ -191,7 +191,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
             }
             catch (JsonException e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogSubjectType.Bucket, bucketId, exception: e);
+                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
@@ -220,7 +220,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
             }
             catch (JsonException e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogSubjectType.Bucket, bucketId, exception: e);
+                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 

@@ -1,6 +1,7 @@
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Master;
 
@@ -21,7 +22,7 @@ internal class PostgresMasterDistributedLockerRepository : SqlMasterDistributedL
     {
         var now = DateTime.UtcNow;
         var newExpires = now.Add(leaseDuration);
-        var token = Guid.NewGuid().ToString("N");
+        var token = JobMasterRandomUtil.NewGuid4().ToString("N");
 
         using var conn = connManager.Open(connString, additionalConnConfig);
 

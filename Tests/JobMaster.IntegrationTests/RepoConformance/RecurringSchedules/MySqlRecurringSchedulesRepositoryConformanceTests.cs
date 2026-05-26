@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
 
 [Collection("MySqlRepositoryConformance")]
+[Trait("DB", "MySql")]
 public sealed class MySqlRecurringSchedulesRepositoryConformanceTests
     : RepositoryRecurringSchedulesConformanceTests<MySqlRepositoryFixture>
 {

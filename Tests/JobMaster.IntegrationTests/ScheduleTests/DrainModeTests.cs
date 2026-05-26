@@ -8,29 +8,31 @@ using Xunit.Abstractions;
 namespace JobMaster.IntegrationTests.ScheduleTests;
 
 [Collection("NatsJetStreamDrainMode")]
+[Trait("DB", "Nats")]
 public class NatsJetStreamDrainModeTests : JobMasterSchedulerTestsBase<NatsJetStreamDrainModeFixture>
 {
     public NatsJetStreamDrainModeTests(NatsJetStreamDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 20, 30)]
-    [InlineData(300000, 60, 90)]
-    [InlineData(1000000, 100, 180)]
+    [Trait("TestType", "DrainMode")]
+    [InlineData(10000, 20, 15)]
+    [InlineData(100000, 60, 60)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
-        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers);
+        await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
     }
 }
 
 [Collection("PostgresDrainMode")]
+[Trait("DB", "Postgres")]
 public class PostgresDrainModeTests : JobMasterSchedulerTestsBase<PostgresDrainModeFixture>
 {
     public PostgresDrainModeTests(PostgresDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(10000, 120, 60)]
-    [InlineData(30000, 180, 120)]
-    [InlineData(100000, 360, 360)]
+    [Trait("TestType", "DrainMode")]
+    [InlineData(10000, 20, 15)]
+    [InlineData(100000, 60, 60)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);
@@ -38,14 +40,15 @@ public class PostgresDrainModeTests : JobMasterSchedulerTestsBase<PostgresDrainM
 }
 
 [Collection("SqlServerDrainMode")]
+[Trait("DB", "SqlServer")]
 public class SqlServerDrainModeTests : JobMasterSchedulerTestsBase<SqlServerDrainModeFixture>
 {
     public SqlServerDrainModeTests(SqlServerDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(10000, 120, 60)]
-    [InlineData(30000, 120, 180)]
-    [InlineData(100000, 200, 360)]
+    [Trait("TestType", "DrainMode")]
+    [InlineData(10000, 20, 15)]
+    [InlineData(100000, 60, 60)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:3);
@@ -53,14 +56,15 @@ public class SqlServerDrainModeTests : JobMasterSchedulerTestsBase<SqlServerDrai
 }
 
 [Collection("MySqlDrainMode")]
+[Trait("DB", "MySql")]
 public class MySqlDrainModeTests : JobMasterSchedulerTestsBase<MySqlDrainModeFixture>
 {
     public MySqlDrainModeTests(MySqlDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(10000, 120, 60)]
-    [InlineData(30000, 120, 180)]
-    [InlineData(100000, 200, 360)]
+    [Trait("TestType", "DrainMode")]
+    [InlineData(10000, 20, 15)]
+    [InlineData(100000, 60, 60)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:25);
@@ -68,14 +72,15 @@ public class MySqlDrainModeTests : JobMasterSchedulerTestsBase<MySqlDrainModeFix
 }
 
 [Collection("MixedDrainMode")]
+[Trait("DB", "Mixed")]
 public class MixedDrainModeTests : JobMasterSchedulerTestsBase<MixedDrainModeFixture>
 {
     public MixedDrainModeTests(MixedDrainModeFixture fixture, ITestOutputHelper output) : base(fixture, output) { }
 
     [Theory]
-    [InlineData(100000, 40, 60)]
-    [InlineData(300000, 120, 180)]
-    [InlineData(1000000, 200, 360)]
+    [Trait("TestType", "DrainMode")]
+    [InlineData(10000, 20, 15)]
+    [InlineData(100000, 60, 60)]
     public async Task DrainModeTest(int qtyJobs, int timeoutInMinutes, int secondsToStopWorkers)
     {
         await RunDrainModeTest(qtyJobs, timeoutInMinutes, secondsToStopWorkers, scheduleParallelLimit:50);

@@ -4,6 +4,10 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
+/// <summary>
+/// Removes host records that have not sent a heartbeat within the dead-host threshold.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class CleanupDeadHostsRunner : JobMasterRunner
 {
     private static readonly TimeSpan DeadHostThreshold = TimeSpan.FromMinutes(5);

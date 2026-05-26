@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using JobMaster.Abstractions.Models;
@@ -23,7 +23,6 @@ namespace JobMaster.NatsJetStream.Background;
 internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
-    private OperationThrottler ackThrottler = null!;
 
     private bool hasInitialized;
     private Task? consumptionTask;
@@ -34,6 +33,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
     private int totalMessagesProcessed = 0;
     private TaskStatus? lastReportedTaskStatus = null;
+    private DateTime lastHeartbeatPublishedAt = DateTime.MinValue;
 
     private AgentConnectionId agentConnectionId = null!;
     private INatsJSConsumer? consumer;
@@ -60,17 +60,17 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             {
                 invalidBucketStatusTickCount++;
                 
-                if (invalidBucketStatusTickCount >= 2)
+                if (invalidBucketStatusTickCount >= 6)
                 {
-                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogSubjectType.Bucket, BucketId);
-                    consumerCts?.Cancel();
-                }
-                else if (invalidBucketStatusTickCount >= 6)
-                {
-                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status still invalid after {invalidBucketStatusTickCount} ticks, disposing CTS", JobMasterLogSubjectType.Bucket, BucketId);
+                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status still invalid after {invalidBucketStatusTickCount} ticks, disposing CTS", JobMasterLogCategory.Bucket, BucketId);
                     consumerCts?.SafeDispose();
                     consumerCts = null;
                     invalidBucketStatusTickCount = 0;
+                }
+                else if (invalidBucketStatusTickCount >= 2)
+                {
+                    logger.Info($"{GetRunnerDescription()}: Bucket {BucketId} status is {bucket?.Status}, stopping consumer", JobMasterLogCategory.Bucket, BucketId);
+                    consumerCts?.Cancel();
                 }
             }
             return OnTickResult.Skipped(TimeSpan.FromSeconds(5));
@@ -93,41 +93,39 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                 BackgroundAgentWorker.BucketBufferLeadTime,
                 ct);
             hasInitialized = true;
-            ackThrottler =
-                BackgroundAgentWorker
-                    .Runtime!
-                    .GetOperationLimiterForAgent(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.ClusterId, this.BackgroundAgentWorker.JobMasterAgentConnectionConfig.Id);
         }
 
-        // 4. Subscriber Startup & Watchdog
+        // 3. Subscriber Startup & Watchdog
         if (consumptionTask == null)
         {
-            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Info($"{GetRunnerDescription()}: Starting subscriber for bucket {BucketId}, fullBucketAddressId={fullBucketAddressId}", JobMasterLogCategory.Bucket, BucketId);
             consumerCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             var consumerToken = consumerCts.Token;
             
             // Publish initial heartbeat message to ensure consumer activates immediately
             await PublishHeartbeatAsync(fullBucketAddressId, ct);
-            
-            consumptionTask = Task.Run(async () => await ListenMsgsAsync(consumerToken, consumer!), consumerToken);
-            
+            lastHeartbeatPublishedAt = DateTime.UtcNow;
+
+            consumptionTask = Task.Run(async () => await ListenMsgsAsync(consumerToken, consumer!));
+
             taskCreatedAt = DateTime.UtcNow;
             lastReportedTaskStatus = null;
             totalMessagesProcessed = 0;
         }
         else if (IsTaskDead(consumptionTask))
         {
-            logger.Warn($"{GetRunnerDescription()}: Subscriber for bucket {BucketId} is DEAD. Status={consumptionTask.Status}, IsFaulted={consumptionTask.IsFaulted}, IsCompleted={consumptionTask.IsCompleted}, IsCanceled={consumptionTask.IsCanceled}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Warn($"{GetRunnerDescription()}: Subscriber for bucket {BucketId} is DEAD. Status={consumptionTask.Status}, IsFaulted={consumptionTask.IsFaulted}, IsCompleted={consumptionTask.IsCompleted}, IsCanceled={consumptionTask.IsCanceled}", JobMasterLogCategory.Bucket, BucketId);
             
             if (consumptionTask.IsFaulted && consumptionTask.Exception != null)
             {
-                logger.Error($"{GetRunnerDescription()}: Task exception details for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId, consumptionTask.Exception);
+                logger.Error($"{GetRunnerDescription()}: Task exception details for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId, consumptionTask.Exception);
             }
             
             consumptionTask?.SafeDispose();
             consumptionTask = null;
             consumerCts?.SafeDispose();
             consumerCts = null;
+            await DoOnTickAsync(ct);
             return OnTickResult.Skipped(TimeSpan.FromSeconds(5));
         }
         else
@@ -137,28 +135,29 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             // Log status transitions (excluding WaitingForActivation as it's expected)
             if (lastReportedTaskStatus != currentStatus)
             {
-                logger.Debug($"{GetRunnerDescription()}: Subscriber status changed for bucket {BucketId}. Status: {lastReportedTaskStatus} -> {currentStatus}, TotalMsgsProcessed={totalMessagesProcessed}", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Debug($"{GetRunnerDescription()}: Subscriber status changed for bucket {BucketId}. Status: {lastReportedTaskStatus} -> {currentStatus}, TotalMsgsProcessed={totalMessagesProcessed}", JobMasterLogCategory.Bucket, BucketId);
                 lastReportedTaskStatus = currentStatus;
             }
         }
 
-        // Heartbeat monitoring: publish heartbeat if no message received recently
+        // Heartbeat monitoring: publish at HeartbeatPublishInterval so ConsumeAsync always has a message
+        // and never exits due to an empty stream. The 90s lost-detection uses lastMessageReceivedAt,
+        // which is updated whenever the consumer processes any message (data or heartbeat).
         if (consumptionTask != null && !IsTaskDead(consumptionTask))
         {
-            var timeSinceLastMessage = lastMessageReceivedAt.HasValue 
-                ? DateTime.UtcNow - lastMessageReceivedAt.Value 
-                : DateTime.UtcNow - taskCreatedAt!.Value;
-            
-            // Publish heartbeat if no message received in last 10 seconds
-            if (timeSinceLastMessage > TimeSpan.FromSeconds(10))
+            if (DateTime.UtcNow - lastHeartbeatPublishedAt > NatsJetStreamConstants.HeartbeatPublishInterval)
             {
                 await PublishHeartbeatAsync(fullBucketAddressId, ct);
+                lastHeartbeatPublishedAt = DateTime.UtcNow;
             }
-            
-            // Stop runner if no message received for 90 seconds
+
+            var timeSinceLastMessage = lastMessageReceivedAt.HasValue
+                ? DateTime.UtcNow - lastMessageReceivedAt.Value
+                : DateTime.UtcNow - taskCreatedAt!.Value;
+
             if (timeSinceLastMessage > TimeSpan.FromSeconds(90))
             {
-                logger.Error($"{GetRunnerDescription()}: Consumer unresponsive for {timeSinceLastMessage.TotalSeconds:F0}s (no messages or heartbeats), marking bucket {BucketId} as lost", JobMasterLogSubjectType.Bucket, BucketId);
+                logger.Error($"{GetRunnerDescription()}: Consumer unresponsive for {timeSinceLastMessage.TotalSeconds:F0}s (no messages or heartbeats), marking bucket {BucketId} as lost", JobMasterLogCategory.Bucket, BucketId);
                 await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(BucketId!);
                 await this.StopAsync();
                 return OnTickResult.Failed(TimeSpan.FromMinutes(1));
@@ -177,76 +176,93 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             });
         }
 
-        await OnTickAfterSetupAsync(ct);
+        await DoOnTickAsync(ct);
 
         return OnTickResult.Success(this);
     }
 
-    // A subscriber task is considered "dead" only if it faulted or was canceled.
-    // RanToCompletion means ConsumeAsync() finished normally (stream closed, no messages, etc.)
-    // which is expected behavior and the task should be recreated.
+    // ListenMsgsAsync loops ConsumeAsync internally and never exits normally, so RanToCompletion
+    // should not occur in practice. Treat it as dead anyway so the watchdog can recover.
     private bool IsTaskDead(Task? t) => t != null && (t.IsFaulted || t.IsCanceled || t.Status == System.Threading.Tasks.TaskStatus.RanToCompletion);
 
     private async Task ListenMsgsAsync(CancellationToken ct, INatsJSConsumer consumer)
     {
-        logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+        logger.Info($"{GetRunnerDescription()}: ListenMsgsAsync STARTED for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
         try
         {
             var opts = new NatsJSConsumeOpts
             {
                 MaxMsgs =
-                    (int)(NatsJetStreamConstants.CalcMaxAckPending(BackgroundAgentWorker.BucketBufferSize) * 0.75)
+                    (int)(NatsJetStreamConstants.CalcMaxAckPending(BackgroundAgentWorker.BucketBufferSize) * 0.75),
+                IdleHeartbeat = NatsJetStreamConstants.ConsumerIdleHeartbeat,
             };
 
-            await foreach (var msg in consumer.ConsumeAsync<byte[]>(opts: opts, cancellationToken: ct))
+            while (!ct.IsCancellationRequested)
             {
                 try
                 {
-                    if (ct.IsCancellationRequested)
+                    await foreach (var msg in consumer.ConsumeAsync<byte[]>(opts: opts, cancellationToken: ct))
                     {
-                        break;
-                    }
-                    
-                    // Update last message received timestamp for any message
-                    lastMessageReceivedAt = DateTime.UtcNow;
-                    
-                    // Send AckProgress to reset AckWait timer now that we're actually processing this message
-                    // This prevents NATS from redelivering due to AckWait timeout while message sits in buffer
-                    await msg.AckProgressAsync(cancellationToken: ct).ConfigureAwait(false);
-                    
-                    // Check if this is a heartbeat message and skip processing
-                    var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
-                    if (isHeartbeat)
-                    {
-                        var signatureIsTaken = 
-                            msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
-                        
-                        if ((signatureIsTaken == true && signatureValue != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString()) || signatureIsTaken != true)
+                        try
                         {
-                            LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
+                            if (ct.IsCancellationRequested)
+                            {
+                                break;
+                            }
 
-                            await msg.AckTerminateAsync(cancellationToken: ct).ConfigureAwait(false);
-                            return;
+                            // Update last message received timestamp for any message
+                            lastMessageReceivedAt = DateTime.UtcNow;
+
+                            // Send AckProgress to reset AckWait timer now that we're actually processing this message
+                            // This prevents NATS from redelivering due to AckWait timeout while message sits in buffer
+                            // Use an independent CTS — must not be tied to the consumer lifecycle token
+                            using var progressCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                            await msg.AckProgressAsync(cancellationToken: progressCts.Token).ConfigureAwait(false);
+
+                            // Check if this is a heartbeat message and skip processing
+                            var isHeartbeat = msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderHeartbeat, out _) == true;
+                            if (isHeartbeat)
+                            {
+                                msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
+                                if (!IsSignatureValid(signatureValue))
+                                {
+                                    LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
+
+                                    using var termCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                                    await msg.AckTerminateAsync(cancellationToken: termCts.Token).ConfigureAwait(false);
+                                    continue;
+                                }
+
+                                logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
+                                using var ackCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                                await msg.AckAsync(cancellationToken: ackCts.Token).ConfigureAwait(false);
+                                continue;
+                            }
+
+                            await ProcessMessageAsync(msg, ct).ConfigureAwait(false);
                         }
-                        
-                        logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
-                        await msg.AckAsync(cancellationToken: ct).ConfigureAwait(false);
-                        continue;
+                        finally
+                        {
+                            Interlocked.Increment(ref totalMessagesProcessed);
+                        }
                     }
-
-                    await ProcessMessageAsync(msg, ct).ConfigureAwait(false);
                 }
-                finally
+                catch (OperationCanceledException) when (!ct.IsCancellationRequested)
                 {
-                    Interlocked.Increment(ref totalMessagesProcessed);
+                    // NATS internally cancelled the subscription (server-side close, heartbeat expiry, etc.)
+                    // — NOT a user-requested stop. Fall through so the while loop restarts ConsumeAsync.
+                    logger.Debug($"{GetRunnerDescription()} subscriber for bucket {BucketId} ConsumeAsync cancelled internally, restarting.", JobMasterLogCategory.Bucket, BucketId);
+                }
+
+                if (!ct.IsCancellationRequested)
+                {
+                    logger.Debug($"{GetRunnerDescription()} subscriber for bucket {BucketId} ConsumeAsync completed, restarting.", JobMasterLogCategory.Bucket, BucketId);
                 }
             }
-            
-            logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stop to reading msg.", JobMasterLogSubjectType.Bucket, BucketId);
         }
         catch (OperationCanceledException)
         {
-            this.logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stopped.", JobMasterLogSubjectType.Bucket, BucketId);
+            this.logger.Info($"{GetRunnerDescription()} subscriber for bucket {BucketId} stopped.", JobMasterLogCategory.Bucket, BucketId);
         }
     }
 
@@ -257,7 +273,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         agentConnectionId = bucketModel!.AgentConnectionId;
     }
 
-    protected virtual Task OnTickAfterSetupAsync(CancellationToken ct) => Task.CompletedTask;
+    protected virtual Task DoOnTickAsync(CancellationToken ct) => Task.CompletedTask;
 
     private async Task PublishHeartbeatAsync(string fullBucketAddressId, CancellationToken ct)
     {
@@ -271,16 +287,16 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             var headers = new NatsHeaders
             {
                 [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
-                [NatsJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString(),
+                [NatsJetStreamConstants.HeaderMessageId] = JobMasterRandomUtil.NewGuid4().ToString(),
                 [NatsJetStreamConstants.HeaderHeartbeat] = "true",
             };
             await jsContext!.PublishAsync(subjectName, data, headers: headers, cancellationToken: pubCts.Token);
             
-            logger.Debug($"{GetRunnerDescription()}: Published heartbeat message for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()}: Published heartbeat message for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
         }
         catch (Exception ex)
         {
-            logger.Warn($"{GetRunnerDescription()}: Failed to publish heartbeat message for bucket {BucketId}: {ex.Message}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Warn($"{GetRunnerDescription()}: Failed to publish heartbeat message for bucket {BucketId}: {ex.Message}", JobMasterLogCategory.Bucket, BucketId);
         }
     }
 
@@ -288,7 +304,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)
     {
         var (signature, correlationId, referenceTimeUtc, messageId) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
-        var ackGuard = new MsgAckGuard(msg, messageId ?? Guid.NewGuid().ToString());
+        using var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString());
         var attempts = ackGuard.FailureCount;
         var natsDeliveryCount = msg.Metadata?.NumDelivered ?? 0;
         
@@ -305,7 +321,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             this.logger.Error(
                 $"{GetRunnerDescription()}: msg data null. CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}",
-                JobMasterLogSubjectType.Bucket,
+                JobMasterLogCategory.Bucket,
                 BucketId);
 
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
@@ -313,7 +329,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         }
 
         var json = Encoding.UTF8.GetString(msg.Data);
-        if (signature is null || signature != NatsJetStreamConfigKey.NamespaceUniqueKey.ToString())
+        if (!IsSignatureValid(signature))
         {
             var preview = NatsJetStreamUtils.LogPreview(json, 128);
             LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch. Preview: {preview} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}");
@@ -339,68 +355,99 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // In-memory duplicate detection: if already processing this message, NAK it
         if (!lockMessages.TryAdd(messageId!, 0))
         {
-            bool shouldAck = false;
-            shouldAck = await ShouldAckAfterLockAsync(payload, ct).ConfigureAwait(false);
+            var shouldAck = await ShouldAckAfterLockAsync(payload, ct).ConfigureAwait(false);
 
             if (shouldAck)
             {
-                await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
-                logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+                await ackGuard.TryAckSuccessAsync().ConfigureAwait(false);
+                logger.Debug($"{GetRunnerDescription()} acked-after-lock CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
                 return;
             }
 
             await ackGuard.TryNakAsync(TimeSpan.FromSeconds(1)).ConfigureAwait(false);
-            logger.Debug($"{GetRunnerDescription()} message already being processed, NAK'd. MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} message already being processed, NAK'd. MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
             return;
         }
 
         Stopwatch? sw = null;
         bool success = false;
+        
+        var keepAliveInterval = NatsJetStreamConstants.CalcAckProgressKeepAliveInterval(BackgroundAgentWorker.BucketBufferLeadTime);
+        using var keepAliveCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var keepAliveTask = Task.Run(async () =>
+        {
+            while (!keepAliveCts.Token.IsCancellationRequested)
+            {
+                try
+                {
+                    await Task.Delay(keepAliveInterval, keepAliveCts.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    break; // consumer stopping — exit cleanly
+                }
+
+                try
+                {
+                    await ackGuard.TryAckProgressAsync();
+                }
+                catch (Exception)
+                {
+                    // AckProgress failed — continue loop so next attempt still fires
+                }
+            }
+        });
+
         try
         {
-            logger.Debug($"{GetRunnerDescription()} processing-started CorrId={correlationId} MessageId={messageId} FailureAttempts={attempts}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} processing-started CorrId={correlationId} MessageId={messageId} FailureAttempts={attempts}", JobMasterLogCategory.Bucket, BucketId);
             sw = Stopwatch.StartNew();
 
             logger.Debug(
                 $"Processing {GetRunnerDescription()} payload {payload} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MessageId={messageId} FailureAttempts={attempts}",
-                JobMasterLogSubjectType.Bucket,
+                JobMasterLogCategory.Bucket,
                 BucketId);
 
             await ProcessPayloadAsync(payload, ackGuard).ConfigureAwait(false);
 
-            await ackGuard.TryAckSuccessAsync(messageId!).ConfigureAwait(false);
+            await ackGuard.TryAckSuccessAsync().ConfigureAwait(false);
             success = true;
-            logger.Debug($"{GetRunnerDescription()} acked CorrId={correlationId} MessageId={messageId}", JobMasterLogSubjectType.Bucket, BucketId);
+            logger.Debug($"{GetRunnerDescription()} acked CorrId={correlationId} MessageId={messageId}", JobMasterLogCategory.Bucket, BucketId);
         }
         catch (Exception ex)
         {
-            
             var (sig, corr, rtime, mid) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
             ulong maxRetries = LostRisk() ? NatsJetStreamConstants.MaxMsgRetriesForLostRisk : NatsJetStreamConstants.MaxMsgRetriesForNoLostRisk;
-            
+
             // Check current failure count before incrementing
             if (ackGuard.FailureCount >= maxRetries)
             {
                 var preview = NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data ?? Array.Empty<byte>()), 128);
                 LogCriticalOrError($"{GetRunnerDescription()}: exhausted retries. Preview: {preview} CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", ex);
                 await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
-                this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
                 return;
             }
 
-            this.logger.Error($"{GetRunnerDescription()}: failure (failureAttempts={ackGuard.FailureCount}). CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", JobMasterLogSubjectType.Bucket, BucketId, ex);
+            this.logger.Error($"{GetRunnerDescription()}: failure (failureAttempts={ackGuard.FailureCount}). CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", JobMasterLogCategory.Bucket, BucketId, ex);
 
-            await ackGuard.TryNakFailAsync(messageId!).ConfigureAwait(false);
-            this.logger.Debug($"{GetRunnerDescription()}: nak-fail requested (failureAttempts={ackGuard.FailureCount}) with delay CorrId={corr} MsgId={mid}", JobMasterLogSubjectType.Bucket, BucketId);
+            await ackGuard.TryNakFailAsync().ConfigureAwait(false);
+            this.logger.Debug($"{GetRunnerDescription()}: nak-fail requested (failureAttempts={ackGuard.FailureCount}) with delay CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
         }
         finally
         {
+            // Stop keep-alive before unlock/logging — ensures no AckProgress fires after the final ack/nak
+            keepAliveCts.Cancel();
+            await keepAliveTask;
+
             if (ackGuard.Outcome == AckOutcome.Ack)
             {
-                // Keep locked for the redelivery window — OnTickAsync will clean up
+                // Keep locked for 5 min + AckWait to cover any post-ACK redeliveries — OnTickAsync will clean up
                 lock (messagesToUnlock)
                 {
-                    messagesToUnlock.Add((messageId!, DateTime.UtcNow.AddMinutes(5)));
+                    var messageLockDuration =
+                        NatsJetStreamConstants.CalcMessageLockDuration(BackgroundAgentWorker.BucketBufferLeadTime);
+                    messagesToUnlock.Add((messageId!, DateTime.UtcNow.Add(messageLockDuration)));
                 }
             }
             else
@@ -413,7 +460,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             {
                 sw.Stop();
                 logger.Debug($"{GetRunnerDescription()} processing-duration CorrId={correlationId} MessageId={messageId} Success={success} ElapsedMs={sw.ElapsedMilliseconds}",
-                    JobMasterLogSubjectType.Bucket, BucketId);
+                    JobMasterLogCategory.Bucket, BucketId);
             }
         }
     }
@@ -433,17 +480,22 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     }
 
 
+    private static bool IsSignatureValid(string? signature) =>
+        signature == NatsJetStreamConfigKey.NamespaceUniqueKey.ToString();
+
     protected void LogCriticalOrError(string message, Exception? ex = null)
     {
         if (LostRisk())
-            this.logger.Critical(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+            this.logger.Critical(message, JobMasterLogCategory.Bucket, BucketId, exception: ex);
         else
-            this.logger.Error(message, JobMasterLogSubjectType.Bucket, BucketId, exception: ex);
+            this.logger.Error(message, JobMasterLogCategory.Bucket, BucketId, exception: ex);
     }
     
     private async Task StopConsumptionTaskAsync()
     {
-        this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogSubjectType.Bucket, BucketId);
+        this.logger.Info($"Stopping {GetRunnerDescription()} Runner for bucket {BucketId}. Waiting for subscriber task...", JobMasterLogCategory.Bucket, BucketId);
+
+        consumerCts?.Cancel();
 
         if (consumptionTask != null)
         {
@@ -451,15 +503,19 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             try
             {
                 await consumptionTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);
-                this.logger.Info($"{GetRunnerDescription()} subscriber task stopped gracefully for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Info($"{GetRunnerDescription()} subscriber task stopped gracefully for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested)
+            {
+                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
             }
             catch (TimeoutException)
             {
-                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogSubjectType.Bucket, BucketId);
+                this.logger.Warn($"{GetRunnerDescription()} subscriber task did not stop within timeout for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
             }
             catch (Exception ex)
             {
-                this.logger.Warn($"{GetRunnerDescription()} shutdown failed: {ex.Message}", JobMasterLogSubjectType.Bucket, BucketId, ex);
+                this.logger.Warn($"{GetRunnerDescription()} shutdown failed: {ex.Message}", JobMasterLogCategory.Bucket, BucketId, ex);
             }
             finally
             {

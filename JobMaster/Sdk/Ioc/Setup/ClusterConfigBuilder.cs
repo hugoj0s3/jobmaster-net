@@ -152,11 +152,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IBucketRunnersFactory, BucketRunnersFactory>();
         clusterServiceRegistration.AddJobMasterComponent<IWorkerClusterOperations, WorkerClusterOperations>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentConnectionService, MasterAgentConnectionService>();
-        clusterServiceRegistration.AddJobMasterComponent<IRandomFriendlyNameService, RandomFriendlyNameService>();
         clusterServiceRegistration.AddJobMasterComponent<IHostStatsProvider, NullHostStatsProvider>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
-        clusterServiceRegistration.AddJobMasterComponent<IMasterJobExecutionService, MasterJobExecutionService>();
-        
+
         JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
         
         var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
@@ -355,13 +353,13 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     public IAgentWorkerSelector AddWorker(
         string? workerName = null, 
         string? agentConnectionName = null, 
-        int batchSize = 1000)
+        int transferBatchSize = 1000)
     {
         var def = new WorkerDefinition
         {
             AgentConnectionName = agentConnectionName ?? string.Empty,
             WorkerName = workerName ?? string.Empty,
-            TransferBatchSize = batchSize,
+            TransferBatchSize = transferBatchSize,
         };
         clusterDefinition.Workers.Add(def);
         return new AgentWorkerSelector(this, def);

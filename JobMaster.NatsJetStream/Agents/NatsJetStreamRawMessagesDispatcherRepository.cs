@@ -173,7 +173,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
             [NatsJetStreamConstants.HeaderReferenceTime] = referenceTime.ToUniversalTime().ToString("O"),
             [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
             // Keep internal correlation id header
-            [NatsJetStreamConstants.HeaderMessageId] = Guid.NewGuid().ToString()
+            [NatsJetStreamConstants.HeaderMessageId] = JobMasterRandomUtil.NewGuid4().ToString()
         };
         
         return headers;

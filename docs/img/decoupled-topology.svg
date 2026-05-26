@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="950" height="630" viewBox="0 0 950 630">
+<defs>
+  <!-- Arrow Markers -->
+  <marker id="ao" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#f59e0b"/>
+  </marker>
+  <marker id="ab" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#3b82f6"/>
+  </marker>
+  <marker id="ap" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#8b5cf6"/>
+  </marker>
+  <marker id="ag" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#10b981"/>
+  </marker>
+  <marker id="ar" markerWidth="10" markerHeight="7" refX="8" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#ea580c"/>
+  </marker>
+
+  <filter id="sh">
+    <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.5"/>
+  </filter>
+  <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+    <circle cx="14" cy="14" r="0.7" fill="#ffffff0d"/>
+  </pattern>
+</defs>
+
+<!-- Background Grid -->
+<rect width="950" height="630" fill="#09111f"/>
+<rect width="950" height="630" fill="url(#dots)"/>
+
+<!-- Header -->
+<text x="475" y="38" fill="#f8fafc" font-family="'Segoe UI',Arial,sans-serif" font-size="22" font-weight="800" text-anchor="middle" letter-spacing="0.5">JobMaster — Decoupled Architecture Topology</text>
+<text x="475" y="58" fill="#94a3b8" font-family="'Segoe UI',Arial,sans-serif" font-size="12.5" text-anchor="middle">Separation of Concerns: Brains (Orchestration &amp; Coordination) vs. Muscle (Execution fleet)</text>
+<line x1="60" y1="72" x2="890" y2="72" stroke="#1e3a8a" stroke-width="1.2" opacity="0.6"/>
+
+<!-- ═══════════════════ LEFT COLUMN: THE CENTRAL STACK ═══════════════════ -->
+
+<!-- 1. Client Capsule -->
+<g filter="url(#sh)">
+  <rect x="200" y="95" width="280" height="75" rx="8" fill="#0c1d38" stroke="#1e4080" stroke-width="1.5"/>
+  <rect x="200" y="95" width="280" height="4" rx="2" fill="#3b82f6"/>
+  <!-- Code braces icon -->
+  <path d="M 222,125 L 217,130 L 222,135 M 230,125 L 235,130 L 230,135" stroke="#60a5fa" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <text x="250" y="126" fill="#60a5fa" font-family="'Segoe UI',Arial,sans-serif" font-size="14.5" font-weight="800">Client / API Producer</text>
+  <text x="250" y="145" fill="#93c5fd" font-family="Arial" font-size="11" text-anchor="start">Schedules tasks in high volume</text>
+</g>
+
+<!-- 2. Agent Ephemeral Transport Layer -->
+<g filter="url(#sh)">
+  <rect x="200" y="215" width="280" height="95" rx="8" fill="#120830" stroke="#6d28d9" stroke-width="1.5"/>
+  <rect x="200" y="215" width="280" height="4" rx="2" fill="#8b5cf6"/>
+  
+  <!-- Envelope / Queue icon -->
+  <rect x="215" y="242" width="20" height="14" rx="2" fill="none" stroke="#a78bfa" stroke-width="1.5"/>
+  <path d="M 215,242 L 225,249 L 235,242" stroke="#a78bfa" stroke-width="1.5" fill="none"/>
+
+  <text x="250" y="242" fill="#c4b5fd" font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="800">Ephemeral Transport</text>
+  <text x="250" y="262" fill="#a78bfa" font-family="Arial" font-size="11" font-weight="bold">High-Speed Active Buffer</text>
+  <text x="250" y="280" fill="#e9d5ff" font-family="Arial" font-size="10.5">NATS JetStream, PostgreSQL, etc.</text>
+  <text x="250" y="295" fill="#a78bfa" font-family="Arial" font-size="9.5" opacity="0.9">Holds in-flight jobs (Master-Agnostic)</text>
+</g>
+
+<!-- 3. Master DB (Orchestration & Durable Storage) -->
+<g filter="url(#sh)">
+  <rect x="200" y="355" width="280" height="105" rx="8" fill="#091d3d" stroke="#1d4ed8" stroke-width="1.5"/>
+  <rect x="200" y="355" width="280" height="4" rx="2" fill="#3b82f6"/>
+  
+  <!-- Database Cylinder Icon -->
+  <path d="M 215,385 C 215,380 231,380 231,385 L 231,401 C 231,406 215,406 215,401 Z" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+  <path d="M 215,390 C 215,395 231,395 231,390" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+  <path d="M 215,396 C 215,401 231,401 231,396" fill="none" stroke="#60a5fa" stroke-width="1.5"/>
+
+  <text x="250" y="382" fill="#93c5fd" font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="800">Master DB (Orchestration)</text>
+  <text x="250" y="402" fill="#3b82f6" font-family="Arial" font-size="11" font-weight="bold">Durable Storage &amp; Source of Truth</text>
+  <text x="250" y="420" fill="#eff6ff" font-family="Arial" font-size="10.5">PostgreSQL, SQL Server, MySQL</text>
+  <text x="250" y="442" fill="#60a5fa" font-family="Arial" font-size="9.5" font-weight="bold">Maintains 100% Audit Trails</text>
+</g>
+
+<!-- 4. Coordinator (Coordinator Mode / Brains) -->
+<g filter="url(#sh)">
+  <rect x="200" y="500" width="280" height="85" rx="8" fill="#2d1502" stroke="#ea580c" stroke-width="1.5"/>
+  <rect x="200" y="500" width="280" height="4" rx="2" fill="#f97316"/>
+  
+  <!-- Brain / Gear Icon -->
+  <path d="M 223,527 C 218,527 216,535 223,539 C 223,545 231,545 235,539 C 240,537 240,529 233,527 Z" fill="none" stroke="#fdb574" stroke-width="1.5"/>
+  <circle cx="228" cy="534" r="3" fill="#f97316"/>
+
+  <text x="250" y="527" fill="#fed7aa" font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="800">Coordinator (Brain)</text>
+  <text x="250" y="547" fill="#ea580c" font-family="Arial" font-size="11" font-weight="bold">Schedules &amp; Reserves (Acquisition)</text>
+  <text x="250" y="565" fill="#fdb874" font-family="Arial" font-size="10" opacity="0.9">Shields Master DB from executor load</text>
+</g>
+
+
+<!-- ═══════════════════ RIGHT COLUMN: THE EXECUTION PLANE ═══════════════════ -->
+
+<!-- Right: Agent Worker (Executor Mode / Muscle) -->
+<g filter="url(#sh)">
+  <rect x="560" y="355" width="280" height="105" rx="8" fill="#022c22" stroke="#059669" stroke-width="1.5"/>
+  <rect x="560" y="355" width="280" height="4" rx="2" fill="#10b981"/>
+  
+  <!-- Muscle/Gears icon -->
+  <circle cx="585" cy="390" r="7" fill="none" stroke="#34d399" stroke-width="2"/>
+  <path d="M 585,380 L 585,383 M 585,397 L 585,400 M 575,390 L 578,390 M 592,390 L 595,390" stroke="#34d399" stroke-width="2" stroke-linecap="round"/>
+  
+  <text x="610" y="382" fill="#a7f3d0" font-family="'Segoe UI',Arial,sans-serif" font-size="14" font-weight="800">Agent Worker (Executor)</text>
+  <text x="610" y="402" fill="#34d399" font-family="Arial" font-size="11" font-weight="bold">Execution Fleet (Muscle)</text>
+  <text x="610" y="420" fill="#ecfdf5" font-family="Arial" font-size="10.5">Pulls from Buckets &amp; executes</text>
+  <text x="610" y="442" fill="#6ee7b7" font-family="Arial" font-size="9.5" font-weight="bold">Scales horizontally (No DB Polling)</text>
+</g>
+
+
+<!-- ═══════════════════ STACKED FLOW FLOWS (100% ALIGNED) ═══════════════════ -->
+
+<!-- 1. Client -> Ephemeral Transport (Fast Ephemeral Writes) -->
+<line x1="340" y1="170" x2="340" y2="207" stroke="#f59e0b" stroke-width="2.5" marker-end="url(#ao)"/>
+<text x="350" y="195" fill="#fcd34d" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" font-weight="bold" text-anchor="start">Fast Ephemeral Writes <tspan fill="#f59e0b" font-weight="normal">(SavePending)</tspan></text>
+
+<!-- 2. Ephemeral Transport -> Master DB (Batch Async Sync-Back) -->
+<line x1="340" y1="310" x2="340" y2="347" stroke="#3b82f6" stroke-width="2" marker-end="url(#ab)"/>
+<text x="350" y="335" fill="#60a5fa" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" font-weight="bold" text-anchor="start">Batch Async Sync-Back</text>
+
+<!-- 3. Master DB -> Coordinator (Acquire & Batch Onboard) -->
+<line x1="340" y1="460" x2="340" y2="492" stroke="#ea580c" stroke-width="2.2" marker-end="url(#ar)"/>
+<text x="350" y="482" fill="#fed7aa" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" font-weight="bold" text-anchor="start">Acquires in Bulk <tspan fill="#ea580c" font-weight="normal">(TransferBatchSize)</tspan></text>
+
+<!-- 4. Coordinator -> Ephemeral Transport (Loop-back Onboard) -->
+<path d="M 200,542 H 145 V 262 H 192" fill="none" stroke="#8b5cf6" stroke-width="2" marker-end="url(#ap)"/>
+<text x="132" y="402" transform="rotate(-90 132,402)" fill="#c4b5fd" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" font-weight="bold" text-anchor="middle">Onboards &amp; Maps to Buckets</text>
+
+<!-- 5. Executor -> Ephemeral Transport (Pulls active bucket jobs) -->
+<path d="M 700,355 V 262 H 488" fill="none" stroke="#10b981" stroke-width="2.5" marker-end="url(#ap)"/>
+<text x="710" y="295" fill="#6ee7b7" font-family="'Segoe UI',Arial,sans-serif" font-size="10.5" font-weight="bold" text-anchor="start">Pulls Bucket Jobs</text>
+<text x="710" y="312" fill="#10b981" font-family="Arial" font-size="9.5" text-anchor="start">(status → InBucket)</text>
+
+<!-- 6. Executor -> Master DB (Sync final outcome) -->
+<line x1="560" y1="407" x2="488" y2="407" stroke="#3b82f6" stroke-width="2" marker-end="url(#ab)"/>
+<text x="524" y="397" fill="#60a5fa" font-family="'Segoe UI',Arial,sans-serif" font-size="10" font-weight="bold" text-anchor="middle">Syncs Outcome</text>
+
+</svg>

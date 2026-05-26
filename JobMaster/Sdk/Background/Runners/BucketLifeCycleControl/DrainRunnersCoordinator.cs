@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
@@ -11,6 +11,15 @@ using JobMaster.Sdk.Background.Runners.DrainRunners;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Coordinates the lifecycle of drain runners for this worker.
+/// On each tick, stops drain and ready-to-delete runners whose bucket is no longer
+/// in a <c>Draining</c> or <c>ReadyToDrain</c> state, then creates new runner sets
+/// (save-pending jobs, processing jobs, save-pending recurring schedules, ready-to-delete)
+/// for any <c>ReadyToDrain</c> bucket owned by the current worker. Transitions the bucket
+/// to <c>Draining</c> and starts all runners atomically under a per-bucket distributed lock.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class DrainRunnersCoordinator : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
@@ -28,17 +37,28 @@ internal class DrainRunnersCoordinator : JobMasterRunner
     
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(5));
+        if (BackgroundAgentWorker.StopRequested)
+        {
+            return OnTickResult.Skipped(this);
+        }
+
+        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(2.5));
         if (lockToken == null)
         {
             return OnTickResult.Skipped(this);
         }
-        
-        await CleanupDrainRunnersAsync(ct);
-        await CreateDrainRunners(ct);
 
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
-        
+        try
+        {
+            await CleanupDrainRunnersAsync(ct);
+            await CreateDrainRunners(ct);
+            await RecoverDrainRunnersAsync(ct);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
+        }
+
         return OnTickResult.Success(this);
     }
 
@@ -50,7 +70,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
             .ToList();
 
         var readyToDeleteRunners = BackgroundAgentWorker.Runners
-            .OfType<DrainBucketReadyToDeleteRunner>()
+            .OfType<MarkBucketReadyToDeleteRunner>()
             .Cast<IBucketAwareRunner>()
             .ToList();
 
@@ -74,34 +94,125 @@ internal class DrainRunnersCoordinator : JobMasterRunner
 
     private async Task CreateDrainRunners(CancellationToken ct)
     {
-        var buckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.ReadyToDrain);
-        
-        var bucketToDrain = buckets
+        var readyToDrainBuckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.ReadyToDrain);
+
+        var bucketToDrain = readyToDrainBuckets
             .Where(b => b.Status == BucketStatus.ReadyToDrain)
             .Where(b => b.AgentWorkerId == BackgroundAgentWorker.AgentWorkerId)
             .ToList();
-        
+
         var savePendingRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingJobsRunner>().ToList();
         var processingRunners = BackgroundAgentWorker.Runners.OfType<IDrainProcessingJobsRunner>().ToList();
         var recurringScheduleRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
-        var readyToDeleteRunners = BackgroundAgentWorker.Runners.OfType<DrainBucketReadyToDeleteRunner>().ToList();
-   
+        var readyToDeleteRunners = BackgroundAgentWorker.Runners.OfType<MarkBucketReadyToDeleteRunner>().ToList();
+
         foreach (var bucket in bucketToDrain)
         {
             ct.ThrowIfCancellationRequested();
-            
-            var bucketLockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromMinutes(5));
+
+            if (BackgroundAgentWorker.StopRequested)
+            {
+                break;
+            }
+
+            var bucketLockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
             if (bucketLockToken == null)
             {
                 continue;
             }
 
-            if (!bucket.MarkAsDraining(BackgroundAgentWorker.AgentWorkerId))
+            try
             {
-                this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+                if (!bucket.MarkAsDraining(BackgroundAgentWorker.AgentWorkerId))
+                {
+                    continue;
+                }
+
+                if (!savePendingRunners.Any(r => r.BucketId == bucket.Id))
+                {
+                    var savePendingRunner = BackgroundAgentWorker.BucketRunnersFactory
+                        .NewDrainSavePendingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    savePendingRunner.DefineBucketId(bucket.Id);
+                    await savePendingRunner.StartAsync();
+                }
+
+                if (!processingRunners.Any(r => r.BucketId == bucket.Id))
+                {
+                    var processingRunner = BackgroundAgentWorker.BucketRunnersFactory
+                        .NewDrainProcessingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    processingRunner.DefineBucketId(bucket.Id);
+                    await processingRunner.StartAsync();
+                }
+
+                if (!recurringScheduleRunners.Any(r => r.BucketId == bucket.Id))
+                {
+                    var saveRecurringScheduleRunner = BackgroundAgentWorker.BucketRunnersFactory
+                        .NewDrainSavePendingRecurringScheduleRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    saveRecurringScheduleRunner.DefineBucketId(bucket.Id);
+                    await saveRecurringScheduleRunner.StartAsync();
+                }
+
+                if (!readyToDeleteRunners.Any(r => r.BucketId == bucket.Id))
+                {
+                    var readyToDeleteRunner = new MarkBucketReadyToDeleteRunner(BackgroundAgentWorker);
+                    readyToDeleteRunner.DefineBucketId(bucket.Id);
+                    await readyToDeleteRunner.StartAsync();
+                }
+
+                await masterBucketsService.UpdateAsync(bucket);
+                logger.Info($"Bucket {bucket.Id} is draining", JobMasterLogCategory.Bucket, bucket.Id);
+            }
+            finally
+            {
+                masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+            }
+        }
+    }
+
+    private async Task RecoverDrainRunnersAsync(CancellationToken ct)
+    {
+        var drainingBuckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.Draining);
+
+        var bucketsToRecover = drainingBuckets
+            .Where(b => b.Status == BucketStatus.Draining)
+            .Where(b => b.AgentWorkerId == BackgroundAgentWorker.AgentWorkerId)
+            .ToList();
+
+        var savePendingRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingJobsRunner>().ToList();
+        var processingRunners = BackgroundAgentWorker.Runners.OfType<IDrainProcessingJobsRunner>().ToList();
+        var recurringScheduleRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
+        var readyToDeleteRunners = BackgroundAgentWorker.Runners.OfType<MarkBucketReadyToDeleteRunner>().ToList();
+
+        foreach (var bucket in bucketsToRecover)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            if (BackgroundAgentWorker.StopRequested)
+            {
+                break;
+            }
+
+            var missing = new List<string>();
+
+            if (!savePendingRunners.Any(r => r.BucketId == bucket.Id))
+                missing.Add(nameof(IDrainSavePendingJobsRunner));
+
+            if (!processingRunners.Any(r => r.BucketId == bucket.Id))
+                missing.Add(nameof(IDrainProcessingJobsRunner));
+
+            if (!recurringScheduleRunners.Any(r => r.BucketId == bucket.Id))
+                missing.Add(nameof(IDrainSavePendingRecurringScheduleRunner));
+
+            if (!readyToDeleteRunners.Any(r => r.BucketId == bucket.Id))
+                missing.Add(nameof(MarkBucketReadyToDeleteRunner));
+
+            if (!missing.Any())
+            {
                 continue;
             }
-            
+
+            logger.Warn($"Draining bucket {bucket.Id} has missing runners: {string.Join(", ", missing)}. Recovering.", JobMasterLogCategory.Bucket, bucket.Id);
+
             if (!savePendingRunners.Any(r => r.BucketId == bucket.Id))
             {
                 var savePendingRunner = BackgroundAgentWorker.BucketRunnersFactory
@@ -125,19 +236,13 @@ internal class DrainRunnersCoordinator : JobMasterRunner
                 saveRecurringScheduleRunner.DefineBucketId(bucket.Id);
                 await saveRecurringScheduleRunner.StartAsync();
             }
-           
+
             if (!readyToDeleteRunners.Any(r => r.BucketId == bucket.Id))
             {
-                var readyToDeleteRunner = new DrainBucketReadyToDeleteRunner(BackgroundAgentWorker);
+                var readyToDeleteRunner = new MarkBucketReadyToDeleteRunner(BackgroundAgentWorker);
                 readyToDeleteRunner.DefineBucketId(bucket.Id);
-                BackgroundAgentWorker.Runners.Add(readyToDeleteRunner);
                 await readyToDeleteRunner.StartAsync();
             }
-            
-            await masterBucketsService.UpdateAsync(bucket);
-            logger.Info($"Bucket {bucket.Id} is draining", JobMasterLogSubjectType.Bucket, bucket.Id);
-            
-            this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
         }
     }
 

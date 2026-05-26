@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -14,6 +14,15 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
 
+/// <summary>
+/// Processes <c>PendingSave</c> recurring schedules queued for a specific bucket.
+/// Must be activated via <see cref="DefineBucketId"/> before ticking; skips immediately
+/// if no bucket ID is set or the bucket is not in an Active or Completing state.
+/// For each pulled schedule, delegates to <see cref="RecurringScheduleSavePendingOperation"/>
+/// to persist or route it. On per-schedule failure the schedule is re-queued and a
+/// consecutive-failure backoff (10–60 s) is applied.
+/// Runs every <see cref="SucceedInterval"/> while the bucket is healthy.
+/// </summary>
 internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecurringSchedulerRunner
 {
     private readonly TimeSpan interval = TimeSpan.FromSeconds(2.5);
@@ -90,7 +99,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                 {
                     hasFailed = true;
                     
-                    logger.Error("Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e);
+                    logger.Error("Failed to save recurring schedule", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
                     // Failure: Attempt to re-queue immediately in memory
                     try 
                     {
@@ -100,8 +109,8 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                     catch (Exception e2)
                     {
                         logger.Critical(
-                            $"Failed to add recurring schedule to queue recurring. Data: {InternalJobMasterSerializer.Serialize(schedule)}", 
-                            JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e2);
+                            $"Failed to add recurring schedule to queue recurring. Data: {schedule.ToLogSummary()}", 
+                            JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e2);
                     }
                     
                     return;
@@ -121,7 +130,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
                 catch
                 {
                     // Log Critical
-                    logger.Critical($"Failed to add recurring schedule to queue. Data: {InternalJobMasterSerializer.Serialize(schedule)}", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
+                    logger.Critical($"Failed to add recurring schedule to queue. Data: {schedule.ToLogSummary()}", JobMasterLogCategory.RecurringSchedule, schedule.Id);
                 }
             }
         }

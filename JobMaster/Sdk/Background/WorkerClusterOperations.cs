@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -25,19 +25,17 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     private readonly IMasterBucketsService masterBucketsService;
     private readonly IMasterAgentWorkersService masterAgentWorkersService = null!;
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService = null!;
-    private readonly IMasterJobExecutionService masterJobExecutionService = null!;
     private readonly IJobMasterLogger logger = null!;
     private readonly JobMasterLockKeys lockKeys = null!;
 
     public WorkerClusterOperations(
-        JobMasterClusterConnectionConfig clusterConnConfig, 
-        IAgentJobsDispatcherService agentJobsDispatcherService, 
-        IMasterJobsService masterJobsService, 
-        IMasterDistributedLockerService masterDistributedLockerService, 
-        IMasterBucketsService masterBucketsService, 
-        IMasterAgentWorkersService masterAgentWorkersService, 
-        IMasterRecurringSchedulesService masterRecurringSchedulesService, 
-        IMasterJobExecutionService masterJobExecutionService,
+        JobMasterClusterConnectionConfig clusterConnConfig,
+        IAgentJobsDispatcherService agentJobsDispatcherService,
+        IMasterJobsService masterJobsService,
+        IMasterDistributedLockerService masterDistributedLockerService,
+        IMasterBucketsService masterBucketsService,
+        IMasterAgentWorkersService masterAgentWorkersService,
+        IMasterRecurringSchedulesService masterRecurringSchedulesService,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.agentJobsDispatcherService = agentJobsDispatcherService;
@@ -46,61 +44,61 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         this.masterBucketsService = masterBucketsService;
         this.masterAgentWorkersService = masterAgentWorkersService;
         this.masterRecurringSchedulesService = masterRecurringSchedulesService;
-        this.masterJobExecutionService = masterJobExecutionService;
         this.logger = logger;
         this.lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
 
-    public async Task AssignJobToBucketFromHeldOnMasterOrSavePendingAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
+    public async Task DispatchJobToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
     {
-        if (jobRaw.Status != JobMasterJobStatus.OnMaster && 
-            jobRaw.Status != JobMasterJobStatus.PendingSave)
+        if (jobRaw.Status != JobMasterJobStatus.InBucket)
         {
-            return;
+            throw new InvalidOperationException($"Job {jobRaw.Id} is not in bucket. Status: {jobRaw.Status}");
         }
-        
-        var originalStatus = jobRaw.Status;
-        jobRaw.AssignToBucket(bucket);
 
-        await masterJobsService.UpsertAsync(jobRaw);
-        
         try
         {
             // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
             var engine = backgroundAgentWorker.GetEngine(bucket.Id);
-            if (engine != null && 
-                jobRaw.IsOnBoarding() && 
-                engine.OnBoardingControl.CountAvailability() > 0)
+            if (engine != null &&
+                jobRaw.IsWithinOnboardingWindow() &&
+                engine.HasOnBoardingAvailability())
             {
-                var result = await engine.TryOnBoardingJobAsync(jobRaw);
+                var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                 if (result == OnBoardingResult.Accepted)
                 {
-                    logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                     return;
                 }
-                
+
                 if (result == OnBoardingResult.MovedToMaster)
                 {
-                    logger.Warn($"Short-cut failed moved to master", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                     return;
                 }
 
                 if (result == OnBoardingResult.Cancelled)
                 {
-                    logger.Warn($"Short-circuit failed job or recurring scheduled was cancelled", JobMasterLogSubjectType.Job, jobRaw.Id);
+                    logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                     return;
                 }
+
+                logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogCategory.Job, jobRaw.Id);
+                jobRaw.MarkAsHeldOnMaster();
+                await masterJobsService.UpdateAsync(jobRaw);
                 
-                logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogSubjectType.Job, jobRaw.Id);
+                await Task.Delay(TimeSpan.FromMilliseconds(50));
+                
+                return;
             }
-            
+
             await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
+            await Task.Delay(TimeSpan.FromMilliseconds(50));
         }
         catch (Exception ex)
         {
-            logger.Error($"Failed to add job {jobRaw.Id} to processing for bucket {bucket.Id}. Reverting to {originalStatus}", JobMasterLogSubjectType.Job, jobRaw.Id, exception: ex);
+            logger.Error($"Failed to dispatch job {jobRaw.Id} to bucket {bucket.Id}.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
             jobRaw.MarkAsHeldOnMaster();
-            await masterJobsService.UpsertAsync(jobRaw);
+            await masterJobsService.UpdateAsync(jobRaw);
             throw;
         }
     }
@@ -114,7 +112,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
 
         job.MarkAsHeldOnMaster();
-        masterJobsService.Upsert(job);
+        masterJobsService.Update(job);
     }
 
     public void CancelJob(Guid jobId)
@@ -123,38 +121,94 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         if (job?.TryToCancel() == true)
         {
-            masterJobsService.Upsert(job);
+            masterJobsService.Update(job);
         }
     }
 
-    public void Upsert(JobRawModel jobRawModel, JobExecution? jobExecution = null)
+    public void Upsert(JobRawModel jobRawModel)
     {
-        masterJobsService.Upsert(jobRawModel);
-        
-        if (jobExecution != null)
+        if (jobRawModel.Version is null)
         {
-            masterJobExecutionService.Save(jobExecution);
+            this.masterJobsService.Add(jobRawModel);
+            return;
         }
-    }
-    
-    public async Task UpsertAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null)
-    {
-        await masterJobsService.UpsertAsync(jobRawModel);
         
-        if (jobExecution != null)
+        if (ExistsJob(jobRawModel.Id))
         {
-            await masterJobExecutionService.SaveAsync(jobExecution);
+            this.masterJobsService.Update(jobRawModel);
+            return;
+        }
+
+        try
+        {
+            this.masterJobsService.Add(jobRawModel);
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
 
-    public Task SaveJobExecutionAsync(JobExecution jobExecution)
+    public async Task UpsertAsync(JobRawModel jobRawModel)
     {
-        return masterJobExecutionService.SaveAsync(jobExecution);
+        if (jobRawModel.Version is null)
+        {
+            await masterJobsService.AddAsync(jobRawModel);
+            return;
+        }
+
+        if (await ExistsJobAsync(jobRawModel.Id))
+        {
+            await this.masterJobsService.UpdateAsync(jobRawModel);
+            return;
+        }
+        
+        try
+        {
+            await this.masterJobsService.AddAsync(jobRawModel);
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
+        }
+    }
+    public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null)
+    {
+        masterJobsService.Update(jobRawModel, jobExecution);
     }
 
-    public void Upsert(RecurringScheduleRawModel jobRawModel)
+    public async Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null)
     {
-        masterRecurringSchedulesService.Upsert(jobRawModel);
+        await masterJobsService.UpdateAsync(jobRawModel, jobExecution);
+    }
+
+    public Task AddJobExecutionAsync(JobExecution jobExecution)
+    {
+        return masterJobsService.AddJobExecutionAsync(jobExecution);
+    }
+
+    public void Upsert(RecurringScheduleRawModel recurringScheduleRawModel)
+    {
+        if (recurringScheduleRawModel.Version is null)
+        {
+            this.masterRecurringSchedulesService.Add(recurringScheduleRawModel);
+            return;
+        }
+        
+        if (ExistsRecurringSchedule(recurringScheduleRawModel.Id))
+        {
+            this.masterRecurringSchedulesService.Update(recurringScheduleRawModel);
+            return;
+        }
+
+        try
+        {
+            this.masterRecurringSchedulesService.Add(recurringScheduleRawModel);
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
+        }
     }
 
     public async Task MarkBucketAsLostAsync(BucketModel bucket)
@@ -162,13 +216,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
         if (lockToken == null)
         {
+            logger.Debug($"MarkBucketAsLostAsync: failed to acquire lock for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
             return;
         }
-            
-        bucket.MarkAsLost();
-        await masterBucketsService.UpdateAsync(bucket);
-            
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+
+        try
+        {
+            bucket.MarkAsLost();
+            await masterBucketsService.UpdateAsync(bucket);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+        }
     }
 
     public async Task MarkBucketAsLostAsync(string bucketId)
@@ -205,23 +265,45 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         {
             return;
         }
-       
+
         bucket.ReadyToDelete();
+        await masterBucketsService.UpdateAsync(bucket);
+    }
+
+    public async Task MarkBucketAsReadyToDrainAsync(string bucketId)
+    {
+        var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+        if (bucket is null)
+        {
+            return;
+        }
+
+        if (!bucket.ReadyToDrainFromCompleting())
+        {
+            logger.Debug($"MarkBucketAsReadyToDrainAsync: skipped — bucket {bucketId} is not in a valid state for this transition. Status={bucket.Status}", JobMasterLogCategory.Bucket, bucketId);
+            return;
+        }
+
         await masterBucketsService.UpdateAsync(bucket);
     }
 
     public void MarkBucketAsLost(BucketModel bucket)
     {
-        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.MarkBucketAsLostLock(bucket.Id), TimeSpan.FromSeconds(10));
+        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
         if (lockToken == null)
         {
             return;
         }
-            
-        bucket.MarkAsLost();
-        masterBucketsService.Update(bucket);
-            
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.MarkBucketAsLostLock(bucket.Id), lockToken);
+
+        try
+        {
+            bucket.MarkAsLost();
+            masterBucketsService.Update(bucket);
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
+        }
     }
     
     public async Task<int> CountActiveCoordinatorWorkersAsync()
@@ -243,7 +325,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         if (recurringScheduleRawModel?.TryToCancel() == true)
         {
-            masterRecurringSchedulesService.Upsert(recurringScheduleRawModel);
+            masterRecurringSchedulesService.Update(recurringScheduleRawModel);
         }
     }
 
@@ -262,12 +344,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobMasterDuplicationException)
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException)
                 {
                     throw;
                 }
-                
-                logger.Error("Failed to execute function", exception: e);
+
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
                 if (attempt >= maxRetries)
                 {
                     throw;
@@ -301,28 +383,68 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception e)
             {
-                if (e is JobMasterDuplicationException)
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException)
                 {
                     throw;
                 }
-                
-                logger.Error("Failed to execute function", exception: e);
+
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
                 if (attempt >= maxRetries)
                 {
                     throw;
                 }
-                
+
                 attempt++;
 
                 if (JobMasterRandomUtil.GetBoolean(0.25))
                 {
                     await Task.Delay(TimeSpan.FromMilliseconds(millisecondsToDelay));
                 }
-                
+
                 var jitter = CalcJitterOnExecWithRetry(attempt);
                 await Task.Delay(TimeSpan.FromMilliseconds(jitter));
             }
         }
+    }
+
+    public async Task<T> ExecWithRetryAsync<T>(Func<IWorkerClusterOperations, Task<T>> func, int maxRetries = 5, int millisecondsToDelay = 200)
+    {
+        if (func is null) throw new ArgumentNullException(nameof(func));
+        if (maxRetries < 1) throw new ArgumentOutOfRangeException(nameof(maxRetries), maxRetries, "maxRetries must be >= 1");
+
+        var attempt = 1;
+        while (true)
+        {
+            try
+            {
+                return await func(this);
+            }
+            catch (Exception e)
+            {
+                if (e is JobMasterDuplicationException or JobMasterVersionConflictException) throw;
+
+                logger.Error($"ExecWithRetry failed on attempt {attempt}/{maxRetries}.", exception: e);
+                if (attempt >= maxRetries) throw;
+
+                attempt++;
+                if (JobMasterRandomUtil.GetBoolean(0.25))
+                    await Task.Delay(TimeSpan.FromMilliseconds(millisecondsToDelay));
+
+                var jitter = CalcJitterOnExecWithRetry(attempt);
+                await Task.Delay(TimeSpan.FromMilliseconds(jitter));
+            }
+        }
+    }
+
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
+    {
+        await masterJobsService.BulkUpdateAsync(request);
+    }
+
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        var result = await masterJobsService.BulkUpdateAsync(jobs);
+        return result;
     }
 
     public async Task AddAsync(JobRawModel job)
@@ -330,9 +452,21 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         await masterJobsService.AddAsync(job);
     }
 
-    public void Insert(JobRawModel job)
+    private bool ExistsJob(Guid jobId)
     {
-        masterJobsService.Add(job);
+        var job = masterJobsService.Get(jobId);
+        return job != null;
+    }
+    
+    private bool ExistsRecurringSchedule(Guid id)
+    {
+        var recurringSchedule = masterRecurringSchedulesService.Get(id);
+        return recurringSchedule != null;
+    }
+
+    private async Task<bool> ExistsJobAsync(Guid jobId)
+    {
+        return await masterJobsService.GetAsync(jobId) != null;
     }
 
     private static int CalcJitterOnExecWithRetry(int attempt)

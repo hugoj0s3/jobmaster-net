@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -11,6 +11,14 @@ using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Reassigns Lost buckets to alive workers within the same agent connection.
+/// Queries all Lost buckets, finds alive workers in matching agent connections, and
+/// calls <c>ReadyToDrain</c> on each eligible bucket. Drain-mode workers are preferred
+/// (with a weighted probability) to consolidate drain activity. A per-bucket distributed
+/// lock prevents concurrent reassignment across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class AssignedLostBucketsRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
@@ -39,61 +47,68 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
         {
             return OnTickResult.Skipped(this);
         }
-        
-        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(5));
+
+        var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(2.5));
         if (lockToken == null)
         {
             return OnTickResult.Locked(this);
         }
-        
-        var buckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.Lost);
-        var lostBuckets = buckets
-            .Where(b => b.Status == BucketStatus.Lost);
-        
-        var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
-        var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
-        
-        foreach (var bucket in lostBuckets)
-        {
-            ct.ThrowIfCancellationRequested();
-            
-            var bucketLockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
-            if (bucketLockToken == null)
-            {
-                continue;
-            }
-            
-            var workerToSelect = workersAlive
-                .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
-                .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
-                .ToList();
-            
-            if (!workerToSelect.Any())
-            {
-                logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogSubjectType.Bucket, bucket.Id);
-                this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
-                continue;
-            }
-                
-            if (workerToSelect.Any(x => x.Mode == AgentWorkerMode.Drain) && JobMasterRandomUtil.GetBoolean(0.75))
-            {
-                workerToSelect = workerToSelect.Where(x => x.Mode == AgentWorkerMode.Drain).ToList();
-            }
-            
-            var worker = workerToSelect.Random()!;
 
-            if (bucket.ReadyToDrain(worker.Id))
+        try
+        {
+            var buckets = await masterBucketsService.QueryAllNoCacheAsync(BucketStatus.Lost);
+            var lostBuckets = buckets.Where(b => b.Status == BucketStatus.Lost);
+
+            var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
+            var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
+
+            foreach (var bucket in lostBuckets)
             {
-                logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogSubjectType.Bucket, bucket.Id);
-                await masterBucketsService.UpdateAsync(bucket);
+                ct.ThrowIfCancellationRequested();
+
+                var bucketLockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
+                if (bucketLockToken == null)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var workerToSelect = workersAlive
+                        .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
+                        .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
+                        .ToList();
+
+                    if (!workerToSelect.Any())
+                    {
+                        logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
+                        continue;
+                    }
+
+                    if (workerToSelect.Any(x => x.Mode == AgentWorkerMode.Drain) && JobMasterRandomUtil.GetBoolean(0.75))
+                    {
+                        workerToSelect = workerToSelect.Where(x => x.Mode == AgentWorkerMode.Drain).ToList();
+                    }
+
+                    var worker = workerToSelect.Random()!;
+
+                    if (bucket.ReadyToDrain(worker.Id))
+                    {
+                        logger.Info($"Bucket {bucket.Id} is ready to drain", JobMasterLogCategory.Bucket, bucket.Id);
+                        await masterBucketsService.UpdateAsync(bucket);
+                    }
+                }
+                finally
+                {
+                    masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+                }
             }
-            
-            this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
         }
-        
-        
-        this.masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
-        
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKeys.BucketRunnerLock(), lockToken);
+        }
+
         return OnTickResult.Success(this);
     }
 

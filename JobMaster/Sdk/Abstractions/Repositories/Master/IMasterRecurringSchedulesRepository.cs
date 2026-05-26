@@ -8,8 +8,8 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     void Add(RecurringScheduleRawModel scheduleRaw);
     Task AddAsync(RecurringScheduleRawModel scheduleRaw);
 
-    void Upsert(RecurringScheduleRawModel scheduleRaw);
-    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
+    void Update(RecurringScheduleRawModel scheduleRaw);
+    Task UpdateAsync(RecurringScheduleRawModel scheduleRaw);
 
     bool Exists(Guid recurringScheduleId);
     Task<bool> ExistsAsync(Guid recurringScheduleId);
@@ -23,6 +23,12 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
     
     long Count(RecurringScheduleQueryCriteria queryCriteria);
+
+    /// <summary>
+    /// Returns the count of acquirable (not actively locked) recurring schedules matching the criteria.
+    /// MetadataFilters are not supported and will throw.
+    /// </summary>
+    Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria);
 
     Task<int> PurgeTerminatedAsync(DateTime cutoffUtc, int limit);
 

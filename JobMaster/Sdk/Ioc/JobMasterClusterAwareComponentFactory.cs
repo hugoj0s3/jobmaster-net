@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions.Background;
+﻿using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
@@ -42,10 +42,10 @@ internal class JobMasterClusterAwareComponentFactory : IJobMasterClusterAwareCom
             .GetRequiredKeyedService<IAgentJobsDispatcherRepository>(GetAgentJobsDispatcherKey(agentRepoTypeId));
     }
 
-    public IAgentFootprintResolver GetFootprintResolver(string agentRepoTypeId)
+    public IAgentFingerprintResolver GetFingerprintResolver(string agentRepoTypeId)
     {
         return ClusterServiceProvider
-            .GetRequiredKeyedService<IAgentFootprintResolver>(GetFootprintResolverKey(agentRepoTypeId));
+            .GetRequiredKeyedService<IAgentFingerprintResolver>(GetFingerprintResolverKey(agentRepoTypeId));
     }
 
     public TBucketAwareRunner GetBucketAwareRunner<TBucketAwareRunner>(

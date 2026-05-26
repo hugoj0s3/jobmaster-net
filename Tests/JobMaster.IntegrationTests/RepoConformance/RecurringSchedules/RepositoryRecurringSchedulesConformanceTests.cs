@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils;
 using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
@@ -25,12 +26,12 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     {
         var now = DateTime.UtcNow;
 
-        var schedule = NewSchedule(jobDefinitionId: "def-rt-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-rt-" + JobMasterRandomUtil.NewGuid4());
         schedule.ExpressionTypeId = NeverRecursExprCompiler.TypeId;
         schedule.Expression = string.Empty;
 
-        schedule.StaticDefinitionId = "static-" + Guid.NewGuid();
-        schedule.ProfileId = "profile-" + Guid.NewGuid();
+        schedule.StaticDefinitionId = "static-" + JobMasterRandomUtil.NewGuid4();
+        schedule.ProfileId = "profile-" + JobMasterRandomUtil.NewGuid4();
 
         schedule.Status = RecurringScheduleStatus.PendingSave;
         schedule.RecurringScheduleType = RecurringScheduleType.Static;
@@ -47,10 +48,10 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.AgentConnectionId = Fixture.AgentConnectionId;
         schedule.AgentWorkerId = "worker-1";
 
-        schedule.PartitionLockId = Guid.NewGuid();
+        schedule.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         schedule.PartitionLockExpiresAt = now.AddMinutes(30);
 
-        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "test-host-" + Guid.NewGuid().ToString("N"));
+        schedule.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "test-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
 
         schedule.CreatedAt = now;
         schedule.StartAfter = now.AddMinutes(-10);
@@ -71,28 +72,29 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Upsert_ShouldPersistChanges()
+    public async Task Update_ShouldPersistChanges()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-upd-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-upd-" + JobMasterRandomUtil.NewGuid4());
+        schedule.Metadata = "{\"original\":\"meta\"}";
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
         var updated = Clone(schedule);
+        var originalVersion = schedule.Version;
         updated.JobDefinitionId = schedule.JobDefinitionId + "-updated";
         updated.ProfileId = "profile-updated";
         updated.Status = RecurringScheduleStatus.Canceled;
         updated.RecurringScheduleType = RecurringScheduleType.Dynamic;
         updated.TerminatedAt = DateTime.UtcNow;
         updated.MsgData = "{\"y\":2}";
-        updated.Metadata = "{\"color\":\"red\"}";
         updated.Priority = JobMasterPriority.Low;
         updated.MaxNumberOfRetries = 2;
         updated.Timeout = TimeSpan.FromSeconds(9);
         updated.BucketId = "bucket-upd";
         updated.AgentConnectionId = Fixture.AgentConnectionId;
         updated.AgentWorkerId = "worker-upd";
-        updated.PartitionLockId = Guid.NewGuid();
+        updated.PartitionLockId = JobMasterRandomUtil.NewGuid4();
         updated.PartitionLockExpiresAt = DateTime.UtcNow.AddMinutes(10);
-        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + Guid.NewGuid().ToString("N"), "updated-host-" + Guid.NewGuid().ToString("N"));
+        updated.HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId("host-" + JobMasterRandomUtil.NewGuid4().ToString("N"), "updated-host-" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         updated.StartAfter = DateTime.UtcNow.AddHours(-1);
         updated.EndBefore = DateTime.UtcNow.AddHours(5);
         updated.LastPlanCoverageUntil = DateTime.UtcNow.AddHours(3);
@@ -101,63 +103,75 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         updated.IsJobCancellationPending = false;
         updated.StaticDefinitionLastEnsured = DateTime.UtcNow.AddMinutes(-1);
         updated.WorkerLane = "LANE_UPD";
+        updated.Metadata = "{\"should\":\"not-persist\"}";
 
-        await Fixture.MasterRecurringSchedules.UpsertAsync(updated);
+        await Fixture.MasterRecurringSchedules.UpdateAsync(updated);
 
         var fromDb = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(fromDb);
+
+        // Metadata is immutable through UpdateAsync — original value must be preserved
+        AssertJsonEquivalent(schedule.Metadata, fromDb!.Metadata);
+        Assert.NotEqual(updated.Metadata, fromDb!.Metadata);
+
+        // Restore metadata to original for the full equivalence check on all other fields
+        updated.Metadata = schedule.Metadata;
         AssertScheduleEquivalent(updated, fromDb!);
+
+        // Version should change on update
+        Assert.False(string.IsNullOrEmpty(fromDb!.Version));
+        Assert.NotEqual(originalVersion, fromDb!.Version);
     }
 
     [Fact]
-    public async Task Upsert_ShouldThrow_OnVersionConflict_WhenConcurrent()
+    public async Task Update_ShouldThrow_OnVersionConflict_WhenConcurrent()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-conflict-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
-        // Load two separate copies to simulate concurrent upserts
+        // Load two separate copies to simulate concurrent updates
         var copyA = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         var copyB = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(copyA);
         Assert.NotNull(copyB);
 
-        // First upsert succeeds and advances the version
+        // First update succeeds and advances the version
         copyA!.JobDefinitionId = copyA.JobDefinitionId + "-A";
-        await Fixture.MasterRecurringSchedules.UpsertAsync(copyA);
+        await Fixture.MasterRecurringSchedules.UpdateAsync(copyA);
 
-        // Second upsert uses stale version — should throw
+        // Second update uses stale version — should throw
         copyB!.JobDefinitionId = copyB.JobDefinitionId + "-B";
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterRecurringSchedules.UpsertAsync(copyB));
+            Fixture.MasterRecurringSchedules.UpdateAsync(copyB));
     }
 
     [Fact]
-    public async Task Upsert_ShouldThrow_WhenVersionMismatch()
+    public async Task Update_ShouldThrow_WhenVersionMismatch()
     {
-        var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + Guid.NewGuid());
+        var schedule = NewSchedule(jobDefinitionId: "def-mismatch-" + JobMasterRandomUtil.NewGuid4());
         await Fixture.MasterRecurringSchedules.AddAsync(schedule);
 
         var current = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
         Assert.NotNull(current);
 
         var stale = Clone(current!);
-        stale.Version = Guid.NewGuid().ToString("N");
+        stale.Version = JobMasterRandomUtil.NewGuid4().ToString("N");
         stale.JobDefinitionId = stale.JobDefinitionId + "-STALE";
 
         await Assert.ThrowsAsync<JobMasterVersionConflictException>(() =>
-            Fixture.MasterRecurringSchedules.UpsertAsync(stale));
+            Fixture.MasterRecurringSchedules.UpdateAsync(stale));
     }
 
     [Fact]
     public async Task GetByStaticId_ShouldReturnOnly_StaticSchedules()
     {
-        var staticId = "static-" + Guid.NewGuid();
+        var staticId = "static-" + JobMasterRandomUtil.NewGuid4();
 
-        var matching = NewSchedule(jobDefinitionId: "def-static-" + Guid.NewGuid());
+        var matching = NewSchedule(jobDefinitionId: "def-static-" + JobMasterRandomUtil.NewGuid4());
         matching.StaticDefinitionId = staticId;
         matching.RecurringScheduleType = RecurringScheduleType.Static;
 
-        var nonStatic = NewSchedule(jobDefinitionId: "def-nonstatic-" + Guid.NewGuid());
+        var nonStatic = NewSchedule(jobDefinitionId: "def-nonstatic-" + JobMasterRandomUtil.NewGuid4());
         nonStatic.StaticDefinitionId = staticId;
         nonStatic.RecurringScheduleType = RecurringScheduleType.Dynamic;
 
@@ -173,8 +187,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     public async Task Query_And_Count_ShouldBeConsistent_ForCommonFilters()
     {
         var baseTime = DateTime.UtcNow;
-        var defA = "defA-" + Guid.NewGuid();
-        var defB = "defB-" + Guid.NewGuid();
+        var defA = "defA-" + JobMasterRandomUtil.NewGuid4();
+        var defB = "defB-" + JobMasterRandomUtil.NewGuid4();
 
         var s1 = NewSchedule(jobDefinitionId: defA);
         s1.Status = RecurringScheduleStatus.Active;
@@ -218,52 +232,35 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task Query_ShouldSupport_IsLocked_And_PartitionLockId()
+    public async Task ProbeCountForAcquire_ShouldExclude_ActivelyLockedSchedules_And_Include_ExpiredLocks()
     {
-        var def = "defLock-" + Guid.NewGuid();
+        var def = "defProbe-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
 
-        var lockedLockId = Guid.NewGuid();
-        var expiredLockId = Guid.NewGuid();
-
-        var locked = NewSchedule(jobDefinitionId: def);
-        locked.PartitionLockId = lockedLockId;
-        locked.PartitionLockExpiresAt = now.AddMinutes(30);
-
-        var expired = NewSchedule(jobDefinitionId: def);
-        expired.PartitionLockId = expiredLockId;
-        expired.PartitionLockExpiresAt = now.AddMinutes(-30);
-
         var unlocked = NewSchedule(jobDefinitionId: def);
-        unlocked.PartitionLockId = null;
-        unlocked.PartitionLockExpiresAt = null;
 
-        await Fixture.MasterRecurringSchedules.AddAsync(locked);
-        await Fixture.MasterRecurringSchedules.AddAsync(expired);
+        var activeLock = NewSchedule(jobDefinitionId: def);
+        activeLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        activeLock.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var expiredLock = NewSchedule(jobDefinitionId: def);
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
         await Fixture.MasterRecurringSchedules.AddAsync(unlocked);
+        await Fixture.MasterRecurringSchedules.AddAsync(activeLock);
+        await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
 
-        var cLocked = new RecurringScheduleQueryCriteria { JobDefinitionId = def, IsLocked = true, CountLimit = 100 };
-        var qLocked = await Fixture.MasterRecurringSchedules.QueryAsync(cLocked);
-        Assert.Contains(qLocked, x => x.Id == locked.Id);
-        Assert.DoesNotContain(qLocked, x => x.Id == expired.Id);
-        Assert.DoesNotContain(qLocked, x => x.Id == unlocked.Id);
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var count = await Fixture.MasterRecurringSchedules.ProbeCountForAcquireAsync(criteria);
 
-        var cUnlocked = new RecurringScheduleQueryCriteria { JobDefinitionId = def, IsLocked = false, CountLimit = 100 };
-        var qUnlocked = await Fixture.MasterRecurringSchedules.QueryAsync(cUnlocked);
-        Assert.Contains(qUnlocked, x => x.Id == expired.Id);
-        Assert.Contains(qUnlocked, x => x.Id == unlocked.Id);
-        Assert.DoesNotContain(qUnlocked, x => x.Id == locked.Id);
-
-        var cLockId = new RecurringScheduleQueryCriteria { JobDefinitionId = def, PartitionLockId = expiredLockId, CountLimit = 100 };
-        var qLockId = await Fixture.MasterRecurringSchedules.QueryAsync(cLockId);
-        Assert.Contains(qLockId, x => x.Id == expired.Id);
-        Assert.DoesNotContain(qLockId, x => x.Id == locked.Id);
+        Assert.Equal(2, count);
     }
 
     [Fact]
     public async Task Query_ShouldSupport_StartAfter_And_EndBefore_Ranges_WithNulls()
     {
-        var def = "defRanges-" + Guid.NewGuid();
+        var def = "defRanges-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var nulls = NewSchedule(jobDefinitionId: def);
@@ -300,7 +297,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CoverageUntil_Filter_WithNulls()
     {
-        var def = "defCoverage-" + Guid.NewGuid();
+        var def = "defCoverage-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var nullCoverage = NewSchedule(jobDefinitionId: def);
@@ -333,7 +330,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_IsJobCancellationPending_Filter()
     {
-        var def = "defCancel-" + Guid.NewGuid();
+        var def = "defCancel-" + JobMasterRandomUtil.NewGuid4();
 
         var a = NewSchedule(jobDefinitionId: def);
         a.IsJobCancellationPending = true;
@@ -359,7 +356,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CanceledOrInactive_Filter()
     {
-        var def = "defCanceledOrInactive-" + Guid.NewGuid();
+        var def = "defCanceledOrInactive-" + JobMasterRandomUtil.NewGuid4();
 
         var active = NewSchedule(jobDefinitionId: def);
         active.Status = RecurringScheduleStatus.Active;
@@ -392,7 +389,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_RecurringScheduleType_ProfileId_And_WorkerLane()
     {
-        var def = "defTypeProfileLane-" + Guid.NewGuid();
+        var def = "defTypeProfileLane-" + JobMasterRandomUtil.NewGuid4();
 
         var a = NewSchedule(jobDefinitionId: def);
         a.RecurringScheduleType = RecurringScheduleType.Static;
@@ -424,7 +421,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_MetadataFilters_AllOperations_And_Types()
     {
-        var def = "defMeta-" + Guid.NewGuid();
+        var def = "defMeta-" + JobMasterRandomUtil.NewGuid4();
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
@@ -471,7 +468,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task Query_ShouldSupport_CountLimit_And_Offset_OrderIsDeterministic()
     {
-        var def = "defPaging-" + Guid.NewGuid();
+        var def = "defPaging-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow;
 
         var list = new List<RecurringScheduleRawModel>();
@@ -524,10 +521,10 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var now = DateTime.UtcNow;
         return new RecurringScheduleRawModel(Fixture.ClusterId)
         {
-            Id = Guid.NewGuid(),
+            Id = JobMasterRandomUtil.NewGuid4(),
             ExpressionTypeId = NeverRecursExprCompiler.TypeId,
             Expression = string.Empty,
-            JobDefinitionId = jobDefinitionId ?? ("def-" + Guid.NewGuid()),
+            JobDefinitionId = jobDefinitionId ?? ("def-" + JobMasterRandomUtil.NewGuid4()),
             Status = RecurringScheduleStatus.Active,
             RecurringScheduleType = RecurringScheduleType.Dynamic,
             MsgData = "{}",
@@ -699,7 +696,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldDelete_OnlyTerminatedSchedulesOlderThanCutoff()
     {
-        var def = "defPurge-" + Guid.NewGuid();
+        var def = "defPurge-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(5);
 
@@ -746,7 +743,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldRespect_Limit()
     {
-        var def = "defPurgeLimit-" + Guid.NewGuid();
+        var def = "defPurgeLimit-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -774,7 +771,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     [Fact]
     public async Task PurgeTerminatedAsync_ShouldNotDelete_ActiveSchedules()
     {
-        var def = "defPurgeActive-" + Guid.NewGuid();
+        var def = "defPurgeActive-" + JobMasterRandomUtil.NewGuid4();
         var baseTime = DateTime.UtcNow.AddHours(-10);
         var cutoff = baseTime.AddMinutes(50);
 
@@ -801,5 +798,482 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         Assert.Contains(remaining, s => s.Id == activeOld.Id);
         Assert.Contains(remaining, s => s.Id == pendingSaveOld.Id);
+    }
+
+    // -----------------------------------------------------------------------
+    // Partition lock regression tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task Query_ShouldReturn_ActivelyLockedSchedules()
+    {
+        // Regression: QueryAsync must return locked schedules — no default isLocked filter.
+        var def = "defQueryLocked-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var locked = NewSchedule(jobDefinitionId: def);
+        locked.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        locked.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var unlocked = NewSchedule(jobDefinitionId: def);
+
+        await Fixture.MasterRecurringSchedules.AddAsync(locked);
+        await Fixture.MasterRecurringSchedules.AddAsync(unlocked);
+
+        var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        Assert.Contains(queried, s => s.Id == locked.Id);
+        Assert.Contains(queried, s => s.Id == unlocked.Id);
+    }
+
+    [Fact]
+    public async Task Query_ShouldReturn_SchedulesWithExpiredLocks()
+    {
+        var def = "defQueryExpiredLock-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var expiredLock = NewSchedule(jobDefinitionId: def);
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
+        await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
+
+        var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        Assert.Contains(queried, s => s.Id == expiredLock.Id);
+    }
+
+    [Fact]
+    public async Task Query_ShouldReturn_CanceledSchedule_AfterPartitionLockCleared()
+    {
+        // Regression: TryToCancel did not clear PartitionLockId/PartitionLockExpiresAt,
+        // so a canceled schedule with an active lock could appear in wrong query results.
+        var def = "defCanceledLock-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var schedule = NewSchedule(jobDefinitionId: def);
+        schedule.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        schedule.PartitionLockExpiresAt = now.AddMinutes(30);
+        await Fixture.MasterRecurringSchedules.AddAsync(schedule);
+
+        schedule.TryToCancel();
+        await Fixture.MasterRecurringSchedules.UpdateAsync(schedule);
+
+        var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
+
+        var fromDb = Assert.Single(queried, s => s.Id == schedule.Id);
+        Assert.Equal(RecurringScheduleStatus.Canceled, fromDb.Status);
+        Assert.Null(fromDb.PartitionLockId);
+        Assert.Null(fromDb.PartitionLockExpiresAt);
+    }
+
+    // -----------------------------------------------------------------------
+    // AcquireAndFetch conformance tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldLockAndReturnMatchingSchedules()
+    {
+        var def = "defAcquire-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var s1 = NewSchedule(jobDefinitionId: def);
+        var s2 = NewSchedule(jobDefinitionId: def);
+        await Fixture.MasterRecurringSchedules.AddAsync(s1);
+        await Fixture.MasterRecurringSchedules.AddAsync(s2);
+
+        var lockId = JobMasterRandomUtil.NewGuid4();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
+
+        Assert.Equal(2, acquired.Count);
+        Assert.All(acquired, s =>
+        {
+            Assert.Equal(lockId, s.PartitionLockId);
+            Assert.NotNull(s.PartitionLockExpiresAt);
+        });
+
+        var ids = acquired.Select(x => x.Id).ToHashSet();
+        Assert.Contains(s1.Id, ids);
+        Assert.Contains(s2.Id, ids);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldSkipAlreadyLockedSchedules()
+    {
+        var def = "defAcquireSkip-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var locked = NewSchedule(jobDefinitionId: def);
+        locked.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        locked.PartitionLockExpiresAt = now.AddMinutes(30);
+
+        var unlocked = NewSchedule(jobDefinitionId: def);
+        unlocked.PartitionLockId = null;
+        unlocked.PartitionLockExpiresAt = null;
+
+        await Fixture.MasterRecurringSchedules.AddAsync(locked);
+        await Fixture.MasterRecurringSchedules.AddAsync(unlocked);
+
+        var lockId = JobMasterRandomUtil.NewGuid4();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
+
+        Assert.Single(acquired);
+        Assert.Equal(unlocked.Id, acquired[0].Id);
+        Assert.Equal(lockId, acquired[0].PartitionLockId);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldReacquireExpiredLocks()
+    {
+        var def = "defAcquireExpired-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        var oldLockId = JobMasterRandomUtil.NewGuid4();
+
+        var expiredLock = NewSchedule(jobDefinitionId: def);
+        expiredLock.PartitionLockId = oldLockId;
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+
+        await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
+
+        var newLockId = JobMasterRandomUtil.NewGuid4();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, newLockId, now.AddMinutes(30));
+
+        Assert.Single(acquired);
+        Assert.Equal(expiredLock.Id, acquired[0].Id);
+        Assert.Equal(newLockId, acquired[0].PartitionLockId);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_SecondAcquireShouldNotReturnAlreadyAcquiredSchedules()
+    {
+        var def = "defAcquireNoOverlap-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var s1 = NewSchedule(jobDefinitionId: def);
+        var s2 = NewSchedule(jobDefinitionId: def);
+        await Fixture.MasterRecurringSchedules.AddAsync(s1);
+        await Fixture.MasterRecurringSchedules.AddAsync(s2);
+
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var first = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
+        Assert.Equal(2, first.Count);
+
+        var second = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
+        Assert.Empty(second);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldRespectQueryCriteriaFilters()
+    {
+        var def = "defAcquireFilter-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var match = NewSchedule(jobDefinitionId: def);
+        match.Status = RecurringScheduleStatus.Active;
+
+        var noMatch = NewSchedule(jobDefinitionId: def);
+        noMatch.Status = RecurringScheduleStatus.Inactive;
+        noMatch.TerminatedAt = now;
+
+        await Fixture.MasterRecurringSchedules.AddAsync(match);
+        await Fixture.MasterRecurringSchedules.AddAsync(noMatch);
+
+        var lockId = JobMasterRandomUtil.NewGuid4();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
+
+        Assert.Single(acquired);
+        Assert.Equal(match.Id, acquired[0].Id);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldBumpVersion()
+    {
+        var def = "defAcquireVersion-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var schedule = NewSchedule(jobDefinitionId: def);
+        await Fixture.MasterRecurringSchedules.AddAsync(schedule);
+
+        var beforeAcquire = await Fixture.MasterRecurringSchedules.GetAsync(schedule.Id);
+        var originalVersion = beforeAcquire!.Version;
+
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
+
+        Assert.Single(acquired);
+        Assert.False(string.IsNullOrEmpty(acquired[0].Version));
+        Assert.NotEqual(originalVersion, acquired[0].Version);
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ConcurrentCalls_ShouldNotDoubleAcquire_AnySchedule()
+    {
+        var def = "defAcquireConcurrent-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        const int scheduleCount = 100;
+        const int callers = 10;
+
+        for (var i = 0; i < scheduleCount; i++)
+        {
+            var s = NewSchedule(jobDefinitionId: def);
+            s.LastPlanCoverageUntil = now.AddHours(i);
+            await Fixture.MasterRecurringSchedules.AddAsync(s);
+        }
+
+        var lockIds = Enumerable.Range(0, callers).Select(_ => JobMasterRandomUtil.NewGuid4()).ToArray();
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = scheduleCount };
+
+        var tasks = lockIds.Select(id => Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, id, now.AddMinutes(30))).ToArray();
+        var results = await Task.WhenAll(tasks);
+
+        var allAcquiredIds = results.SelectMany(r => r.Select(s => s.Id)).ToList();
+
+        // No schedule must appear in more than one caller's result
+        Assert.Equal(allAcquiredIds.Count, allAcquiredIds.Distinct().Count());
+
+        // Together all callers must have claimed every schedule exactly once
+        Assert.Equal(scheduleCount, allAcquiredIds.Count);
+
+        // Each returned schedule must carry the lockId of the caller that acquired it
+        for (var c = 0; c < callers; c++)
+        {
+            var expectedLockId = lockIds[c];
+            Assert.All(results[c], s => Assert.Equal(expectedLockId, s.PartitionLockId));
+        }
+    }
+
+    [Fact]
+    public async Task AcquireAndFetch_ShouldRespectCountLimit()
+    {
+        var def = "defAcquireLimit-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+        var lockId1 = JobMasterRandomUtil.NewGuid4();
+        var lockId2 = JobMasterRandomUtil.NewGuid4();
+
+        for (var i = 0; i < 5; i++)
+        {
+            var s = NewSchedule(jobDefinitionId: def);
+            s.LastPlanCoverageUntil = now.AddHours(i);
+            await Fixture.MasterRecurringSchedules.AddAsync(s);
+        }
+
+        var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 2 };
+        var first = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId1, now.AddMinutes(30));
+
+        Assert.Equal(2, first.Count);
+        Assert.All(first, s => Assert.Equal(lockId1, s.PartitionLockId));
+
+        var second = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId2, now.AddMinutes(30));
+        Assert.Equal(2, second.Count);
+        Assert.All(second, s => Assert.Equal(lockId2, s.PartitionLockId));
+
+        var firstIds = first.Select(x => x.Id).ToHashSet();
+        var secondIds = second.Select(x => x.Id).ToHashSet();
+        Assert.Empty(firstIds.Intersect(secondIds));
+    }
+
+    // -----------------------------------------------------------------------
+    // Query criteria conformance: one shared dataset, one Theory per criteria
+    // -----------------------------------------------------------------------
+
+    private sealed record QueryDataset(
+        string Def,
+        RecurringScheduleRawModel ActiveDynLaneA,
+        RecurringScheduleRawModel ActiveStatLaneB,
+        RecurringScheduleRawModel CanceledLaneA,
+        RecurringScheduleRawModel InactiveLaneB,
+        RecurringScheduleRawModel PendingSave,
+        RecurringScheduleRawModel ActiveLock,
+        RecurringScheduleRawModel ExpiredLock,
+        RecurringScheduleRawModel CoverageNear,
+        RecurringScheduleRawModel CoverageFar,
+        RecurringScheduleRawModel StartAfterPast,
+        RecurringScheduleRawModel StartAfterFuture,
+        RecurringScheduleRawModel CancelPending);
+
+    private async Task<QueryDataset> CreateQueryDatasetAsync()
+    {
+        var def = "defQ-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var activeDynLaneA = NewSchedule(def);
+        activeDynLaneA.Status = RecurringScheduleStatus.Active;
+        activeDynLaneA.RecurringScheduleType = RecurringScheduleType.Dynamic;
+        activeDynLaneA.WorkerLane = "LANE_A";
+        activeDynLaneA.ProfileId = "p1";
+        activeDynLaneA.LastPlanCoverageUntil = now.AddHours(3);
+
+        var activeStatLaneB = NewSchedule(def);
+        activeStatLaneB.Status = RecurringScheduleStatus.Active;
+        activeStatLaneB.RecurringScheduleType = RecurringScheduleType.Static;
+        activeStatLaneB.WorkerLane = "LANE_B";
+        activeStatLaneB.ProfileId = "p2";
+        activeStatLaneB.LastPlanCoverageUntil = now.AddHours(3);
+
+        var canceledLaneA = NewSchedule(def);
+        canceledLaneA.Status = RecurringScheduleStatus.Canceled;
+        canceledLaneA.WorkerLane = "LANE_A";
+        canceledLaneA.TerminatedAt = now;
+        canceledLaneA.IsJobCancellationPending = true;
+        canceledLaneA.LastPlanCoverageUntil = now.AddHours(1);
+
+        var inactiveLaneB = NewSchedule(def);
+        inactiveLaneB.Status = RecurringScheduleStatus.Inactive;
+        inactiveLaneB.WorkerLane = "LANE_B";
+        inactiveLaneB.TerminatedAt = now;
+        inactiveLaneB.LastPlanCoverageUntil = now.AddHours(1);
+
+        var pendingSave = NewSchedule(def);
+        pendingSave.Status = RecurringScheduleStatus.PendingSave;
+        pendingSave.WorkerLane = "LANE_A";
+        pendingSave.LastPlanCoverageUntil = now.AddHours(1);
+
+        var activeLock = NewSchedule(def);
+        activeLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        activeLock.PartitionLockExpiresAt = now.AddMinutes(30);
+        activeLock.LastPlanCoverageUntil = now.AddHours(3);
+
+        var expiredLock = NewSchedule(def);
+        expiredLock.PartitionLockId = JobMasterRandomUtil.NewGuid4();
+        expiredLock.PartitionLockExpiresAt = now.AddMinutes(-10);
+        expiredLock.LastPlanCoverageUntil = now.AddHours(3);
+
+        var coverageNear = NewSchedule(def);
+        coverageNear.LastPlanCoverageUntil = now.AddHours(1);
+
+        var coverageFar = NewSchedule(def);
+        coverageFar.LastPlanCoverageUntil = now.AddHours(5);
+
+        var startAfterPast = NewSchedule(def);
+        startAfterPast.StartAfter = now.AddHours(-2);
+        startAfterPast.LastPlanCoverageUntil = now.AddHours(3);
+
+        var startAfterFuture = NewSchedule(def);
+        startAfterFuture.StartAfter = now.AddHours(10);
+        startAfterFuture.LastPlanCoverageUntil = now.AddHours(3);
+
+        var cancelPending = NewSchedule(def);
+        cancelPending.IsJobCancellationPending = true;
+        cancelPending.LastPlanCoverageUntil = now.AddHours(3);
+
+        foreach (var s in new[] { activeDynLaneA, activeStatLaneB, canceledLaneA, inactiveLaneB, pendingSave, activeLock, expiredLock, coverageNear, coverageFar, startAfterPast, startAfterFuture, cancelPending })
+            await Fixture.MasterRecurringSchedules.AddAsync(s);
+
+        return new QueryDataset(def, activeDynLaneA, activeStatLaneB, canceledLaneA, inactiveLaneB, pendingSave, activeLock, expiredLock, coverageNear, coverageFar, startAfterPast, startAfterFuture, cancelPending);
+    }
+
+    [Theory]
+    [InlineData("NoFilter")]
+    [InlineData("Status_Active")]
+    [InlineData("Status_Canceled")]
+    [InlineData("Status_Inactive")]
+    [InlineData("Status_PendingSave")]
+    [InlineData("WorkerLane_A")]
+    [InlineData("WorkerLane_B")]
+    [InlineData("RecurringScheduleType_Static")]
+    [InlineData("RecurringScheduleType_Dynamic")]
+    [InlineData("ProfileId")]
+    [InlineData("CoverageUntil")]
+    [InlineData("IsJobCancellationPending")]
+    [InlineData("CanceledOrInactive")]
+    [InlineData("StartAfterTo")]
+    [InlineData("StartAfterFrom")]
+    public async Task Query_AllCriteria(string testCase)
+    {
+        var d = await CreateQueryDatasetAsync();
+        var now = DateTime.UtcNow;
+
+        var (criteria, mustContain, mustNotContain) = testCase switch
+        {
+            // Regression: QueryAsync must return locked schedules — no implicit isLocked filter
+            "NoFilter" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, CountLimit = 100 },
+                new[] { d.ActiveLock.Id, d.ExpiredLock.Id, d.ActiveDynLaneA.Id },
+                Array.Empty<Guid>()),
+
+            "Status_Active" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, Status = RecurringScheduleStatus.Active, CountLimit = 100 },
+                new[] { d.ActiveDynLaneA.Id, d.ActiveStatLaneB.Id, d.ActiveLock.Id, d.ExpiredLock.Id },
+                new[] { d.CanceledLaneA.Id, d.InactiveLaneB.Id, d.PendingSave.Id }),
+
+            "Status_Canceled" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, Status = RecurringScheduleStatus.Canceled, CountLimit = 100 },
+                new[] { d.CanceledLaneA.Id },
+                new[] { d.ActiveDynLaneA.Id, d.InactiveLaneB.Id }),
+
+            "Status_Inactive" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, Status = RecurringScheduleStatus.Inactive, CountLimit = 100 },
+                new[] { d.InactiveLaneB.Id },
+                new[] { d.ActiveDynLaneA.Id, d.CanceledLaneA.Id }),
+
+            "Status_PendingSave" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, Status = RecurringScheduleStatus.PendingSave, CountLimit = 100 },
+                new[] { d.PendingSave.Id },
+                new[] { d.ActiveDynLaneA.Id, d.CanceledLaneA.Id }),
+
+            "WorkerLane_A" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, WorkerLane = "LANE_A", CountLimit = 100 },
+                new[] { d.ActiveDynLaneA.Id, d.CanceledLaneA.Id, d.PendingSave.Id },
+                new[] { d.ActiveStatLaneB.Id, d.InactiveLaneB.Id }),
+
+            "WorkerLane_B" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, WorkerLane = "LANE_B", CountLimit = 100 },
+                new[] { d.ActiveStatLaneB.Id, d.InactiveLaneB.Id },
+                new[] { d.ActiveDynLaneA.Id, d.CanceledLaneA.Id }),
+
+            "RecurringScheduleType_Static" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, RecurringScheduleType = RecurringScheduleType.Static, CountLimit = 100 },
+                new[] { d.ActiveStatLaneB.Id },
+                new[] { d.ActiveDynLaneA.Id }),
+
+            "RecurringScheduleType_Dynamic" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, RecurringScheduleType = RecurringScheduleType.Dynamic, CountLimit = 100 },
+                new[] { d.ActiveDynLaneA.Id },
+                new[] { d.ActiveStatLaneB.Id }),
+
+            "ProfileId" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, ProfileId = "p1", CountLimit = 100 },
+                new[] { d.ActiveDynLaneA.Id },
+                new[] { d.ActiveStatLaneB.Id }),
+
+            "CoverageUntil" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, CoverageUntil = now.AddHours(2), CountLimit = 100 },
+                new[] { d.CoverageNear.Id },
+                new[] { d.CoverageFar.Id }),
+
+            "IsJobCancellationPending" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, IsJobCancellationPending = true, CountLimit = 100 },
+                new[] { d.CanceledLaneA.Id, d.CancelPending.Id },
+                new[] { d.ActiveDynLaneA.Id, d.InactiveLaneB.Id }),
+
+            "CanceledOrInactive" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, CanceledOrInactive = true, CountLimit = 100 },
+                new[] { d.CanceledLaneA.Id, d.InactiveLaneB.Id },
+                new[] { d.ActiveDynLaneA.Id, d.ActiveStatLaneB.Id }),
+
+            "StartAfterTo" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, StartAfterTo = now.AddHours(1), CountLimit = 100 },
+                new[] { d.StartAfterPast.Id },
+                new[] { d.StartAfterFuture.Id }),
+
+            "StartAfterFrom" => (
+                new RecurringScheduleQueryCriteria { JobDefinitionId = d.Def, StartAfterFrom = now.AddHours(5), CountLimit = 100 },
+                new[] { d.StartAfterFuture.Id },
+                new[] { d.StartAfterPast.Id }),
+
+            _ => throw new ArgumentException($"Unknown test case: {testCase}")
+        };
+
+        var results = await Fixture.MasterRecurringSchedules.QueryAsync(criteria);
+        var ids = results.Select(s => s.Id).ToHashSet();
+
+        foreach (var id in mustContain)
+            Assert.Contains(id, ids);
+        foreach (var id in mustNotContain)
+            Assert.DoesNotContain(id, ids);
     }
 }

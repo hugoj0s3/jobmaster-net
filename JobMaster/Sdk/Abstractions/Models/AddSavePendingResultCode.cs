@@ -15,5 +15,6 @@ internal enum SaveDrainResultCode
     Success = 1,
     Skipped = 2,
     Failed = 3,
-    AlreadyExists = 4
+    AlreadyExists = 4,
+    FailedSafeGuarded = 5
 }

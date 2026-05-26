@@ -7,6 +7,13 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
 
+/// <summary>
+/// Monitors distributed lock signals to coordinate immediate and graceful worker shutdown.
+/// Detects an immediate-stop lock and calls <c>StopImmediatelyAsync</c>, or a graceful-stop
+/// lock and calls <c>RequestStop</c>. Once a graceful stop has been requested and the grace
+/// period has elapsed, forces an immediate stop. On stop or failure, marks all owned buckets
+/// as Lost so they can be reassigned. Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class WorkerStopCoordinatorRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;

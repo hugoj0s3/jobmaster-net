@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.GenericRecords;
 
 [Collection("PostgresRepositoryConformance")]
+[Trait("DB", "Postgres")]
 public sealed class PostgresGenericRecordsRepositoryConformanceTests
     : RepositoryGenericRecordsConformanceTests<PostgresRepositoryFixture>
 {

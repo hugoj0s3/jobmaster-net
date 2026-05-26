@@ -48,8 +48,7 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
         var resultCode = await savePendingOperation.AddPendingSaveJobForDrainAsync(payload);
         if (resultCode == SaveDrainResultCode.Failed)
         {
-            var messageId = NatsJetStreamUtils.GetHeaderMessageId(ackGuard.Msg.Headers);
-            await ackGuard.TryNakFailAsync(messageId!);
+            await ackGuard.TryNakFailAsync();
         }
     }
 

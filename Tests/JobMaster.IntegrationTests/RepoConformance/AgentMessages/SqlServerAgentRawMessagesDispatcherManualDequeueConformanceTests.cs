@@ -4,6 +4,7 @@ using Xunit;
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
 [Collection("SqlServerRepositoryConformance")]
+[Trait("DB", "SqlServer")]
 public sealed class SqlServerAgentRawMessagesDispatcherManualDequeueConformanceTests
     : RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests<SqlServerRepositoryFixture>
 {

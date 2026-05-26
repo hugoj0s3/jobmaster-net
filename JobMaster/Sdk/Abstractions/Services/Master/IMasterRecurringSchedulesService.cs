@@ -6,8 +6,10 @@ namespace JobMaster.Sdk.Abstractions.Services.Master;
 
 internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareService
 {
-    Task UpsertAsync(RecurringScheduleRawModel scheduleRaw);
-    void Upsert(RecurringScheduleRawModel scheduleRaw);
+    Task UpdateAsync(RecurringScheduleRawModel scheduleRaw);
+    void Update(RecurringScheduleRawModel scheduleRaw);
+    Task AddAsync(RecurringScheduleRawModel scheduleRaw);
+    void Add(RecurringScheduleRawModel scheduleRaw);
     void UpsertStatic(StaticRecurringScheduleDefinition definition);
     IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);
@@ -15,6 +17,7 @@ internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareServ
     Task<IList<RecurringScheduleRawModel>> AcquireAndFetchAsync(RecurringScheduleQueryCriteria queryCriteria, DateTime expiresAtUtc);
     Task<IList<RecurringScheduleRawModel>> AcquireAndFetchByIdsAsync(IList<Guid> ids, DateTime expiresAtUtc);
     long Count(RecurringScheduleQueryCriteria queryCriteria);
+    Task<long> ProbeCountForAcquireAsync(RecurringScheduleQueryCriteria queryCriteria);
     RecurringScheduleRawModel? Get(Guid recurringScheduleId);
     Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId);
     void BulkUpdateStaticDefinitionLastEnsured(IList<string> staticDefinitionIds, DateTime ensuredAt);

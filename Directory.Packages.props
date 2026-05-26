@@ -1,5 +1,5 @@
 <Project>
   <PropertyGroup>
-    <JobMasterVersion>0.0.6-alpha</JobMasterVersion>
+    <JobMasterVersion>0.0.7-alpha</JobMasterVersion>
   </PropertyGroup>
 </Project>

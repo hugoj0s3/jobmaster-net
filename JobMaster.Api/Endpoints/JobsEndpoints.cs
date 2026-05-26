@@ -117,7 +117,7 @@ internal static class JobsEndpoints
         [FromRoute] string id,
         CancellationToken ct)
     {
-        var service = EndpointUtils.GetClusterAwareComponent<IMasterJobExecutionService>(clusterId);
+        var service = EndpointUtils.GetClusterAwareComponent<IMasterJobsService>(clusterId);
         if (service == null)
         {
             return Results.NotFound();
@@ -133,7 +133,7 @@ internal static class JobsEndpoints
             return Results.BadRequest($"Invalid job id '{id}'.");
         }
 
-        var executions = await service.QueryAsync(guid);
+        var executions = await service.QueryJobExecutionsAsync(guid);
         var result = executions
             .Select(ApiJobExecution.FromDomain)
             .ToList();

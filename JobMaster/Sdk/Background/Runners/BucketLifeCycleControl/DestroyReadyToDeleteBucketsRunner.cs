@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -10,6 +10,14 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 
+/// <summary>
+/// Permanently destroys buckets that are in the <c>ReadyToDelete</c> state and have
+/// passed their <c>DeletesAt</c> timestamp. Before calling <c>DestroyAsync</c>, verifies
+/// via the dispatcher that no jobs remain; if jobs are still present or <c>DeletesAt</c>
+/// is null, the bucket is reverted to <c>Lost</c> for re-evaluation. A distributed lock
+/// prevents concurrent destruction across coordinator workers.
+/// Runs every <see cref="SucceedInterval"/>.
+/// </summary>
 internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
 {
     private readonly IMasterBucketsService masterBucketsService;
@@ -64,7 +72,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
 
                     if (freshBucket.DeletesAt is null)
                     {
-                        logger.Error($"Bucket {freshBucket.Id} has been marked as ready to delete but has no delete time", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                        logger.Error($"Bucket {freshBucket.Id} has been marked as ready to delete but has no delete time", JobMasterLogCategory.Bucket, freshBucket.Id);
                         freshBucket.MarkAsLost();
                         await masterBucketsService.UpdateAsync(freshBucket);
                         continue;
@@ -72,7 +80,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
                     
                     if (await agentJobsDispatcherService.HasJobsAsync(freshBucket.AgentConnectionId, freshBucket.Id))
                     {
-                        logger.Warn($"Bucket {freshBucket.Id} has been marked as ready to delete but has jobs", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                        logger.Warn($"Bucket {freshBucket.Id} has been marked as ready to delete but has jobs", JobMasterLogCategory.Bucket, freshBucket.Id);
                         freshBucket.MarkAsLost();
                         await masterBucketsService.UpdateAsync(freshBucket);
                         continue;
@@ -83,7 +91,7 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
                         continue;
                     }
 
-                    logger.Info($"Destroying bucket {freshBucket.Id}", JobMasterLogSubjectType.Bucket, freshBucket.Id);
+                    logger.Info($"Destroying bucket {freshBucket.Id}", JobMasterLogCategory.Bucket, freshBucket.Id);
                     await masterBucketsService.DestroyAsync(freshBucket.Id);
                 }
                 finally

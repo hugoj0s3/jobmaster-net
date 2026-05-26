@@ -57,7 +57,7 @@ internal class MasterClusterConfigurationService : JobMasterClusterAwareComponen
             factory: FetchFromRepo,
             allowedDiscrepancy: JobMasterConstants.ClusterConfigurationAllowDiscrepancy,
             valueFactoryLockDuration: TimeSpan.FromSeconds(2),
-            durationToExpire: TimeSpan.FromMinutes(5)));
+            durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
     public ClusterConfigurationModel? GetFresh()

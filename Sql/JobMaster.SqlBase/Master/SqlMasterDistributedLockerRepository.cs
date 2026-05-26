@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Scripts;
 
@@ -33,7 +34,7 @@ internal abstract class SqlMasterDistributedLockerRepository : JobMasterClusterA
         connString = clusterConnectionConfig.ConnectionString;
         additionalConnConfig = clusterConnectionConfig.AdditionalConnConfig;
         this.logger = logger;
-        connectionId = $"{nameof(SqlMasterDistributedLockerRepository)}:{clusterConnectionConfig.ClusterId}:{Guid.NewGuid().ToString("N")}";
+        connectionId = $"{nameof(SqlMasterDistributedLockerRepository)}:{clusterConnectionConfig.ClusterId}:{JobMasterRandomUtil.NewGuid4().ToString("N")}";
         
         CleanupTimers = new Timer(_ => SafeCleanupExpiredLocks(), null, TimeSpan.FromHours(2), TimeSpan.FromHours(2));
         lockKeys = new JobMasterLockKeys(clusterConnectionConfig.ClusterId);
@@ -60,12 +61,12 @@ internal abstract class SqlMasterDistributedLockerRepository : JobMasterClusterA
             if (deletedCount > 0)
             {
                 logger.Warn($"Zombie Locks Detected: Cleanup removed {deletedCount} locks that were expired more than 48h. Investigate worker stability.", 
-                    JobMasterLogSubjectType.Cluster, ClusterConnConfig.ClusterId);
+                    JobMasterLogCategory.Cluster, ClusterConnConfig.ClusterId);
             }
         }
         catch (Exception e)
         {
-            logger.Error($"Failed to cleanup expired locks", JobMasterLogSubjectType.Cluster, ClusterConnConfig.ClusterId, exception: e);
+            logger.Error($"Failed to cleanup expired locks", JobMasterLogCategory.Cluster, ClusterConnConfig.ClusterId, exception: e);
             if (!string.IsNullOrEmpty(lockToken))
             {
                 this.ReleaseLock(lockKeys.LockCleanupLock(), lockToken!);
@@ -101,7 +102,7 @@ internal abstract class SqlMasterDistributedLockerRepository : JobMasterClusterA
             var now = DateTime.UtcNow;
             var newExpires = now.Add(leaseDuration);
             var t = TableName();
-            var token = Guid.NewGuid().ToString("N");
+            var token = JobMasterRandomUtil.NewGuid4().ToString("N");
 
             // 1) Try to update an expired lock row
             var updateSql = $@"UPDATE {t}

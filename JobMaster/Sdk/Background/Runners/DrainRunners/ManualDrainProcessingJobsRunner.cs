@@ -1,31 +1,25 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
-using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
-using JobMaster.Sdk.Background.Runners.SavePendingJobs;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
 internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProcessingJobsRunner
 {
-    private JobMasterLockKeys lockKeys;
-    private IMasterJobsService masterJobsService;
-    private IMasterDistributedLockerService masterDistributedLockerService;
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
     
-    protected JobSavePendingOperation? savePendingOperation;
-
     public ManualDrainProcessingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
-        lockKeys = new JobMasterLockKeys(this.BackgroundAgentWorker.ClusterConnConfig.ClusterId);
-        masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
-        masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -33,11 +27,6 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
         if (string.IsNullOrEmpty(BucketId))
         {
             return OnTickResult.Skipped(this);
-        }
-        
-        if (savePendingOperation is null)
-        {
-            savePendingOperation = new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
         }
         
         var bucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
@@ -54,12 +43,19 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
             return OnTickResult.Skipped(TimeSpan.FromMinutes(1));
         }
 
+        var jobIds = processingJobs.Select(j => j.Id).ToList();
+
         bool hasFailed = false;
-        foreach (var job in processingJobs)
+        foreach (var partition in jobIds.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
         {
-            var result = await savePendingOperation.HeldOnMasterProcessingForDrainAsync(job); 
-            if (result != SaveDrainResultCode.Success && result != SaveDrainResultCode.Skipped)
+            try
             {
+                await BackgroundAgentWorker.WorkerClusterOperations
+                    .ExecWithRetryAsync(o => o.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList())));
+            }
+            catch (Exception e)
+            {
+                logger.Error($"Drain: failed to bulk mark jobs as HeldOnMaster. PartitionSize={partition.Count}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
                 hasFailed = true;
             }
         }

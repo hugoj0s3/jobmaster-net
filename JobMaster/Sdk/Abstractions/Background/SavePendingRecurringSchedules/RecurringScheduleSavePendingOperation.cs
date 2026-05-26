@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions.Extensions;
+﻿using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -32,7 +32,7 @@ internal class RecurringScheduleSavePendingOperation
         if (distributedLockerService.IsLocked(lockKeys.RecurringScheduleCancellingLock(schedule.Id)))
         {
             workerClusterOperations.CancelRecurringSchedule(schedule.Id);
-            logger.Debug("Recurring schedule cancelled", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
+            logger.Debug("Recurring schedule cancelled", JobMasterLogCategory.RecurringSchedule, schedule.Id);
             return;
         }
 
@@ -56,7 +56,7 @@ internal class RecurringScheduleSavePendingOperation
             }
             catch (Exception e)
             {
-                logger.Critical("Failed to add recurring schedule to queue", JobMasterLogSubjectType.RecurringSchedule, schedule.Id, exception: e);
+                logger.Critical("Failed to add recurring schedule to queue", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
                 return SaveDrainResultCode.Failed;
             }
         }
@@ -73,7 +73,7 @@ internal class RecurringScheduleSavePendingOperation
         }
         catch
         {
-            logger.Error("Failed to save recurring schedule", JobMasterLogSubjectType.RecurringSchedule, schedule.Id);
+            logger.Error("Failed to save recurring schedule", JobMasterLogCategory.RecurringSchedule, schedule.Id);
             return SaveDrainResultCode.Failed;
         }
     }

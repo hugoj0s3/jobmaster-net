@@ -1,4 +1,4 @@
-using Microsoft.Data.SqlClient;
+﻿using Microsoft.Data.SqlClient;
 
 namespace JobMaster.IntegrationTests.Utils;
 
@@ -51,7 +51,7 @@ public static class SqlServerTestDbUtil
 
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}message_dispatcher");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}bucket_dispatcher");
-        await DropTableIfExistsAsync(cnn, $"{tablePrefix}agent_conn_footprint");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}agent_conn_fingerprint");
     }
 
     private static async Task DropTableIfExistsAsync(SqlConnection cnn, string tableName)

@@ -1,4 +1,4 @@
-using JobMaster.Sdk.Abstractions.Background;
+﻿using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 
@@ -18,7 +18,7 @@ internal interface IJobMasterClusterAwareComponentFactory
     
     IAgentJobsDispatcherRepository GetRepositoryDispatcher(string agentRepoTypeId);
 
-    IAgentFootprintResolver GetFootprintResolver(string agentRepoTypeId);
+    IAgentFingerprintResolver GetFingerprintResolver(string agentRepoTypeId);
 
     public TBucketAwareRunner GetBucketAwareRunner<TBucketAwareRunner>(
         string agentRepoTypeId,

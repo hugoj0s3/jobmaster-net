@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Reflection;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
@@ -88,22 +88,22 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 var agentConnectionId = new AgentConnectionId(agentConfig.Id);
                 var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
                 
-                var footprintResolver = agentComponentFactory.GetFootprintResolver(agentConfig.Id);
-                var footprint = await footprintResolver.GiveYourFootprintAsync(agentDefinition.ClusterId, agentConfig.Id);
-                
-                if (existingConnection != null && existingConnection.Footprint != footprint)
+                var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(agentConfig.Id);
+                var fingerprint = await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
+
+                if (existingConnection != null && existingConnection.Fingerprint != fingerprint)
                 {
                     if (agentDefinition.ProtectConnectionChanges)
                     {
                         throw new Exception(
-                            $"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, " +
+                            $"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, " +
                             $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
                     }
-                    
-                    logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} footprint has changed, updating...");
+
+                    logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, updating...");
                 }
-                
-                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, footprint, agentDefinition.ProtectConnectionChanges);
+
+                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, fingerprint, agentDefinition.ProtectConnectionChanges);
             }
             
             

@@ -87,6 +87,16 @@ internal class BucketModel : JobMasterBaseModel
         return true;
     }
 
+    public bool ReadyToDrainFromCompleting()
+    {
+        if (!CanTransitionStatusNow()) return false;
+        if (Status != BucketStatus.Completing) return false;
+
+        Status = BucketStatus.ReadyToDrain;
+        LastStatusChangeAt = DateTime.UtcNow;
+        return true;
+    }
+
     public bool ReadyToDrain(string agentWorkerId)
     {
         if (!CanTransitionStatusNow())

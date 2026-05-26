@@ -22,6 +22,36 @@ config.ClusterId("My-Cluster");
 });
 ```
 
+### Worker Name
+
+`.WorkerName()` is optional. The behaviour depends on whether you supply a value.
+
+**Not provided — auto-generated from hostname**
+
+```
+{hostname}-{timestampId}
+```
+
+Example: `myserver-3c1a8b2`
+
+The timestamp suffix guarantees uniqueness across process restarts on the same host.
+
+> [!WARNING]
+> Auto-generated names are **ephemeral by design**. While convenient for local development and rapid prototyping, the randomized suffix changes on every restart. This makes it difficult to track and correlate the same logical worker across deployments in dashboards and audit logs.
+
+**Provided**
+
+```
+{workerName}-{timestampId}
+```
+
+Example: `payroll-01-3c1a8b2`
+
+The timestamp suffix is always appended to ensure the runtime name is unique, even when the configured name is fixed.
+
+> [!TIP]
+> For production deployments always provide a stable, meaningful name such as `"Payroll-Worker-01"`. This keeps logs, dashboards, and alerting rules readable and consistent across restarts.
+
 ### Worker Lanes (Workload Isolation)
 Lanes allow you to physically isolate different types of business logic. 
 This ensures that a heavy, slow-running process (like "Report Generation") does not steal resources from a high-priority process (like "Transactional Emails").
@@ -127,11 +157,9 @@ With `.BucketQtyConfig()`, you define how many buckets this worker should own fo
 - Higher Quantity: Increases the potential for parallel processing across the cluster.
 - Lower Quantity: Reduces database connection overhead and resource footprint.
 
-## Throughput & Batch Optimization
-
-In 0.0.6, the old single `BatchSize` setting was split into three distinct knobs, each controlling a different layer of the pipeline. Mixing them into one value led to hard trade-offs; keeping them separate lets you tune each concern independently.
-
 ---
+
+## Throughput & Batch Optimization
 
 ### 1. TransferBatchSize — DB Fetch Efficiency
 

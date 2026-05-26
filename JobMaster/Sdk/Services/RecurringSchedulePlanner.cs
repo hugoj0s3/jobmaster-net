@@ -1,4 +1,4 @@
-using JobMaster.Abstractions.Models;
+﻿using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
@@ -53,27 +53,27 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
     {
         if (scheduleRawModel.Status != RecurringScheduleStatus.Active)
         {
-            logger.Debug($"Skipping: Status is {scheduleRawModel.Status}, not Active", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug($"Skipping: Status is {scheduleRawModel.Status}, not Active", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
         if (scheduleRawModel.IsStaticIdle(jobMasterRuntime.StartingAt))
         {
-            logger.Debug("Skipping: Schedule is in static idle period", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug("Skipping: Schedule is in static idle period", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
         if (scheduleRawModel.EndBefore.HasValue && scheduleRawModel.EndBefore.Value < DateTime.UtcNow)
         {
-            logger.Debug($"Skipping: EndBefore ({scheduleRawModel.EndBefore:O}) is in the past", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug($"Skipping: EndBefore ({scheduleRawModel.EndBefore:O}) is in the past", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             scheduleRawModel.TryEnded();
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
+            await masterRecurringSchedulesService.UpdateAsync(scheduleRawModel);
             return;
         }
         
         if (scheduleRawModel.StartAfter.HasValue && scheduleRawModel.StartAfter.Value > DateTime.UtcNow)
         {
-            logger.Debug($"Skipping: StartAfter ({scheduleRawModel.StartAfter:O}) is in the future", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug($"Skipping: StartAfter ({scheduleRawModel.StartAfter:O}) is in the future", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
@@ -87,11 +87,11 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         var lockToken = masterDistributedLockerService.TryLock(lockKeys.RecurringSchedulePlan(scheduleRawModel.Id), timeToScheduleInAdvance);
         if (lockToken == null)
         {
-            logger.Debug("Failed to acquire lock for recurring schedule planning", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug("Failed to acquire lock for recurring schedule planning", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
-        logger.Debug("Lock acquired, starting to plan next dates", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+        logger.Debug("Lock acquired, starting to plan next dates", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(scheduleRawModel);
         var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
@@ -101,14 +101,14 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             
             // Avoid keep get this schedule again and again. Delay the next attempt.
             scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             
             return;
         }
 
         var baseDateTime = scheduleRawModel.LastPlanCoverageUntil ?? scheduleRawModel.StartAfter ?? scheduleRawModel.CreatedAt;
         logger.Debug($"Planning from baseDateTime={baseDateTime:O}, LastPlanCoverageUntil={scheduleRawModel.LastPlanCoverageUntil:O}, StartAfter={scheduleRawModel.StartAfter:O}, CreatedAt={scheduleRawModel.CreatedAt:O}", 
-            JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var (lastPlanCoverageUntilUtc, nextDates, planningHorizonUsed) = PlanNextDates(
             recurringSchedule.Id, 
@@ -120,7 +120,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.EndBefore);
         
         logger.Debug($"PlanNextDates returned {nextDates.Count} dates. lastPlanCoverageUntilUtc={lastPlanCoverageUntilUtc:O}, planningHorizonUsed={planningHorizonUsed:O}", 
-            JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         if (nextDates.IsNullOrEmpty())
         {
@@ -131,25 +131,25 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             if (recurringSchedule.RecurExpression.HasEnded(checkTime, ianaTimeZoneId))
             {
                 logger.Info($"Recurring schedule has ended. Marking as Completed. LastPlanCoverageUntil={checkTime:O}", 
-                    JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+                    JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
                 
                 scheduleRawModel.Status = RecurringScheduleStatus.Completed;
                 scheduleRawModel.HasFailedOnLastPlanExecution = false;
                 scheduleRawModel.LastPlanCoverageUntil = checkTime;
                 scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-                await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+                await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
                 return;
             }
             
             logger.Warn($"No next dates to schedule in current window. Updating LastPlanCoverageUntil to {checkTime:O}", 
-                JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+                JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             
             // Update LastPlanCoverageUntil even when empty to prevent infinite loop
             // Schedule hasn't ended, just no occurrences in this planning window
             scheduleRawModel.HasFailedOnLastPlanExecution = false;
             scheduleRawModel.LastPlanCoverageUntil = checkTime;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
 
@@ -160,12 +160,12 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             jobs.Add(job);
         }
         
-        logger.Debug($"Bulk scheduling {jobs.Count} jobs", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+        logger.Debug($"Bulk scheduling {jobs.Count} jobs", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
 
         try
         {
             await scheduler.BulkScheduleAsync(jobs);
-            logger.Debug($"Successfully bulk scheduled {jobs.Count} jobs", JobMasterLogSubjectType.RecurringSchedule, scheduleRawModel.Id);
+            logger.Debug($"Successfully bulk scheduled {jobs.Count} jobs", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         }
         catch (Exception e)
         {
@@ -174,14 +174,14 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             scheduleRawModel.HasFailedOnLastPlanExecution = true;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
             
-            await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+            await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
        
         scheduleRawModel.HasFailedOnLastPlanExecution = false;
         scheduleRawModel.LastPlanCoverageUntil = lastPlanCoverageUntilUtc;
         scheduleRawModel.LastExecutedPlan = lastPlanCoverageUntilUtc;
-        await UpsertAndReleasePlanLockAsync(scheduleRawModel, lockToken);
+        await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
     }
 
     internal (DateTime? lastSchedule, IList<DateTime> nextDates, DateTime planningHorizon) PlanNextDates(
@@ -284,11 +284,11 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         return (lastScheduleAt, results, stopAt);
     }
     
-    private async Task UpsertAndReleasePlanLockAsync(RecurringScheduleRawModel scheduleRawModel, string lockToken)
+    private async Task UpdateAndReleasePlanLockAsync(RecurringScheduleRawModel scheduleRawModel, string lockToken)
     {
         try
         {
-            await masterRecurringSchedulesService.UpsertAsync(scheduleRawModel);
+            await masterRecurringSchedulesService.UpdateAsync(scheduleRawModel);
         }
         finally
         {

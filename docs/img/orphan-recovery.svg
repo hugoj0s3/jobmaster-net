@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420">
+<defs>
+  <marker id="ar" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#ef4444"/>
+  </marker>
+  <marker id="ag" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#22c55e"/>
+  </marker>
+  <marker id="ab" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#3b82f6"/>
+  </marker>
+  <filter id="sh">
+    <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.45"/>
+  </filter>
+  <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+    <circle cx="14" cy="14" r="0.7" fill="#ffffff0d"/>
+  </pattern>
+</defs>
+
+<!-- Background -->
+<rect width="1100" height="420" fill="#09111f"/>
+<rect width="1100" height="420" fill="url(#dots)"/>
+
+<!-- Title -->
+<text x="550" y="36" fill="#e2e8f0" font-family="'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" text-anchor="middle" letter-spacing="0.5">JobMaster — Self-Healing &amp; Orphan Bucket Recovery</text>
+<line x1="60" y1="50" x2="1040" y2="50" stroke="#1e3a5f" stroke-width="1"/>
+
+
+<!-- ═══════════════════ LEFT COLUMN: THE CRASH & ORPHAN ═══════════════════ -->
+<rect x="40" y="70" width="280" height="310" rx="10" fill="#140606" stroke="#ef4444" stroke-width="1.5" filter="url(#sh)"/>
+<rect x="40" y="70" width="280" height="6" rx="3" fill="#ef4444"/>
+
+<!-- Crashed Worker Box -->
+<rect x="60" y="92" width="240" height="62" rx="6" fill="#240c0c" stroke="#b91c1c" stroke-width="1.2"/>
+<rect x="68" y="100" width="14" height="11" rx="2" fill="#ef4444"/>
+<circle cx="75" cy="105" r="2.5" fill="#fca5a5"/>
+<text x="92" y="110" fill="#fca5a5" font-family="Arial" font-size="10.5" font-weight="bold">Worker A (CRASHED)</text>
+<text x="68" y="132" fill="#ef4444" font-family="Arial" font-size="9" font-weight="bold">Heartbeat Lost / Dead Agent</text>
+
+<!-- Lost Bucket Box -->
+<rect x="60" y="172" width="240" height="186" rx="6" fill="#1a0707" stroke="#ef4444" stroke-width="1.5"/>
+<text x="180" y="192" fill="#fca5a5" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle">Bucket-A1  ·  status → LOST</text>
+<line x1="70" y1="202" x2="290" y2="202" stroke="#b91c1c" stroke-width="1"/>
+
+<!-- Jobs trapped inside Lost Bucket -->
+<!-- Unfinished Job -->
+<rect x="70" y="214" width="220" height="36" rx="4" fill="#2d1414" stroke="#ef4444" stroke-width="0.8"/>
+<text x="80" y="230" fill="#fca5a5" font-family="Arial" font-size="9.5" font-weight="bold">Job #1 (Queued / Unfinished)</text>
+<text x="80" y="243" fill="#ef4444" font-family="Arial" font-size="8.5">Trapped in active execution queue</text>
+
+<!-- Unsaved Job -->
+<rect x="70" y="260" width="220" height="36" rx="4" fill="#2d1414" stroke="#ef4444" stroke-width="0.8"/>
+<text x="80" y="276" fill="#fca5a5" font-family="Arial" font-size="9.5" font-weight="bold">Job #2 (Unsaved / SavePending)</text>
+<text x="80" y="289" fill="#ef4444" font-family="Arial" font-size="8.5">Buffered in Agent, not yet on Master</text>
+
+<text x="180" y="342" fill="#ef4444" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle">Rescue required to prevent data loss</text>
+
+
+<!-- ═══════════════════ ADOPTION PATH (Left → Center) ═══════════════════ -->
+<path d="M 330,225 Q 380,185 430,225" fill="none" stroke="#22c55e" stroke-width="2.5" marker-end="url(#ag)"/>
+<rect x="348" y="174" width="64" height="15" rx="3" fill="#042f1a" stroke="#22c55e" stroke-width="0.8"/>
+<text x="380" y="185" fill="#4ade80" font-family="Arial" font-size="8.5" font-weight="bold" text-anchor="middle">ADOPTS</text>
+
+
+<!-- ═══════════════════ CENTER COLUMN: THE ADOPTION & DRAIN ═══════════════════ -->
+<rect x="440" y="70" width="280" height="310" rx="10" fill="#071a07" stroke="#22c55e" stroke-width="1.5" filter="url(#sh)"/>
+<rect x="440" y="70" width="280" height="6" rx="3" fill="#22c55e"/>
+
+<!-- Active Worker B Box -->
+<rect x="460" y="92" width="240" height="62" rx="6" fill="#0c240c" stroke="#15803d" stroke-width="1.2"/>
+<rect x="468" y="100" width="14" height="11" rx="2" fill="#22c55e"/>
+<circle cx="475" cy="105" r="2.5" fill="#bbf7d0"/>
+<text x="492" y="110" fill="#86efac" font-family="Arial" font-size="10.5" font-weight="bold">Worker B (HEALTHY)</text>
+<text x="468" y="132" fill="#4ade80" font-family="Arial" font-size="9" font-weight="bold">Active Janitor / Recovery Node</text>
+
+<!-- Draining Bucket Box -->
+<rect x="460" y="172" width="240" height="186" rx="6" fill="#051405" stroke="#22c55e" stroke-width="1.5"/>
+<text x="580" y="192" fill="#bbf7d0" font-family="Arial" font-size="11" font-weight="bold" text-anchor="middle">Bucket-A1  ·  status → DRAINING</text>
+<line x1="470" y1="202" x2="690" y2="202" stroke="#14532d" stroke-width="1"/>
+
+<rect x="470" y="214" width="220" height="82" rx="4" fill="#0c200c" stroke="#15803d" stroke-width="0.8"/>
+<text x="580" y="235" fill="#86efac" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle">Draining active bucket...</text>
+<text x="480" y="255" fill="#a7f3d0" font-family="Arial" font-size="9.5">1. Safely locks Lost bucket</text>
+<text x="480" y="271" fill="#a7f3d0" font-family="Arial" font-size="9.5">2. Pulls all trapped &amp; unsaved jobs</text>
+<text x="480" y="287" fill="#a7f3d0" font-family="Arial" font-size="9.5">3. Redirects them back to Master DB</text>
+
+<text x="580" y="342" fill="#34d399" font-family="Arial" font-size="10.5" font-weight="bold" text-anchor="middle">Zero job loss guaranteed</text>
+
+
+<!-- ═══════════════════ REDIRECTION PATHS (Center → Right) ═══════════════════ -->
+<!-- Top Redirect: Unfinished Jobs -->
+<path d="M 730,210 Q 795,150 850,175" fill="none" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#ab)"/>
+<text x="790" y="150" fill="#bfdbfe" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Redirect Unfinished</text>
+<text x="790" y="162" fill="#60a5fa" font-family="Arial" font-size="8.5" text-anchor="middle">(status → HeldOnMaster)</text>
+
+<!-- Bottom Redirect: Unsaved SavePending Jobs -->
+<path d="M 730,290 Q 795,350 850,325" fill="none" stroke="#3b82f6" stroke-width="2.5" marker-end="url(#ab)"/>
+<text x="790" y="358" fill="#bfdbfe" font-family="Arial" font-size="9" font-weight="bold" text-anchor="middle">Flush &amp; Sync Unsaved</text>
+<text x="790" y="370" fill="#60a5fa" font-family="Arial" font-size="8.5" text-anchor="middle">(saves &amp; registers in Master DB)</text>
+
+
+<!-- ═══════════════════ RIGHT COLUMN: MASTER DB ORCHESTRATION ═══════════════════ -->
+<rect x="860" y="70" width="200" height="310" rx="10" fill="#091830" stroke="#3b82f6" stroke-width="1.5" filter="url(#sh)"/>
+<rect x="860" y="70" width="200" height="6" rx="3" fill="#3b82f6"/>
+
+<!-- Cylinder DB Graphic -->
+<ellipse cx="960" cy="112" rx="32" ry="7" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.2"/>
+<rect x="928" y="112" width="64" height="20" fill="#172554"/>
+<line x1="928" y1="112" x2="928" y2="132" stroke="#3b82f6" stroke-width="1.2"/>
+<line x1="992" y1="112" x2="992" y2="132" stroke="#3b82f6" stroke-width="1.2"/>
+<ellipse cx="960" cy="132" rx="32" ry="7" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.2"/>
+<rect x="928" y="132" width="64" height="20" fill="#1e1b4b"/>
+<line x1="928" y1="132" x2="928" y2="152" stroke="#3b82f6" stroke-width="1.2"/>
+<line x1="992" y1="132" x2="992" y2="152" stroke="#3b82f6" stroke-width="1.2"/>
+<ellipse cx="960" cy="152" rx="32" ry="7" fill="#1e3a8a" stroke="#3b82f6" stroke-width="1.2"/>
+
+<text x="960" y="186" fill="#93c5fd" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">Master DB</text>
+<text x="960" y="202" fill="#60a5fa" font-family="Arial" font-size="9" text-anchor="middle" font-weight="bold">Orchestration &amp; Storage</text>
+
+<!-- HeldOnMaster Status Box -->
+<rect x="880" y="222" width="160" height="76" rx="5" fill="#0f1f3a" stroke="#1d4ed8" stroke-width="1"/>
+<text x="960" y="238" fill="#bfdbfe" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Durable Safety State</text>
+<text x="960" y="254" fill="#38bdf8" font-family="Arial" font-size="10" font-weight="bold" text-anchor="middle">HeldOnMaster</text>
+<text x="960" y="271" fill="#60a5fa" font-family="Arial" font-size="8.5" text-anchor="middle">Awaiting standard</text>
+<text x="960" y="283" fill="#60a5fa" font-family="Arial" font-size="8.5" text-anchor="middle">re-onboarding scan</text>
+
+<text x="960" y="342" fill="#60a5fa" font-family="Arial" font-size="9.5" font-weight="bold" text-anchor="middle">Resilience Completed</text>
+
+</svg>

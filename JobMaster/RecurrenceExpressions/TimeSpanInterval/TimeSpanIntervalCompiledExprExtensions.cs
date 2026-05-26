@@ -4,10 +4,16 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 
 namespace JobMaster.RecurrenceExpressions.TimeSpanInterval;
 
+/// <summary>
+/// Convenience extension methods for scheduling fixed-interval recurring jobs using <see cref="TimeSpan"/> values.
+/// </summary>
 public static class TimeSpanIntervalCompiledExprExtensions
 {
+    /// <summary>
+    /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> every <paramref name="timeSpan"/> interval.
+    /// </summary>
     public static async Task<RecurringScheduleContext> RecurringAsync<T>(
-        this IJobMasterScheduler scheduler, 
+        this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,
         JobMasterPriority? priority = null,
@@ -28,8 +34,11 @@ public static class TimeSpanIntervalCompiledExprExtensions
         return await scheduler.RecurringAsync<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
     }
     
+    /// <summary>
+    /// Synchronous version of <see cref="RecurringAsync{T}(IJobMasterScheduler, TimeSpan, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.
+    /// </summary>
     public static RecurringScheduleContext Recurring<T>(
-        this IJobMasterScheduler scheduler, 
+        this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,
         JobMasterPriority? priority = null,
@@ -50,6 +59,7 @@ public static class TimeSpanIntervalCompiledExprExtensions
         return scheduler.Recurring<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
     }
     
+    /// <summary>Adds a fixed-interval recurring schedule definition to <paramref name="collection"/>.</summary>
     public static RecurringScheduleDefinitionCollection Add<Th>(
         this RecurringScheduleDefinitionCollection collection,
         TimeSpan timeSpan,

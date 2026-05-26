@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
 using JobMaster.Sdk.Repositories;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Repositories;
 
@@ -131,7 +132,7 @@ public class AgentJobsDispatcherRepositoryTests
         public string AgentRepoTypeId => "test";
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

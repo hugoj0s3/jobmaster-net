@@ -8,9 +8,10 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
 {
     void Add(JobRawModel jobRaw);
     Task AddAsync(JobRawModel jobRaw);
-
-    void Upsert(JobRawModel jobRaw);
-    Task UpsertAsync(JobRawModel jobRaw);
+    void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+    Task AddJobExecutionAsync(JobExecution jobExecution);
+    Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
     bool Exists(Guid jobId);
     Task<bool> ExistsAsync(Guid jobId);
@@ -23,10 +24,17 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     Task<JobRawModel?> GetAsync(Guid jobId);
     
     long Count(JobQueryCriteria queryCriteria);
+    /// <summary>
+    /// Returns the count of unacquired <c>OnMaster</c> jobs matching the criteria and the earliest
+    /// <c>NextPlanExecutionAt</c> among them. MetadataFilters are not supported and will throw.
+    /// </summary>
+    Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria);
     
     void ReleasePartitionLock(Guid jobId);
     
-    void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? excludeStatuses = null);
+    Task BulkUpdateAsync(BulkJobUpdateRequest request);
+    
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels);
 
     Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);

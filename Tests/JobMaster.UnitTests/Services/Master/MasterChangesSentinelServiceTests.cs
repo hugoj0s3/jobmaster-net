@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using Moq;
 using JobMaster.Sdk.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Services.Master;
 
@@ -17,7 +18,7 @@ public class MasterChangesSentinelServiceTests
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
-        var sentinelKey = new JobMasterSentinelKeys(clusterId).BucketsAvailableForJobs();
+        var sentinelKey = new JobMasterSentinelKeys(clusterId).AllBuckets();
 
         var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Strict);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
@@ -44,7 +45,7 @@ public class MasterChangesSentinelServiceTests
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
-        var sentinelKey = new JobMasterSentinelKeys(clusterId).BucketsAvailableForJobs();
+        var sentinelKey = new JobMasterSentinelKeys(clusterId).AllBuckets();
 
         var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Strict);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
@@ -73,7 +74,7 @@ public class MasterChangesSentinelServiceTests
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
-        var sentinelKey = new JobMasterSentinelKeys(clusterId).BucketsAvailableForJobs();
+        var sentinelKey = new JobMasterSentinelKeys(clusterId).AllBuckets();
 
         var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Strict);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
@@ -90,7 +91,8 @@ public class MasterChangesSentinelServiceTests
             new SentinelRecordDto { Id = sentinelKey, LastUpdate = dbUpdate });
 
         repo.Setup(x => x.Get(MasterGenericRecordGroupIds.Sentinel, sentinelKey, false)).Returns(entry);
-        cache.Setup(x => x.Set(sentinelKey, It.Is<DateTime?>(dt => dt == dbUpdate), null));
+        cache.Setup(x => x.Set(sentinelKey, It.Is<DateTime?>(dt => dt == dbUpdate), null))
+            .Returns(new JobMasterInMemoryCacheItem<DateTime?>(DateTime.UtcNow, DateTime.UtcNow.AddHours(8), dbUpdate));
 
         var sut = new MasterChangesSentinelService(clusterConfig, cache.Object, repo.Object);
 
@@ -107,7 +109,7 @@ public class MasterChangesSentinelServiceTests
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
-        var sentinelKey = new JobMasterSentinelKeys(clusterId).BucketsAvailableForJobs();
+        var sentinelKey = new JobMasterSentinelKeys(clusterId).AllBuckets();
 
         var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Strict);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
@@ -150,7 +152,7 @@ public class MasterChangesSentinelServiceTests
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
-        var sentinelKey = new JobMasterSentinelKeys(clusterId).BucketsAvailableForJobs();
+        var sentinelKey = new JobMasterSentinelKeys(clusterId).AllBuckets();
 
         var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Strict);
         var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Strict);
@@ -189,7 +191,7 @@ public class MasterChangesSentinelServiceTests
         public DateTime LastUpdate { get; set; }
     }
 
-    private static string NewClusterId() => $"c{Guid.NewGuid():N}";
+    private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
         => JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
 using Npgsql;
 
 namespace JobMaster.IntegrationTests.Utils;
@@ -52,7 +52,7 @@ public static class PostgresTestDbUtil
 
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}message_dispatcher");
         await DropTableIfExistsAsync(cnn, $"{tablePrefix}bucket_dispatcher");
-        await DropTableIfExistsAsync(cnn, $"{tablePrefix}agent_conn_footprint");
+        await DropTableIfExistsAsync(cnn, $"{tablePrefix}agent_conn_fingerprint");
     }
 
     private static async Task DropTableIfExistsAsync(NpgsqlConnection cnn, string tableName)

@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
+using JobMaster.Sdk.Utils;
 using Moq;
 using Xunit;
 using Xunit.Abstractions;
@@ -57,7 +58,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithTimeSpanInterval_ShouldGenerateDatesWithinHorizon()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var interval = TimeSpan.FromSeconds(5);
@@ -115,7 +116,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithPastBaseDateTime_ShouldGenerateFutureDates()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow.AddMinutes(-10); // 10 minutes in the past
         var horizon = TimeSpan.FromMinutes(5);
         var interval = TimeSpan.FromSeconds(10);
@@ -168,7 +169,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithBaseDateTimeBeyondHorizon_ShouldReturnEmpty()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow.AddMinutes(10); // 10 minutes in the future
         var horizon = TimeSpan.FromMinutes(5);
         var interval = TimeSpan.FromSeconds(5);
@@ -203,7 +204,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithEndBefore_ShouldRespectEndBound()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var endBefore = DateTime.UtcNow.AddMinutes(2); // End after 2 minutes
@@ -248,7 +249,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithOneMinuteInterval_ShouldGenerateCorrectCount()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var interval = TimeSpan.FromMinutes(1);
@@ -296,7 +297,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithNaturalCron_ShouldGenerateDatesWithinHorizon()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var compiler = new NaturalCronExprCompiler();
@@ -349,7 +350,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithNaturalCron_PastBaseDateTime_ShouldGenerateFutureDates()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow.AddMinutes(-10);
         var horizon = TimeSpan.FromMinutes(5);
         var compiler = new NaturalCronExprCompiler();
@@ -391,7 +392,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithNaturalCron_BaseDateTimeBeyondHorizon_ShouldReturnEmpty()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow.AddMinutes(10);
         var horizon = TimeSpan.FromMinutes(5);
         var compiler = new NaturalCronExprCompiler();
@@ -425,7 +426,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithNaturalCron_EndBefore_ShouldRespectEndBound()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var endBefore = DateTime.UtcNow.AddMinutes(2);
@@ -464,7 +465,7 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithNaturalCron_OneMinute_ShouldGenerateCorrectCount()
     {
         // Arrange
-        var recurringScheduleId = Guid.NewGuid();
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow;
         var horizon = TimeSpan.FromMinutes(5);
         var interval = TimeSpan.FromMinutes(1);

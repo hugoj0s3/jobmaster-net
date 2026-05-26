@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -81,35 +82,50 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         });
     }
 
-    public async Task UpsertAsync(JobRawModel jobRaw)
+    public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
     {
+        ValidateJobExecutionOutcome(jobRaw, addJobExecution);
+
         try
         {
-            await operationThrottler.ExecAsync(() => DoUpsertAsync(jobRaw));
+            await operationThrottler.ExecAsync(() => masterJobsRepository.UpdateAsync(jobRaw, addJobExecution));
         }
         catch (JobMasterVersionConflictException e)
         {
-            this.logger.Error("Job version conflict", JobMasterLogSubjectType.Job, jobRaw.Id, e);
+            this.logger.Error("Job version conflict", JobMasterLogCategory.Job, jobRaw.Id, e);
             throw;
         }
     }
 
-    public void Upsert(JobRawModel jobRaw)
+    public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
     {
+        ValidateJobExecutionOutcome(jobRaw, addJobExecution);
+        
         try
         {
-            operationThrottler.Exec(() => DoUpsert(jobRaw));
+            operationThrottler.Exec(() => masterJobsRepository.Update(jobRaw, addJobExecution));
         }
         catch (JobMasterVersionConflictException e)
         {
-            this.logger.Error("Job version conflict", JobMasterLogSubjectType.Job, jobRaw.Id, e);
+            this.logger.Error("Job version conflict", JobMasterLogCategory.Job, jobRaw.Id, e);
             throw;
         }
+    }
+
+    public Task AddJobExecutionAsync(JobExecution jobExecution)
+    {
+        jobExecution.EnsureFinalized();
+        return operationThrottler.ExecAsync(() => masterJobsRepository.AddJobExecutionAsync(jobExecution));
+    }
+
+    public Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId)
+    {
+        return operationThrottler.ExecAsync(() => masterJobsRepository.QueryJobExecutionsAsync(jobId));
     }
 
     public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
-        var partitionLockId = Guid.NewGuid();
+        var partitionLockId = JobMasterRandomUtil.NewGuid7();
         return await retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
@@ -131,6 +147,11 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     public long Count(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Count(queryCriteria));
+    }
+
+    public Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria)
+    {
+        return operationThrottler.ExecAsync(() => masterJobsRepository.ProbeForAcquireAsync(queryCriteria));
     }
 
     public JobRawModel? Get(Guid jobId)
@@ -175,17 +196,43 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return job.Version == expectedVersion;
     }
 
-    public void BulkUpdateStatus(IList<Guid> jobIds, JobMasterJobStatus status, string? agentConnectionId, string? agentWorkerId, string? bucketId, IList<JobMasterJobStatus>? negateStatuses = null)
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
-        if (jobIds.Count <= 0)
-        {
-            return;
-        }
-        
-        operationThrottler.Exec(() => { masterJobsRepository.BulkUpdateStatus(jobIds, status, agentConnectionId, agentWorkerId, bucketId, negateStatuses); return true; });
+        if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
+        await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
     }
 
-    private void DoUpsert(JobRawModel jobRaw) => masterJobsRepository.Upsert(jobRaw);
-
-    private Task DoUpsertAsync(JobRawModel jobRaw) => masterJobsRepository.UpsertAsync(jobRaw);
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
+    }
+    
+    
+    private static void ValidateJobExecutionOutcome(JobRawModel jobRaw, JobExecution? addJobExecution)
+    {
+        if (jobRaw.Status == JobMasterJobStatus.Succeeded &&
+            addJobExecution != null &&
+            addJobExecution.Outcome != JobExecutionOutcomeStatus.Succeeded)
+        {
+            throw new ArgumentException("Job execution outcome must be succeeded when job status is succeeded.");
+        }
+        
+        
+        if (jobRaw.Status == JobMasterJobStatus.Failed &&
+            addJobExecution != null &&
+            addJobExecution.Outcome != JobExecutionOutcomeStatus.Failed)
+        {
+            throw new ArgumentException("Job execution outcome must be failed when job status is failed.");
+        }
+        
+        if (addJobExecution != null && 
+            addJobExecution.Outcome != JobExecutionOutcomeStatus.Succeeded 
+            && jobRaw.Status != JobMasterJobStatus.Failed)
+        {
+            throw new ArgumentException("Job execution outcome must be succeeded or failed when job status is not failed.");
+        }
+        
+        addJobExecution?.EnsureFinalized();
+    }
 }

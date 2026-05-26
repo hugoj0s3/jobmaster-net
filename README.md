@@ -1,5 +1,5 @@
 # JobMaster .Net
-## Distributed job orchestration engine for .NET. Oriented to horizontal scalling and flexibility.
+## Distributed job orchestration engine for .NET. Oriented to horizontal scalling and flexibility
 
 JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. By decoupling coordination from execution, it allows developers to scale their infrastructure horizontally based on workload demands.
 
@@ -8,8 +8,8 @@ JobMaster is a framework designed to manage and execute background tasks across 
 ## 📋 Overview
 JobMaster provides a architecture to handle job lifecycles. It is built to be transport-agnostic, supporting RDBMS (PostgreSQL, SQL Server, MySQL) and Message Brokers (NATS JetStream).
 
-## 🚀 Quick Start (Standalone Mode)
-Standalone mode is the easiest way to start. It uses a single database for both coordination and job storage, with no external brokers required.
+## 🚀 Quick Start (Standalone Setup)
+Standalone setup is the easiest way to start. It uses a single database connection for both coordination and job storage, with no external brokers/database required.
 
 ### Configuration
 Register JobMaster in your `Program.cs`. This sets up the database and attaches a background worker automatically.
@@ -192,6 +192,10 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
   - One-off and recurring scheduling, `IJobHandler`, attributes and metadata
   - See: [docs/Scheduling.md](docs/Scheduling.md)
 
+- **Architecture Overview**
+  - Core concepts, planes (Orchestration & Durable Storage vs. Transport Layer), and standard assignment vs. high-speed SavePending shortcut flows.
+  - See: [docs/ArchitectureOverview.md](docs/ArchitectureOverview.md)
+
 - **Cluster, Agent Connections, and Workers Configuration**
   - Cluster setup, agent connections, workers, lanes, buckets, batch sizing
   - See:
@@ -199,6 +203,10 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
     - [docs/WorkersConfiguration.md](docs/WorkersConfiguration.md)
     - [docs/AgentsConfiguration.md](docs/AgentsConfiguration.md)
     - [docs/ClusterConfiguration.md](docs/ClusterConfiguration.md)
+
+- **Architecture & Performance Tuning Guide**
+  - Tuning JobMaster like a database: sizing coordinators, workers, lanes, and bucket partitions.
+  - See: [docs/ArchitectureTuningGuide.md](docs/ArchitectureTuningGuide.md)
 
 - **Repositories / Transport Providers**
   - Postgres, MySQL, SQL Server, NATS JetStream

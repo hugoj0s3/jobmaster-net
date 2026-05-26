@@ -25,8 +25,6 @@ internal static class MasterGenericRecordGroupIds
     public const string AgentConnectionHeartbeat = "AgentConnectionHeartbeat";
     public const string HostHeartbeat = "HostHeartbeat";
     
-    public const string Log = "Log";
-    
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
     
@@ -38,8 +36,6 @@ internal class GenericRecordEntry : JobMasterBaseModel
     public string RecordUniqueId { get; private set; } = string.Empty;
     public string EntryId { get; private set; } = string.Empty;
     public string GroupId { get; private set; } = string.Empty;
-    public string? SubjectType { get; set; }
-    public string? SubjectId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? ExpiresAt { get; set; }
     public IDictionary<string, object?> Values { get; set; } = new Dictionary<string, object?>();
@@ -62,44 +58,20 @@ internal class GenericRecordEntry : JobMasterBaseModel
         string clusterId,
         string groupId,
         string entryId,
-        string scopeType,
-        string subjectId,
         T obj,
         DateTime? expiresAt = null)
     {
-        return CreateImpl(clusterId, groupId, entryId, scopeType, subjectId, obj, expiresAt);
+        return CreateImpl(clusterId, groupId, entryId, obj, expiresAt);
     }
 
     public static GenericRecordEntry Create<T>(
         string clusterId,
         string groupId,
-        string entryId,
-        T obj,
-        DateTime? expiresAt = null)
-    {
-        return CreateImpl(clusterId, groupId, entryId, null, null, obj, expiresAt);
-    }
-    
-    public static GenericRecordEntry Create<T>(
-        string clusterId,
-        string groupId,
         Guid entryId,
         T obj,
         DateTime? expiresAt = null)
     {
-        return CreateImpl(clusterId, groupId, entryId, null, null, obj, expiresAt);
-    }
-    
-    public static GenericRecordEntry Create<T>(
-        string clusterId,
-        string groupId,
-        Guid entryId,
-        string subjectType,
-        string subjectId,
-        T obj,
-        DateTime? expiresAt = null)
-    {
-        return CreateImpl(clusterId, groupId, entryId,subjectType, subjectId, obj, expiresAt);
+        return CreateImpl(clusterId, groupId, entryId, obj, expiresAt);
     }
     
     public IReadableMetadata ToReadable() => new Metadata(this.DictionaryShallowCopy());
@@ -111,8 +83,8 @@ internal class GenericRecordEntry : JobMasterBaseModel
         IWritableMetadata metadata,
         DateTime? expiresAt = null)
     {
-        EnsureIdsIsValid(clusterId, groupId, entryId, null);
-        
+        EnsureIdsIsValid(clusterId, groupId, entryId);
+
         var dict = metadata.ToDictionary();
         return new GenericRecordEntry(clusterId)
         {
@@ -124,54 +96,26 @@ internal class GenericRecordEntry : JobMasterBaseModel
             Values = dict,
         };
     }
-    
-    public static GenericRecordEntry FromWritableMetadata(  
-        string clusterId,
-        string groupId,
-        Guid entryId,
-        string subjectType,
-        string subjectId,
-        IWritableMetadata metadata,
-        DateTime? expiresAt = null)
-    {
-        EnsureIdsIsValid(clusterId, groupId, entryId.ToString("N"), subjectId);
-        var dict = metadata.ToDictionary();
-        return new GenericRecordEntry(clusterId)
-        {
-            RecordUniqueId = UniqueId(clusterId, groupId, entryId),
-            GroupId = groupId,
-            EntryId = entryId.ToString("N"),
-            SubjectType = subjectType,
-            SubjectId = subjectId,
-            CreatedAt = DateTime.UtcNow,
-            ExpiresAt = expiresAt,
-            Values = dict,
-        };
-    }
 
     private static GenericRecordEntry CreateImpl<T>(
         string clusterId,
         string groupId,
         Guid entryId,
-        string? subjectType,
-        string? subjectId,
         T obj,
         DateTime? expiresAt = null)
     {
         var entryIdStr = entryId.ToString("N");
-        return CreateImpl(clusterId, groupId, entryIdStr, subjectType, subjectId, obj, expiresAt);
+        return CreateImpl(clusterId, groupId, entryIdStr, obj, expiresAt);
     }
 
     private static GenericRecordEntry CreateImpl<T>(
         string clusterId,
         string groupId,
         string entryId,
-        string? subjectType,
-        string? subjectId,
         T obj,
-        DateTime? expiresAt = null) 
+        DateTime? expiresAt = null)
     {
-        EnsureIdsIsValid(clusterId, groupId, entryId, subjectId);
+        EnsureIdsIsValid(clusterId, groupId, entryId);
 
         var uniqueId = UniqueId(clusterId, groupId, entryId);
 
@@ -193,8 +137,6 @@ internal class GenericRecordEntry : JobMasterBaseModel
             GroupId = groupId,
             EntryId = entryId,
             ExpiresAt = expiresAt,
-            SubjectType = subjectType,
-            SubjectId = subjectId,
             CreatedAt = DateTime.UtcNow,
             Values = values
         };
@@ -426,16 +368,11 @@ internal class GenericRecordEntry : JobMasterBaseModel
         catch { return null; }
     }
     
-    private static void EnsureIdsIsValid(string clusterId, string groupId, string entryId, string? subjectId)
+    private static void EnsureIdsIsValid(string clusterId, string groupId, string entryId)
     {
         if (!JobMasterStringUtils.IsValidForId(clusterId) || !JobMasterStringUtils.IsValidForId(groupId) || !JobMasterStringUtils.IsValidForId(entryId))
         {
             throw new ArgumentException($"Invalid ID format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. clusterId: {clusterId}, groupId: {groupId}, entryId: {entryId}");
-        }
-
-        if (subjectId != null && !JobMasterStringUtils.IsValidForId(subjectId))
-        {
-            throw new ArgumentException($"Invalid subject ID format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. subjectId: {subjectId}");
         }
     }
     

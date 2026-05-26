@@ -6,38 +6,50 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace JobMaster.Api.ApiModels;
 
+/// <summary>Query criteria for filtering and paginating jobs.</summary>
 public class ApiJobQueryCriteria
 {
+    /// <summary>Filter by a single job status.</summary>
     public JobMasterJobStatus? Status { get; set; }
-   
+    /// <summary>Filter by multiple job statuses (OR condition).</summary>
     public JobMasterJobStatus[]? Statuses { get; set; }
-
+    /// <summary>Filter by job priority.</summary>
     public JobMasterPriority? Priority { get; set; }
-    
+    /// <summary>Upper bound for the next planned execution window.</summary>
     public DateTime? NextPlanExecutionAtTo { get; set; }
+    /// <summary>Lower bound for the next planned execution window.</summary>
     public DateTime? NextPlanExecutionAtFrom { get; set; }
-    
+    /// <summary>Lower bound for the scheduled execution time.</summary>
     public DateTime? ScheduledFrom { get; set; }
+    /// <summary>Upper bound for the scheduled execution time.</summary>
     public DateTime? ScheduledTo { get; set; }
-    
+    /// <summary>Upper bound for the process deadline.</summary>
     public DateTime? ProcessDeadlineTo { get; set; }
+    /// <summary>Filter by one or more trigger source types.</summary>
     public JobMasterTriggerSourceType[]? TriggerSourceTypes { get; set; }
+    /// <summary>Filter by multiple source IDs (base64url-encoded GUIDs).</summary>
     public string[]? SourceIds { get; set; }
+    /// <summary>Filter by a single source ID (base64url-encoded GUID).</summary>
     public string? SourceId { get; set; }
-    
+    /// <summary>Filter by job definition ID.</summary>
     public string? JobDefinitionId { get; set; }
-   
-    
+    /// <summary>Filter by worker ID.</summary>
     public string? WorkerId { get; set; }
+    /// <summary>Filter by agent connection ID.</summary>
     public string? AgentConnectionId { get; set; }
+    /// <summary>Filter by host ID.</summary>
     public string? HostId { get; set; }
+    /// <summary>Filter by bucket ID.</summary>
     public string? BucketId { get; set; }
-
+    /// <summary>Filter by worker lane.</summary>
     public string? WorkerLane { get; set; }
-    
+    /// <summary>Maximum number of results to return. Defaults to 25.</summary>
     public int? CountLimit { get; set; }
+    /// <summary>Number of results to skip before returning.</summary>
     public int? Offset { get; set; }
-    public string? MetadataFiltersJson { get; set; } 
+    /// <summary>JSON-encoded list of metadata filters to apply.</summary>
+    public string? MetadataFiltersJson { get; set; }
+    /// <summary>Optional sort specification.</summary>
     public ApiSortByCriteria? SortBy { get; set; } 
    
     internal JobQueryCriteria ToDomainCriteria()

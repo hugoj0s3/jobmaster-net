@@ -14,7 +14,7 @@ internal class RecurringSchedule : JobMasterBaseModel
 {
     internal RecurringSchedule(string clusterId) : base(clusterId)
     {
-        Id = JobMasterRandomUtil.NewGuid();
+        Id = JobMasterRandomUtil.NewGuid7();
         RecurringScheduleType = RecurringScheduleType.Dynamic;
         CreatedAt = DateTime.UtcNow;
         Status = RecurringScheduleStatus.PendingSave;

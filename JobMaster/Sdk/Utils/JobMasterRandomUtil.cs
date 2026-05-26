@@ -1,6 +1,6 @@
 using System.Buffers;
 using System.Security.Cryptography;
-#if NET
+#if NET6_0_OR_GREATER
 using SecurityDriven.Core;
 #endif
 
@@ -9,12 +9,20 @@ namespace JobMaster.Sdk.Utils;
 internal static class JobMasterRandomUtil
 {
 #if NETSTANDARD2_0
-    private static readonly ThreadLocal<Random> ThreadLocalRandom = new ThreadLocal<Random>(() => new Random());
-    private static Random Rnd => ThreadLocalRandom.Value;
     private static readonly RandomNumberGenerator Rng = RandomNumberGenerator.Create();
+    
+    private static readonly ThreadLocal<Random> ThreadLocalRandom = new ThreadLocal<Random>(() => 
+    {
+        byte[] seedBytes = new byte[4];
+        Rng.GetBytes(seedBytes);
+        int seed = BitConverter.ToInt32(seedBytes, 0);
+        return new Random(seed);
+    });
+    
+    private static Random Rnd => ThreadLocalRandom.Value;
 #endif
 
-#if NET
+#if NET6_0_OR_GREATER
     private static readonly CryptoRandom Rnd = new();
 #endif
     public static int GetInt() => Rnd.Next();
@@ -27,15 +35,18 @@ internal static class JobMasterRandomUtil
     
     public static bool GetBoolean() => Rnd.Next() % 2 == 0;
 
+    
+#if NET6_0_OR_GREATER
     public static void FillBytes(byte[] buffer) => Rnd.NextBytes(buffer);
-
-#if NET
     public static void FillBytes(Span<byte> buffer) => Rnd.NextBytes(buffer);
 #endif
+
 #if NETSTANDARD2_0
+    // Use Rng here so it matches the security of the Span<byte> version below
+    public static void FillBytes(byte[] buffer) => Rng.GetBytes(buffer); 
+
     public static void FillBytes(Span<byte> buffer)
     {
-        // netstandard2.0 lacks RandomNumberGenerator.Fill(Span<byte>)
         byte[] rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
         try
         {
@@ -65,23 +76,41 @@ internal static class JobMasterRandomUtil
         return GetDouble() < probability;
     }
 
-    public static T GetEnum<T>() where T : struct
+    public static T GetEnum<T>() where T : struct, Enum
     {
-        if (!typeof(T).IsEnum)
-        {
-            throw new ArgumentException();
-        }
-
-        var values = Enum.GetValues(typeof(T));
+        var values = EnumCache<T>.Values;
         if (values.Length == 0)
         {
-            throw new ArgumentException();
+            throw new ArgumentException($"Enum {typeof(T).Name} has no values.");
         }
         
-        var result = (T)(values.GetValue(GetInt(values.Length)) ?? throw new InvalidOperationException());
-
-        return result;
+        return values[GetInt(values.Length)];
     }
     
-    public static Guid NewGuid() => Guid.NewGuid();
+    // This nested class automatically caches the array per-type the first time it is accessed!
+    private static class EnumCache<T> where T : struct, Enum
+    {
+        public static readonly T[] Values = (T[])Enum.GetValues(typeof(T));
+    }
+    
+    public static Guid NewGuid4() => Guid.NewGuid();
+    
+    public static Guid NewGuid7() => DoNewGuid7(DateTimeOffset.UtcNow);
+
+    private static Guid DoNewGuid7(DateTimeOffset timestamp)
+    {
+        var unixMilliseconds = timestamp.ToUnixTimeMilliseconds();
+
+        var timeHigh = (uint)(unixMilliseconds >> 16);
+        var timeLow = (ushort)unixMilliseconds;
+
+        Span<byte> bytes = stackalloc byte[10];
+        FillBytes(bytes);
+
+        var randA = (ushort)(0x7000u | ((bytes[0] & 0xF) << 8) | bytes[1]);
+
+        return new Guid(timeHigh, timeLow, randA,
+            (byte)(bytes[2] & 0x3F | 0x80), bytes[3], bytes[4], bytes[5],
+            bytes[6], bytes[7], bytes[8], bytes[9]);
+    }
 }
