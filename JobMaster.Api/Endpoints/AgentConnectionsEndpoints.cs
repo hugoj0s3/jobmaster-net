@@ -20,9 +20,9 @@ internal static class AgentConnectionsEndpoints
     {
         var agentConnections = group.GetClusterEntityGroup("agent-connections");
 
-        agentConnections.MapGet("/", ListAgentConnectionsAsync);
-        agentConnections.MapGet("/count", CountAgentConnectionsAsync);
-        agentConnections.MapGet("/{agentConnectionId}", GetAgentConnectionAsync);
+        agentConnections.MapGet("/", ListAgentConnectionsAsync).Produces<List<ApiAgentConnection>>();
+        agentConnections.MapGet("/count", CountAgentConnectionsAsync).Produces<int>();
+        agentConnections.MapGet("/{agentConnectionId}", GetAgentConnectionAsync).Produces<ApiAgentConnection>();
 
         return group;
     }

@@ -1,0 +1,40 @@
+namespace JobMaster.Dashboard.Configurations.Themes;
+
+public enum DashboardBuiltInTheme
+{
+    JobMasterLight = 1,
+    JobMasterDark = 2,
+
+    Light = 3,
+    Dark = 4,
+    Cupcake = 5,
+    Bumblebee = 6,
+    Emerald = 7,
+    Corporate = 8,
+    Synthwave = 9,
+    Retro = 10,
+    Cyberpunk = 11,
+    Valentine = 12,
+    Halloween = 13,
+    Garden = 14,
+    Forest = 15,
+    Aqua = 16,
+    Lofi = 17,
+    Pastel = 18,
+    Fantasy = 19,
+    Wireframe = 20,
+    Black = 21,
+    Luxury = 22,
+    Dracula = 23,
+    Cmyk = 24,
+    Autumn = 25,
+    Business = 26,
+    Acid = 27,
+    Lemonade = 28,
+    Night = 29,
+    Coffee = 30,
+    Winter = 31,
+    Dim = 32,
+    Nord = 33,
+    Sunset = 34
+}

@@ -14,9 +14,9 @@ internal static class LogsEndpoints
     {
         var logs = group.GetClusterEntityGroup("logs");
 
-        logs.MapGet("/", QueryLogsAsync);
-        logs.MapGet("/{id}", GetLogAsync);
-        logs.MapGet("/count", CountLogsAsync);
+        logs.MapGet("/", QueryLogsAsync).Produces<List<ApiLogItem>>();
+        logs.MapGet("/{id}", GetLogAsync).Produces<ApiLogItem>();
+        logs.MapGet("/count", CountLogsAsync).Produces<int>();
 
         return group;
     }

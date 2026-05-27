@@ -138,7 +138,7 @@
 			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
 			const [workersResponse, hostsResponse] = await Promise.all([
-				jmApi.GET("/{clusterId}/workers", {
+				(jmApi as any).GET("/{clusterId}/workers", {
 					params: { path: { clusterId: cid } }
 				}),
 				jmApi.GET("/{clusterId}/hosts", {

@@ -1,12 +1,14 @@
-<script lang="ts">
-	import { createEventDispatcher } from "svelte";
-
+<script context="module" lang="ts">
 	export type SearchSelectOption = {
 		value: string;
 		label: string;
 		description?: string;
 	};
+</script>
 
+<script lang="ts">
+	import { createEventDispatcher } from "svelte";
+	
 	export let open = false;
 	export let title = "Pesquisar";
 	export let placeholder = "Digite para pesquisar...";

@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -47,7 +47,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private ManualJobsExecutionRunner? fallBackRunner;
     private FallbackBucketJobsOnboardingSource? fallbackOnboardingSource;
     private BucketModel? fallbackBucket;
-    
+
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
     private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
 
@@ -154,7 +154,9 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
             var timeRemaining = cutOffTime - DateTime.UtcNow;
             using var batchTimeoutCts =
-                new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5) ? timeRemaining : TimeSpan.FromSeconds(5));
+                new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5)
+                    ? timeRemaining
+                    : TimeSpan.FromSeconds(5));
             var parallelOptions = new ParallelOptions()
             {
                 CancellationToken = batchTimeoutCts.Token,
@@ -164,10 +166,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             await JobMasterParallelUtil.ForEachAsync(
                 updatedJobs,
                 parallelOptions,
-                async (job, _) => {
+                async (job, _) =>
+                {
                     if (cutOffTime <= DateTime.UtcNow)
                     {
-                        logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.", JobMasterLogCategory.AgentWorker,
+                        logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.",
+                            JobMasterLogCategory.AgentWorker,
                             BackgroundAgentWorker.AgentWorkerId);
                         return;
                     }
@@ -185,11 +189,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         {
             if (probeDiagnosticResult.LockToken != null)
             {
-                masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!, probeDiagnosticResult.LockToken);
+                masterDistributedLockerService.ReleaseLock(probeDiagnosticResult.LockKey!,
+                    probeDiagnosticResult.LockToken);
             }
         }
     }
-    
+
     public override async Task OnStopAsync()
     {
         await base.OnStopAsync();
@@ -201,7 +206,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         await base.OnTerminateFailureAsync(ex);
         await MarkFallbackBucketAsReadyToDeleteAsync();
     }
-    
+
     private async Task MarkFallbackBucketAsReadyToDeleteAsync()
     {
         if (!string.IsNullOrEmpty(this.fallbackBucket?.Id))
@@ -213,7 +218,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     }
 
 
-    private async Task DispatchJobToBucketAsync(IReadOnlyDictionary<Guid, BucketModel> jobIdByBucketModel, JobRawModel job)
+    private async Task DispatchJobToBucketAsync(IReadOnlyDictionary<Guid, BucketModel> jobIdByBucketModel,
+        JobRawModel job)
     {
         if (!jobIdByBucketModel.TryGetValue(job.Id, out var bucket))
         {
@@ -224,7 +230,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
         try
         {
-            await BackgroundAgentWorker.WorkerClusterOperations.DispatchJobToBucketAsync(this.BackgroundAgentWorker, job, bucket);
+            await BackgroundAgentWorker.WorkerClusterOperations.DispatchJobToBucketAsync(this.BackgroundAgentWorker,
+                job, bucket);
         }
         catch (Exception e)
         {
@@ -354,11 +361,11 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             fallbackCreationLock.Release();
         }
     }
-    
+
     private string BucketFailureKey(JobRawModel job) =>
         $"{BackgroundAgentWorker.ClusterConnConfig.ClusterId}_{job.WorkerLane}_{job.Priority}";
-    
-    private enum HandleJobBucketAssignmentResult 
+
+    private enum HandleJobBucketAssignmentResult
     {
         Success,
         FallbackAssignment,
@@ -366,7 +373,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         Canceled
     }
 
-    private async Task<ProbeDiagnosticResult> ProbeDiagnosticAsync(JobQueryCriteria jobQueryCriteria, TimeSpan transientThreshold)
+    private async Task<ProbeDiagnosticResult> ProbeDiagnosticAsync(JobQueryCriteria jobQueryCriteria,
+        TimeSpan transientThreshold)
     {
         var durationToLock = JobMasterConstants.DurationToLockRecords.Add(TimeSpan.FromMinutes(1));
         var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;

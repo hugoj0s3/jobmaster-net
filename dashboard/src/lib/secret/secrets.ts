@@ -3,8 +3,8 @@
 export type SecretAuthProvider =
     | { type: "API_KEY"; headerName?: string }
     | { type: "USER_PASSWORD"; userHeaderName?: string; passwordHeaderName?: string }
-    | { type: "JWT_CUSTOM_FORM"; transport?: { header?: string; scheme?: string } }
-    | { type: "JWT_SSO"; transport?: { header?: string; scheme?: string } };
+    | { type: "JWT_SIMPLE"; headerName?: string; scheme?: string }
+    | { type: "JWT_CUSTOM_FORM"; transport?: { header?: string; scheme?: string } };
 
 export type SecretKeys = {
     apiKey: string | null;

@@ -1,17 +1,15 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Api.AspNetCore;
+using JobMaster.Dashboard.Configurations;
+using JobMaster.Dashboard.Configurations.Auth;
+using JobMaster.Dashboard.Configurations.Themes;
+using JobMaster.Dashboard.Ioc;
+using JobMaster.Dashboard.Middleware;
 using JobMaster.Ioc.Extensions;
-using JobMaster.MySql;
 using JobMaster.NatsJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
-using JobMaster.Postgres.Agents;
-using JobMaster.SqlBase;
-using JobMaster.SqlServer;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.Extensions.Configuration;
-using Microsoft.OpenApi.Models;
 using Serilog;
 using System.Text.RegularExpressions;
 
@@ -166,7 +164,77 @@ builder.Services.UseJobMasterApi(o =>
     // o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
 });
 
+builder.Services.AddJobMasterDashboard(dashboard =>
+{
+    dashboard.UseBasePath("/jm-dashboard");
+    dashboard.UseApiUrl("/jm-api");
 
+    dashboard.AddCluster("Cluster-1", "NATS Cluster");
+    dashboard.AddCluster("Cluster-Standalone-1", "Standalone Cluster");
+
+    dashboard.AddPrimaryTheme(DashboardBuiltInTheme.JobMasterLight, "JobMaster Light")
+        .SetBorderRadii(box: "0.75rem", btn: "0.5rem", badge: "99rem")
+        .SetFontSans("Inter", "system-ui", "sans-serif")
+        .SetFontMono("JetBrains Mono", "Fira Code", "monospace")
+        .Primary("oklch(55.04% 0.184 264.09)", "oklch(97% 0.01 264)")
+        .Secondary("oklch(58% 0.15 200)", "oklch(97% 0.01 200)")
+        .Accent("oklch(68% 0.18 330)", "oklch(20% 0.05 330)")
+        .Neutral("oklch(45% 0.02 264)", "oklch(95% 0.01 264)")
+        .BaseColors("oklch(98.5% 0.002 247)", "oklch(95% 0.004 247)", "oklch(90% 0.008 247)", "oklch(22% 0.02 264)")
+        .Info("oklch(62% 0.17 230)", "oklch(97% 0.01 230)")
+        .Success("oklch(62% 0.17 145)", "oklch(97% 0.01 145)")
+        .Warning("oklch(72% 0.18 65)", "oklch(15% 0.04 65)")
+        .Error("oklch(58% 0.22 25)", "oklch(97% 0.01 25)");
+
+    dashboard.AddTheme(DashboardBuiltInTheme.JobMasterDark, "JobMaster Dark")
+        .Primary("oklch(63% 0.20 264)", "oklch(15% 0.05 264)")
+        .Secondary("oklch(60% 0.16 200)", "oklch(15% 0.04 200)")
+        .Accent("oklch(72% 0.18 330)", "oklch(15% 0.05 330)")
+        .Neutral("oklch(35% 0.02 264)", "oklch(85% 0.01 264)")
+        .BaseColors("oklch(18% 0.015 264)", "oklch(14% 0.012 264)", "oklch(11% 0.010 264)", "oklch(90% 0.015 264)")
+        .Info("oklch(65% 0.17 230)", "oklch(15% 0.04 230)")
+        .Success("oklch(65% 0.17 145)", "oklch(15% 0.04 145)")
+        .Warning("oklch(75% 0.18 65)", "oklch(15% 0.04 65)")
+        .Error("oklch(62% 0.22 25)", "oklch(15% 0.04 25)");
+
+    dashboard.AddTheme(DashboardBuiltInTheme.Corporate, "Corporate Blue")
+        .DefaultForClusterId("Cluster-1")
+        .Primary("oklch(50% 0.22 230)", "oklch(97% 0.01 230)")
+        .Secondary("oklch(60% 0.10 230)", "oklch(97% 0.01 230)")
+        .Accent("oklch(58% 0.18 270)", "oklch(97% 0.01 270)")
+        .Neutral("oklch(42% 0.02 230)", "oklch(95% 0.01 230)")
+        .BaseColors("oklch(99% 0.002 230)", "oklch(96% 0.004 230)", "oklch(92% 0.006 230)", "oklch(20% 0.02 230)");
+
+    dashboard.AddTheme(DashboardBuiltInTheme.Dark, "Midnight Pro")
+        .DefaultForClusterId("Cluster-Standalone-1")
+        .Primary("oklch(72% 0.17 85)", "oklch(15% 0.02 85)")
+        .Secondary("oklch(55% 0.08 264)", "oklch(88% 0.01 264)")
+        .Accent("oklch(72% 0.18 195)", "oklch(15% 0.04 195)")
+        .Neutral("oklch(28% 0.015 280)", "oklch(85% 0.01 280)")
+        .BaseColors("oklch(12% 0.010 280)", "oklch(9% 0.008 280)", "oklch(7% 0.006 280)", "oklch(88% 0.015 264)")
+        .Error("oklch(62% 0.22 25)", "oklch(15% 0.04 25)");
+    //
+    // dashboard.AddApiKeyAuth()
+    //     .WithDisplayName("API Key")
+    //     .WithHeaderName("X-JobMaster-Key");
+    //
+    // dashboard.AddUserPasswordAuth()
+    //     .WithDisplayName("Username & Password")
+    //     .WithUserHeaderName("X-JobMaster-User")
+    //     .WithPasswordHeaderName("X-JobMaster-Pwd");
+    //
+    // dashboard.AddSimpleJwtAuth()
+    //     .WithDisplayName("Bearer Token");
+    //
+    // dashboard.AddJwtFormAuth("/jm-api/auth/token")
+    //     .WithDisplayName("Login")
+    //     .AddField("username", "Email")
+    //     .AddField("password", "Password", DashboardJwtFormFieldType.Password)
+    //     .AddField("tenant", "Organization", isRequired: false, defaultValue: "default");
+
+    dashboard.ConfigureCredentialsPersistence()
+        .SetPersistenceType(DashboardCredentialsPersistenceType.ServerSideInMemory);
+});
 
 builder.Services.AddEndpointsApiExplorer();
 
@@ -206,6 +274,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapJobMasterApi();
+app.UseJobMasterDashboard();
+app.MapJobMasterDashboard();
 
 await app.Services.StartJobMasterRuntimeAsync();
 

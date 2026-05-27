@@ -170,7 +170,7 @@
 
 			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const response = await jmApi.GET("/{clusterId}/hosts", {
+			const response = await (jmApi as any).GET("/{clusterId}/hosts", {
 				params: { path: { clusterId: cid } }
 			});
 
@@ -396,7 +396,7 @@
 					]}
 					value={sort}
 					on:change={(e) => {
-						sort = e.detail;
+						sort = e.detail as "" | "recent" | "oldest" | "online";
 						pageIndex = 0;
 					}}
 				/>

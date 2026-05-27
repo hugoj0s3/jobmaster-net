@@ -15,9 +15,9 @@ internal static class BucketsEndpoints
     {
         var buckets = group.GetClusterEntityGroup("buckets");
 
-	buckets.MapGet("/", QueryBucketsAsync);
-        buckets.MapGet("/count", CountBucketsAsync);
-        buckets.MapGet("/{bucketId}", GetBucket);
+	buckets.MapGet("/", QueryBucketsAsync).Produces<List<ApiBucketModel>>();
+        buckets.MapGet("/count", CountBucketsAsync).Produces<int>();
+        buckets.MapGet("/{bucketId}", GetBucket).Produces<ApiBucketModel>();
 
         return group;
     }

@@ -14,16 +14,17 @@
 	import Pager from "$lib/components/Pager.svelte";
 	import { copyText, createCopyFeedback } from "$lib/helper/clipboard-util";
 
-	type RecurringSchedule = components["schemas"]["RecurringSchedule"];
+	type RecurringSchedule = any;
 
 	const clusterId = () => $page.params.cluster;
 	const scheduleId = () => $page.params.id;
 
 	let schedule: RecurringSchedule | null = null;
 	let upcomingRuns: any[] = [];
-	let isLoading = true;
+	let isLoading = false;
 	let isLoadingUpcoming = false;
 	let error: string | null = null;
+	let notFound = false;
 	let upcomingRunsPage = 0;
 	let upcomingRunsPageSize = 10;
 
@@ -75,6 +76,7 @@
 		isLoadingUpcoming = true;
 		try {
 			const cid = clusterId();
+			if (!cid) return;
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
 			const response = await jm.GET("/{clusterId}/jobs", {
@@ -83,8 +85,7 @@
 					query: { 
 						SourceId: schedule.id,
 						CountLimit: 10,
-						SortByProperty: "ScheduledAt",
-						SortByAscending: true
+
 					}
 				}
 			});
@@ -117,19 +118,27 @@
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const response = await jm.GET("/{clusterId}/recurring-schedules/{id}", {
+			const response = await (jm as any).GET("/{clusterId}/recurring-schedules/{id}", {
 				params: {
 					path: { clusterId: cid, id: sid }
 				}
 			});
 
 			if (response.error) {
+				if (response.response?.status === 404) {
+					notFound = true;
+					return;
+				}
 				console.error("API error:", response.error);
 				error = "Failed to load schedule details";
 				return;
 			}
 
 			schedule = response.data as any;
+			if (!schedule) {
+				notFound = true;
+				return;
+			}
 			// Fetch upcoming runs after schedule is loaded
 			await fetchUpcomingRuns();
 		} catch (e) {
@@ -218,9 +227,16 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		{#if isLoading && !schedule}
-			<div class="flex items-center justify-center py-20">
-				<span class="loading loading-spinner loading-lg"></span>
+
+		{#if notFound}
+			<div class="alert alert-error text-sm mt-4">
+				<span>Recurring schedule not found.</span>
+			</div>
+		{:else}
+
+		{#if isLoading}
+			<div class="flex items-center justify-center p-12">
+				<span class="loading loading-spinner loading-lg text-primary"></span>
 			</div>
 		{:else if error && !schedule}
 			<div class="alert alert-error">
@@ -281,7 +297,7 @@
 										<div class="flex items-center justify-between gap-4">
 											<div class="text-sm opacity-70">Last Job Status</div>
 											<div class="flex items-center gap-2">
-												<span class={getLastJobBadgeClass()}>{lastJobStatusLabel}</span>
+												<span class={getLastJobBadgeClass(lastJobStatusLabel)}>{lastJobStatusLabel}</span>
 												<span class="text-sm opacity-70">{lastRunAgo}</span>
 											</div>
 										</div>
@@ -447,6 +463,7 @@
 					</div>
 				</div>
 			</div>
+		{/if}
 		{/if}
 	</div>
 </div>

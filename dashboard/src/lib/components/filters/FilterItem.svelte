@@ -1,19 +1,21 @@
+<script context="module" lang="ts">
+    export type Option<T> = { value: T; label: string };
+    
+    export type DatePreset =
+        | { type: "LAST_MINUTES"; minutes: number; label: string }
+        | { type: "NEXT_HOURS"; hours: number; label: string };
+</script>
+
 <script lang="ts">
     import { getContext } from "svelte";
     import { get } from "svelte/store";
     import { FILTERS_CTX_KEY, type FiltersContext } from "$lib/components/filters/context";
 
-    export type Option<T> = { value: T; label: string };
-    
     export let id: string;
     export let label: string;
     export let type: "datetime" | "multiselect" | "single";
 
     export let options: Option<any>[] = [];
-
-    export type DatePreset =
-        | { type: "LAST_MINUTES"; minutes: number; label: string }
-        | { type: "NEXT_HOURS"; hours: number; label: string };
 
     export let presets: DatePreset[] = [];
 

@@ -20,10 +20,10 @@ internal static class JobsEndpoints
     {
         var jobs = group.GetClusterEntityGroup("jobs");
 
-        jobs.MapGet("/", QueryJobsAsync);
-        jobs.MapGet("/count", CountJobsAsync);
-        jobs.MapGet("/{id}", GetJobAsync);
-        jobs.MapGet("/{id}/executions", GetJobExecutionsAsync);
+        jobs.MapGet("/", QueryJobsAsync).Produces<List<ApiJobModel>>();
+        jobs.MapGet("/count", CountJobsAsync).Produces<int>();
+        jobs.MapGet("/{id}", GetJobAsync).Produces<ApiJobModel>();
+        jobs.MapGet("/{id}/executions", GetJobExecutionsAsync).Produces<List<ApiJobExecution>>();
 
         return group;
     }

@@ -32,6 +32,7 @@
 	let isRefreshing = false;
 	let lastUpdatedAt = new Date();
 	let refreshError: string | null = null;
+	let notFound = false;
 
 	let activeJobs: ActiveJob[] = [];
 	let activeApiJobs: ApiJobModel[] = [];
@@ -162,11 +163,19 @@
 			]);
 
 			if (bucketResp.error) {
+				if (bucketResp.response?.status === 404) {
+					notFound = true;
+					return;
+				}
 				console.error("API error (bucket detail):", bucketResp.error);
 				refreshError = "Failed to load bucket.";
 				return;
 			}
 			bucket = (bucketResp.data ?? null) as ApiBucketModel | null;
+			if (!bucket) {
+				notFound = true;
+				return;
+			}
 
 			if (activeJobsResp.error) {
 				console.error("API error (bucket active jobs):", activeJobsResp.error);
@@ -318,6 +327,11 @@
 			<h1 class="text-2xl font-semibold">Bucket Detail</h1>
 		</div>
 
+		{#if notFound}
+			<div class="alert alert-error text-sm mt-4">
+				<span>Bucket not found.</span>
+			</div>
+		{:else}
 		<!-- Summary card -->
 		<div class="card mt-4 bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="card-body gap-4">
@@ -477,6 +491,7 @@
 				</div>
 			</div>
 		</div>
+		{/if}
 
 	</div>
 </div>

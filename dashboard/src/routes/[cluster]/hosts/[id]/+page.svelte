@@ -23,7 +23,7 @@
 	let lastClusterId: string | null = null;
 	let notFound = false;
 
-	$: hostName = host?.hostDisplayName ?? host?.id ?? "Unknown";
+	$: hostName = host?.displayName ?? host?.id ?? "Unknown";
 
 	$: hostStatus = deriveStatus(host);
 
@@ -37,7 +37,7 @@
 		}
 		
 		// Use isAlive property from API (same logic as hosts list page)
-		const label: HostStatusLabel = h.isAlive === false 
+		const label: HostStatusLabel = (h as any).isAlive === false 
 			? HostStatusUtil.Label.Offline 
 			: HostStatusUtil.Label.Online;
 
@@ -106,12 +106,11 @@
 					const workerIdStr = String(w.id || '').toLowerCase();
 					const workerDisplayNameStr = String(w.displayName || '').toLowerCase();
 					const hostIdStr = String(hid || '').toLowerCase();
-					const hostNameStr = String(host?.name || '').toLowerCase();
 					const hostDisplayNameStr = String(host?.displayName || '').toLowerCase();
 					
 					const matchesById = workerIdStr === hostIdStr;
-					const matchesByName = workerDisplayNameStr === hostNameStr || workerDisplayNameStr === hostDisplayNameStr;
-					const matchesWorkerName = workerIdStr === hostNameStr || workerIdStr === hostDisplayNameStr;
+					const matchesByName = workerDisplayNameStr === hostDisplayNameStr;
+					const matchesWorkerName = workerIdStr === hostDisplayNameStr;
 					
 					const matches = matchesById || matchesByName || matchesWorkerName;
 

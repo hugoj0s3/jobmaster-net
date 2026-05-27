@@ -6,7 +6,7 @@ export const load: PageLoad = async ({ fetch, params }) => {
 		const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
 		// Try to get the individual agent connection first
-		const connResponse = await jmApi.GET("/{clusterId}/agent-connections/{agentConnectionId}", {
+		const connResponse = await (jmApi as any).GET("/{clusterId}/agent-connections/{agentConnectionId}", {
 			params: { path: { clusterId: params.cluster, agentConnectionId: params.id } }
 		});
 
@@ -16,13 +16,13 @@ export const load: PageLoad = async ({ fetch, params }) => {
 		// If individual endpoint fails (404), try to get from list as fallback
 		if (!agentConnection && connResponse.error) {
 			try {
-				const listResponse = await jmApi.GET("/{clusterId}/agent-connections", {
+				const listResponse = await (jmApi as any).GET("/{clusterId}/agent-connections", {
 					params: { path: { clusterId: params.cluster } }
 				});
 				
 				if (!listResponse.error && listResponse.data) {
 					const allConnections = listResponse.data as any[];
-					agentConnection = allConnections.find(conn => conn.id === params.id) || null;
+					agentConnection = allConnections.find((conn: any) => conn.id === params.id) || null;
 					if (agentConnection) {
 						error = null; // Clear error since we found the connection
 					}
@@ -34,13 +34,13 @@ export const load: PageLoad = async ({ fetch, params }) => {
 
 		// Get workers and buckets (these should work even if individual endpoint fails)
 		const [workersResponse, bucketsResponse] = await Promise.all([
-			jmApi.GET("/{clusterId}/workers", {
+			(jmApi as any).GET("/{clusterId}/workers", {
 				params: {
 					path: { clusterId: params.cluster },
 					query: { AgentConnectionId: params.id }
 				}
 			}),
-			jmApi.GET("/{clusterId}/buckets", {
+			(jmApi as any).GET("/{clusterId}/buckets", {
 				params: {
 					path: { clusterId: params.cluster },
 					query: { AgentConnectionId: params.id }

@@ -14,9 +14,9 @@ internal static class HostsEndpoints
     {
         var hosts = group.GetClusterEntityGroup("hosts");
 
-        hosts.MapGet("/", ListHostsAsync);
-        hosts.MapGet("/count", CountHostsAsync);
-        hosts.MapGet("/{hostId}", GetHostAsync);
+        hosts.MapGet("/", ListHostsAsync).Produces<List<ApiHostModel>>();
+        hosts.MapGet("/count", CountHostsAsync).Produces<int>();
+        hosts.MapGet("/{hostId}", GetHostAsync).Produces<ApiHostModel>();
 
         return group;
     }

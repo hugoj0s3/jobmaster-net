@@ -220,9 +220,9 @@
                         return r.data as number;
                     }),
 
-                    jmApi.GET("/{clusterId}/hosts/count", {
+                    (jmApi as any).GET("/{clusterId}/hosts/count", {
                         params: { path: { clusterId: cid } }
-                    }).then((r) => {
+                    }).then((r: any) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
@@ -307,10 +307,10 @@
 
                 const upcomingTotal = onMasterCount + inBucketCount + queuedCount + processingCount;
 
-                const onlineWorkers = apiWorkers.filter((w: ApiWorkerModel) => w.isAlive === true);
-                const workerModes = onlineWorkers.map((w: ApiWorkerModel) => w.mode);
+                const onlineWorkers = apiWorkers.filter((w: any) => w.isAlive === true);
+                const workerModes = onlineWorkers.map((w: any) => w.mode);
                 const lastHb = onlineWorkers
-                    .map((w: ApiWorkerModel) => w.lastHeartbeatAt)
+                    .map((w: any) => w.lastHeartbeat ?? w.lastHeartbeatAt)
                     .filter(Boolean)
                     .sort()
                     .pop();

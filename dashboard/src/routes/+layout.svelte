@@ -8,6 +8,7 @@
     import Sidebar from "$lib/components/Sidebar.svelte";
 
     import {resolveThemeId, setStoredTheme} from "$lib/theme-helper";
+    import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
     let {children} = $props();
 
@@ -17,33 +18,44 @@
     let currentTheme = $state<any>(null);
 
     onMount(async () => {
-        const res = await fetch("/jobmaster-config.json");
-        config = await res.json();
+        config = await JobMasterConfigUtil.loadConfig(fetch);
         if (sessionStorage.getItem("jm_auth") === "true" || config.auth?.enabled != true) isLoggedIn = true;
     });
 
     function getUrlClusterIdFromPathname(pathname: string) {
         const parts = pathname.split("/").filter(Boolean);
-        const first = parts[0];
-        if (!first) return null;
-
-        const isCluster = config?.clusters?.some((c: any) => c.id === first) === true;
-        return isCluster ? first : null;
+        for (const part of parts) {
+            const cluster = config?.clusters?.find((c: any) => c.id.toLowerCase() === part.toLowerCase());
+            if (cluster) return cluster.id;
+        }
+        return null;
     }
 
     function getPathAfterCluster() {
+        const base = JobMasterConfigUtil.getBasePath();
+        const baseParts = base.split("/").filter(Boolean);
         const parts = $page.url.pathname.split("/").filter(Boolean);
-        const first = parts[0];
-        const isCluster = config?.clusters?.some((c: any) => c.id === first) === true;
-
-        const rest = isCluster ? parts.slice(1) : parts;
-        return `/${rest.join("/")}`;
+        
+        let filtered = parts;
+        if (baseParts.length > 0 && parts.slice(0, baseParts.length).every((p, idx) => p.toLowerCase() === baseParts[idx].toLowerCase())) {
+            filtered = parts.slice(baseParts.length);
+        }
+        
+        if (filtered.length > 0) {
+            const first = filtered[0];
+            const isCluster = config?.clusters?.some((c: any) => c.id.toLowerCase() === first.toLowerCase()) === true;
+            if (isCluster) {
+                filtered = filtered.slice(1);
+            }
+        }
+        
+        return `/${filtered.join("/")}`;
     }
 
     function handleClusterChange(id: string) {
         const after = getPathAfterCluster();
         const next = after === "/" ? "/dashboard" : after;
-        window.location.href = `/${id}${next}`;
+        window.location.href = JobMasterConfigUtil.resolveHref(next, id);
     }
 
     $effect(() => {
@@ -66,7 +78,7 @@
 
             currentCluster = null;
 
-            const defaultThemeId = config?.defaultThemeId ?? "jobmaster-light";
+            const defaultThemeId = config?.themeConfigs?.primaryThemeId ?? "jobmaster-light";
             if (currentTheme?.id !== defaultThemeId) {
                 applyTheme(defaultThemeId, false);
             }
@@ -85,7 +97,7 @@
         if (!clusterFound) {
             const after = getPathAfterCluster();
             const next = after === "/" ? "/dashboard" : after;
-            const target = `/${nextCluster.id}${next}`;
+            const target = JobMasterConfigUtil.resolveHref(next, nextCluster.id);
 
             if ($page.url.pathname !== target) {
                 void goto(target, { replaceState: true, keepFocus: true, noScroll: true });
@@ -93,7 +105,6 @@
         }
     });
 
-    // 1. Definimos o mapeamento fora para ser usado na limpeza e na aplicação
     const themeVarMap: Record<string, string> = {
         primary: "--color-primary",
         primaryContent: "--color-primary-content",
@@ -101,11 +112,28 @@
         secondaryContent: "--color-secondary-content",
         accent: "--color-accent",
         accentContent: "--color-accent-content",
+        neutral: "--color-neutral",
+        neutralContent: "--color-neutral-content",
         base100: "--color-base-100",
         base200: "--color-base-200",
         base300: "--color-base-300",
         baseContent: "--color-base-content",
+        info: "--color-info",
+        infoContent: "--color-info-content",
+        success: "--color-success",
+        successContent: "--color-success-content",
+        warning: "--color-warning",
+        warningContent: "--color-warning-content",
+        error: "--color-error",
+        errorContent: "--color-error-content",
     };
+
+    const styleVarList = [
+        "--font-sans", "--font-mono", "--font-serif",
+        "--rounded-box", "--rounded-btn", "--rounded-badge",
+        "--tab-radius", "--border-btn", "--tab-border",
+        "--animation-btn", "--animation-input", "--btn-focus-scale",
+    ];
 
     const darkBaseThemes = new Set([
         "dark",
@@ -117,37 +145,48 @@
     ]);
 
     function applyTheme(themeId: string, persistForCluster = false) {
-        let theme = config?.themes?.find((t: any) => t.id === themeId);
+        const themes = config?.themeConfigs?.themes;
+        let theme = themes?.find((t: any) => t.id === themeId);
 
         if (!theme) {
-            const fallbackId = config?.defaultThemeId ?? "light";
-            theme = config?.themes?.find((t: any) => t.id === fallbackId) ?? config?.themes?.[0];
+            const fallbackId = config?.themeConfigs?.primaryThemeId ?? "jobmaster-light";
+            theme = themes?.find((t: any) => t.id === fallbackId) ?? themes?.[0];
         }
 
         if (!theme) return;
 
         currentTheme = theme;
         const base = theme.baseTheme ?? "jobmaster-light";
-        
+
         const root = document.documentElement.style;
         Object.values(themeVarMap).forEach(cssVar => root.removeProperty(cssVar));
+        styleVarList.forEach(cssVar => root.removeProperty(cssVar));
 
         document.documentElement.setAttribute("data-theme", base);
+        document.documentElement.style.colorScheme = darkBaseThemes.has(base) ? "dark" : "light";
 
-        document.documentElement.style.colorScheme =
-            darkBaseThemes.has(base) ? "dark" : "light";
-
-        console.log(`Applying theme: ${themeId} (${base}) color scheme: ${document.documentElement.style.colorScheme}`);
-
-        if (theme.overrides) {
-            for (const [key, value] of Object.entries(theme.overrides)) {
+        if (theme.colorOverrides) {
+            for (const [key, value] of Object.entries(theme.colorOverrides)) {
+                if (!value) continue;
                 const cssVar = themeVarMap[key];
-                if (cssVar) {
-                    root.setProperty(cssVar, value as string);
-
-                    console.log(`Override applied: ${cssVar} = ${value}`);
-                }
+                if (cssVar) root.setProperty(cssVar, value as string);
             }
+        }
+
+        if (theme.styleOverrides) {
+            const so = theme.styleOverrides;
+            if (so.fontFamily?.length)     root.setProperty("--font-sans",          so.fontFamily.join(", "));
+            if (so.fontFamilyMono?.length)  root.setProperty("--font-mono",         so.fontFamilyMono.join(", "));
+            if (so.fontFamilySerif?.length) root.setProperty("--font-serif",        so.fontFamilySerif.join(", "));
+            if (so.borderRadiusBox)         root.setProperty("--rounded-box",       so.borderRadiusBox);
+            if (so.borderRadiusBtn)         root.setProperty("--rounded-btn",       so.borderRadiusBtn);
+            if (so.borderRadiusBadge)       root.setProperty("--rounded-badge",     so.borderRadiusBadge);
+            if (so.tabRadius)               root.setProperty("--tab-radius",        so.tabRadius);
+            if (so.borderWidthBtn)          root.setProperty("--border-btn",        so.borderWidthBtn);
+            if (so.tabBorderWidth)          root.setProperty("--tab-border",        so.tabBorderWidth);
+            if (so.animationBtn)            root.setProperty("--animation-btn",     so.animationBtn);
+            if (so.animationInput)          root.setProperty("--animation-input",   so.animationInput);
+            if (so.btnFocusScale)           root.setProperty("--btn-focus-scale",   so.btnFocusScale);
         }
 
         if (persistForCluster && currentCluster?.id) {
@@ -217,7 +256,7 @@
 
                             <li class="menu-title text-[12px] font-black opacity-40">Appearance</li>
                             <div class="grid grid-cols-2 gap-1 p-2">
-                                {#each config.themes as theme}
+                                {#each config.themeConfigs.themes as theme}
                                     <button
                                             class="btn btn-xs font-mono text-[12px] {currentTheme?.id === theme.id ? 'btn-primary' : 'btn-ghost border-base-300'}"
                                             onclick={() => applyTheme(theme.id, true)}

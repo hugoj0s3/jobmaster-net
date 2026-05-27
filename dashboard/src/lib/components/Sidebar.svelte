@@ -1,6 +1,7 @@
 <script lang="ts">
     import { page } from "$app/stores";
     import logoSvg from "$lib/assets/jobmaster-logo.svg";
+    import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
     let isHovered = $state(false);
 
@@ -16,10 +17,7 @@
 
     function resolveHref(path: string) {
         const cluster = $page.params.cluster;
-
-        if (!cluster) return path;
-        if (path === "/") return `/${cluster}/dashboard`;
-        return `/${cluster}${path}`;
+        return JobMasterConfigUtil.resolveHref(path, cluster);
     }
 </script>
 
@@ -38,7 +36,7 @@
         onmouseleave={() => (isHovered = false)}
 >
     <!-- Logo -->
-    <a href="/" class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300 cursor-pointer">
+    <a href={resolveHref("/")} class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300 cursor-pointer">
         <div class="flex items-center min-w-[50px]">
             <img src={logoSvg} alt="JobMaster" class="h-10 w-10" />
         </div>

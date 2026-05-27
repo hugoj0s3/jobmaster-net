@@ -36,6 +36,7 @@
 	let lastUpdatedAt = new Date();
 	let refreshError: string | null = null;
 	let poller: number | undefined;
+	let notFound = false;
 	const refreshIntervalSec = 15;
 
 	$: agentName = agentConn?.displayName ?? agentConn?.name ?? agentConn?.id ?? "Unknown";
@@ -131,7 +132,7 @@
 			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
 			const [connResponse, workersResponse, bucketsResponse] = await Promise.all([
-				jmApi.GET("/{clusterId}/agent-connections/{agentConnectionId}", {
+				(jmApi as any).GET("/{clusterId}/agent-connections/{agentConnectionId}", {
 					params: { path: { clusterId: cid, agentConnectionId: connId } }
 				}),
 				jmApi.GET("/{clusterId}/workers", {
@@ -148,6 +149,11 @@
 				})
 			]);
 
+			if (connResponse.error && connResponse.response?.status === 404) {
+				notFound = true;
+				return;
+			}
+
 			if (connResponse.error) {
 				refreshError = String(connResponse.error);
 				console.error("API error (agent-connection):", connResponse.error);
@@ -155,6 +161,10 @@
 			}
 
 			agentConn = connResponse.data ?? null;
+			if (!agentConn) {
+				notFound = true;
+			}
+
 			apiWorkers = (workersResponse.data ?? []) as any[];
 			apiBuckets = (bucketsResponse.data ?? []) as ApiBucketModel[];
 			lastUpdatedAt = new Date();
@@ -175,6 +185,9 @@
 
 	onMount(() => {
 		agentConn = data.agentConnection;
+		if (!agentConn) {
+			notFound = true;
+		}
 		apiWorkers = data.workers ?? [];
 		apiBuckets = (data.buckets ?? []) as ApiBucketModel[];
 		refreshError = data.error;
@@ -249,7 +262,12 @@
 			</div>
 		{/if}
 
-		<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-12">
+		{#if notFound}
+			<div class="alert alert-error text-sm mt-4">
+				<span>Agent Connection not found.</span>
+			</div>
+		{:else}
+			<div class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-12">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg md:col-span-3">
 				<div class="card-body">
 					<div class="flex items-center justify-between">
@@ -439,5 +457,6 @@
 				{/if}
 			</div>
 		</div>
+		{/if}
 	</div>
 </div>

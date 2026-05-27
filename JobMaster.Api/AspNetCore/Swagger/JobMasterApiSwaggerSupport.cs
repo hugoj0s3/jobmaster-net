@@ -1,5 +1,6 @@
 using JobMaster.Api.AspNetCore.Auth;
 using JobMaster.Api.AspNetCore.Internals;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Keys;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +15,8 @@ namespace JobMaster.Api.AspNetCore.Swagger;
 
 internal static class JobMasterApiSwaggerSupport
 {
+    internal const string OpenApiDocumentName = "v1";
+
     public static void ConfigureServices(IServiceCollection services, JobMasterApiOptions options)
     {
         if (!options.EnableSwagger) return;
@@ -24,15 +27,8 @@ internal static class JobMasterApiSwaggerSupport
         // Use PostConfigure to ensure this runs AFTER the host application's setup
         services.PostConfigure<SwaggerGenOptions>(opt =>
         {
-            // Swashbuckle requires at least one SwaggerDoc. If the host didn't register any,
-            // add a minimal default so /swagger doesn't break.
-            if (opt.SwaggerGeneratorOptions.SwaggerDocs.Count == 0)
-            {
-                opt.SwaggerDoc("v1", new OpenApiInfo());
-            }
-
             // 1. Define the JobMaster Document
-            opt.SwaggerDoc($"{JobMasterApiNamespaceKey.Key}", new OpenApiInfo
+            opt.SwaggerDoc(OpenApiDocumentName, new OpenApiInfo
             {
                 Title = JobMasterApiAssemblyInfo.GetServiceId(),
                 Version = JobMasterApiAssemblyInfo.GetVersion(),
@@ -46,7 +42,9 @@ internal static class JobMasterApiSwaggerSupport
             var previousPredicate = opt.SwaggerGeneratorOptions.DocInclusionPredicate;
             opt.SwaggerGeneratorOptions.DocInclusionPredicate = (docName, apiDesc) =>
             {
-                var isJmDoc = string.Equals(docName, $"{JobMasterApiNamespaceKey.Key}", StringComparison.OrdinalIgnoreCase);
+                var isJmDoc = string.Equals(docName, OpenApiDocumentName, StringComparison.OrdinalIgnoreCase)
+                              && opt.SwaggerGeneratorOptions.SwaggerDocs.TryGetValue(docName, out var info)
+                              && info.Extensions?.ContainsKey("x-jobmaster-doc") == true;
                 var isJmEndpoint = string.Equals(apiDesc.GroupName, $"{JobMasterApiNamespaceKey.Key}", StringComparison.OrdinalIgnoreCase);
 
                 if (isJmDoc) return isJmEndpoint;
@@ -64,15 +62,17 @@ internal static class JobMasterApiSwaggerSupport
     {
         if (!options.EnableSwagger) return;
 
-        // ONLY use the default JSON endpoint
-        app.UseSwagger();
+        var basePath = JobMasterApiPath.NormalizeBasePath(options.BasePath).TrimStart('/');
 
-        // Dedicated UI for JobMaster
+        app.UseSwagger(c =>
+        {
+            c.RouteTemplate = $"{basePath}/openapi/{{documentName}}/openapi.json";
+        });
+
         app.UseSwaggerUI(c =>
         {
-            var basePath = JobMasterApiPath.NormalizeBasePath(options.BasePath);
-            c.RoutePrefix = $"{basePath.TrimStart('/')}/swagger";
-            c.SwaggerEndpoint($"/swagger/{JobMasterApiNamespaceKey.Key}/swagger.json", "JobMaster.Api");
+            c.RoutePrefix = $"{basePath}/swagger";
+            c.SwaggerEndpoint($"/{basePath}/openapi/{OpenApiDocumentName}/openapi.json", "JobMaster.Api");
         });
     }
 }
@@ -91,8 +91,7 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
 
     public void Apply(OpenApiDocument swaggerDoc, DocumentFilterContext context)
     {
-        // Only proceed if this is the JobMaster document
-        if (swaggerDoc.Info?.Extensions == null || 
+        if (swaggerDoc.Info?.Extensions == null ||
             !swaggerDoc.Info.Extensions.TryGetValue("x-jobmaster-doc", out var ext) ||
             !(ext is OpenApiString extStr) ||
             !string.Equals(extStr.Value, JobMasterApiNamespaceKey.Key.ToString(), StringComparison.OrdinalIgnoreCase))
@@ -100,6 +99,12 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
             return;
         }
 
+        ApplySecuritySchemes(swaggerDoc);
+        ApplyClusterIds(swaggerDoc);
+    }
+
+    private void ApplySecuritySchemes(OpenApiDocument swaggerDoc)
+    {
         var supported = jobMasterOptions.Value?.GetAuthenticationTypesSupported() ?? Array.Empty<JobMasterApiAuthenticationType>();
         if (supported.Count == 0) return;
 
@@ -109,7 +114,6 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
 
         var requirement = new OpenApiSecurityRequirement();
 
-        // Configure ApiKey Security
         if (supported.Contains(JobMasterApiAuthenticationType.ApiKey))
         {
             var header = jobMasterOptions.Value?.ApiKeyOptions?.ApiKeyHeader ?? "api-key";
@@ -122,45 +126,32 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
             requirement[new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = id } }] = Array.Empty<string>();
         }
 
-        // Configure JWT Security
         if (supported.Contains(JobMasterApiAuthenticationType.JwtBearer))
         {
             const string id = "JobMasterBearer";
 
             var headerName = jobMasterOptions.Value?.JwtBearerOptions?.AuthorizationHeaderName;
             if (string.IsNullOrWhiteSpace(headerName))
-            {
                 headerName = "Authorization";
-            }
 
             var configuredScheme = jobMasterOptions.Value?.JwtBearerOptions?.Scheme;
             var scheme = string.IsNullOrWhiteSpace(configuredScheme) ? "Bearer" : configuredScheme;
 
-            if (string.Equals(scheme, "Bearer", StringComparison.OrdinalIgnoreCase))
-            {
-                swaggerDoc.Components.SecuritySchemes[id] = new OpenApiSecurityScheme
+            swaggerDoc.Components.SecuritySchemes[id] = string.Equals(scheme, "Bearer", StringComparison.OrdinalIgnoreCase)
+                ? new OpenApiSecurityScheme
                 {
-                    Type = SecuritySchemeType.Http,
-                    Scheme = "bearer",
-                    BearerFormat = "JWT",
-                    Description = "JWT Bearer authentication. Example: 'Authorization: Bearer {token}'.",
-                };
-            }
-            else
-            {
-                swaggerDoc.Components.SecuritySchemes[id] = new OpenApiSecurityScheme
+                    Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT",
+                    Description = "JWT Bearer authentication. Example: 'Authorization: Bearer {token}'."
+                }
+                : new OpenApiSecurityScheme
                 {
-                    Type = SecuritySchemeType.ApiKey,
-                    In = ParameterLocation.Header,
-                    Name = headerName,
-                    Description = $"JWT authentication via header '{headerName}'. Example: '{scheme} {{token}}'.",
+                    Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header, Name = headerName,
+                    Description = $"JWT authentication via header '{headerName}'. Example: '{scheme} {{token}}'."
                 };
-            }
 
             requirement[new OpenApiSecurityScheme { Reference = new OpenApiReference { Type = ReferenceType.SecurityScheme, Id = id } }] = Array.Empty<string>();
         }
 
-        // Configure Basic Auth (User/Password)
         if (supported.Contains(JobMasterApiAuthenticationType.UserPwd))
         {
             const string id = "JobMasterBasic";
@@ -173,8 +164,21 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
         }
 
         if (requirement.Count > 0)
-        {
             swaggerDoc.SecurityRequirements.Add(requirement);
-        }
+    }
+
+    private void ApplyClusterIds(OpenApiDocument swaggerDoc)
+    {
+        if (jobMasterOptions.Value?.IncludeClusterIdsInOpenApiDoc != true) return;
+
+        var ids = JobMasterClusterConnectionConfig.GetAllConfigs()
+            .Select(x => x.ClusterId)
+            .ToList();
+
+        var array = new OpenApiArray();
+        foreach (var id in ids)
+            array.Add(new OpenApiString(id));
+
+        swaggerDoc.Info.Extensions["x-jobmaster-clusters"] = array;
     }
 }

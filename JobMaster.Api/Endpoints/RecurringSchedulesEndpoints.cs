@@ -18,9 +18,9 @@ internal static class RecurringSchedulesEndpoints
     {
         var schedules = group.GetClusterEntityGroup("recurring-schedules");
 
-        schedules.MapGet("/", QueryRecurringSchedulesAsync);
-        schedules.MapGet("/count", CountRecurringSchedulesAsync);
-        schedules.MapGet("/{id}", GetRecurringScheduleAsync);
+        schedules.MapGet("/", QueryRecurringSchedulesAsync).Produces<List<ApiRecurringScheduleModel>>();
+        schedules.MapGet("/count", CountRecurringSchedulesAsync).Produces<int>();
+        schedules.MapGet("/{id}", GetRecurringScheduleAsync).Produces<ApiRecurringScheduleModel>();
 
         return group;
     }

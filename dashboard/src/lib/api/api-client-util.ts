@@ -1,34 +1,15 @@
 import createClient from "openapi-fetch";
 import type { paths } from "$lib/api/schema";
-import { getAllSecrets } from "$lib/secret/secrets";
+import { getAllSecrets, type SecretAuthProvider } from "$lib/secret/secrets";
 
-type AuthProvider =
-    | { type: "API_KEY"; headerName?: string }
-    | { type: "USER_PASSWORD"; userHeaderName?: string; passwordHeaderName?: string }
-    | { type: "JWT_CUSTOM_FORM"; transport?: { header?: string; scheme?: string } }
-    | { type: "JWT_SSO"; transport?: { header?: string; scheme?: string } };
-
-type JobmasterConfig = {
-    apiBaseUrl: string;
-};
+import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 export class ApiClientUtil {
-    private static configCache: JobmasterConfig | null = null;
-
-    private static async loadJobmasterConfig(fetchFn: typeof fetch): Promise<JobmasterConfig> {
-        if (ApiClientUtil.configCache) return ApiClientUtil.configCache;
-
-        const res = await fetchFn("/jobmaster-config.json");
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText} - /jobmaster-config.json`);
-        const cfg = (await res.json()) as JobmasterConfig;
-        ApiClientUtil.configCache = cfg;
-        return cfg;
-    }
     
     private static async buildAuthHeaders(): Promise<Record<string, string>> {
         const headers: Record<string, string> = {};
         const { apiKey, user, pwd, jwt, authProvider } = await getAllSecrets();
-        const provider = authProvider as AuthProvider | null;
+        const provider = authProvider as SecretAuthProvider | null;
 
         if (apiKey) {
             const headerName =
@@ -52,8 +33,15 @@ export class ApiClientUtil {
         }
 
         if (jwt) {
-            const transportHeader = provider?.transport?.header ?? "Authorization";
-            const scheme = provider?.transport?.scheme;
+            let transportHeader: string;
+            let scheme: string | undefined;
+            if (provider?.type === "JWT_SIMPLE") {
+                transportHeader = provider.headerName ?? "Authorization";
+                scheme = provider.scheme;
+            } else {
+                transportHeader = (provider as any)?.transport?.header ?? "Authorization";
+                scheme = (provider as any)?.transport?.scheme;
+            }
             headers[transportHeader] = scheme ? `${scheme} ${jwt}` : jwt;
         }
         return headers;
@@ -83,7 +71,7 @@ export class ApiClientUtil {
 
         return createClient<paths>({
             baseUrl,
-            fetch: async (input, init) => {
+            fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
                 const authHeaders = await ApiClientUtil.buildAuthHeaders();
                 const mergedHeaders: HeadersInit = {
                     ...(init?.headers ?? {}),
@@ -98,8 +86,9 @@ export class ApiClientUtil {
         });
     }
 
-    static async CreateApiClientFromConfig(fetchFn: typeof fetch) {
-        const cfg = await ApiClientUtil.loadJobmasterConfig(fetchFn);
-        return ApiClientUtil.CreateApiClient(cfg.apiBaseUrl, fetchFn);
+    static async CreateApiClientFromConfig(fetchFn: typeof fetch, clusterId?: string) {
+        await JobMasterConfigUtil.loadConfig(fetchFn);
+        const apiUrl = JobMasterConfigUtil.getClusterApiUrl(clusterId);
+        return ApiClientUtil.CreateApiClient(apiUrl, fetchFn);
     }
 }

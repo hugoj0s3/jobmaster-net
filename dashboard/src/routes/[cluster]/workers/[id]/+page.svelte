@@ -20,6 +20,7 @@
 	let isRefreshing = false;
 	let lastUpdatedAt = new Date();
 	let poller: number | undefined;
+	let notFound = false;
 	const refreshIntervalSec = 10;
 
 	// --- derived ---
@@ -66,9 +67,9 @@
 		try { return PriorityUtil.getLabel(p); } catch { return "—"; }
 	}
 
-	function goToBucket(bucketId: string) {
+	function goToBucket(bucketId: string | null | undefined) {
 		const cid = clusterId();
-		if (!cid) return;
+		if (!cid || !bucketId) return;
 		goto(`/${encodeURIComponent(cid)}/buckets/${encodeURIComponent(bucketId)}`);
 	}
 
@@ -82,7 +83,7 @@
 
 			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const workerResponse = await jmApi.GET("/{clusterId}/workers/{workerId}", {
+			const workerResponse: any = await (jmApi as any).GET("/{clusterId}/workers/{workerId}", {
 				params: { path: { clusterId: cid, workerId: wid } }
 			});
 
@@ -92,9 +93,12 @@
 			}
 
 			worker = (workerResponse.data ?? null) as any;
+			if (!worker) {
+				notFound = true;
+			}
 
 			try {
-				const bucketsResponse = await jmApi.GET("/{clusterId}/buckets", {
+				const bucketsResponse = await (jmApi as any).GET("/{clusterId}/buckets", {
 					params: {
 						path: { clusterId: cid },
 						query: { AgentWorkerId: wid }
@@ -178,6 +182,12 @@
 				</div>
 			</div>
 		</div>
+
+		{#if notFound}
+			<div class="alert alert-error text-sm mt-4">
+				<span>Worker not found.</span>
+			</div>
+		{:else}
 
 		<!-- Main grid -->
 		<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
@@ -320,6 +330,7 @@
 					</div>
 				</div>
 			</div>
-		</div>
+			</div>
+		{/if}
 	</div>
 </div>

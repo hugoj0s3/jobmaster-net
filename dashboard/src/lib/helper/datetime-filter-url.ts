@@ -70,8 +70,8 @@ export function parseDatetimeParam(raw: string, filterKey: string): Record<strin
 				unit,
 				fromOffset: Number.isFinite(fromOffset) ? fromOffset : undefined,
 				toOffset: Number.isFinite(toOffset) ? toOffset : undefined,
-				from: Number.isFinite(fromOffset) ? new Date(now + fromOffset * ms).toISOString() : undefined,
-				to: Number.isFinite(toOffset) ? new Date(now + toOffset * ms).toISOString() : undefined
+				from: typeof fromOffset === 'number' && Number.isFinite(fromOffset) ? new Date(now + (fromOffset as number) * ms).toISOString() : undefined,
+				to: typeof toOffset === 'number' && Number.isFinite(toOffset) ? new Date(now + (toOffset as number) * ms).toISOString() : undefined
 			} satisfies DatetimeFilterValue
 		};
 	}

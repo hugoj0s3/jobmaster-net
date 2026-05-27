@@ -1,6 +1,7 @@
 <script lang="ts">
     import { onMount } from "svelte";
     import logoSvg from "$lib/assets/jobmaster-logo.svg";
+    import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
     
     interface ClusterConfig {
         clusters: { id: string; environmentName: string }[];
@@ -9,8 +10,7 @@
     let config = $state<ClusterConfig | null>(null);
 
     onMount(async () => {
-        const res = await fetch("/jobmaster-config.json");
-        config = await res.json();
+        config = await JobMasterConfigUtil.loadConfig(fetch) as any;
     });
 </script>
 
@@ -34,7 +34,7 @@
             <div class="space-y-3">
                 {#each config.clusters as cluster (cluster.id)}
                     <a
-                            href="/{cluster.id}/dashboard"
+                            href={JobMasterConfigUtil.resolveHref("/", cluster.id)}
                             class="btn btn-block justify-between"
                     >
                         <div class="flex flex-col items-start gap-0.5">

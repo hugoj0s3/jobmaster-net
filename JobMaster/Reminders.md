@@ -1,4 +1,4 @@
-# JobMaster – Reminders & Improvement Backlog
+# JobMaster – Reminders & Improvement
 
 ## Scheduler
 - **Locking strategy**: Re‑evaluate the locker usage (we probably no longer need the “saving” locks). Ideal design is per-resource locking; keep the current action-level approach only if the refactor is too costly right now.
@@ -31,6 +31,7 @@ The goal is to introduce a durable buffering layer that batches schedule writes 
 6. **`SaveOperation` reuse** — once stable, evaluate whether the same mechanism can back `SaveOperation` writes. Requires careful analysis to avoid conflicts with the scheduler's own flush cycle.
 
 > ⚠️ This feature introduces a write-ahead style buffer. The failure window shrinks to the flush interval rather than being eliminated entirely — operators should configure the flush interval based on their durability tolerance.
+
 ### JobDefinition-based scheduling
 Goal: support advanced scenarios where publishers and consumers are fully separated.
 
@@ -39,4 +40,9 @@ Approach:
 2. Allow handlers such as `JobHandlerA : IJobHandler<DefinitionJobA>` so consumers can bind to definitions directly.
 3. Keep the current “direct handler” option for simple scenarios, and consider releasing the definitional model as a v2 feature.
 
+## Serialization
+- **Source Generator Context (`JsonSerializerContext`)**: Upgrade `InternalJobMasterSerializer` to use `System.Text.Json` Source Generators. By declaring the exact types being serialized (e.g., `JobRawModel`, `Dictionary<string, object?>`), we can completely eliminate runtime reflection for JSON parsing, achieving AOT-level speed with zero allocations.
 
+## Messaging & Positioning
+- **Standalone Mode is a Selling Point:** The documentation mentions that reverting from Distributed to Standalone is a one-way operation. We need to re-word this or handle it gracefully to prevent scaring off early adopters. Standalone is a huge benefit (start simple, scale to NATS later while keeping the code).
+- **Fallback Bucket Starvation Penalty:** Add a limit or "never processed" flag for fallback buckets to prevent memory starvation on coordinator nodes if a user misconfigures lane priorities.

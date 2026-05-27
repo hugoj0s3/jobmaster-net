@@ -5,7 +5,7 @@ export const load: PageLoad = async ({ fetch, params }) => {
 	try {
 		const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-		const response = await jmApi.GET("/{clusterId}/agent-connections", {
+		const response = await (jmApi as any).GET("/{clusterId}/agent-connections", {
 			params: { path: { clusterId: params.cluster } }
 		});
 

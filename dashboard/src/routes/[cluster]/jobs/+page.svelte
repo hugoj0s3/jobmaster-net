@@ -16,7 +16,7 @@
 		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
-    import SearchSelectModal from "$lib/components/filters/SearchSelectModal.svelte";
+    import SearchSelectModal, { type SearchSelectOption } from "$lib/components/filters/SearchSelectModal.svelte";
     import { readSavedFilter, writeSavedFilter, setupFilterPersistOnUnload } from "$lib/helper/filter-persistence";
 
     let isDefinitionSearchOpen = false;
@@ -198,7 +198,7 @@
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
     let selectedJobDefinitionId: string = _initParams.jobDefinitionId;
     let selectedSortDirection: string = _initParams.sortDirection;
-    let searchTimeout: number | undefined;
+    let searchTimeout: ReturnType<typeof setTimeout> | undefined;
 
     type FilterValues = Record<string, unknown>;
     let filterValues: FilterValues = _initParams.scheduledAt ? parseDatetimeParam(_initParams.scheduledAt, "scheduledAt") : {};
@@ -400,12 +400,12 @@
                         maxNumberOfRetries: j.maxNumberOfRetries,
                         executedAt: bestExecutedAtIso(j),
                         scheduledAt: scheduledIso(j),
-                        nextPlanExecutionAt: j.nextPlanExecutionAt,
-                        completedAt: j.completedAt ?? bestExecutedAtIso(j),
-                        workerLane: j.workerLane,
-                        worker: j.agentWorkerId,
-                        bucketId: j.bucketId,
-                        bucketName: j.bucketId
+                        nextPlanExecutionAt: j.originalScheduledAt,
+                        completedAt: j.succeedExecutedAt ?? bestExecutedAtIso(j),
+                        workerLane: j.workerLane ?? undefined,
+                        worker: j.agentWorkerId ?? undefined,
+                        bucketId: j.bucketId ?? undefined,
+                        bucketName: j.bucketId ?? undefined
                     };
                 });
 

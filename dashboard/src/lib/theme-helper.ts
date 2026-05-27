@@ -1,16 +1,16 @@
+import type { DashboardPublicConfig } from '$lib/api/job-master-config-util';
+
 const KEY = (clusterId: string) => `jm_theme_${clusterId}`;
 
-export function resolveThemeId(clusterId: string, config: any) {
+export function resolveThemeId(clusterId: string, config: DashboardPublicConfig): string {
     const stored = sessionStorage.getItem(KEY(clusterId));
 
-    // If stored theme doesn't exist in config anymore, ignore it
-    if (stored && config?.themes?.some((t: any) => t.id === stored)) {
+    if (stored && config.themeConfigs?.themes?.some(t => t.id === stored)) {
         return stored;
     }
 
-    // else fallback to cluster default, then global default
-    const cluster = config?.clusters?.find((c: any) => c.id === clusterId);
-    return cluster?.defaultThemeId ?? config?.defaultThemeId ?? "light";
+    const cluster = config.clusters?.find(c => c.id === clusterId);
+    return cluster?.themeId ?? config.themeConfigs?.primaryThemeId ?? 'jobmaster-light';
 }
 
 export function setStoredTheme(clusterId: string, themeId: string) {

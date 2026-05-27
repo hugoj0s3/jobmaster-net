@@ -1,7 +1,9 @@
+<script context="module" lang="ts">
+    export type Option<T = string> = { value: T; label: string };
+</script>
+
 <script lang="ts">
     import { createEventDispatcher } from "svelte";
-
-    export type Option<T = string> = { value: T; label: string };
 
     export let label: string;
     export let options: Option[] = [];

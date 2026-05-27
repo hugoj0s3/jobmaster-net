@@ -106,6 +106,16 @@ public sealed class JobMasterApiOptions
         AuthenticationTypesSupported.Add(JobMasterApiAuthenticationType.JwtBearer);
     }
     
+    /// <summary>
+    /// Includes cluster IDs as metadata in the OpenAPI document.
+    /// Enables discovery by other applications such as the JobMaster Dashboard or third-party integrations.
+    /// </summary>
+    public void IncludeClusterIdsInOpenApi()
+    {
+        IncludeClusterIdsInOpenApiDoc = true;
+    }
+
+    internal bool IncludeClusterIdsInOpenApiDoc { get; private set; }
     internal Type? JobMasterIdentityProviderType { get; set; }
     internal Type? JobMasterAuthorizationProviderType { get; set; }
     /// <summary>When <c>true</c>, API access is logged to the cluster's structured logger.</summary>

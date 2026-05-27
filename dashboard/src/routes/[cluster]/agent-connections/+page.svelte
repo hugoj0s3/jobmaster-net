@@ -87,7 +87,7 @@
 	function resetFilters() {
 		selectedHealths = [];
 		filterValues = {};
-		sortDirection = "";
+		sortDirection = "desc";
 		pageIndex = 0;
 		refreshNow();
 	}

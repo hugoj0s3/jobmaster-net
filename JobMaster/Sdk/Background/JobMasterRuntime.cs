@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using System.Reflection;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
@@ -22,18 +22,19 @@ namespace JobMaster.Sdk.Background;
 internal class JobMasterRuntime : IJobMasterRuntime
 {
     private readonly List<JobMasterBackgroundAgentWorker> Workers = new List<JobMasterBackgroundAgentWorker>();
-    
+
     public bool Started { get; private set; } = false;
     public DateTime? StartedAt { get; private set; }
-    
+
     public DateTime? StartingAt { get; private set; }
 
-    public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() => new List<IJobMasterBackgroundAgentWorker>(Workers);
+    public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() =>
+        new List<IJobMasterBackgroundAgentWorker>(Workers);
 
     public bool IsOnWarmUpTime()
     {
-        return Started && 
-               StartedAt.HasValue && 
+        return Started &&
+               StartedAt.HasValue &&
                (DateTime.UtcNow - StartedAt.Value) <= TimeSpan.FromMinutes(2.5);
     }
 
@@ -45,25 +46,25 @@ internal class JobMasterRuntime : IJobMasterRuntime
     {
         this.StartingAt = DateTime.UtcNow;
         if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
-        
+
         if (Started)
         {
             throw new InvalidOperationException("JobMasterRuntime is already started");
         }
 
         using var scope = serviceProvider.CreateScope();
-        
+
         var runtimeSetups = scope.ServiceProvider.GetServices<IJobMasterRuntimeSetup>().ToList();
         foreach (var runtimeSetup in runtimeSetups)
         {
             await runtimeSetup.ValidateAsync(scope.ServiceProvider);
         }
-        
+
         foreach (var runtimeSetup in runtimeSetups)
         {
             await runtimeSetup.OnStartingAsync(scope.ServiceProvider);
         }
-        
+
         PreValidation();
 
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
@@ -73,9 +74,10 @@ internal class JobMasterRuntime : IJobMasterRuntime
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
             var masterAgentConnectionService = componentFactory.GetComponent<IMasterAgentConnectionService>();
             var logger = componentFactory.GetComponent<IJobMasterLogger>();
-            
-            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
-            
+
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c =>
+                string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+
             var agentDefinitions = clusterDefinition.AgentConnections;
             foreach (var agentDefinition in agentDefinitions)
             {
@@ -86,10 +88,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
 
                 var agentConnectionId = new AgentConnectionId(agentConfig.Id);
-                var existingConnection = await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
-                
+                var existingConnection =
+                    await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
+
                 var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(agentConfig.Id);
-                var fingerprint = await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
+                var fingerprint =
+                    await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
 
                 if (existingConnection != null && existingConnection.Fingerprint != fingerprint)
                 {
@@ -100,18 +104,21 @@ internal class JobMasterRuntime : IJobMasterRuntime
                             $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
                     }
 
-                    logger.Warn($"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, updating...");
+                    logger.Warn(
+                        $"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, updating...");
                 }
 
-                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId, fingerprint, agentDefinition.ProtectConnectionChanges);
+                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId,
+                    fingerprint, agentDefinition.ProtectConnectionChanges);
             }
-            
-            
+
+
             var workerDefinitions = clusterDefinition.Workers;
-          
+
             var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
-            modelToSave.DefaultMaxOfRetryCount = clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
+            modelToSave.DefaultMaxOfRetryCount =
+                clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
             modelToSave.MaxMessageByteSize = clusterDefinition.MaxMessageByteSize ?? modelToSave.MaxMessageByteSize;
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
@@ -121,25 +128,27 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             if (clusterCnnCfg.MirrorLog == JsonlFileLogger.LogMirror)
             {
-                JsonlFileLogger.AddLogger(clusterCnnCfg.ClusterId, clusterDefinition.MirrorLogFilePath!, clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
+                JsonlFileLogger.AddLogger(clusterCnnCfg.ClusterId, clusterDefinition.MirrorLogFilePath!,
+                    clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
             }
-            
+
             masterConfigService.Save(modelToSave);
-            
+
             if (!clusterDefinition.IsStandalone)
             {
                 var bucketService = componentFactory.GetComponent<IMasterBucketsService>();
                 var existingBuckets = await bucketService.QueryAllNoCacheAsync();
-                
+
                 // Create a drainer for standalone buckets. It can happen when a standalone cluster transitions to a non-standalone cluster.
                 // workerDefinitions.Any() is to not add in publisher only app instance.
-                if (existingBuckets.Any(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!)) && workerDefinitions.Any())
+                if (existingBuckets.Any(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!)) &&
+                    workerDefinitions.Any())
                 {
                     var lanes = existingBuckets.Where(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!))
                         .Select(x => x.WorkerLane)
                         .Distinct()
                         .ToList();
-                    
+
                     foreach (var lane in lanes)
                     {
                         var workerDefinition = new WorkerDefinition()
@@ -151,17 +160,16 @@ internal class JobMasterRuntime : IJobMasterRuntime
                             ClusterId = clusterDefinition.ClusterId!,
                             TransferBatchSize = 1000,
                         };
-                        
+
                         var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
                             serviceProvider,
                             workerDefinition);
-                        
+
                         Workers.Add(worker);
                     }
                 }
-                
             }
-            
+
             foreach (var workerDefinition in workerDefinitions)
             {
                 var worker = await JobMasterBackgroundAgentWorker.CreateAsync(
@@ -176,20 +184,19 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             def.MarkAsReady();
         }
-        
+
         foreach (var worker in Workers)
         {
-           
             await Task.Delay(TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(100, 500)));
-            
+
             await worker.StartAsync();
         }
-        
+
         BootstrapStaticRecurringSchedules(JobMasterClusterConnectionConfig.Default!.ClusterId);
-        
+
         Started = true;
         StartedAt = DateTime.UtcNow;
-        
+
         BootstrapBlueprintDefinitions.Clear();
 
         await Task.Delay(TimeSpan.FromSeconds(1));
@@ -202,43 +209,48 @@ internal class JobMasterRuntime : IJobMasterRuntime
         {
             if (JobMasterClusterConnectionConfig.ClusterCount == 1)
             {
-                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs().First().ClusterId);
+                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs()
+                    .First().ClusterId);
             }
             else if (JobMasterClusterConnectionConfig.ClusterCount > 1)
             {
-                throw new InvalidOperationException("Multiple clusters configured but no default cluster defined. Mark one as default.");
+                throw new InvalidOperationException(
+                    "Multiple clusters configured but no default cluster defined. Mark one as default.");
             }
         }
-        
+
         var clusterDupes = JobMasterClusterConnectionConfig
             .GetAllConfigs()
             .GroupBy(x => JobMasterStringUtils.NormalizeId(x.ClusterId)).Where(x => x.Count() > 1)
             .ToList();
-        
+
         if (clusterDupes.Any())
         {
-            throw new InvalidOperationException($"Multiple clusters configured with the same id. {string.Join(", ", clusterDupes.Select(x => x.Key))}");
+            throw new InvalidOperationException(
+                $"Multiple clusters configured with the same id. {string.Join(", ", clusterDupes.Select(x => x.Key))}");
         }
 
         // Validation of all clusters first.
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
-            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c => string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
-            
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c =>
+                string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+
             if (clusterDefinition == null)
             {
                 throw new InvalidOperationException("Cluster definition not found");
             }
-            
-            if (string.IsNullOrWhiteSpace(clusterDefinition.ConnString) || 
-                string.IsNullOrWhiteSpace(clusterDefinition.RepoType)) 
+
+            if (string.IsNullOrWhiteSpace(clusterDefinition.ConnString) ||
+                string.IsNullOrWhiteSpace(clusterDefinition.RepoType))
             {
-                throw new InvalidOperationException("Cluster definition is missing connection string or repository type");
+                throw new InvalidOperationException(
+                    "Cluster definition is missing connection string or repository type");
             }
-            
+
             var agentDefinitions = clusterDefinition.AgentConnections;
-            
+
             var missingCnnStringOrRepoType = agentDefinitions.Where(x =>
                 string.IsNullOrWhiteSpace(x.AgentConnString) || string.IsNullOrWhiteSpace(x.AgentRepoType)).ToList();
             if (missingCnnStringOrRepoType.Any())
@@ -247,51 +259,57 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException(
                     @$"Agent connection is missing connection string or repository type. Connection: {agentNames}");
             }
-            
+
             var workerDefinitions = clusterDefinition.Workers;
-            
+
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
 
             var existingClusterConfig = masterConfigService.GetFresh();
             var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
-            
-            if (clusterDefinition.IanaTimeZoneId != null && existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
+
+            if (clusterDefinition.IanaTimeZoneId != null &&
+                existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
             {
                 throw new InvalidOperationException(
                     "if you want to use agents in different regions please explicitly set the IanaTimeZoneId for the cluster. " +
-                    "The cluster IanaTimeZoneId does not match the local timezone" + 
-                    " ClusterId: " + clusterDefinition.ClusterId + ", Defined IanaTimeZoneId: " + clusterDefinition.IanaTimeZoneId + ", Existing IanaTimeZoneId Configured: " + existingTimezoneId);
+                    "The cluster IanaTimeZoneId does not match the local timezone" +
+                    " ClusterId: " + clusterDefinition.ClusterId + ", Defined IanaTimeZoneId: " +
+                    clusterDefinition.IanaTimeZoneId + ", Existing IanaTimeZoneId Configured: " + existingTimezoneId);
             }
-            
+
             // Ensure no duplicates
             var agentDupes = agentDefinitions
                 .GroupBy(x => JobMasterStringUtils.NormalizeId(x.AgentConnectionName))
                 .Where(x => x.ToList().Count > 1).ToList();
             if (agentDupes.Any())
             {
-                throw new InvalidOperationException($"Duplicate agent connection names found. {string.Join(", ", agentDupes.Select(x => x.Key))}");
+                throw new InvalidOperationException(
+                    $"Duplicate agent connection names found. {string.Join(", ", agentDupes.Select(x => x.Key))}");
             }
-            
-            if ((clusterDefinition.ClusterMode == ClusterMode.Passive || clusterDefinition.ClusterMode == ClusterMode.Archived) && 
-                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1))) 
+
+            if ((clusterDefinition.ClusterMode == ClusterMode.Passive ||
+                 clusterDefinition.ClusterMode == ClusterMode.Archived) &&
+                workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1)))
             {
                 throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
             }
-            
+
             if (agentDefinitions.Any(x => string.Equals(
                     x.AgentConnectionName,
                     JobMasterConstants.StandaloneAgentConnName,
                     StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException($"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
+                throw new InvalidOperationException(
+                    $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
             }
 
             if (clusterDefinition.IsStandalone && agentDefinitions.Any())
             {
-                throw new InvalidOperationException("Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
-            } 
-            
-            
+                throw new InvalidOperationException(
+                    "Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
+            }
+
+
             // Ensure no duplicates
             var workDupes = workerDefinitions
                 .Where(x => !string.IsNullOrEmpty(x.WorkerName))
@@ -299,25 +317,31 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .ToList();
             if (workDupes.Any())
             {
-                throw new InvalidOperationException($"Duplicate worker names found {string.Join(", ", workDupes.Select(x => x.Key))}");
+                throw new InvalidOperationException(
+                    $"Duplicate worker names found {string.Join(", ", workDupes.Select(x => x.Key))}");
             }
-            
+
             var distinctWorkLanes = workerDefinitions
                 .Where(x => !string.IsNullOrEmpty(x.WorkerLane))
                 .Select(x => x.WorkerLane)
                 .Distinct()
                 .ToList();
-            
-            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x!)).Where(x => x.ToList().Count > 1).ToList();
+
+            var workLanesDupes = distinctWorkLanes.GroupBy(x => JobMasterStringUtils.NormalizeId(x!))
+                .Where(x => x.ToList().Count > 1).ToList();
             if (workLanesDupes.Any())
             {
-                throw new InvalidOperationException($"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
+                throw new InvalidOperationException(
+                    $"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
             }
         }
     }
 
-    private IDictionary<string, OperationThrottler> OperationLimiterPerCluster { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+    private IDictionary<string, OperationThrottler> OperationLimiterPerCluster { get; } =
+        new ConcurrentDictionary<string, OperationThrottler>();
+
     private OperationThrottler? notStartedClusterOperationThrottler;
+
     public OperationThrottler GetOperationLimiterForCluster(string clusterId)
     {
         if (!Started)
@@ -326,23 +350,27 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 notStartedClusterOperationThrottler = new OperationThrottler(50);
             }
-            
+
             return notStartedClusterOperationThrottler;
         }
-        
+
         if (!OperationLimiterPerCluster.TryGetValue(clusterId, out var throttler))
         {
-            var jobMasterClusterConnectionConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
+            var jobMasterClusterConnectionConfig =
+                JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
             throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationLimit);
             OperationLimiterPerCluster[clusterId] = throttler;
         }
-        
+
         return throttler;
     }
-    
 
-    private IDictionary<string, OperationThrottler> OperationLimiterPerAgent { get; } = new ConcurrentDictionary<string, OperationThrottler>();
+
+    private IDictionary<string, OperationThrottler> OperationLimiterPerAgent { get; } =
+        new ConcurrentDictionary<string, OperationThrottler>();
+
     private OperationThrottler? notStartedAgentOperationLimiter;
+
     public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
     {
         if (!Started)
@@ -351,10 +379,10 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 notStartedAgentOperationLimiter = new OperationThrottler(50);
             }
-            
+
             return notStartedAgentOperationLimiter;
         }
-        
+
         var key = clusterId + "||" + agentConnectionIdOrName;
         if (!OperationLimiterPerAgent.TryGetValue(key, out var throttler))
         {
@@ -363,8 +391,8 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationLimit;
             throttler = new OperationThrottler(runtimeDbOperationLimit);
             OperationLimiterPerAgent[key] = throttler;
-        }   
-        
+        }
+
         return throttler;
     }
 
@@ -383,7 +411,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         List<JobMasterBackgroundAgentWorker> toStop;
         toStop = new List<JobMasterBackgroundAgentWorker>(Workers);
         Workers.Clear();
-        
+
         foreach (var w in toStop)
         {
             try
@@ -404,24 +432,36 @@ internal class JobMasterRuntime : IJobMasterRuntime
         var profileTypes = AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a =>
             {
-                try { return a.GetTypes(); }
-                catch { return Array.Empty<Type>(); } // skip dynamic/unloaded
+                try
+                {
+                    return a.GetTypes();
+                }
+                catch
+                {
+                    return Array.Empty<Type>();
+                } // skip dynamic/unloaded
             })
-            .Where(t => !t.IsAbstract && t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
+            .Where(t => !t.IsAbstract &&
+                        t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
 
-        IList<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection)> profileInfos = 
-            new List<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection)>();
-        
-        
+        IList<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection)>
+            profileInfos =
+                new List<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection
+                    )>();
+
+
         foreach (var pt in profileTypes)
         {
             // 2) Read static members
-            var profileId = (string?)pt.GetProperty("ProfileId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
-                            ?? throw new InvalidOperationException($"ProfileId missing on {pt.FullName}");
-            var profileCluster = (string?)pt.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+            var profileId =
+                (string?)pt.GetProperty("ProfileId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
+                ?? throw new InvalidOperationException($"ProfileId missing on {pt.FullName}");
+            var profileCluster = (string?)pt.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)
+                ?.GetValue(null);
             var effectiveCluster = string.IsNullOrWhiteSpace(profileCluster) ? defaultClusterId : profileCluster;
-            
-            var workerLane = (string?)pt.GetProperty("WorkerLane", BindingFlags.Public | BindingFlags.Static)?.GetValue(null);
+
+            var workerLane = (string?)pt.GetProperty("WorkerLane", BindingFlags.Public | BindingFlags.Static)
+                ?.GetValue(null);
 
             // Validate profile info
             var info = new StaticRecurringSchedulesProfileInfo(profileId, effectiveCluster!, workerLane);
@@ -439,7 +479,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             profileInfos.Add((info, collection));
         }
-        
+
 
         // // 5) Upsert each desired (one-by-one)
         foreach (var cfg in profileInfos)
@@ -449,7 +489,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 clusterId = defaultClusterId;
             }
-            
+
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
             var masterRecurringService = componentFactory.GetService<IMasterRecurringSchedulesService>();
             var masterDistributedLockerService = componentFactory.GetService<IMasterDistributedLockerService>();

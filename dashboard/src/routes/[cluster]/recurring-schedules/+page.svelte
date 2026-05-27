@@ -240,7 +240,7 @@
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const response = await jm.GET("/{clusterId}/recurring-schedules", {
+			const response = await (jm as any).GET("/{clusterId}/recurring-schedules", {
 				params: {
 					path: { clusterId: cid },
 					query: {

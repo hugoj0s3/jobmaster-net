@@ -13,9 +13,9 @@ internal static class WorkersEndpoints
     {
         var workers = group.GetClusterEntityGroup("workers");
 
-        workers.MapGet("/", QueryWorkersAsync);
-        workers.MapGet("/count", CountWorkersAsync);
-        workers.MapGet("/{workerId}", GetWorkerAsync);
+        workers.MapGet("/", QueryWorkersAsync).Produces<List<ApiAgentWorker>>();
+        workers.MapGet("/count", CountWorkersAsync).Produces<int>();
+        workers.MapGet("/{workerId}", GetWorkerAsync).Produces<ApiAgentWorker>();
 
         return group;
     }
