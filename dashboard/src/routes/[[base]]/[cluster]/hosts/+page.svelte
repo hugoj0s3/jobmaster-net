@@ -1,0 +1,527 @@
+<script lang="ts">
+	import { onMount, onDestroy } from "svelte";
+	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
+	import { ApiClientUtil } from "$lib/api/api-client-util";
+	import type { components } from "$lib/api/schema";
+	import Pager from "$lib/components/Pager.svelte";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
+	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
+	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
+	import FilterItem from "$lib/components/filters/FilterItem.svelte";
+	import { DateDisplayUtil } from "$lib/helper/date-display-util";
+	import { resolve } from "$app/paths";
+	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
+	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
+	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
+
+	type ApiHostModel = components["schemas"]["ApiHostModel"];
+
+	const clusterId = () => $page.params.cluster;
+
+	type HostStatus = "Online" | "Offline";
+
+	type HostRow = {
+		id: string;
+		status: HostStatus;
+		host: string;
+		hostDisplayName?: string;
+		cpu: number | null;
+		memPercent?: number;
+		memGb?: number;
+		workers?: number;
+		uptime?: string;
+		createdAt?: string;
+	};
+
+	let rows: HostRow[] = [];
+	let isRefreshing = false;
+	let lastUpdatedAt = new Date();
+	let poller: number | undefined;
+	const refreshIntervalSec = 10;
+	let activeFiltersCount = 0;
+
+	const DEFAULT_STATUSES = ["Online"];
+
+	const urlParamDefs = {
+		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
+		sort: { defaultValue: "" as "" | "recent" | "oldest" | "online" },
+		page: { defaultValue: 0, ...Serializers.number },
+		size: { defaultValue: 10, ...Serializers.number },
+		createdAt: { defaultValue: "" as string }
+	};
+
+	const LS_KEY_HOSTS_FILTERS = `hosts-filters-${$page.params.cluster}`;
+
+	// Carrega filtros salvos da localStorage
+	function loadSavedFilters() {
+		const saved = readSavedFilter(LS_KEY_HOSTS_FILTERS, "");
+		if (!saved) return null;
+		try {
+			return JSON.parse(saved);
+		} catch {
+			return null;
+		}
+	}
+
+	let _initParams = readUrlParams(urlParamDefs);
+	let sort: "" | "recent" | "oldest" | "online" = _initParams.sort;
+
+	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+
+	type FilterValues = Record<string, unknown>;
+	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
+
+	let pageIndex = _initParams.page;
+	let pageSize = _initParams.size;
+
+	let filterKeySeed = 0;
+	let filterKeyBase = $page.url.search;
+	let filterKey = `${filterKeyBase}|${filterKeySeed}`;
+	let lastSearch = $page.url.search;
+	$: if ($page.url.search !== lastSearch) {
+		lastSearch = $page.url.search;
+		filterKeyBase = $page.url.search;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
+		_initParams = readUrlParams(urlParamDefs);
+		pageSize = _initParams.size;
+		pageIndex = _initParams.page;
+		selectedStatuses = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+		sort = _initParams.sort;
+		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
+		refreshNow();
+	}
+
+	function syncToUrl() {
+		writeUrlParams(urlParamDefs, {
+			statuses: selectedStatuses,
+			sort,
+			page: pageIndex,
+			size: pageSize,
+			createdAt: datetimeToParam(filterValues, "createdAt")
+		});
+	}
+
+	$: if (filterValues || selectedStatuses || sort || pageIndex || pageSize) {
+		syncToUrl();
+	}
+
+	function resetFilters() {
+		selectedStatuses = [];
+		filterValues = {};
+		sort = "";
+		pageIndex = 0;
+		filterKeySeed += 1;
+		filterKey = `${filterKeyBase}|${filterKeySeed}`;
+		syncToUrl();
+	}
+
+	$: onlineCount = rows.filter(r => r.status === "Online").length;
+	$: offlineCount = rows.filter(r => r.status === "Offline").length;
+
+	$: avgCpu = (() => {
+		const online = rows.filter(r => r.status !== "Offline" && r.cpu != null);
+		if (online.length === 0) return "N/A";
+		return Math.round(online.reduce((acc, r) => acc + (r.cpu ?? 0), 0) / online.length) + "%";
+	})();
+
+	$: avgMem = (() => {
+		const online = rows.filter(r => r.status !== "Offline" && r.memPercent != null);
+		if (online.length === 0) return "N/A";
+		return Math.round(online.reduce((acc, r) => acc + (r.memPercent ?? 0), 0) / online.length) + "%";
+	})();
+
+	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
+
+	function mapHostToRow(host: any): HostRow {
+		const memTotal = host.memoryTotalBytes ?? 0;
+		const memUsed = host.memoryUsedBytes ?? 0;
+		const memPercent = memTotal > 0 ? Math.round((memUsed / memTotal) * 100) : undefined;
+		const memGb = memTotal > 0 ? Number((memUsed / (1024 ** 3)).toFixed(1)) : undefined;
+
+		const cpu = host.cpuUsagePercent != null ? Math.round(host.cpuUsagePercent) : null;
+		
+		let status: HostStatus;
+		if (host.isAlive === false) {
+			status = "Offline";
+		} else {
+			status = "Online";
+		}
+
+		return {
+			id: host.id ?? "",
+			status,
+			host: host.id ?? "Unknown",
+			hostDisplayName: host.hostDisplayName,
+			cpu,
+			memPercent,
+			memGb,
+			workers: undefined,
+			uptime: undefined,
+			createdAt: host?.createdAt ?? host?.registeredAt ?? undefined
+		};
+	}
+
+	async function refreshNow() {
+		isRefreshing = true;
+		try {
+			const cid = clusterId();
+			if (!cid) return;
+
+			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+
+			const response = await (jmApi as any).GET("/{clusterId}/hosts", {
+				params: { path: { clusterId: cid } }
+			});
+
+			if (response.error) {
+				console.error("API error:", response.error);
+				return;
+			}
+
+			const apiHosts = (response.data ?? []) as ApiHostModel[];
+			rows = apiHosts.map(mapHostToRow);
+			lastUpdatedAt = new Date();
+		} catch (error) {
+			console.error("Failed to fetch hosts:", error);
+			rows = [];
+		} finally {
+			isRefreshing = false;
+		}
+	}
+
+	function restartPoller() {
+		if (poller) window.clearInterval(poller);
+		poller = window.setInterval(() => {
+			refreshNow();
+		}, refreshIntervalSec * 1000);
+	}
+
+	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
+
+	$: filteredAll = rows
+		.filter(r => {
+			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
+			if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
+			return true;
+		})
+		.sort((a, b) => {
+			if (sort === "online") {
+				if (a.status === "Online" && b.status !== "Online") return -1;
+				if (a.status !== "Online" && b.status === "Online") return 1;
+				// If both have same status, fallback to recent
+			}
+
+			const dir = sort === "oldest" ? 1 : -1;
+			const safeTime = (iso: string | undefined) => {
+				if (!iso) return Number.MIN_SAFE_INTEGER;
+				const t = new Date(iso).getTime();
+				return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+			};
+			return (safeTime(a.createdAt) - safeTime(b.createdAt)) * dir;
+		});
+
+	$: totalCount = filteredAll.length;
+	$: paginatedHosts = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+	$: currentCount = paginatedHosts.length;
+	$: activeFiltersCount =
+		(selectedStatuses.length > 0 ? 1 : 0) +
+		(filterValues?.createdAt ? 1 : 0) +
+		(sort ? 1 : 0);
+
+	function refresh() {
+		refreshNow();
+	}
+
+	function badgeColor(status: HostStatus) {
+		if (status === "Online") return "badge-success";
+		return "badge-error";
+	}
+
+	function dotClass(status: HostStatus) {
+		if (status === "Online") return "bg-success";
+		return "bg-error";
+	}
+
+	onMount(() => {
+		// Se não tem params na URL, tenta carregar da localStorage
+		const hasUrlParams = $page.url.search.length > 0;
+		if (!hasUrlParams) {
+			const savedFilters = loadSavedFilters();
+			if (savedFilters) {
+				// Carrega filtros salvos (respeita até valores vazios)
+				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
+				sort = savedFilters.sort !== undefined ? savedFilters.sort : "recent";
+				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
+			} else {
+				// Aplica defaults quando não há localStorage (primeira vez)
+				selectedStatuses = [...DEFAULT_STATUSES];
+				sort = "recent";
+			}
+		}
+
+		refreshNow();
+		restartPoller();
+	});
+
+	onDestroy(() => {
+		if (poller) window.clearInterval(poller);
+
+		// Salva filtros atuais na localStorage no unmount
+		writeSavedFilter(
+			LS_KEY_HOSTS_FILTERS,
+			JSON.stringify({
+				statuses: selectedStatuses,
+				sort,
+				createdAt: datetimeToParam(filterValues, "createdAt")
+			})
+		);
+	});
+</script>
+
+<div class="min-h-screen bg-base-100">
+	<div class="mx-auto max-w-full px-6 py-6">
+		<div class="flex items-start justify-between gap-4">
+			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
+
+			<div class="flex items-center gap-3 text-sm opacity-80">
+				<span>Last Refresh: {lastUpdated}</span>
+				<button
+					class="btn btn-ghost btn-sm btn-square"
+					aria-label="Refresh now"
+					on:click={refresh}
+					disabled={isRefreshing}
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
+						viewBox="0 0 24 24"
+						fill="none"
+						stroke="currentColor"
+						stroke-width="2"
+					>
+						<path d="M21 12a9 9 0 1 1-3-6.7" />
+						<path d="M21 3v6h-6" />
+					</svg>
+				</button>
+			</div>
+		</div>
+
+		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-base-content/70">Hosts Online</div>
+							<div class="mt-1 text-4xl font-semibold">{onlineCount}</div>
+						</div>
+						<div class="rounded-2xl bg-success/15 p-3 text-success">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M20 6 9 17l-5-5"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-base-content/70">Hosts Offline</div>
+							<div class="mt-1 text-4xl font-semibold">{offlineCount}</div>
+						</div>
+						<div class="rounded-2xl bg-error/15 p-3 text-error">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<circle cx="12" cy="12" r="9"/>
+								<path d="M15 9l-6 6M9 9l6 6"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-base-content/70">Avg. CPU Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgCpu}</div>
+						</div>
+						<div class="rounded-2xl bg-secondary/15 p-3 text-secondary">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M8 2h8v4H8z"/><path d="M6 6h12v16H6z"/><path d="M9 10h6M9 14h6M9 18h6"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+				<div class="card-body p-5">
+					<div class="flex items-center justify-between">
+						<div>
+							<div class="text-sm text-base-content/70">Avg. Memory Usage</div>
+							<div class="mt-1 text-4xl font-semibold">{avgMem}</div>
+						</div>
+						<div class="rounded-2xl bg-info/15 p-3 text-info">
+							<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+								<path d="M7 7h10v10H7z"/><path d="M4 10h3M17 10h3M4 14h3M17 14h3M10 4v3M14 4v3M10 17v3M14 17v3"/>
+							</svg>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+		<div class="flex items-center justify-between gap-4 mt-6">
+			{#key filterKey}
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Status"
+					options={[
+						{ value: "Online", label: "Online" },
+						{ value: "Offline", label: "Offline" }
+					]}
+					bind:values={selectedStatuses}
+					on:change={() => { pageIndex = 0; }}
+				/>
+
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "recent", label: "Recents" },
+						{ value: "oldest", label: "Olders" },
+						{ value: "online", label: "Online" }
+					]}
+					value={sort}
+					on:change={(e) => {
+						sort = e.detail as "" | "recent" | "oldest" | "online";
+						pageIndex = 0;
+					}}
+				/>
+
+				<FilterContainer
+					initialValues={filterValues}
+					onChange={(v) => {
+						filterValues = v;
+						pageIndex = 0;
+					}}
+				>
+					<FilterItem
+						id="createdAt"
+						label="Created at"
+						type="datetime"
+						presets={[
+							{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
+							{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
+							{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
+						]}
+					/>
+				</FilterContainer>
+
+				{#if activeFiltersCount > 0}
+					<button
+						type="button"
+						class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
+						on:click={resetFilters}
+					>
+						Clear filters
+					</button>
+				{/if}
+			</div>
+			{/key}
+
+			<Pager
+				bind:pageIndex
+				bind:pageSize
+				{totalCount}
+				{currentCount}
+				disabled={isRefreshing}
+				showPageSize={true}
+			/>
+		</div>
+
+		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-4">
+			<div class="card-body gap-4">
+				<div class="overflow-x-auto">
+					<table class="table">
+						<thead>
+						<tr class="text-base-content/70">
+							<th>Status</th>
+							<th>Host</th>
+							<th>CPU Load</th>
+							<th>Memory Usage</th>
+							<th>Workers</th>
+							<th>Uptime</th>
+						</tr>
+						</thead>
+						<tbody>
+						{#each paginatedHosts as r (r.id)}
+							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(resolve(`/${clusterId()}/hosts/${r.id}`))}>
+								<td>
+									<div class="flex items-center gap-2">
+										<span class={`inline-block h-2.5 w-2.5 rounded-full ${dotClass(r.status)}`} />
+										<span class={`badge badge-outline ${badgeColor(r.status)}`}>{r.status}</span>
+									</div>
+								</td>
+
+								<td>
+									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
+								</td>
+
+								<td>
+									{#if r.status === "Offline"}
+										<span class="opacity-60">—</span>
+									{:else if r.cpu == null}
+										<span class="opacity-60">N/A</span>
+									{:else}
+										<div class="flex items-center gap-3">
+											<progress class="progress progress-success w-28" value={r.cpu} max="100" />
+											<span class="tabular-nums">{r.cpu}%</span>
+										</div>
+									{/if}
+								</td>
+
+								<td>
+									{#if r.status === "Offline"}
+										<span class="opacity-60">—</span>
+									{:else if r.memPercent == null}
+										<span class="opacity-60">N/A</span>
+									{:else}
+										<div class="flex items-center gap-3">
+											<progress class="progress progress-info w-28" value={r.memPercent} max="100" />
+											<span class="tabular-nums">{r.memPercent}% ({r.memGb} GB)</span>
+										</div>
+									{/if}
+								</td>
+
+								<td class="tabular-nums">
+									{#if r.status === "Offline"}
+										<span class="badge badge-ghost">Offline</span>
+									{:else}
+										{r.workers ?? "—"}
+									{/if}
+								</td>
+
+								<td class="tabular-nums">
+									{#if r.status === "Offline"}
+										<span class="opacity-60">Offline</span>
+									{:else}
+										{r.uptime ?? "—"}
+									{/if}
+								</td>
+							</tr>
+						{/each}
+						</tbody>
+					</table>
+				</div>
+
+				<div class="flex items-center gap-6 text-sm opacity-80">
+					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
+					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-error"></span> Offline</div>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
