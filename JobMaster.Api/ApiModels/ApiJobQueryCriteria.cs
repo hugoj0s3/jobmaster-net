@@ -27,9 +27,9 @@ public class ApiJobQueryCriteria
     public DateTime? ProcessDeadlineTo { get; set; }
     /// <summary>Filter by one or more trigger source types.</summary>
     public JobMasterTriggerSourceType[]? TriggerSourceTypes { get; set; }
-    /// <summary>Filter by multiple source IDs (base64url-encoded GUIDs).</summary>
+    /// <summary>Filter by multiple source IDs (base64url-encoded or standard GUID format).</summary>
     public string[]? SourceIds { get; set; }
-    /// <summary>Filter by a single source ID (base64url-encoded GUID).</summary>
+    /// <summary>Filter by a single source ID (base64url-encoded or standard GUID format).</summary>
     public string? SourceId { get; set; }
     /// <summary>Filter by job definition ID.</summary>
     public string? JobDefinitionId { get; set; }
@@ -57,10 +57,10 @@ public class ApiJobQueryCriteria
         Guid? sourceId = null;
         if (!string.IsNullOrWhiteSpace(SourceId))
         {
-            sourceId = SourceId!.FromBase64();
+            sourceId = SourceId!.ParseFlexible();
         }
-        
-        var sourceIds = (SourceIds ?? Array.Empty<string>()).Select(s => s.FromBase64()).ToArray();
+
+        var sourceIds = (SourceIds ?? Array.Empty<string>()).Select(s => s.ParseFlexible()).ToArray();
 
         var triggerSourceTypes = (TriggerSourceTypes ?? Array.Empty<JobMasterTriggerSourceType>()).ToList();
         

@@ -71,7 +71,7 @@ internal static class LogsEndpoints
         Guid guid;
         try
         {
-            guid = id.FromBase64();
+            guid = id.ParseFlexible();
         }
         catch (Exception)
         {

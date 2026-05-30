@@ -7,7 +7,7 @@
     export let disabled: boolean = false;
     export let showFirstLast: boolean = true;
 	export let showPageSize: boolean = false;
-	export let pageSizeOptions: number[] = [10, 25, 50, 100];
+	export let pageSizeOptions: number[] = [10, 25, 50, 100, 250, 500, 1000];
 
     let maxPageIndex = 0;
 
@@ -40,8 +40,6 @@
 	{/if}
 
     <div class="hidden sm:block">
-        <span class="font-semibold">{start}-{end}</span>
-        <span class="opacity-70">/</span>
         <span class="font-semibold">{totalCount}</span>
     </div>
 

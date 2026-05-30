@@ -16,40 +16,8 @@
 		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
-    import SearchSelectModal, { type SearchSelectOption } from "$lib/components/filters/SearchSelectModal.svelte";
     import { readSavedFilter, writeSavedFilter, setupFilterPersistOnUnload } from "$lib/helper/filter-persistence";
-
-    let isDefinitionSearchOpen = false;
-
-    $: definitionOptions = Array.from(
-      new Map(
-        jobs
-          .filter((j) => j.definitionId)
-          .map((j) => [
-              j.definitionId,
-              {
-                  value: j.definitionId,
-                  label: j.definitionId,
-                  description: j.jobId
-              } satisfies SearchSelectOption
-          ])
-      ).values()
-    );
-
-    function openDefinitionSearch() {
-        isDefinitionSearchOpen = true;
-    }
-
-    function closeDefinitionSearch() {
-        isDefinitionSearchOpen = false;
-    }
-
-    function handleDefinitionSelect(option: SearchSelectOption) {
-        selectedJobDefinitionId = option.value;
-        pageIndex = 0;
-        isDefinitionSearchOpen = false;
-        refreshNow();
-    }
+    import { bucketNameCache } from "$lib/helper/bucket-name-cache";
 
     const refreshIntervalSec = 20;
 
@@ -77,7 +45,7 @@
     let pageSize = _initParams.size;
     let pageIndex = _initParams.page;
 
-    // Carrega filtros salvos da localStorage
+    // Load saved filters from localStorage
     function loadSavedFilters() {
         const saved = readSavedFilter(LS_KEY_JOBS_FILTERS, "");
         if (!saved) return null;
@@ -131,6 +99,7 @@
     };
 
     type ApiJobModel = components["schemas"]["ApiJobModel"];
+    type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 
     function mapApiStatus(status: number): JobStatus {
         return JobStatusUtil.getLabel(status);
@@ -159,7 +128,7 @@
     }
 
     function bestExecutedAtIso(j: ApiJobModel): string | undefined {
-        return j.succeedExecutedAt ?? j.processingStartedAt ?? undefined;
+        return j.finalizedAt ?? j.processStartedAt ?? undefined;
     }
 
     function scheduledIso(j: ApiJobModel): string | undefined {
@@ -194,7 +163,7 @@
         refreshNow();
     }
 
-    // Inicializa com valores da URL se existirem
+    // Initialize with URL values if present
     let selectedStatuses: number[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
     let selectedJobDefinitionId: string = _initParams.jobDefinitionId;
     let selectedSortDirection: string = _initParams.sortDirection;
@@ -235,18 +204,18 @@
     $: filterValues, selectedStatuses, selectedJobDefinitionId, selectedSortDirection, pageIndex, pageSize, syncToUrl();
 
     onMount(() => {
-        // Se não tem params na URL, tenta carregar da localStorage
+        // If no URL params, try to load from localStorage
         const hasUrlParams = $page.url.search.length > 0;
         if (!hasUrlParams) {
             const savedFilters = loadSavedFilters();
             if (savedFilters) {
-                // Carrega filtros salvos (respeita até valores vazios)
+                // Load saved filters (respects even empty values)
                 selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [];
                 selectedJobDefinitionId = savedFilters.jobDefinitionId !== undefined ? savedFilters.jobDefinitionId : "";
                 selectedSortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : "";
                 filterValues = savedFilters.scheduledAt ? parseDatetimeParam(savedFilters.scheduledAt, "scheduledAt") : {};
             } else {
-                // Aplica default quando não há localStorage (primeira vez)
+                // Apply default when no localStorage entry exists (first visit)
                 filterValues = parseDatetimeParam(DEFAULT_SCHEDULED_PARAM, "scheduledAt");
             }
             syncToUrl();
@@ -254,7 +223,7 @@
     });
 
     onDestroy(() => {
-        // Salva filtros atuais na localStorage no unmount
+        // Save current filters to localStorage on unmount
         writeSavedFilter(
             LS_KEY_JOBS_FILTERS,
             JSON.stringify({
@@ -400,14 +369,32 @@
                         maxNumberOfRetries: j.maxNumberOfRetries,
                         executedAt: bestExecutedAtIso(j),
                         scheduledAt: scheduledIso(j),
-                        nextPlanExecutionAt: j.originalScheduledAt,
-                        completedAt: j.succeedExecutedAt ?? bestExecutedAtIso(j),
+                        nextPlanExecutionAt: j.nextPlanExecutionAt ?? undefined,
+                        completedAt: j.finalizedAt ?? undefined,
                         workerLane: j.workerLane ?? undefined,
                         worker: j.agentWorkerId ?? undefined,
                         bucketId: j.bucketId ?? undefined,
-                        bucketName: j.bucketId ?? undefined
+                        bucketName: undefined
                     };
                 });
+
+                // Post-load: resolve bucket names (fetch only IDs not yet in cache)
+                const distinctBucketIds = [...new Set(apiJobs.map((j) => j.bucketId).filter((id): id is string => !!id))];
+                const missingIds = bucketNameCache.getMissing(cid, distinctBucketIds);
+                if (missingIds.length > 0) {
+                    try {
+                        const apiBuckets = await jm.GET("/{clusterId}/buckets", {
+                            params: { path: { clusterId: cid }, query: { BucketIds: missingIds, CountLimit: missingIds.length } }
+                        }).then((r) => {
+                            if (r.error) throw r.error;
+                            return r.data as ApiBucketModel[];
+                        });
+                        bucketNameCache.populate(cid, apiBuckets);
+                    } catch {
+                        // cache stays as-is; bucket names may be partially resolved
+                    }
+                }
+                jobs = jobs.map((j) => j.bucketId ? { ...j, bucketName: bucketNameCache.get(cid, j.bucketId) } : j);
 
                 console.log('[Jobs] Mapped jobs:', jobs);
                 lastUpdatedAt = new Date();
@@ -461,87 +448,24 @@
 
 <div class="min-h-screen bg-base-100">
     <div class="mx-auto max-w-full px-6 py-6">
-        <div class="flex items-center justify-between gap-4">
-            <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
-
-            <div class="flex items-center gap-3 text-sm opacity-80">
-								<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt, uiNow)}</span>
-
-                <button
-                    class="btn btn-ghost btn-sm btn-square"
-                    aria-label="Refresh now"
-                    on:click={refreshNow}
-                    disabled={isRefreshing}
-                >
-                    <svg
-                        xmlns="http://www.w3.org/2000/svg"
-                        class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="currentColor"
-                        stroke-width="2"
-                    >
-                        <path d="M21 12a9 9 0 1 1-3-6.7" />
-                        <path d="M21 3v6h-6" />
-                    </svg>
-                </button>
-            </div>
-        </div>
+                <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
 
         <div class="flex items-center justify-between gap-4 mt-4">
             {#key filterKey}
             <div class="flex flex-wrap items-center gap-2">
-                <div class="form-control">
-                    <div class="join">
-                        <button
-                          type="button"
-                          class="btn btn-sm join-item"
-                          on:click={openDefinitionSearch}
-                        >
-                            Search Definition
-                        </button>
-
-                        {#if selectedJobDefinitionId}
-                            <button
-                              type="button"
-                              class="btn btn-sm btn-ghost join-item"
-                              aria-label="Clear definition filter"
-                              on:click={() => {
-                              selectedJobDefinitionId = "";
-                              pageIndex = 0;
-                              refreshNow();
-                            }}
-                            >
-                                ✕
-                            </button>
-                        {/if}
-                    </div>
-                </div>
-
-                <FilterDropdown
-                    label="Sort By"
-                    options={[
-                        { value: "desc", label: "Recents" },
-                        { value: "asc", label: "Olders" }
-                    ]}
-                    bind:value={selectedSortDirection}
-                    on:change={() => {
-                        pageIndex = 0;
-                        refreshNow();
-                    }}
-                />
-
                 <FilterDropdownMulti
                     label="Statuses"
                     options={[
-                        { value: String(ApiJobStatus.SavePending), label: JobStatusUtil.Label.SavePending },
-                        { value: String(ApiJobStatus.HeldOnMaster), label: JobStatusUtil.Label.HeldOnMaster },
-                        { value: String(ApiJobStatus.AssignedToBucket), label: JobStatusUtil.Label.AssignedToBucket },
+                        { value: String(ApiJobStatus.PendingSave), label: JobStatusUtil.Label.PendingSave },
+                        { value: String(ApiJobStatus.OnMaster), label: JobStatusUtil.Label.OnMaster },
+                        { value: String(ApiJobStatus.InBucket), label: JobStatusUtil.Label.InBucket },
+                        { value: String(ApiJobStatus.Onboarded), label: JobStatusUtil.Label.Onboarded },
                         { value: String(ApiJobStatus.Processing), label: JobStatusUtil.Label.Processing },
                         { value: String(ApiJobStatus.Succeeded), label: JobStatusUtil.Label.Succeeded },
                         { value: String(ApiJobStatus.Queued), label: JobStatusUtil.Label.Queued },
                         { value: String(ApiJobStatus.Failed), label: JobStatusUtil.Label.Failed },
-                        { value: String(ApiJobStatus.Cancelled), label: JobStatusUtil.Label.Cancelled }
+                        { value: String(ApiJobStatus.Cancelled), label: JobStatusUtil.Label.Cancelled },
+                        { value: String(ApiJobStatus.Aborted), label: JobStatusUtil.Label.Aborted }
                     ]}
                     values={selectedStatuses.map(String)}
                     on:change={(e) => {
@@ -583,29 +507,43 @@
             </div>
             {/key}
 
-            <Pager
-                bind:pageIndex
-                bind:pageSize
-                totalCount={jobsTotalCount}
-                currentCount={jobs.length}
-                disabled={isRefreshing}
-                showPageSize={true}
-            />
+            <div class="flex items-center gap-2">
+                <FilterDropdown
+                    label="Sort By"
+                    options={[
+                        { value: "desc", label: "Recents" },
+                        { value: "asc", label: "Olders" }
+                    ]}
+                    bind:value={selectedSortDirection}
+                    on:change={() => {
+                        pageIndex = 0;
+                        refreshNow();
+                    }}
+                />
+                <Pager
+                    bind:pageIndex
+                    bind:pageSize
+                    totalCount={jobsTotalCount}
+                    currentCount={jobs.length}
+                    disabled={isRefreshing}
+                    showPageSize={true}
+                />
+                <button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
+            </div>
         </div>
-
         <div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
             <div class="overflow-x-auto">
                 <table class="table">
                     <thead>
                     <tr class="text-base-content/70">
-                        <th>JobId</th>
-                        <th>DefinitionId</th>
+                        <th>Id</th>
+                        <th>Definition Id</th>
                         <th>Metadata</th>
                         <th>Status</th>
                         <th>Failure Attempts</th>
                         <th>Priority</th>
-                        <th>Next Planned Execution</th>
                         <th>Schedule Date</th>
+                        <th>Next Planned Execution</th>
                         <th>Finish</th>
                         <th>Worker Lane</th>
                         <th>Bucket</th>
@@ -624,7 +562,6 @@
                         <tr>
                             <td colspan="11" class="text-center py-8">
                                 <p class="opacity-60">No jobs found</p>
-                                <p class="text-sm opacity-40 mt-1">Try adjusting your filters</p>
                             </td>
                         </tr>
                     {:else}
@@ -676,7 +613,7 @@
                             </td>
 
                             <td>
-                                <span class={`badge badge-sm ${statusBadgeClass(j.status)}`}>
+                                <span class={`badge badge-sm whitespace-nowrap ${statusBadgeClass(j.status)}`}>
                                     {j.status}
                                 </span>
                             </td>
@@ -690,19 +627,9 @@
                             </td>
 
                             <td>
-                                <span class={`badge badge-sm ${PriorityUtil.getBadgeClass(j.priority)}`}>
+                                <span class={`badge badge-sm whitespace-nowrap ${PriorityUtil.getBadgeClass(j.priority)}`}>
                                     {j.priority}
                                 </span>
-                            </td>
-
-                            <td>
-                                {#if formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}
-                                    <span class="tooltip tooltip-bottom" data-tip={formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}>
-                                        {formatDateCell(j.nextPlanExecutionAt, j.status, true).label}
-                                    </span>
-                                {:else}
-                                    <span>{formatDateCell(j.nextPlanExecutionAt, j.status, true).label}</span>
-                                {/if}
                             </td>
 
                             <td>
@@ -712,6 +639,16 @@
                                     </span>
                                 {:else}
                                     <span>{formatDateCell(j.scheduledAt).label}</span>
+                                {/if}
+                            </td>
+
+                            <td>
+                                {#if formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}
+                                    <span class="tooltip tooltip-bottom" data-tip={formatDateCell(j.nextPlanExecutionAt, j.status, true).tooltip}>
+                                        {formatDateCell(j.nextPlanExecutionAt, j.status, true).label}
+                                    </span>
+                                {:else}
+                                    <span>{formatDateCell(j.nextPlanExecutionAt, j.status, true).label}</span>
                                 {/if}
                             </td>
 
@@ -749,16 +686,7 @@
                     {/if}
                     </tbody>
                 </table>
-                <SearchSelectModal
-                  open={isDefinitionSearchOpen}
-                  title="Search Definition ID"
-                  placeholder="Type exactly definition id name"
-                  options={definitionOptions}
-                  selectedValue={selectedJobDefinitionId}
-                  emptyText="No definition found"
-                  on:close={closeDefinitionSearch}
-                  on:select={(e) => handleDefinitionSelect(e.detail)}
-                />
+
             </div>
         </div>
     </div>

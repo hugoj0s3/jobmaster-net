@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <style>
+    .bg { fill: #111; }
+    .fg { fill: #fff; }
+    @media (prefers-color-scheme: light) {
+      .bg { fill: #fff; }
+      .fg { fill: #111; }
+    }
+  </style>
+  <rect x="10" y="10" width="180" height="180" rx="40" ry="40" class="bg"/>
+  <text x="100" y="118" text-anchor="middle"
+        font-family="'Inter','Segoe UI',system-ui,sans-serif"
+        font-weight="800" font-size="72"
+        letter-spacing="-2"
+        class="fg">JM</text>
+</svg>

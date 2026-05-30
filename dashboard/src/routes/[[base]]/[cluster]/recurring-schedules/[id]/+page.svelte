@@ -13,23 +13,40 @@
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 	import { copyText, createCopyFeedback } from "$lib/helper/clipboard-util";
+	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
+	import { LogCategory, LogLevel, logLevelLabel, logLevelBadgeClass, LogLevelFilterOptions } from "$lib/api/enums";
 
 	type RecurringSchedule = any;
 
 	const clusterId = () => $page.params.cluster;
 	const scheduleId = () => $page.params.id;
 
+	type LogEntry = {
+		id?: string;
+		timestampUtc?: string;
+		level?: number;
+		message?: string;
+		exceptionMessage?: string;
+		exceptionStackTrace?: string;
+	};
+
 	let schedule: RecurringSchedule | null = null;
 	let upcomingRuns: any[] = [];
+	let recentLogs: LogEntry[] = [];
+	let filteredLogs: LogEntry[] = [];
+	let selectedLogLevel: string = "";
+	let logsPageSize = 10;
+	let logsSortDirection: "asc" | "desc" = "desc";
+	let selectedLogDetail: LogEntry | null = null;
+	let isDarkTheme = false;
 	let isLoading = false;
 	let isLoadingUpcoming = false;
 	let error: string | null = null;
 	let notFound = false;
 	let upcomingRunsPage = 0;
 	let upcomingRunsPageSize = 10;
+	let upcomingRunsSortDirection: "asc" | "desc" = "asc";
 
-	let refreshIntervalSec = 20;
-	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
 	const copiedId = copyFeedback.copiedId;
@@ -72,30 +89,18 @@
 
 	async function fetchUpcomingRuns() {
 		if (!schedule?.id) return;
-		
 		isLoadingUpcoming = true;
 		try {
 			const cid = clusterId();
 			if (!cid) return;
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
-
 			const response = await jm.GET("/{clusterId}/jobs", {
 				params: {
 					path: { clusterId: cid },
-					query: { 
-						SourceId: schedule.id,
-						CountLimit: 10,
-
-					}
+					query: { SourceId: schedule.id, CountLimit: 10 }
 				}
 			});
-
-			if (response.error) {
-				console.error('Error fetching upcoming runs:', response.error);
-				upcomingRuns = [];
-			} else {
-				upcomingRuns = response.data || [];
-			}
+			upcomingRuns = response.error ? [] : (response.data ?? []) as any[];
 		} catch (err) {
 			console.error('Error fetching upcoming runs:', err);
 			upcomingRuns = [];
@@ -139,22 +144,25 @@
 				notFound = true;
 				return;
 			}
-			// Fetch upcoming runs after schedule is loaded
 			await fetchUpcomingRuns();
+
+			try {
+				const logsResp = await jm.GET("/{clusterId}/logs", {
+					params: {
+						path: { clusterId: cid },
+						query: { ReferenceGuid: sid, Category: LogCategory.RecurringSchedule, CountLimit: logsPageSize }
+					}
+				});
+				recentLogs = logsResp.error ? [] : (logsResp.data ?? []) as LogEntry[];
+			} catch {
+				recentLogs = [];
+			}
 		} catch (e) {
 			console.error("Refresh failed", e);
 			error = "An error occurred while loading the schedule";
 		} finally {
 			isLoading = false;
 		}
-	}
-
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshSchedule();
-			fetchUpcomingRuns();
-		}, refreshIntervalSec * 1000);
 	}
 
 	function goBack() {
@@ -193,13 +201,20 @@
 		await copyFeedback.copy(jobId);
 	}
 
+	$: filteredLogs = selectedLogLevel
+		? recentLogs.filter(log => log.level === parseInt(selectedLogLevel))
+		: recentLogs;
+
 	onMount(() => {
+		const checkTheme = () => { isDarkTheme = document.documentElement.style.colorScheme === "dark"; };
+		checkTheme();
+		const observer = new MutationObserver(checkTheme);
+		observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 		refreshSchedule();
-		restartPoller();
+		return () => observer.disconnect();
 	});
 
 	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
 		copyFeedback.destroy();
 	});
 
@@ -217,9 +232,8 @@
 	$: statusLabel = schedule ? getScheduleStatus() : RecurringSchedulesStatusUtil.Label.Inactive;
 	$: lastJobStatusLabel = schedule?.lastJobStatus ? JobStatusUtil.getLabel(schedule.lastJobStatus) : null;
 
-	// Pagination for upcoming runs
 	$: paginatedUpcomingRuns = upcomingRuns.slice(
-		upcomingRunsPage * upcomingRunsPageSize, 
+		upcomingRunsPage * upcomingRunsPageSize,
 		(upcomingRunsPage + 1) * upcomingRunsPageSize
 	);
 	$: upcomingRunsTotalCount = upcomingRuns.length;
@@ -329,19 +343,10 @@
 							</div>
 
 							<div class="px-6 pb-5">
-								{#if schedule?.messageData}
-									<div class="space-y-2">
-										{#each Object.entries(schedule.messageData) as [key, value]}
-											<div class="flex items-center justify-between gap-4">
-												<div class="text-sm opacity-70 font-mono">{key}</div>
-												<div class="font-medium text-right break-all">{String(value)}</div>
-											</div>
-										{/each}
-									</div>
+								{#if schedule?.msgData && Object.keys(schedule.msgData).length > 0}
+									<pre class="bg-base-300/60 rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(schedule.msgData, null, 2)}</pre>
 								{:else}
-									<div class="text-center opacity-70">
-										<p>No message data available</p>
-									</div>
+									<div class="text-sm opacity-60">No message data.</div>
 								{/if}
 							</div>
 						</div>
@@ -396,12 +401,10 @@
 									<p>Loading upcoming runs...</p>
 								</div>
 							{:else if upcomingRuns.length === 0}
-								<div class="text-center opacity-70 py-8">
-									<p>No upcoming runs found</p>
-								</div>
+								<div class="text-sm opacity-60 py-4">No upcoming runs found.</div>
 							{:else}
 								<div class="overflow-x-auto">
-									<table class="table table-zebra table-sm">
+									<table class="table">
 										<thead>
 											<tr class="text-base-content/70">
 												<th>Job ID</th>
@@ -415,16 +418,9 @@
 												<tr>
 													<td>
 														<div class="flex items-center gap-2">
-															<span class="tooltip tooltip-bottom" data-tip={job.id}>
-																<a
-																	class="link link-hover"
-																	href={`/${clusterId()}/jobs/${job.id}`}
-																	aria-label={`Open job ${job.id}`}
-																>
-																	{job.id}
-																</a>
-															</span>
-
+															<a class="link link-hover font-mono text-sm" href={`/${clusterId()}/jobs/${job.id}`}>
+																{job.id}
+															</a>
 															<button
 																class="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
 																aria-label="Copy Job ID"
@@ -444,17 +440,83 @@
 														</div>
 													</td>
 													<td>
-														<span class={getJobStatusBadgeClass(job.status)}>
+														<span class={"badge badge-sm whitespace-nowrap " + (job.status ? (()=>{try{return JobStatusUtil.getBadgeClass(JobStatusUtil.getLabel(job.status));}catch{return "badge-ghost";}})() : "badge-ghost")}>
 															{getJobStatusLabel(job.status)}
 														</span>
 													</td>
-													<td>
-														<div class="font-medium">{formatJobDateTime(job.scheduledAt)}</div>
-														<div class="text-xs opacity-60">{formatJobTimeAgo(job.scheduledAt)}</div>
-													</td>
+													<td class="font-medium whitespace-nowrap">{DateDisplayUtil.formatRelativeOrDate(job.scheduledAt)}</td>
 													<td class="font-mono text-sm">{job.priority ?? "—"}</td>
 												</tr>
 											{/each}
+										</tbody>
+									</table>
+								</div>
+							{/if}
+						</div>
+					</div>
+					<!-- Logs -->
+					<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
+						<div class="card-body">
+							<div class="flex items-center justify-between gap-4">
+								<h2 class="card-title text-base">Logs</h2>
+								<div class="flex items-center gap-2">
+									<FilterDropdown
+										label="Log Level"
+										options={LogLevelFilterOptions}
+										bind:value={selectedLogLevel}
+									/>
+									<select class="select select-bordered select-xs" bind:value={logsSortDirection}>
+										<option value="desc">Newest first</option>
+										<option value="asc">Oldest first</option>
+									</select>
+									<select class="select select-bordered select-xs" bind:value={logsPageSize}>
+										<option value={10}>10</option>
+										<option value={25}>25</option>
+										<option value={50}>50</option>
+										<option value={100}>100</option>
+									</select>
+								</div>
+							</div>
+							<div class="divider my-2"></div>
+							{#if filteredLogs.length === 0}
+								<div class="text-sm opacity-60">
+									{#if selectedLogLevel}
+										No logs match the selected log level.
+									{:else}
+										No logs found.
+									{/if}
+								</div>
+							{:else}
+								<div class="overflow-x-auto">
+									<table class="table">
+										<thead>
+										<tr class="text-base-content/70">
+											<th>Level</th>
+											<th>Timestamp</th>
+											<th>Message</th>
+											<th></th>
+										</tr>
+										</thead>
+										<tbody>
+										{#each filteredLogs as log (log.id ?? log.timestampUtc ?? Math.random())}
+											<tr>
+												<td>
+													<span class={"badge badge-sm whitespace-nowrap " + logLevelBadgeClass(log.level)}>
+														{logLevelLabel(log.level)}
+													</span>
+												</td>
+												<td class="font-medium whitespace-nowrap">{DateDisplayUtil.formatRelativeOrDate(log.timestampUtc)}</td>
+												<td class="font-mono text-xs max-w-xs truncate">{log.message ?? "—"}</td>
+												<td>
+													<button
+														class="btn btn-ghost btn-xs opacity-70 hover:opacity-100"
+														on:click={() => selectedLogDetail = log}
+													>
+														Details
+													</button>
+												</td>
+											</tr>
+										{/each}
 										</tbody>
 									</table>
 								</div>
@@ -467,3 +529,21 @@
 		{/if}
 	</div>
 </div>
+
+{#if selectedLogDetail !== null}
+	<dialog class="modal modal-open" on:click|self={() => selectedLogDetail = null}>
+		<div class="modal-box max-w-2xl w-full">
+			<div class="flex items-center gap-2 mb-4">
+				<span class={"badge badge-sm " + logLevelBadgeClass(selectedLogDetail.level)}>
+					{logLevelLabel(selectedLogDetail.level)}
+				</span>
+				<h3 class="font-bold text-base">Log Detail</h3>
+				<span class="text-xs opacity-50 ml-auto">{DateDisplayUtil.formatRelativeOrDate(selectedLogDetail.timestampUtc)}</span>
+			</div>
+			<pre class={"rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto border-l-4 " + (selectedLogDetail.level === LogLevel.Error || selectedLogDetail.level === LogLevel.Critical ? "border-error" : selectedLogDetail.level === LogLevel.Warning ? "border-warning" : selectedLogDetail.level === LogLevel.Info ? "border-info" : "border-base-300") + (isDarkTheme ? " bg-neutral text-neutral-content" : " bg-base-200 text-base-content")}>{selectedLogDetail.message ?? "—"}{selectedLogDetail.exceptionMessage ? "\n\n" + selectedLogDetail.exceptionMessage : ""}{selectedLogDetail.exceptionStackTrace ? "\n\n" + selectedLogDetail.exceptionStackTrace : ""}</pre>
+			<div class="modal-action">
+				<button class="btn btn-sm" on:click={() => selectedLogDetail = null}>Close</button>
+			</div>
+		</div>
+	</dialog>
+{/if}

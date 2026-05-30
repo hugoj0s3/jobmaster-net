@@ -43,6 +43,8 @@ internal static class WorkersEndpoints
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
             workers = workers.Where(w => string.Equals(w.AgentConnectionId.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!string.IsNullOrEmpty(criteria.HostId))
+            workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
 
         var apiWorkers = workers.Select(ApiAgentWorker.FromDomain).ToList();
         
@@ -83,6 +85,8 @@ internal static class WorkersEndpoints
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
             workers = workers.Where(w => string.Equals(w.AgentConnectionId.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!string.IsNullOrEmpty(criteria.HostId))
+            workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
 
         return Results.Ok(workers.Count);
     }

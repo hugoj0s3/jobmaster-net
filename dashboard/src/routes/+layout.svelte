@@ -6,6 +6,7 @@
     import { goto } from "$app/navigation";
     import Login from "$lib/components/Login.svelte";
     import Sidebar from "$lib/components/Sidebar.svelte";
+    import logoSvg from "$lib/assets/jobmaster-logo.svg";
 
     import {resolveThemeId, setStoredTheme} from "$lib/theme-helper";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
@@ -70,12 +71,6 @@
         }
 
         if (!urlClusterId || !clusterFound) {
-            const parts = $page.url.pathname.split("/").filter(Boolean);
-
-            if (parts.length > 0) {
-                void goto("/", { replaceState: true, keepFocus: true, noScroll: true });
-            }
-
             currentCluster = null;
 
             const defaultThemeId = config?.themeConfigs?.primaryThemeId ?? "jobmaster-light";
@@ -136,12 +131,9 @@
     ];
 
     const darkBaseThemes = new Set([
-        "dark",
-        "business",
-        "night",
-        "dracula",
-        "synthwave",
-        "jobmaster-dark",
+        "dark", "synthwave", "halloween", "forest", "aqua", "black",
+        "luxury", "dracula", "business", "night", "coffee", "dim",
+        "sunset", "jobmaster-dark",
     ]);
 
     function applyTheme(themeId: string, persistForCluster = false) {
@@ -219,16 +211,21 @@
                     <div class="dropdown dropdown-end">
                         <button
                                 tabindex="0"
-                                class="btn btn-ghost btn-sm h-9 px-3 flex items-center gap-3 border border-base-300 bg-base-100 hover:bg-base-200"
+                                class="btn btn-ghost btn-sm h-10 px-3 flex items-center gap-2.5 border border-base-300 bg-base-100 hover:bg-base-200"
                         >
-                            <div class="flex items-center gap-2">
-                                <span class="text-[12px] font-mono opacity-50">ADMIN</span>
-                                <span class="text-[14px] font-mono font-bold px-1.5 py-0.5 rounded leading-none">
-                    {currentCluster?.id} {currentCluster?.environmentName}
-                  </span>
+                            <!-- Logo-style accent badge -->
+                            <div class="h-7 w-7 rounded-xl bg-primary flex items-center justify-center shrink-0">
+                                <span class="text-[11px] font-extrabold text-primary-content leading-none">
+                                    {(currentCluster?.id?.[0] ?? 'C').toUpperCase()}
+                                </span>
+                            </div>
+                            <!-- Cluster info -->
+                            <div class="flex flex-col items-start leading-tight">
+                                <span class="text-[12px] font-bold text-base-content">{currentCluster?.id}</span>
+                                <span class="text-[10px] opacity-50 font-mono">{currentCluster?.environmentName}</span>
                             </div>
 
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30" fill="none"
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 opacity-30 ml-1" fill="none"
                                  viewBox="0 0 24 24" stroke="currentColor">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
                             </svg>
@@ -242,12 +239,11 @@
                             {#each config.clusters as cluster}
                                 <li>
                                     <button
-                                            class="flex flex-col items-start py-2 {currentCluster?.id === cluster.id ? 'active' : ''}"
+                                            class="flex flex-col items-start py-2 w-full {currentCluster?.id === cluster.id ? 'active' : ''}"
                                             onclick={() => handleClusterChange(cluster.id)}
                                     >
-                      <span class="text-[12px] font-mono font-bold">
-                        {cluster.id} {cluster.environmentName}
-                      </span>
+                                        <span class="text-[12px] font-bold">{cluster.id}</span>
+                                        <span class="text-[10px] opacity-50 font-mono">{cluster.environmentName}</span>
                                     </button>
                                 </li>
                             {/each}
@@ -285,8 +281,36 @@
             </div>
         </div>
     {:else}
-        <main class="min-h-screen bg-base-200 text-base-content">
-            {@render children()}
+        <main class="flex min-h-screen items-center justify-center bg-base-200 text-base-content">
+            <div class="mx-auto w-full max-w-md px-6">
+                <div class="flex flex-col items-center text-center">
+                    <img src={logoSvg} alt="JobMaster" class="mb-6 h-20 w-20" />
+                    <h1 class="text-3xl tracking-tight leading-none flex items-baseline">
+                        <span class="font-light text-base-content">Job</span><span class="font-extrabold text-base-content">Master</span>
+                    </h1>
+                    <p class="mt-2 text-sm text-base-content/60">Select a cluster to continue</p>
+                </div>
+                <div class="divider mt-8 mb-6"></div>
+                <div class="space-y-3">
+                    {#each config.clusters as cluster (cluster.id)}
+                        <a
+                            href={JobMasterConfigUtil.resolveHref("/", cluster.id)}
+                            class="btn btn-block justify-between"
+                        >
+                            <div class="flex flex-col items-start gap-0.5">
+                                <div class="font-medium">{cluster.id}</div>
+                                <div class="text-xs opacity-60">{cluster.environmentName}</div>
+                            </div>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                            </svg>
+                        </a>
+                    {/each}
+                </div>
+                <p class="mt-10 text-center text-sm text-base-content/60">
+                    {config.clusters.length} cluster{config.clusters.length !== 1 ? 's' : ''} available
+                </p>
+            </div>
         </main>
     {/if}
 {/if}

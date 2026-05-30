@@ -93,7 +93,7 @@ internal static class RecurringSchedulesEndpoints
         Guid guid;
         try
         {
-            guid = id.FromBase64();
+            guid = id.ParseFlexible();
         }
         catch (Exception)
         {

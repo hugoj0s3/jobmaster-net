@@ -33,7 +33,10 @@ internal static class BucketsEndpoints
             return Results.NotFound();
         }
         
-        var buckets = await service.QueryAsync(criteria.ToDomainCriteria());
+        var buckets = await service.QueryAsync(
+            criteria.ToDomainCriteria(), 
+            allowedDiscrepancy: JobMasterConstants.BucketFastAllowDiscrepancy);
+        
         var apiBuckets = buckets.Select(ApiBucketModel.FromDomain).ToList();
         
         // Apply in-memory sorting

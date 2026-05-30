@@ -705,6 +705,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             try
             {
                 RecurringScheduleContext? recurringScheduleContext = null;
+                
                 if (jobRawModel.SourceId.HasValue && jobRawModel.TriggerSourceType.IsRecurringTrigger())
                 {
                     lockRecurringScheduleProcessingToken = distributedLockerService.TryLock(
@@ -714,9 +715,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     if (lockRecurringScheduleProcessingToken == null)
                     {
                         logger.Warn($"Recurring schedule {jobRawModel.SourceId} has an overlapping job still executing.", JobMasterLogCategory.RecurringSchedule, jobRawModel.SourceId.Value);
-                        logger.Warn($"Job {jobRawModel.Id} failed due to overlap — recurring schedule {jobRawModel.SourceId} is still executing.", JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                        logger.Error($"Job {jobRawModel.Id} failed due to overlap — recurring schedule {jobRawModel.SourceId} is still executing.", JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                        
+                        execution = jobRawModel.ProcessingStarted();
+                        
                         jobRawModel.MarkAsFailed();
-                        await this.UpdateSingleJobAsync(jobRawModel);
+                        execution.Fail($"Overlap — recurring schedule {jobRawModel.SourceId} is still executing.");
+                        await this.UpdateSingleJobAsync(jobRawModel, execution);
+                        
                         return;
                     }
 
@@ -730,7 +736,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     {
                         case RecurringScheduleValidationResult.NotFound:
                             jobRawModel.MarkAsFailed();
-                            await this.UpdateSingleJobAsync(jobRawModel);
+                            execution = jobRawModel.ProcessingStarted();
+                            execution.Fail($"Recurring schedule was not found");
+                            await this.UpdateSingleJobAsync(jobRawModel, execution);
                             return;
 
                         case RecurringScheduleValidationResult.Terminated:
@@ -747,10 +755,10 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 }
 
                 timeoutCancellationToken.ThrowIfCancellationRequested();
-
+                
                 execution = jobRawModel.ProcessingStarted();
                 await this.UpdateSingleJobAsync(jobRawModel);
-
+                
                 await using var scope = backgroundAgentWorker.ServiceProvider.CreateAsyncScope();
                 var job = jobRawModel.ToJob();
                 var jobContext = JobConvertUtil.ToJobContext(job);

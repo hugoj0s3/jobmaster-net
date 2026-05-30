@@ -7,6 +7,8 @@ public class ApiAgentWorkerCriteria
 {
     /// <summary>Filter by agent connection ID.</summary>
     public string? AgentConnectionId { get; set; }
+    /// <summary>Filter by host ID.</summary>
+    public string? HostId { get; set; }
     /// <summary>Filter by worker lane.</summary>
     public string? WorkerLane { get; set; }
     /// <summary>Filter by worker status.</summary>

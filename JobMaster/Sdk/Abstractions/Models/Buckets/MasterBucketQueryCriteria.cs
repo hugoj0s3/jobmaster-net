@@ -11,5 +11,6 @@ internal class MasterBucketQueryCriteria
     public string? AgentWorkerId { get; set; }
     public string? WorkerLane { get; set; }
     public BucketType? BucketType { get; set; }
+    public IList<string> BucketIds { get; set; } = new List<string>();
     public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

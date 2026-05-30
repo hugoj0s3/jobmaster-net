@@ -1,42 +1,39 @@
 {
   "openapi": "3.0.1",
-  "info": { },
+  "info": {
+    "title": "JobMaster.Api",
+    "version": "0.0.7-alpha",
+    "x-jobmaster-doc": "JobMaster.Api.627b34633149493c9f293298ab209809"
+  },
   "paths": {
-    "/schedule-job": {
-      "post": {
+    "/jm-api/{clusterId}/agent-connections": {
+      "get": {
         "tags": [
-          "JobMaster.SampleWeb, Version=0.0.7.0, Culture=neutral, PublicKeyToken=null"
+          "Agent-connections"
         ],
         "parameters": [
           {
-            "name": "qty",
-            "in": "query",
+            "name": "clusterId",
+            "in": "path",
             "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
             "schema": {
               "type": "integer",
               "format": "int32"
             }
           },
           {
-            "name": "lane",
+            "name": "Offset",
             "in": "query",
             "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "clusterId",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "name": "delay",
-            "in": "query",
-            "schema": {
-              "type": "string",
-              "format": "date-span"
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
@@ -44,9 +41,12 @@
           "200": {
             "description": "OK",
             "content": {
-              "text/plain": {
+              "application/json": {
                 "schema": {
-                  "type": "string"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiAgentConnection"
+                  }
                 }
               }
             }
@@ -54,31 +54,358 @@
         }
       }
     },
-    "/recurring-schedule-job": {
-      "post": {
+    "/jm-api/{clusterId}/agent-connections/count": {
+      "get": {
         "tags": [
-          "JobMaster.SampleWeb, Version=0.0.7.0, Culture=neutral, PublicKeyToken=null"
+          "Agent-connections"
         ],
         "parameters": [
           {
-            "name": "expressionType",
-            "in": "query",
+            "name": "clusterId",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "expression",
+            "name": "CountLimit",
             "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/agent-connections/{agentConnectionId}": {
+      "get": {
+        "tags": [
+          "Agent-connections"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
             "required": true,
             "schema": {
               "type": "string"
             }
           },
           {
-            "name": "lane",
+            "name": "agentConnectionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiAgentConnection"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/buckets": {
+      "get": {
+        "tags": [
+          "Buckets"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
             "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Priority",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterPriority"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BucketStatus"
+            }
+          },
+          {
+            "name": "AgentWorkerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "BucketType",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BucketType"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "BucketIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiBucketModel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/buckets/count": {
+      "get": {
+        "tags": [
+          "Buckets"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Priority",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterPriority"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BucketStatus"
+            }
+          },
+          {
+            "name": "AgentWorkerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "BucketType",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/BucketType"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "BucketIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/buckets/{bucketId}": {
+      "get": {
+        "tags": [
+          "Buckets"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "bucketId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiBucketModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/clusters/count": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/jm-api/clusters/ids": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/jm-api/clusters/{clusterId}": {
+      "get": {
+        "tags": [
+          "Clusters"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string"
             }
@@ -91,29 +418,2018 @@
         }
       }
     },
-    "/cancel-recurring-schedule-job": {
-      "delete": {
+    "/jm-api/{clusterId}/hosts": {
+      "get": {
         "tags": [
-          "JobMaster.SampleWeb, Version=0.0.7.0, Culture=neutral, PublicKeyToken=null"
+          "Hosts"
         ],
         "parameters": [
           {
-            "name": "id",
-            "in": "query",
+            "name": "clusterId",
+            "in": "path",
             "required": true,
             "schema": {
-              "type": "string",
-              "format": "uuid"
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
             }
           }
         ],
         "responses": {
           "200": {
-            "description": "OK"
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiHostModel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/hosts/count": {
+      "get": {
+        "tags": [
+          "Hosts"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/hosts/{hostId}": {
+      "get": {
+        "tags": [
+          "Hosts"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "hostId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiHostModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/jobs": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterJobStatus"
+            }
+          },
+          {
+            "name": "Statuses",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JobMasterJobStatus"
+              }
+            }
+          },
+          {
+            "name": "Priority",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterPriority"
+            }
+          },
+          {
+            "name": "NextPlanExecutionAtTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "NextPlanExecutionAtFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ScheduledFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ScheduledTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ProcessDeadlineTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "TriggerSourceTypes",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JobMasterTriggerSourceType"
+              }
+            }
+          },
+          {
+            "name": "SourceIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "SourceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "JobDefinitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "HostId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "BucketId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "MetadataFiltersJson",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiJobModel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/jobs/count": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterJobStatus"
+            }
+          },
+          {
+            "name": "Statuses",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JobMasterJobStatus"
+              }
+            }
+          },
+          {
+            "name": "Priority",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/JobMasterPriority"
+            }
+          },
+          {
+            "name": "NextPlanExecutionAtTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "NextPlanExecutionAtFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ScheduledFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ScheduledTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ProcessDeadlineTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "TriggerSourceTypes",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/JobMasterTriggerSourceType"
+              }
+            }
+          },
+          {
+            "name": "SourceIds",
+            "in": "query",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "name": "SourceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "JobDefinitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "HostId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "BucketId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "MetadataFiltersJson",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/jobs/{id}": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiJobModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/jobs/{id}/executions": {
+      "get": {
+        "tags": [
+          "Jobs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiJobExecution"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/logs": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Level",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ApiJobMasterLogLevel"
+            }
+          },
+          {
+            "name": "Category",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ApiJobMasterLogCategory"
+            }
+          },
+          {
+            "name": "ReferenceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "FromTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ToTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "Keyword",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiLogItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/logs/{id}": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiLogItem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/logs/count": {
+      "get": {
+        "tags": [
+          "Logs"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Level",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ApiJobMasterLogLevel"
+            }
+          },
+          {
+            "name": "Category",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/ApiJobMasterLogCategory"
+            }
+          },
+          {
+            "name": "ReferenceId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "FromTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "ToTimestamp",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "Keyword",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/recurring-schedules": {
+      "get": {
+        "tags": [
+          "Recurring-schedules"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RecurringScheduleStatus"
+            }
+          },
+          {
+            "name": "StartAfterTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "StartAfterFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndBeforeTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndBeforeFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "CoverageUntil",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "IsJobCancellationPending",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "CanceledOrInactive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "RecurringScheduleType",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RecurringScheduleType"
+            }
+          },
+          {
+            "name": "JobDefinitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "MetadataFiltersJson",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiRecurringScheduleModel"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/recurring-schedules/count": {
+      "get": {
+        "tags": [
+          "Recurring-schedules"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RecurringScheduleStatus"
+            }
+          },
+          {
+            "name": "StartAfterTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "StartAfterFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndBeforeTo",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "EndBeforeFrom",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "CoverageUntil",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "IsJobCancellationPending",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "CanceledOrInactive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "RecurringScheduleType",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/RecurringScheduleType"
+            }
+          },
+          {
+            "name": "JobDefinitionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ProfileId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "MetadataFiltersJson",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/recurring-schedules/{id}": {
+      "get": {
+        "tags": [
+          "Recurring-schedules"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiRecurringScheduleModel"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/workers": {
+      "get": {
+        "tags": [
+          "Workers"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AgentWorkerStatus"
+            }
+          },
+          {
+            "name": "Mode",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AgentWorkerMode"
+            }
+          },
+          {
+            "name": "IsAlive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ApiAgentWorker"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/workers/count": {
+      "get": {
+        "tags": [
+          "Workers"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "AgentConnectionId",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "WorkerLane",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Status",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AgentWorkerStatus"
+            }
+          },
+          {
+            "name": "Mode",
+            "in": "query",
+            "schema": {
+              "$ref": "#/components/schemas/AgentWorkerMode"
+            }
+          },
+          {
+            "name": "IsAlive",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "CountLimit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          },
+          {
+            "name": "Offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "integer",
+                  "format": "int32"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/jm-api/{clusterId}/workers/{workerId}": {
+      "get": {
+        "tags": [
+          "Workers"
+        ],
+        "parameters": [
+          {
+            "name": "clusterId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "workerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiAgentWorker"
+                }
+              }
+            }
           }
         }
       }
     }
   },
-  "components": { }
+  "components": {
+    "schemas": {
+      "AgentWorkerMode": {
+        "enum": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "AgentWorkerStatus": {
+        "enum": [
+          0,
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ApiAgentConnection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "repositoryTypeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "fingerprint": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHeartbeat": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "protectConnectionChanges": {
+            "type": "boolean"
+          },
+          "isAlive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiAgentWorker": {
+        "type": "object",
+        "properties": {
+          "clusterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionName": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "isAlive": {
+            "type": "boolean"
+          },
+          "stopRequestedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "stopGracePeriod": {
+            "type": "string",
+            "format": "date-span",
+            "nullable": true
+          },
+          "lastHeartbeat": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/AgentWorkerMode"
+          },
+          "workerLane": {
+            "type": "string",
+            "nullable": true
+          },
+          "parallelismFactor": {
+            "type": "number",
+            "format": "double"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AgentWorkerStatus"
+          },
+          "hostId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostDisplayName": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiBucketModel": {
+        "type": "object",
+        "properties": {
+          "clusterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "name": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionName": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentWorkerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostDisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "repositoryTypeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobMasterPriority"
+          },
+          "status": {
+            "$ref": "#/components/schemas/BucketStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "color": {
+            "type": "string",
+            "nullable": true
+          },
+          "workerLane": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastStatusChangeAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "bucketType": {
+            "$ref": "#/components/schemas/BucketType"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiHostModel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostDisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "processId": {
+            "type": "string",
+            "nullable": true
+          },
+          "processorCount": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "osDescription": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastHeartbeat": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "statisticsAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cpuUsagePercent": {
+            "type": "number",
+            "format": "double",
+            "nullable": true
+          },
+          "memoryTotalBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "memoryUsedBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "diskAvailableBytes": {
+            "type": "integer",
+            "format": "int64",
+            "nullable": true
+          },
+          "isAlive": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiJobExecution": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobId": {
+            "type": "string",
+            "nullable": true
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "agentConnectionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionName": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentWorkerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "bucketId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostDisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "finalizedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "outcomeMessage": {
+            "type": "string",
+            "nullable": true
+          },
+          "outcome": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiJobMasterLogCategory": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ApiJobMasterLogLevel": {
+        "enum": [
+          0,
+          1,
+          2,
+          3,
+          4
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "ApiJobModel": {
+        "type": "object",
+        "properties": {
+          "clusterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobDefinitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "triggerSourceType": {
+            "$ref": "#/components/schemas/JobMasterTriggerSourceType"
+          },
+          "bucketId": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentConnectionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "agentWorkerId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostId": {
+            "type": "string",
+            "nullable": true
+          },
+          "hostDisplayName": {
+            "type": "string",
+            "nullable": true
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobMasterPriority"
+          },
+          "scheduledAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "nextPlanExecutionAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "msgData": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobMasterJobStatus"
+          },
+          "numberOfFailures": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "timeout": {
+            "type": "string",
+            "format": "date-span"
+          },
+          "maxNumberOfRetries": {
+            "type": "integer",
+            "format": "int32"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sourceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "processDeadline": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "processStartedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "finalizedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "workerLane": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiLogItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "clusterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "level": {
+            "$ref": "#/components/schemas/ApiJobMasterLogLevel"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          },
+          "category": {
+            "$ref": "#/components/schemas/ApiJobMasterLogCategory"
+          },
+          "referenceId": {
+            "type": "string",
+            "nullable": true
+          },
+          "timestampUtc": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "host": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceMember": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceFile": {
+            "type": "string",
+            "nullable": true
+          },
+          "sourceLine": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          }
+        },
+        "additionalProperties": false
+      },
+      "ApiRecurringScheduleModel": {
+        "type": "object",
+        "properties": {
+          "clusterId": {
+            "type": "string",
+            "nullable": true
+          },
+          "id": {
+            "type": "string",
+            "nullable": true
+          },
+          "expression": {
+            "type": "string",
+            "nullable": true
+          },
+          "expressionTypeId": {
+            "type": "string",
+            "nullable": true
+          },
+          "jobDefinitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "staticDefinitionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "profileId": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "$ref": "#/components/schemas/RecurringScheduleStatus"
+          },
+          "recurringScheduleType": {
+            "$ref": "#/components/schemas/RecurringScheduleType"
+          },
+          "terminatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "msgData": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "nullable": true
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "nullable": true
+            },
+            "nullable": true
+          },
+          "priority": {
+            "$ref": "#/components/schemas/JobMasterPriority"
+          },
+          "maxNumberOfRetries": {
+            "type": "integer",
+            "format": "int32",
+            "nullable": true
+          },
+          "timeout": {
+            "type": "string",
+            "format": "date-span",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "startAfter": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "endBefore": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastPlanCoverageUntil": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "lastExecutedPlan": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "hasFailedOnLastPlanExecution": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "isJobCancellationPending": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "staticDefinitionLastEnsured": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "workerLane": {
+            "type": "string",
+            "nullable": true
+          },
+          "isStaticIdle": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "BucketStatus": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "BucketType": {
+        "enum": [
+          1,
+          2
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "JobMasterJobStatus": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "JobMasterPriority": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "JobMasterTriggerSourceType": {
+        "enum": [
+          1,
+          2,
+          3
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "RecurringScheduleStatus": {
+        "enum": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "type": "integer",
+        "format": "int32"
+      },
+      "RecurringScheduleType": {
+        "enum": [
+          2,
+          3
+        ],
+        "type": "integer",
+        "format": "int32"
+      }
+    }
+  }
 }

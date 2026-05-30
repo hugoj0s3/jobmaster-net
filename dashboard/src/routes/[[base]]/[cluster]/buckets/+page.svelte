@@ -16,7 +16,6 @@
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
 
-	const refreshIntervalSec = 20;
 	const clusterId = () => $page.params.cluster;
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
@@ -44,7 +43,6 @@
 		createdAt: string;
 	};
 
-	let lastUpdatedAt = new Date();
 	let isRefreshing = false;
 	let activeFiltersCount = 0;
 
@@ -61,7 +59,7 @@
 
 	const LS_KEY_BUCKETS_FILTERS = `buckets-filters-${$page.params.cluster}`;
 
-	// Carrega filtros salvos da localStorage
+	// Load saved filters from localStorage
 	function loadSavedFilters() {
 		const saved = readSavedFilter(LS_KEY_BUCKETS_FILTERS, "");
 		if (!saved) return null;
@@ -125,7 +123,6 @@
 		sortDirection = "";
 		pageIndex = 0;
 	}
-	let poller: number | undefined;
 
 	const copyFeedback = createCopyFeedback({ resetAfterMs: 1200 });
 	const copiedId = copyFeedback.copiedId;
@@ -152,19 +149,7 @@
 	$: paginatedBuckets = filtered.slice(pageIndex * pageSize, pageIndex * pageSize + pageSize);
 	$: activeFiltersCount =
 		(selectedStatuses.length > 0 ? 1 : 0) +
-		(filterValues?.createdAt ? 1 : 0) +
-		(sortDirection ? 1 : 0);
-
-	let lastPageIndexForRefresh = pageIndex;
-	$: if (pageIndex !== lastPageIndexForRefresh) {
-		lastPageIndexForRefresh = pageIndex;
-	}
-
-	let lastPageSizeForRefresh = pageSize;
-	$: if (pageSize !== lastPageSizeForRefresh) {
-		lastPageSizeForRefresh = pageSize;
-		pageIndex = 0;
-	}
+		(filterValues?.createdAt ? 1 : 0);
 
 	const badgeFor = (s: BucketStatusLabel) => {
 		if (s === "Active") return "badge-success";
@@ -172,13 +157,6 @@
 		if (s === "Draining" || s === "ReadyToDrain" || s === "Completing") return "badge-warning";
 		if (s === "ReadyToDelete") return "badge-ghost";
 		return "badge-ghost";
-	};
-
-	const dotFor = (s: BucketStatusLabel) => {
-		if (s === "Active") return "bg-success";
-		if (s === "Lost") return "bg-error";
-		if (s === "Draining" || s === "ReadyToDrain" || s === "Completing") return "bg-warning";
-		return "bg-base-content/30";
 	};
 
 	function formatDate(iso: string | undefined): string {
@@ -258,7 +236,6 @@
 					createdAt: b.createdAt ?? ""
 				}));
 
-				lastUpdatedAt = new Date();
 			} catch (e) {
 				console.error("Buckets refresh failed", e);
 				allBuckets = [];
@@ -269,49 +246,33 @@
 		}
 	}
 
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshNow();
-		}, refreshIntervalSec * 1000);
-	}
-
 	onMount(() => {
-		// Se não tem params na URL, tenta carregar da localStorage
-		const hasUrlParams = $page.url.search.length > 0;
-		if (!hasUrlParams) {
+		const rawSearch = window.location.search;
+		const hasUserUrlParams = rawSearch.length > 0 && new URLSearchParams(rawSearch).toString().length > 0;
+		if (!hasUserUrlParams) {
 			const savedFilters = loadSavedFilters();
 			if (savedFilters) {
-				// Carrega filtros salvos (respeita até valores vazios)
 				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
 				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+				pageSize = savedFilters.pageSize !== undefined ? savedFilters.pageSize : 10;
 				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
 			} else {
-				// Aplica defaults quando não há localStorage (primeira vez)
 				selectedStatuses = [...DEFAULT_STATUSES];
 				sortDirection = DEFAULT_SORT_DIRECTION;
 			}
 			syncToUrl();
 		}
-
 		refreshNow();
-		restartPoller();
-
-		return () => {
-			if (poller) window.clearInterval(poller);
-		};
 	});
 
 	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
 		copyFeedback.destroy();
-
-		// Salva filtros atuais na localStorage no unmount
 		writeSavedFilter(
 			LS_KEY_BUCKETS_FILTERS,
 			JSON.stringify({
 				statuses: selectedStatuses,
 				sortDirection,
+				pageSize,
 				createdAt: datetimeToParam(filterValues, "createdAt")
 			})
 		);
@@ -320,31 +281,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<div class="flex flex-wrap items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Buckets</h1>
-
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refreshNow}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-			</div>
-		</div>
 
 		<section class="mt-6 grid gap-4 md:grid-cols-4">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -441,19 +378,6 @@
 						on:change={() => { pageIndex = 0; }}
 					/>
 
-					<FilterDropdown
-						label="Sort By"
-						options={[
-							{ value: "desc", label: "Recents" },
-							{ value: "asc", label: "Olders" }
-						]}
-						value={sortDirection}
-						on:change={(e) => {
-							sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
-							pageIndex = 0;
-						}}
-					/>
-
 					<FilterContainer
 						initialValues={filterValues}
 						onChange={(v) => {
@@ -485,19 +409,34 @@
 				</div>
 				{/key}
 
-				<Pager
-					bind:pageIndex
-					bind:pageSize
-					totalCount={bucketsTotalCount}
-					currentCount={paginatedBuckets.length}
-					disabled={isRefreshing}
-					showPageSize={true}
-				/>
+				<div class="flex items-center gap-2">
+					<FilterDropdown
+						label="Sort By"
+						options={[
+							{ value: "desc", label: "Recents" },
+							{ value: "asc", label: "Olders" }
+						]}
+						value={sortDirection}
+						on:change={(e) => {
+							sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
+							pageIndex = 0;
+						}}
+					/>
+					<Pager
+						bind:pageIndex
+						bind:pageSize
+						totalCount={bucketsTotalCount}
+						currentCount={paginatedBuckets.length}
+						disabled={isRefreshing}
+						showPageSize={true}
+					/>
+					<button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
+				</div>
 			</div>
 
 				<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
 				<div class="overflow-x-auto">
-					<table class="table table-zebra">
+					<table class="table">
 						<thead>
 						<tr class="text-base-content/70">
 							<th>Name</th>
@@ -512,9 +451,8 @@
 						{#each paginatedBuckets as r (r.id)}
 							<tr class="hover cursor-pointer" on:click|stopPropagation={() => goToBucket(r.id)}>
 								<td>
-									<div class="flex items-center gap-3">
-										<span class={`h-2.5 w-2.5 rounded-full ${dotFor(r.status)}`}></span>
-										<div class="font-medium">{r.name}</div>
+									<div class="flex items-center gap-2">
+										<span class="font-medium">{r.name}</span>
 										<button
 											class="btn btn-ghost btn-xs btn-square opacity-40 hover:opacity-100"
 											aria-label="Copy bucket id"
@@ -538,7 +476,7 @@
 								<td>{r.hostDisplayName}</td>
 								<td>{formatDate(r.createdAt)}</td>
 								<td class="text-right">
-										<span class={`badge badge-sm ${badgeFor(r.status)}`}>
+										<span class={`badge badge-sm whitespace-nowrap ${badgeFor(r.status)}`}>
 											{r.status}
 										</span>
 								</td>

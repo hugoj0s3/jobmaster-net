@@ -7,15 +7,10 @@
 	import Pager from "$lib/components/Pager.svelte";
 	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
-	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
-	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
-	import { WorkerModeUtil, type WorkerMode } from "$lib/helper/worker-mode-util";
-	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
+	import { WorkerMode, workerModeLabel, workerModeBadgeClass } from "$lib/api/enums";
 	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
-
-	type ApiHostModel = components["schemas"]["ApiHostModel"];
 
 	type WorkerStatus = "Online" | "Offline";
 
@@ -23,10 +18,9 @@
 		id: string;
 		name: string;
 		status: WorkerStatus;
-		mode: WorkerMode;
+		mode: number | undefined;
 		lane: string;
 		hostName?: string;
-		parallelism?: number;
 		lastHeartbeat?: string;
 	};
 
@@ -34,19 +28,13 @@
 
 	let rows: WorkerRow[] = [];
 	let isRefreshing = false;
-	let lastUpdatedAt = new Date();
-	let poller: number | undefined;
-	const refreshIntervalSec = 10;
 	let activeFiltersCount = 0;
 
 	const DEFAULT_STATUSES = ["Online"];
 	const DEFAULT_SORT_DIRECTION: "asc" | "desc" = "desc";
 
-	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
-
 	$: onlineCount = rows.filter((r) => r.status === "Online").length;
 	$: offlineCount = rows.filter((r) => r.status === "Offline").length;
-
 
 	const urlParamDefs = {
 		statuses: { defaultValue: [] as string[], ...Serializers.stringArray },
@@ -56,24 +44,20 @@
 		size: { defaultValue: 10, ...Serializers.number }
 	};
 
-	const LS_KEY_WORKERS_FILTERS = `workers-filters-${$page.params.cluster}`;
+	const LS_KEY = `workers-filters-${$page.params.cluster}`;
 
-	// Carrega filtros salvos da localStorage
 	function loadSavedFilters() {
-		const saved = readSavedFilter(LS_KEY_WORKERS_FILTERS, "");
+		const saved = readSavedFilter(LS_KEY, "");
 		if (!saved) return null;
-		try {
-			return JSON.parse(saved);
-		} catch {
-			return null;
-		}
+		try { return JSON.parse(saved); } catch { return null; }
 	}
 
 	let _initParams = readUrlParams(urlParamDefs);
 	let sortDirection: "" | "asc" | "desc" = _initParams.sortDirection;
-
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
+	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
+	let selectedModes: string[] = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
 
 	let filterKey = $page.url.search;
 	let lastSearch = $page.url.search;
@@ -89,17 +73,8 @@
 		refreshNow();
 	}
 
-	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
-	let selectedModes: string[] = _initParams.modes.length > 0 ? [..._initParams.modes] : [];
-
 	function syncToUrl() {
-		writeUrlParams(urlParamDefs, {
-			statuses: selectedStatuses,
-			modes: selectedModes,
-			sortDirection,
-			page: pageIndex,
-			size: pageSize
-		});
+		writeUrlParams(urlParamDefs, { statuses: selectedStatuses, modes: selectedModes, sortDirection, page: pageIndex, size: pageSize });
 	}
 
 	$: selectedStatuses, selectedModes, sortDirection, pageIndex, pageSize, syncToUrl();
@@ -111,20 +86,14 @@
 		pageIndex = 0;
 	}
 
-	function mapWorkerToRow(w: any, hostsMap: Map<string, ApiHostModel>): WorkerRow {
-		const isAlive = w.isAlive === true;
-		const host = w.hostId ? hostsMap.get(w.hostId) : undefined;
-
-		const status: WorkerStatus = isAlive ? "Online" : "Offline";
-
+	function mapWorkerToRow(w: any): WorkerRow {
 		return {
 			id: w.id ?? "",
-			name: w.displayName ?? w.name ?? w.id ?? "Unknown",
-			status,
-			mode: WorkerModeUtil.getLabel(w.mode),
+			name: w.name ?? w.id ?? "Unknown",
+			status: w.isAlive === true ? "Online" : "Offline",
+			mode: w.mode ?? undefined,
 			lane: w.workerLane ?? "—",
-			hostName: w.hostDisplayName ?? host?.displayName ?? "N/A",
-			parallelism: w.parallelismFactor ?? undefined,
+			hostName: w.hostDisplayName || "—",
 			lastHeartbeat: w.lastHeartbeat ?? w.lastHeartbeatAt ?? undefined
 		};
 	}
@@ -134,32 +103,12 @@
 		try {
 			const cid = clusterId();
 			if (!cid) return;
-
 			const jmApi = await ApiClientUtil.CreateApiClientFromConfig(fetch);
-
-			const [workersResponse, hostsResponse] = await Promise.all([
-				(jmApi as any).GET("/{clusterId}/workers", {
-					params: { path: { clusterId: cid } }
-				}),
-				jmApi.GET("/{clusterId}/hosts", {
-					params: { path: { clusterId: cid } }
-				})
-			]);
-
-			if (workersResponse.error) {
-				console.error("API error (workers):", workersResponse.error);
-				return;
-			}
-
-			const apiHosts = ((hostsResponse.data ?? []) as ApiHostModel[]);
-			const hostsMap = new Map<string, ApiHostModel>();
-			for (const h of apiHosts) {
-				if (h.id) hostsMap.set(h.id, h);
-			}
-
-			const apiWorkers = ((workersResponse.data ?? []) as any[]);
-			rows = apiWorkers.map((w) => mapWorkerToRow(w, hostsMap));
-			lastUpdatedAt = new Date();
+			const response = await jmApi.GET("/{clusterId}/workers", {
+				params: { path: { clusterId: cid } }
+			});
+			if (response.error) { console.error("API error (workers):", response.error); return; }
+			rows = ((response.data ?? []) as any[]).map(mapWorkerToRow);
 		} catch (error) {
 			console.error("Failed to fetch workers:", error);
 		} finally {
@@ -167,117 +116,57 @@
 		}
 	}
 
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshNow();
-		}, refreshIntervalSec * 1000);
-	}
-
-	const statusDot = (s: WorkerStatus) => {
-		if (s === "Online") return "bg-success";
-		return "bg-error";
-	};
-
-	const statusPill = (s: WorkerStatus) => {
-		if (s === "Online") return "badge badge-outline badge-success rounded-full px-4 py-3";
-		return "badge badge-outline badge-error rounded-full px-4 py-3";
-	};
-
+	const statusDot = (s: WorkerStatus) => s === "Online" ? "bg-success" : "bg-error";
+	const statusBadgeClass = (s: WorkerStatus) => s === "Online" ? "badge-success" : "badge-error";
 
 	$: filteredAll = rows
 		.filter((r) => {
 			if (selectedStatuses.length > 0 && !selectedStatuses.includes(r.status)) return false;
-			if (selectedModes.length > 0 && !selectedModes.includes(r.mode)) return false;
+			if (selectedModes.length > 0 && !selectedModes.includes(String(r.mode ?? ""))) return false;
 			return true;
 		})
 		.sort((a, b) => {
 			const dir = sortDirection === "asc" ? 1 : -1;
-			const safeTime = (iso: string | undefined) => {
+			const t = (iso: string | undefined) => {
 				if (!iso) return Number.MIN_SAFE_INTEGER;
-				const t = new Date(iso).getTime();
-				return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+				const v = new Date(iso).getTime();
+				return Number.isFinite(v) ? v : Number.MIN_SAFE_INTEGER;
 			};
-			return (safeTime(a.lastHeartbeat) - safeTime(b.lastHeartbeat)) * dir;
+			return (t(a.lastHeartbeat) - t(b.lastHeartbeat)) * dir;
 		});
 
 	$: totalCount = filteredAll.length;
 	$: filtered = filteredAll.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
 	$: currentCount = filtered.length;
-	$: activeFiltersCount =
-		(selectedStatuses.length > 0 ? 1 : 0) +
-		(selectedModes.length > 0 ? 1 : 0) +
-		(sortDirection ? 1 : 0);
-
-
-	function refresh() {
-		refreshNow();
-	}
+	$: activeFiltersCount = (selectedStatuses.length > 0 ? 1 : 0) + (selectedModes.length > 0 ? 1 : 0);
 
 	onMount(() => {
-		// Se não tem params na URL, tenta carregar da localStorage
-		const hasUrlParams = $page.url.search.length > 0;
-		if (!hasUrlParams) {
-			const savedFilters = loadSavedFilters();
-			if (savedFilters) {
-				// Carrega filtros salvos (respeita até valores vazios)
-				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
-				selectedModes = savedFilters.modes !== undefined ? savedFilters.modes : [];
-				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+		const rawSearch = window.location.search;
+		const hasUserUrlParams = rawSearch.length > 0 && new URLSearchParams(rawSearch).toString().length > 0;
+		if (!hasUserUrlParams) {
+			const saved = loadSavedFilters();
+			if (saved) {
+				selectedStatuses = saved.statuses !== undefined ? saved.statuses : [...DEFAULT_STATUSES];
+				selectedModes = saved.modes !== undefined ? saved.modes : [];
+				sortDirection = saved.sortDirection !== undefined ? saved.sortDirection : DEFAULT_SORT_DIRECTION;
+				pageSize = saved.pageSize !== undefined ? saved.pageSize : 10;
 			} else {
-				// Aplica defaults quando não há localStorage (primeira vez)
 				selectedStatuses = [...DEFAULT_STATUSES];
 				sortDirection = DEFAULT_SORT_DIRECTION;
 			}
 			syncToUrl();
 		}
-
 		refreshNow();
-		restartPoller();
 	});
 
 	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
-
-		// Salva filtros atuais na localStorage no unmount
-		writeSavedFilter(
-			LS_KEY_WORKERS_FILTERS,
-			JSON.stringify({
-				statuses: selectedStatuses,
-				modes: selectedModes,
-				sortDirection
-			})
-		);
+		writeSavedFilter(LS_KEY, JSON.stringify({ statuses: selectedStatuses, modes: selectedModes, sortDirection, pageSize }));
 	});
 </script>
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<div class="flex items-start justify-between gap-4">
-			<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
-
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {lastUpdated}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refresh}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-			</div>
-		</div>
+		<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
 
 		<section class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -312,7 +201,6 @@
 					</div>
 				</div>
 			</div>
-
 		</section>
 
 		<div class="flex items-center justify-between gap-4 mt-6">
@@ -331,25 +219,13 @@
 				<FilterDropdownMulti
 					label="Mode"
 					options={[
-						{ value: "Execution", label: "Execution" },
-						{ value: "Full", label: "Full" },
-						{ value: "Draining", label: "Draining" }
+						{ value: String(WorkerMode.Full),        label: "Full" },
+						{ value: String(WorkerMode.Execution),   label: "Execution" },
+						{ value: String(WorkerMode.Drain),       label: "Drain" },
+						{ value: String(WorkerMode.Coordinator), label: "Coordinator" }
 					]}
 					bind:values={selectedModes}
 					on:change={() => { pageIndex = 0; }}
-				/>
-
-				<FilterDropdown
-					label="Sort By"
-					options={[
-						{ value: "desc", label: "Recents" },
-						{ value: "asc", label: "Olders" }
-					]}
-					value={sortDirection}
-					on:change={(e) => {
-						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
-						pageIndex = 0;
-					}}
 				/>
 
 				{#if activeFiltersCount > 0}
@@ -364,64 +240,76 @@
 			</div>
 			{/key}
 
-			<Pager
-				bind:pageIndex
-				bind:pageSize
-				{totalCount}
-				{currentCount}
-				disabled={isRefreshing}
-				showPageSize={true}
-			/>
+			<div class="flex items-center gap-2">
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "desc", label: "Recents" },
+						{ value: "asc", label: "Olders" }
+					]}
+					value={sortDirection}
+					on:change={(e) => {
+						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						pageIndex = 0;
+					}}
+				/>
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					{totalCount}
+					{currentCount}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
+				<button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
+			</div>
 		</div>
 
-		<section class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
-			<div class="card-body gap-4">
-				<div class="overflow-x-auto">
-					<table class="table">
-						<thead>
-						<tr class="text-base-content/70">
-							<th>Status</th>
-							<th>Mode</th>
-							<th>Worker</th>
-							<th>Host</th>
-							<th>Lane</th>
-							<th>Last Heartbeat</th>
+		<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
+			<div class="overflow-x-auto">
+				<table class="table">
+					<thead>
+					<tr class="text-base-content/70">
+						<th>Worker</th>
+						<th>Status</th>
+						<th>Mode</th>
+						<th>Host</th>
+						<th>Lane</th>
+						<th>Last Heartbeat</th>
+					</tr>
+					</thead>
+					<tbody>
+					{#each filtered as r (r.id)}
+						<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${r.id}`)}>
+							<td class="font-medium">{r.name}</td>
+
+							<td>
+								<div class="flex items-center gap-2">
+									<span class={"h-2 w-2 rounded-full " + statusDot(r.status)} />
+									<span class={"badge badge-sm badge-outline whitespace-nowrap " + statusBadgeClass(r.status)}>{r.status}</span>
+								</div>
+							</td>
+
+							<td>
+								<span class={"badge badge-sm whitespace-nowrap " + workerModeBadgeClass(r.mode)}>{workerModeLabel(r.mode)}</span>
+							</td>
+
+							<td class="opacity-70">{r.hostName}</td>
+
+							<td class="opacity-70">{r.lane}</td>
+
+							<td class="opacity-70 whitespace-nowrap">{DateDisplayUtil.formatRelativeOrDate(r.lastHeartbeat)}</td>
 						</tr>
-						</thead>
+					{/each}
 
-						<tbody>
-						{#each filtered as r (r.id)}
-							<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${r.id}`)}>
-								<td>
-									<div class="flex items-center gap-3">
-										<span class={"h-2.5 w-2.5 rounded-full " + statusDot(r.status)} />
-										<span class={statusPill(r.status)}>{r.status}</span>
-									</div>
-								</td>
-
-								<td>
-									<span class={`badge badge-sm ${WorkerModeUtil.getBadgeClass(r.mode)}`}>{r.mode}</span>
-								</td>
-
-								<td class="text-base-content font-medium">{r.name}</td>
-
-								<td class="text-base-content/70">{r.hostName ?? "N/A"}</td>
-
-								<td class="text-base-content/70">{r.lane}</td>
-
-								<td class="text-base-content/70">{DateDisplayUtil.formatRelativeOrDate(r.lastHeartbeat)}</td>
-							</tr>
-						{/each}
-
-						{#if filtered.length === 0}
-							<tr>
-								<td colspan="6" class="py-10 text-base-content/60">No workers found.</td>
-							</tr>
-						{/if}
-						</tbody>
-					</table>
-				</div>
+					{#if filtered.length === 0}
+						<tr>
+							<td colspan="6" class="py-10 text-center opacity-60">No workers found.</td>
+						</tr>
+					{/if}
+					</tbody>
+				</table>
 			</div>
-		</section>
+		</div>
 	</div>
 </div>

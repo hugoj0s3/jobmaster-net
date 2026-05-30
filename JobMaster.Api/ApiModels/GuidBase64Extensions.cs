@@ -9,7 +9,22 @@ internal static class GuidBase64Extensions
         return b64.TrimEnd('=').Replace('+', '-').Replace('/', '_'); // 22 chars
     }
 
-    public static Guid FromBase64(this string base64Url)
+    /// <summary>
+    /// Parses a GUID from either standard format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    /// or base64url-encoded format (22-character compact form).
+    /// </summary>
+    public static Guid ParseFlexible(this string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new ArgumentException("Value cannot be null or empty.", nameof(value));
+
+        if (Guid.TryParse(value, out var guid))
+            return guid;
+
+        return value.FromBase64();
+    }
+    
+    private static Guid FromBase64(this string base64Url)
     {
         if (string.IsNullOrWhiteSpace(base64Url))
             throw new ArgumentException("Value cannot be null or empty.", nameof(base64Url));

@@ -15,8 +15,12 @@ public class ApiJobModel : ApiClusterBaseModel
     public JobMasterTriggerSourceType TriggerSourceType { get; set; }
     /// <summary>Bucket that owns this job, if assigned.</summary>
     public string? BucketId { get; set; }
-    /// <summary>Agent connection that dispatched this job, if assigned.</summary>
+    /// <summary>Agent connection id that dispatched this job, if assigned.</summary>
     public string? AgentConnectionId { get; set; }
+    /// <summary>
+    /// Agent connection name 
+    /// </summary>
+    public string? AgentConnectionName { get; set; }
     /// <summary>Worker that is executing or executed this job, if assigned.</summary>
     public string? AgentWorkerId { get; set; }
     /// <summary>Host running the assigned worker, if known.</summary>
@@ -69,6 +73,7 @@ public class ApiJobModel : ApiClusterBaseModel
             TriggerSourceType = job.TriggerSourceType,
             BucketId = job.BucketId,
             AgentConnectionId = job.AgentConnectionId?.IdValue,
+            AgentConnectionName = job.AgentConnectionId?.Name,
             AgentWorkerId = job.AgentWorkerId,
             Priority = job.Priority,
             ScheduledAt = job.ScheduledAt,

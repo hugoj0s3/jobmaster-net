@@ -90,18 +90,15 @@ export interface DashboardPublicConfig {
     themeConfigs: PublicThemeConfig;
 }
 
-// Captured once at module load time, before any SPA navigation changes window.location
-const _initialBasePath: string = (() => {
-    if (typeof window === 'undefined') return '';
-    const parts = window.location.pathname.split('/').filter(Boolean);
-    return parts.length > 0 ? `/${parts[0]}` : '';
-})();
+// Set once by loadConfig after discovering where jobmaster-config.json lives.
+// This decouples base-path detection from window.location so direct URL navigation works.
+let _resolvedBasePath: string | null = null;
 
 export class JobMasterConfigUtil {
     private static configCache: DashboardPublicConfig | null = null;
 
     static getBasePath(): string {
-        return _initialBasePath;
+        return _resolvedBasePath ?? '';
     }
 
     static resolveHref(path: string, clusterId?: string): string {
@@ -117,13 +114,36 @@ export class JobMasterConfigUtil {
     static async loadConfig(fetchFn: typeof fetch): Promise<DashboardPublicConfig> {
         if (JobMasterConfigUtil.configCache) return JobMasterConfigUtil.configCache;
 
-        const basePath = JobMasterConfigUtil.getBasePath();
-        const res = await fetchFn(`${basePath}/jobmaster-config.json`);
-        if (!res.ok) throw new Error(`${res.status} ${res.statusText} - jobmaster-config.json`);
+        // In production the C# middleware injects window.__JM__ into index.html,
+        // giving us the base path directly with no guessing needed.
+        const injected = typeof window !== 'undefined' ? (window as any).__JM__ : undefined;
+        if (injected?.basePath !== undefined) {
+            const prefix: string = injected.basePath;
+            const res = await fetchFn(`${prefix}/jobmaster-config.json`);
+            if (!res.ok) throw new Error(`${res.status} ${res.statusText} - jobmaster-config.json`);
+            const cfg = (await res.json()) as DashboardPublicConfig;
+            _resolvedBasePath = prefix;
+            JobMasterConfigUtil.configCache = cfg;
+            return cfg;
+        }
 
-        const cfg = (await res.json()) as DashboardPublicConfig;
-        JobMasterConfigUtil.configCache = cfg;
-        return cfg;
+        // Dev fallback: walk up path segments until jobmaster-config.json is found.
+        const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+        const parts = pathname.split('/').filter(Boolean);
+
+        for (let i = parts.length; i >= 0; i--) {
+            const prefix = i > 0 ? '/' + parts.slice(0, i).join('/') : '';
+            const res = await fetchFn(`${prefix}/jobmaster-config.json`);
+            if (!res.ok) continue;
+            const ct = res.headers.get('content-type') ?? '';
+            if (!ct.includes('json')) continue;
+            const cfg = (await res.json()) as DashboardPublicConfig;
+            _resolvedBasePath = prefix;
+            JobMasterConfigUtil.configCache = cfg;
+            return cfg;
+        }
+
+        throw new Error('jobmaster-config.json not found');
     }
 
     static getClusterApiUrl(_clusterId?: string): string {

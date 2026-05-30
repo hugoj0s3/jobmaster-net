@@ -30,6 +30,8 @@ public static class JobMasterDashboardMiddlewareExtensions
                 "Check your .csproj <EmbeddedResource> mapping. The Svelte output might be incorrectly nested inside a 'build/' or 'dist/' folder, or the GenerateEmbeddedFilesManifest flag is missing.");
         }
 
+        var indexHtml = ReadIndexWithInjectedConfig(provider, basePath);
+
         // Rewrite exact matches and SPA routes to index.html so UseStaticFiles can serve the entry point.
         app.Use(async (ctx, next) =>
         {
@@ -43,30 +45,24 @@ public static class JobMasterDashboardMiddlewareExtensions
 
             if (isExactMatch)
             {
-                var fileInfo = provider.GetFileInfo("/index.html");
                 ctx.Response.StatusCode = 200;
                 ctx.Response.ContentType = "text/html; charset=utf-8";
-                using var stream = fileInfo.CreateReadStream();
-                await stream.CopyToAsync(ctx.Response.Body);
+                await ctx.Response.WriteAsync(indexHtml);
                 return;
             }
 
             // Allow SPA client-side routing by fallback to index.html
             if (path.StartsWith(routePrefix, StringComparison.OrdinalIgnoreCase))
             {
-                // Extract relative path to check if it physically exists in the Svelte build
                 var relativePath = path.Substring(basePath.Length);
                 if (!provider.GetFileInfo(relativePath).Exists)
                 {
-                    // Safely rewrite to index.html if it's a browser navigation or standard SPA route
                     bool acceptsHtml = ctx.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase);
                     if (acceptsHtml || !System.IO.Path.HasExtension(path))
                     {
-                        var fileInfo = provider.GetFileInfo("/index.html");
                         ctx.Response.StatusCode = 200;
                         ctx.Response.ContentType = "text/html; charset=utf-8";
-                        using var stream = fileInfo.CreateReadStream();
-                        await stream.CopyToAsync(ctx.Response.Body);
+                        await ctx.Response.WriteAsync(indexHtml);
                         return;
                     }
                 }
@@ -91,5 +87,16 @@ public static class JobMasterDashboardMiddlewareExtensions
         });
 
         return app;
+    }
+
+    private static string ReadIndexWithInjectedConfig(ManifestEmbeddedFileProvider provider, string basePath)
+    {
+        using var stream = provider.GetFileInfo("/index.html").CreateReadStream();
+        using var reader = new System.IO.StreamReader(stream);
+        var html = reader.ReadToEnd();
+
+        var json = System.Text.Json.JsonSerializer.Serialize(new { basePath });
+        var script = $"<script>window.__JM__={json};</script>";
+        return html.Replace("<!-- __JM_RUNTIME_CONFIG__ -->", script);
     }
 }

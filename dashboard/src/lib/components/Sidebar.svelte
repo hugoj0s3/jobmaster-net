@@ -1,6 +1,5 @@
 <script lang="ts">
     import { page } from "$app/stores";
-    import logoSvg from "$lib/assets/jobmaster-logo.svg";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
     let isHovered = $state(false);
@@ -38,7 +37,23 @@
     <!-- Logo -->
     <a href={resolveHref("/")} class="h-20 flex items-center px-4 overflow-hidden border-b border-base-300 cursor-pointer">
         <div class="flex items-center min-w-[50px]">
-            <img src={logoSvg} alt="JobMaster" class="h-10 w-10" />
+            <svg viewBox="0 0 200 200" class="h-10 w-10 shrink-0 transition-transform duration-300 {isHovered ? '-rotate-12' : ''}" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="10" y="10" width="180" height="180" rx="40" ry="40" style="fill: var(--color-primary)" />
+                    <g style="stroke: var(--color-primary-content); stroke-opacity: 0.12; stroke-width: 1.2" fill="none">
+                        <line x1="60" y1="30" x2="60" y2="170"/>
+                        <line x1="100" y1="30" x2="100" y2="170"/>
+                        <line x1="140" y1="30" x2="140" y2="170"/>
+                        <line x1="30" y1="60" x2="170" y2="60"/>
+                        <line x1="30" y1="100" x2="170" y2="100"/>
+                        <line x1="30" y1="140" x2="170" y2="140"/>
+                    </g>
+                    <g style="fill: var(--color-primary-content); opacity: 0.25">
+                        <circle cx="60" cy="60" r="3"/><circle cx="100" cy="60" r="3"/><circle cx="140" cy="60" r="3"/>
+                        <circle cx="60" cy="100" r="3"/><circle cx="140" cy="100" r="3"/>
+                        <circle cx="60" cy="140" r="3"/><circle cx="100" cy="140" r="3"/><circle cx="140" cy="140" r="3"/>
+                    </g>
+                    <text x="100" y="118" text-anchor="middle" font-family="'Inter','Segoe UI',system-ui,sans-serif" font-weight="800" font-size="72" letter-spacing="-2" style="fill: var(--color-primary-content)">JM</text>
+                </svg>
         </div>
 
         {#if isHovered}

@@ -296,6 +296,9 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         if (criteria.BucketType.HasValue)
             query = query.Where(b => b.BucketType == criteria.BucketType.Value);
 
+        if (criteria.BucketIds.Count > 0)
+            query = query.Where(b => criteria.BucketIds.Contains(b.Id));
+
         return query.ToList();
     }
 
@@ -427,6 +430,12 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
                 Operation = GenericFilterOperation.Eq,
                 Value = (int)criteria.BucketType.Value,
             });
+        }
+
+        if (criteria.BucketIds.Count > 0)
+        {
+            foreach (var id in criteria.BucketIds)
+                genericRecordQueryCriteria.EntryIds.Add(id);
         }
 
         genericRecordQueryCriteria.ReadIsolationLevel = criteria.ReadIsolationLevel;

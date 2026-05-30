@@ -9,8 +9,19 @@ public class ApiLogItemQueryCriteria
     public ApiJobMasterLogLevel? Level { get; set; }
     /// <summary>Filter by log category.</summary>
     public ApiJobMasterLogCategory? Category { get; set; }
-    /// <summary>Filter by reference identifier (e.g. job or schedule ID).</summary>
+    /// <summary>
+    /// Filter by reference identifier as a raw string (matched exactly against the stored value).
+    /// Use <see cref="ReferenceGuid"/> instead when the reference ID is a GUID.
+    /// </summary>
     public string? ReferenceId { get; set; }
+    /// <summary>
+    /// Filter by a GUID-typed reference identifier. Accepts either standard GUID format
+    /// (<c>xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</c>) or the compact base64url form (22 characters).
+    /// When set, takes precedence over <see cref="ReferenceId"/> and normalises the value to the
+    /// storage format before querying.
+    /// </summary>
+    public string? ReferenceGuid { get; set; }
+    
     /// <summary>Lower bound for the log entry timestamp (inclusive).</summary>
     public DateTime? FromTimestamp { get; set; }
     /// <summary>Upper bound for the log entry timestamp (inclusive).</summary>
@@ -24,7 +35,7 @@ public class ApiLogItemQueryCriteria
 
     internal LogItemQueryCriteria ToDomainCriteria()
     {
-        return new LogItemQueryCriteria
+        var criteria = new LogItemQueryCriteria
         {
             Level = Level.HasValue ? (JobMasterLogLevel)(int)Level.Value : null,
             Category = Category.HasValue ? (JobMasterLogCategory)(int)Category.Value : null,
@@ -35,5 +46,13 @@ public class ApiLogItemQueryCriteria
             CountLimit = CountLimit ?? 25,
             Offset = Offset ?? 0,
         };
+
+        if (!string.IsNullOrEmpty(ReferenceGuid))
+        {
+            var guid = ReferenceGuid.ParseFlexible();
+            criteria.ReferenceId = guid.ToString("N");
+        }
+
+        return criteria;
     }
 }

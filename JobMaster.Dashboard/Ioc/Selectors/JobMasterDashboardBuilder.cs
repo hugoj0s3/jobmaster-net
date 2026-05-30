@@ -20,7 +20,13 @@ internal class JobMasterDashboardBuilder : IJobMasterDashboardBuilder
 
     public IJobMasterDashboardBuilder UseBasePath(string basePath)
     {
-        options.BasePath = basePath;
+        var trimmed = basePath.Trim('/');
+        if (trimmed.Contains('/'))
+            throw new ArgumentException(
+                $"BasePath must be a single path segment (e.g. \"/jm-dashboard\"), not a multi-segment path. Got: \"{basePath}\"",
+                nameof(basePath));
+
+        options.BasePath = string.IsNullOrEmpty(trimmed) ? string.Empty : "/" + trimmed;
         return this;
     }
 

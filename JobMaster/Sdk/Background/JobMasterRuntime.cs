@@ -112,6 +112,17 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     fingerprint, agentDefinition.ProtectConnectionChanges);
             }
 
+            if (clusterDefinition.IsStandalone)
+            {
+                var standaloneConfig = clusterCnnCfg.TryGetAgentConnectionConfig(JobMasterConstants.StandaloneAgentConnName);
+                if (standaloneConfig != null)
+                {
+                    var standaloneId = new AgentConnectionId(standaloneConfig.Id);
+                    var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(standaloneConfig.Id);
+                    var fingerprint = await fingerprintResolver.GiveYourFingerprintAsync(clusterDefinition.ClusterId!, standaloneConfig.Id);
+                    await masterAgentConnectionService.SaveConnectionAsync(standaloneId, standaloneConfig.RepositoryTypeId, fingerprint, protectChanges: false);
+                }
+            }
 
             var workerDefinitions = clusterDefinition.Workers;
 

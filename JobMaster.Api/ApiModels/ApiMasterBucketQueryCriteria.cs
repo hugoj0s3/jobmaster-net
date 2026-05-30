@@ -25,6 +25,8 @@ public class ApiMasterBucketQueryCriteria
     public int? CountLimit { get; set; }
     /// <summary>Number of results to skip before returning.</summary>
     public int? Offset { get; set; }
+    /// <summary>Filter by specific bucket IDs.</summary>
+    public string[]? BucketIds { get; set; }
     /// <summary>Optional sort specification.</summary>
     public ApiSortByCriteria? SortBy { get; set; }
 
@@ -38,6 +40,7 @@ public class ApiMasterBucketQueryCriteria
             Status = Status,
             WorkerLane = WorkerLane,
             BucketType = BucketType,
+            BucketIds = BucketIds ?? [],
             ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }

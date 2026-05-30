@@ -17,6 +17,7 @@
     type UpcomingJobsBreakdown = {
         OnMaster: number;
         InBucket: number;
+        Onboarded: number;
         Queued: number;
         Processing: number;
     };
@@ -84,6 +85,7 @@
                 breakdown: {
                     OnMaster: 0,
                     InBucket: 0,
+                    Onboarded: 0,
                     Queued: 0,
                     Processing: 0
                 }
@@ -177,6 +179,7 @@
                 const [
                     onMasterCount,
                     inBucketCount,
+                    onboardedCount,
                     queuedCount,
                     processingCount,
                     hostsCount,
@@ -193,14 +196,21 @@
                     apiWorkers
                 ] = await Promise.all([
                     jmApi.GET("/{clusterId}/jobs/count", {
-                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.HeldOnMaster } }
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.OnMaster } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
                     }),
                     
                     jmApi.GET("/{clusterId}/jobs/count", {
-                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.AssignedToBucket } }
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.InBucket } }
+                    }).then((r) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+                    
+                    jmApi.GET("/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Onboarded } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as number;
@@ -305,7 +315,7 @@
                     })
                 ]);
 
-                const upcomingTotal = onMasterCount + inBucketCount + queuedCount + processingCount;
+                const upcomingTotal = onMasterCount + inBucketCount + onboardedCount + queuedCount + processingCount;
 
                 const onlineWorkers = apiWorkers.filter((w: any) => w.isAlive === true);
                 const workerModes = onlineWorkers.map((w: any) => w.mode);
@@ -322,6 +332,7 @@
                         breakdown: {
                             OnMaster: onMasterCount,
                             InBucket: inBucketCount,
+                            Onboarded: onboardedCount,
                             Queued: queuedCount,
                             Processing: processingCount
                         }
@@ -516,24 +527,32 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.HeldOnMaster}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
-                            <span>On Master</span>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.OnMaster}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                            {JobStatusUtil.Label.OnMaster}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.OnMaster, "badge-primary")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.OnMaster}
                             </span>
                         </a>
-                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.AssignedToBucket}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
-                            <span>In Bucket</span>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.InBucket}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                            {JobStatusUtil.Label.InBucket}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.InBucket, "badge-secondary")} font-mono text-base font-semibold`}
                             >
                                 {metrics.upcomingJobs.breakdown.InBucket}
                             </span>
                         </a>
+                        <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.Onboarded}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                            {JobStatusUtil.Label.Onboarded}
+                            <span
+                                class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Onboarded, "badge-info")} font-mono text-base font-semibold`}
+                            >
+                                {metrics.upcomingJobs.breakdown.Onboarded}
+                            </span>
+                        </a>
                         <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.Queued}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
-                            <span>Queued</span>
+                            {JobStatusUtil.Label.Queued}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Queued, "badge-warning")} font-mono text-base font-semibold`}
                             >
@@ -541,7 +560,7 @@
                             </span>
                         </a>
                         <a href="/{clusterId()}/jobs?statuses={ApiJobStatus.Processing}" class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
-                            <span>Processing</span>
+                            {JobStatusUtil.Label.Processing}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Processing, "badge-accent")} font-mono text-base font-semibold`}
                             >

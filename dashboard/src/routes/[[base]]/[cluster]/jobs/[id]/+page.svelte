@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount, onDestroy } from "svelte";
+	import { onMount } from "svelte";
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
@@ -8,15 +8,28 @@
 	import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
 	import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
 	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
+	import { bucketNameCache } from "$lib/helper/bucket-name-cache";
+	import { workerCache, type WorkerCacheEntry } from "$lib/helper/worker-cache";
+	import { LogCategory, LogLevel, logLevelLabel, logLevelBadgeClass, LogLevelFilterOptions, workerModeLabel } from "$lib/api/enums";
 
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
+	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
+	type ApiAgentWorker = components["schemas"]["ApiAgentWorker"];
+	type ApiJobExecution = components["schemas"]["ApiJobExecution"];
+
+	function triggerSourceTypeLabel(value: number | null | undefined): string {
+		if (value === 1) return "Once";
+		if (value === 2) return "Static Recurring";
+		if (value === 3) return "Dynamic Recurring";
+		return "—";
+	}
 
 	const clusterId = () => $page.params.cluster;
 	const jobId = () => $page.params.id;
 
 	type LogEntry = {
 		id?: string;
-		timestamp?: string;
+		timestampUtc?: string;
 		level?: number;
 		message?: string;
 		subjectType?: number;
@@ -26,25 +39,29 @@
 	};
 
 	let job: ApiJobModel | null = null;
+	let executions: ApiJobExecution[] = [];
 	let recentLogs: LogEntry[] = [];
 	let filteredLogs: LogEntry[] = [];
 	let selectedLogLevel: string = "";
+	let logsPageSize = 10;
+	let logsSortDirection: "asc" | "desc" = "desc";
 	let isLoading = true;
 	let refreshError: string | null = null;
-	let lastUpdatedAt = new Date();
-	let poller: number | undefined;
-	const refreshIntervalSec = 15;
 	let lastClusterId: string | null = null;
 	let notFound = false;
+	let selectedExecDetail: { message: string; isError: boolean } | null = null;
+	let selectedLogDetail: LogEntry | null = null;
+	let isDarkTheme = false;
 
 	$: statusLabel = safeStatusLabel(job?.status);
 	$: priorityLabel = safePriorityLabel(job?.priority);
-	$: completedAt = (job as any)?.completedAt ?? job?.succeedExecutedAt;
-	$: outcomeMessage = (job as any)?.outcomeMessage ?? (job as any)?.lastOutcomeMessage;
-	$: outcome = (job as any)?.outcome ?? (job as any)?.lastOutcome;
-	$: agentConnectionName = (job as any)?.agentConnectionName;
+	$: sortedExecutions = [...executions].sort((a, b) =>
+		new Date(b.startedAt ?? 0).getTime() - new Date(a.startedAt ?? 0).getTime()
+	);
+	let bucketName: string | null = null;
+	let workerEntry: WorkerCacheEntry | undefined = undefined;
 
-	$: filteredLogs = selectedLogLevel 
+	$: filteredLogs = selectedLogLevel
 		? recentLogs.filter(log => log.level === parseInt(selectedLogLevel))
 		: recentLogs;
 
@@ -74,6 +91,22 @@
 		return PriorityUtil.getBadgeClass(label);
 	}
 
+	function outcomeLabel(value: unknown): string {
+		if (value == null) return "—";
+		const s = String(value).toLowerCase();
+		if (s === "1" || s === "succeeded" || s === "success") return "Succeeded";
+		if (s === "2" || s === "failed" || s === "failure") return "Failed";
+		return String(value);
+	}
+
+	function outcomeBadgeClass(value: unknown): string {
+		if (value == null) return "badge-ghost";
+		const s = String(value).toLowerCase();
+		if (s === "1" || s === "succeeded" || s === "success") return "badge-success";
+		if (s === "2" || s === "failed" || s === "failure") return "badge-error";
+		return "badge-ghost";
+	}
+
 	function formatDateTime(iso: string | null | undefined): string {
 		return DateDisplayUtil.formatRelativeOrDate(iso);
 	}
@@ -96,18 +129,7 @@
 		});
 	}
 
-	function msgDataEntries(data: Record<string, unknown> | null | undefined): Array<[string, string]> {
-		if (!data) return [];
-		return Object.entries(data).map(([k, v]) => {
-			if (typeof v === "string") return [k, v];
-			if (v === null || v === undefined) return [k, "—"];
-			try { return [k, JSON.stringify(v)]; } catch { return [k, String(v)]; }
-		});
-	}
-
-	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
-
-	async function refreshNow() {
+async function refreshNow() {
 		isLoading = true;
 		refreshError = null;
 		notFound = false;
@@ -116,7 +138,6 @@
 			const jid = jobId();
 			if (!cid || !jid) return;
 
-			// Se o cluster mudou, redireciona para a lista
 			if (lastClusterId && lastClusterId !== cid) {
 				goto(`/${cid}/jobs`);
 				return;
@@ -131,7 +152,6 @@
 
 			if (response.error) {
 				console.error("API error (job detail):", response.error);
-				// Se for 404, marca como não encontrado
 				if (response.response?.status === 404) {
 					notFound = true;
 					refreshError = null;
@@ -143,30 +163,52 @@
 
 			job = (response.data ?? null) as ApiJobModel | null;
 
-			// Se não retornou job, marca como não encontrado
 			if (!job) {
 				notFound = true;
 				return;
+			}
+
+			if (job.bucketId && bucketNameCache.getMissing(cid, [job.bucketId]).length > 0) {
+				try {
+					const br = await jm.GET("/{clusterId}/buckets", {
+						params: { path: { clusterId: cid }, query: { BucketIds: [job.bucketId], CountLimit: 1 } }
+					});
+					if (!br.error) bucketNameCache.populate(cid, (br.data ?? []) as ApiBucketModel[]);
+				} catch { /* name stays as ID */ }
+			}
+			bucketName = job.bucketId ? (bucketNameCache.get(cid, job.bucketId) ?? job.bucketId) : null;
+
+			if (job.agentWorkerId && workerCache.getMissing(cid, [job.agentWorkerId]).length > 0) {
+				try {
+					const wr = await jm.GET("/{clusterId}/workers/{workerId}", {
+						params: { path: { clusterId: cid, workerId: job.agentWorkerId } }
+					});
+					if (!wr.error && wr.data) workerCache.populate(cid, [wr.data as ApiAgentWorker]);
+				} catch { /* name stays as ID */ }
+			}
+			workerEntry = job.agentWorkerId ? workerCache.get(cid, job.agentWorkerId) : undefined;
+
+			try {
+				const execResp = await jm.GET("/{clusterId}/jobs/{id}/executions", {
+					params: { path: { clusterId: cid, id: jid } }
+				});
+				executions = execResp.error ? [] : (execResp.data ?? []) as ApiJobExecution[];
+			} catch {
+				executions = [];
 			}
 
 			try {
 				const logsResp = await jm.GET("/{clusterId}/logs", {
 					params: {
 						path: { clusterId: cid },
-						query: { SubjectId: jid, CountLimit: 20 }
+						query: { ReferenceGuid: jid, Category: LogCategory.JobExecution, CountLimit: logsPageSize }
 					}
 				});
-				if (!logsResp.error) {
-					const allLogs = (logsResp.data ?? []) as LogEntry[];
-					recentLogs = allLogs.filter((l) => l.level != null && l.level >= 3);
-				} else {
-					recentLogs = [];
-				}
+				recentLogs = logsResp.error ? [] : (logsResp.data ?? []) as LogEntry[];
 			} catch {
 				recentLogs = [];
 			}
 
-			lastUpdatedAt = new Date();
 		} catch (e) {
 			console.error("Failed to fetch job:", e);
 			refreshError = e instanceof Error ? e.message : String(e);
@@ -175,20 +217,17 @@
 		}
 	}
 
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshNow();
-		}, refreshIntervalSec * 1000);
-	}
-
 	onMount(() => {
-		refreshNow();
-		restartPoller();
-	});
+		const checkTheme = () => {
+			isDarkTheme = document.documentElement.style.colorScheme === "dark";
+		};
+		checkTheme();
+		const observer = new MutationObserver(checkTheme);
+		observer.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "data-theme"] });
 
-	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
+		refreshNow();
+
+		return () => observer.disconnect();
 	});
 </script>
 
@@ -207,16 +246,10 @@
 						</p>
 					</div>
 					<div class="mt-8 flex gap-4 justify-center">
-						<button
-							class="btn btn-primary"
-							on:click={() => goto(`/${clusterId()}/jobs`)}
-						>
+						<button class="btn btn-primary" on:click={() => goto(`/${clusterId()}/jobs`)}>
 							Go to Jobs List
 						</button>
-						<button
-							class="btn btn-ghost"
-							on:click={() => window.history.back()}
-						>
+						<button class="btn btn-ghost" on:click={() => window.history.back()}>
 							Go Back
 						</button>
 					</div>
@@ -240,39 +273,9 @@
 							<li>{job.id ?? "—"}</li>
 						</ul>
 					</div>
-
-					<h1 class="text-3xl font-semibold tracking-tight">JobExecutionDetail</h1>
-
-					<div class="flex flex-wrap items-center gap-2">
-						<span class={"badge " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
-						<span class={"badge " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
-						{#if job.workerLane}
-							<span class="badge badge-ghost">{job.workerLane}</span>
-						{/if}
-					</div>
+					<h1 class="text-3xl font-semibold tracking-tight">Job Detail</h1>
 				</div>
 
-				<div class="flex items-center gap-3 text-sm opacity-80">
-					<span>Last updated: {lastUpdated}</span>
-					<button
-						class="btn btn-ghost btn-sm btn-square"
-						aria-label="Refresh now"
-						on:click={refreshNow}
-						disabled={isLoading}
-					>
-						<svg
-							xmlns="http://www.w3.org/2000/svg"
-							class={"h-4 w-4 " + (isLoading ? "animate-spin" : "")}
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-						>
-							<path d="M21 12a9 9 0 1 1-3-6.7" />
-							<path d="M21 3v6h-6" />
-						</svg>
-					</button>
-				</div>
 			</div>
 
 			{#if refreshError}
@@ -283,10 +286,10 @@
 
 			<!-- Main content grid -->
 			<div class="mt-6 grid grid-cols-1 gap-4 lg:grid-cols-2">
-				<!-- Identity -->
+				<!-- Summary -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">Identity</h2>
+						<h2 class="card-title text-base">Summary</h2>
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
@@ -294,38 +297,85 @@
 								<span class="font-mono font-medium">{job.id ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">JobId</span>
+								<span class="opacity-70">Job Definition Id</span>
 								<span class="font-medium">{job.jobDefinitionId ?? "—"}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">ClusterId</span>
-								<span class="font-medium">{job.clusterId ?? clusterId()}</span>
+								<span class="opacity-70">Status</span>
+								<span class={"badge whitespace-nowrap " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Priority</span>
+								<span class={"badge whitespace-nowrap " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Scheduled Date</span>
+								<span class="font-medium">{formatDateTime(job.scheduledAt)}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Created At</span>
+								<span class="font-medium">{formatDateTime(job.createdAt)}</span>
 							</div>
 						</div>
 					</div>
 				</div>
 
-				<!-- Status & Scheduling -->
+				<!-- Infrastructure -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">StatusAndScheduling</h2>
+						<h2 class="card-title text-base">Infrastructure</h2>
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Status</span>
-								<span class={"badge " + statusBadgeClass(statusLabel)}>{statusLabel}</span>
+								<span class="opacity-70">Bucket</span>
+								<span class="font-mono font-medium">
+									{#if job.bucketId}
+										<a href="/{clusterId()}/buckets/{job.bucketId}" class="link link-hover link-primary">{bucketName ?? job.bucketId}</a>
+									{:else}
+										—
+									{/if}
+								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">Priority</span>
-								<span class={"badge " + priorityBadgeClass(priorityLabel)}>{priorityLabel}</span>
+								<span class="opacity-70">Agent Connection</span>
+								<span class="font-medium">
+									{#if job.agentConnectionId}
+										<a href="/{clusterId()}/agent-connections/{job.agentConnectionId}" class="link link-hover link-primary">{job.agentConnectionName ?? job.agentConnectionId}</a>
+									{:else}
+										—
+									{/if}
+								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">StartedAt</span>
-								<span class="font-medium">{formatDateTime(job.processingStartedAt ?? job.originalScheduledAt ?? job.scheduledAt)}</span>
+								<span class="opacity-70">Worker</span>
+								<span class="font-medium flex items-center gap-1">
+									{#if job.agentWorkerId}
+										<a href="/{clusterId()}/workers/{job.agentWorkerId}" class="link link-hover link-primary">{workerEntry?.name ?? job.agentWorkerId}</a>
+										{#if workerEntry?.mode != null}
+											<span class="badge badge-ghost badge-sm">{workerModeLabel(workerEntry.mode)}</span>
+										{/if}
+									{:else}
+										—
+									{/if}
+								</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">CreatedAt</span>
-								<span class="font-medium">{formatDateTime(job.createdAt)}</span>
+								<span class="opacity-70">Host</span>
+								<span class="font-medium">
+									{#if job.hostId}
+										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? job.hostId}</a>
+									{:else}
+										{job.hostDisplayName ?? "—"}
+									{/if}
+								</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Worker Lane</span>
+								<span class="font-medium">{job.workerLane ?? "—"}</span>
+							</div>
+							<div class="flex items-center justify-between gap-4">
+								<span class="opacity-70">Trigger Source</span>
+								<span class="font-medium">{triggerSourceTypeLabel(job.triggerSourceType)}</span>
 							</div>
 						</div>
 					</div>
@@ -334,29 +384,12 @@
 				<!-- Message Data (full width) -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
-						<h2 class="card-title text-base">MessageData</h2>
+						<h2 class="card-title text-base">Message Data</h2>
 						<div class="divider my-2"></div>
-						{#if msgDataEntries(job.msgData).length === 0}
+						{#if !job.msgData || Object.keys(job.msgData).length === 0}
 							<div class="text-sm opacity-60">No message data.</div>
 						{:else}
-							<div class="overflow-x-auto">
-								<table class="table table-zebra">
-									<thead>
-									<tr class="text-base-content/70">
-										<th>Key</th>
-										<th>Value</th>
-									</tr>
-									</thead>
-									<tbody>
-									{#each msgDataEntries(job.msgData) as [k, v] (k)}
-										<tr>
-											<td class="font-medium opacity-80">{k}</td>
-											<td class="font-mono break-all">{v}</td>
-										</tr>
-									{/each}
-									</tbody>
-								</table>
-							</div>
+							<pre class="bg-base-300/60 rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(job.msgData, null, 2)}</pre>
 						{/if}
 					</div>
 				</div>
@@ -381,78 +414,18 @@
 					</div>
 				</div>
 
-				<!-- Infrastructure -->
-				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
-					<div class="card-body">
-						<h2 class="card-title text-base">Infrastructure</h2>
-						<div class="divider my-2"></div>
-						<div class="space-y-3 text-sm">
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">BucketId</span>
-								<span class="font-mono font-medium">
-									{#if job.bucketId}
-										<a href="/{clusterId()}/buckets/{job.bucketId}" class="link link-hover link-primary">{job.bucketId}</a>
-									{:else}
-										—
-									{/if}
-								</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">AgentConnectionId</span>
-								<span class="font-mono font-medium">
-									{#if job.agentConnectionId}
-										<a href="/{clusterId()}/agent-connections/{job.agentConnectionId}" class="link link-hover link-primary">{job.agentConnectionId}</a>
-									{:else}
-										—
-									{/if}
-								</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">AgentConnectionName</span>
-								<span class="font-medium">{agentConnectionName ?? "—"}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">AgentWorkerId</span>
-								<span class="font-mono font-medium">{job.agentWorkerId ?? "—"}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">HostId</span>
-								<span class="font-medium">
-									{#if job.hostId}
-										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? "—"}</a>
-									{:else}
-										{job.hostDisplayName ?? "—"}
-									{/if}
-								</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">HostDisplayName</span>
-								<span class="font-medium">{job.hostDisplayName ?? "—"}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">WorkerLane</span>
-								<span class="font-medium">{job.workerLane ?? "—"}</span>
-							</div>
-							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">TriggerSourceType</span>
-								<span class="font-medium">{job.triggerSourceType ?? "—"}</span>
-							</div>
-						</div>
-					</div>
-				</div>
-
 				<!-- Failure & Retries -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
 					<div class="card-body">
-						<h2 class="card-title text-base">FailureAndRetries</h2>
+						<h2 class="card-title text-base">Failure & Retries</h2>
 						<div class="divider my-2"></div>
 						<div class="space-y-3 text-sm">
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">NumberOfFailures</span>
+								<span class="opacity-70">Number Of Failures</span>
 								<span class="font-semibold">{job.numberOfFailures ?? 0}</span>
 							</div>
 							<div class="flex items-center justify-between gap-4">
-								<span class="opacity-70">MaxNumberOfRetries</span>
+								<span class="opacity-70">Max Number Of Retries</span>
 								<span class="font-semibold">{job.maxNumberOfRetries ?? 0}</span>
 							</div>
 							{#if typeof job.numberOfFailures === "number" && typeof job.maxNumberOfRetries === "number" && job.maxNumberOfRetries > 0}
@@ -464,7 +437,7 @@
 							{/if}
 							{#if job.scheduledAt && typeof job.numberOfFailures === "number" && job.numberOfFailures > 0 && typeof job.maxNumberOfRetries === "number" && job.numberOfFailures < job.maxNumberOfRetries}
 								<div class="flex items-center justify-between gap-4">
-									<span class="opacity-70">ScheduledAt</span>
+									<span class="opacity-70">Scheduled At</span>
 									<span class="font-medium text-warning">{formatDateTime(job.scheduledAt)}</span>
 								</div>
 							{/if}
@@ -477,58 +450,69 @@
 					<div class="card-body">
 						<h2 class="card-title text-base">Execution</h2>
 						<div class="divider my-2"></div>
-						<div class="overflow-x-auto">
-							<table class="table table-zebra">
-								<thead>
-								<tr class="text-base-content/70">
-									<th>StartedAt</th>
-									<th>CompletedAt</th>
-									<th>ProcessDeadline</th>
-									<th>RunDuration</th>
-									<th>Timeout</th>
-								</tr>
-								</thead>
-								<tbody>
-								<tr>
-									<td class="font-medium">{formatDateTime(job.processingStartedAt)}</td>
-									<td class="font-medium">{formatDateTime(completedAt)}</td>
-									<td class="font-medium">{formatDateTime(job.processDeadline)}</td>
-									<td class="font-medium">{formatDuration(job.processingStartedAt, completedAt)}</td>
-									<td class="font-mono font-medium">{job.timeout ?? "—"}</td>
-								</tr>
-								</tbody>
-							</table>
-							{#if outcomeMessage || outcome}
-								<div class="mt-3 grid gap-2 text-sm lg:grid-cols-2">
-									<div class="flex items-center justify-between gap-4">
-										<span class="opacity-70">Outcome</span>
-										<span class="font-medium">{outcome ?? "—"}</span>
-									</div>
-									<div class="flex items-center justify-between gap-4">
-										<span class="opacity-70">OutcomeMessage</span>
-										<span class="font-medium text-right break-all">{outcomeMessage ?? "—"}</span>
-									</div>
-								</div>
-							{/if}
-						</div>
+						{#if sortedExecutions.length === 0}
+							<div class="text-sm opacity-60">No execution records.</div>
+						{:else}
+							<div class="overflow-x-auto">
+								<table class="table table-zebra">
+									<thead>
+									<tr class="text-base-content/70">
+										<th>Started At</th>
+										<th>Completed At</th>
+										<th>Run Duration</th>
+										<th>Outcome</th>
+									</tr>
+									</thead>
+									<tbody>
+									{#each sortedExecutions as exec (exec.id)}
+										<tr>
+											<td class="font-medium whitespace-nowrap">{formatDateTime(exec.startedAt)}</td>
+											<td class="font-medium whitespace-nowrap">{formatDateTime(exec.finalizedAt)}</td>
+											<td class="font-medium">{formatDuration(exec.startedAt, exec.finalizedAt)}</td>
+											<td>
+												<div class="flex items-center gap-2">
+													<span class={"badge whitespace-nowrap " + outcomeBadgeClass(exec.outcome)}>{outcomeLabel(exec.outcome)}</span>
+													{#if exec.outcomeMessage}
+														<button
+															class="btn btn-ghost btn-xs opacity-70 hover:opacity-100"
+															on:click={() => selectedExecDetail = { message: exec.outcomeMessage ?? "", isError: outcomeLabel(exec.outcome) === "Failed" }}
+														>
+															Details
+														</button>
+													{/if}
+												</div>
+											</td>
+										</tr>
+									{/each}
+									</tbody>
+								</table>
+							</div>
+						{/if}
 					</div>
 				</div>
 
-				<!-- Recents Logs -->
+				<!-- Logs -->
 				<div class="card bg-base-200/60 border border-base-300/60 shadow-lg lg:col-span-2">
 					<div class="card-body">
 						<div class="flex items-center justify-between gap-4">
-							<h2 class="card-title text-base">RecentLogs</h2>
-							<FilterDropdown
-								label="Log Level"
-								options={[
-									{ value: "4", label: "Error" },
-									{ value: "3", label: "Warning" },
-									{ value: "2", label: "Info" },
-									{ value: "1", label: "Debug" }
-								]}
-								bind:value={selectedLogLevel}
-							/>
+							<h2 class="card-title text-base">Logs</h2>
+							<div class="flex items-center gap-2">
+								<FilterDropdown
+									label="Log Level"
+									options={LogLevelFilterOptions}
+									bind:value={selectedLogLevel}
+								/>
+								<select class="select select-bordered select-xs" bind:value={logsSortDirection}>
+									<option value="desc">Newest first</option>
+									<option value="asc">Oldest first</option>
+								</select>
+								<select class="select select-bordered select-xs" bind:value={logsPageSize}>
+									<option value={10}>10</option>
+									<option value={25}>25</option>
+									<option value={50}>50</option>
+									<option value={100}>100</option>
+								</select>
+							</div>
 						</div>
 						<div class="divider my-2"></div>
 						{#if filteredLogs.length === 0}
@@ -536,33 +520,37 @@
 								{#if selectedLogLevel}
 									No logs match the selected log level.
 								{:else}
-									No recent failure or error logs.
+									No logs found.
 								{/if}
 							</div>
 						{:else}
-							<div class="overflow-x-auto max-h-80 overflow-y-auto">
+							<div class="overflow-x-auto">
 								<table class="table table-zebra">
-									<thead class="sticky top-0 bg-base-200 z-10">
+									<thead>
 									<tr class="text-base-content/70">
 										<th>Level</th>
 										<th>Timestamp</th>
 										<th>Message</th>
+										<th></th>
 									</tr>
 									</thead>
 									<tbody>
-									{#each filteredLogs as log (log.id ?? log.timestamp ?? Math.random())}
+									{#each filteredLogs as log (log.id ?? log.timestampUtc ?? Math.random())}
 										<tr>
 											<td>
-												<span class={"badge badge-sm " + (log.level === 4 ? "badge-error" : log.level === 3 ? "badge-warning" : "badge-ghost")}>
-													{log.level === 4 ? "Error" : log.level === 3 ? "Warning" : "Level " + (log.level ?? "?")}
+												<span class={"badge badge-sm whitespace-nowrap " + logLevelBadgeClass(log.level)}>
+													{logLevelLabel(log.level)}
 												</span>
 											</td>
-											<td class="font-medium whitespace-nowrap">{formatDateTime(log.timestamp)}</td>
-											<td class="font-mono text-xs break-all">
-												{log.message ?? "—"}
-												{#if log.exceptionMessage}
-													<div class="mt-1 text-error/80">{log.exceptionMessage}</div>
-												{/if}
+											<td class="font-medium whitespace-nowrap">{formatDateTime(log.timestampUtc)}</td>
+											<td class="font-mono text-xs max-w-xs truncate">{log.message ?? "—"}</td>
+											<td>
+												<button
+													class="btn btn-ghost btn-xs opacity-70 hover:opacity-100"
+													on:click={() => selectedLogDetail = log}
+												>
+													Details
+												</button>
 											</td>
 										</tr>
 									{/each}
@@ -577,3 +565,40 @@
 		{/if}
 	</div>
 </div>
+
+{#if selectedExecDetail !== null}
+	<dialog class="modal modal-open" on:click|self={() => selectedExecDetail = null}>
+		<div class="modal-box max-w-2xl w-full">
+			<div class="flex items-center gap-2 mb-4">
+				{#if selectedExecDetail.isError}
+					<span class="badge badge-error badge-sm">Failed</span>
+				{:else}
+					<span class="badge badge-success badge-sm">Succeeded</span>
+				{/if}
+				<h3 class="font-bold text-base">Execution Detail</h3>
+			</div>
+			<pre class={"rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto border-l-4 " + (selectedExecDetail.isError ? "border-error" : "border-success") + (isDarkTheme ? " bg-neutral text-neutral-content" : " bg-base-200 text-base-content")}>{selectedExecDetail.message}</pre>
+			<div class="modal-action">
+				<button class="btn btn-sm" on:click={() => selectedExecDetail = null}>Close</button>
+			</div>
+		</div>
+	</dialog>
+{/if}
+
+{#if selectedLogDetail !== null}
+	<dialog class="modal modal-open" on:click|self={() => selectedLogDetail = null}>
+		<div class="modal-box max-w-2xl w-full">
+			<div class="flex items-center gap-2 mb-4">
+				<span class={"badge badge-sm " + logLevelBadgeClass(selectedLogDetail.level)}>
+					{logLevelLabel(selectedLogDetail.level)}
+				</span>
+				<h3 class="font-bold text-base">Log Detail</h3>
+				<span class="text-xs opacity-50 ml-auto">{formatDateTime(selectedLogDetail.timestampUtc)}</span>
+			</div>
+			<pre class={"rounded-lg p-4 text-xs font-mono overflow-x-auto whitespace-pre-wrap break-words max-h-96 overflow-y-auto border-l-4 " + (selectedLogDetail.level === LogLevel.Error || selectedLogDetail.level === LogLevel.Critical ? "border-error" : selectedLogDetail.level === LogLevel.Warning ? "border-warning" : selectedLogDetail.level === LogLevel.Info ? "border-info" : "border-base-300") + (isDarkTheme ? " bg-neutral text-neutral-content" : " bg-base-200 text-base-content")}>{selectedLogDetail.message ?? "—"}{selectedLogDetail.exceptionMessage ? "\n\n" + selectedLogDetail.exceptionMessage : ""}{selectedLogDetail.exceptionStackTrace ? "\n\n" + selectedLogDetail.exceptionStackTrace : ""}</pre>
+			<div class="modal-action">
+				<button class="btn btn-sm" on:click={() => selectedLogDetail = null}>Close</button>
+			</div>
+		</div>
+	</dialog>
+{/if}

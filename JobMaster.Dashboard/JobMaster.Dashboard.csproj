@@ -19,7 +19,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="..\dashboard\build\**\*">
+    <EmbeddedResource Include="..\dashboard\build\**\*" Exclude="..\dashboard\build\jobmaster-config.json">
       <Link>Embedded\%(RecursiveDir)%(Filename)%(Extension)</Link>
       <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </EmbeddedResource>

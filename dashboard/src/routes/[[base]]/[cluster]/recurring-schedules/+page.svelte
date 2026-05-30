@@ -43,7 +43,7 @@
 		startBefore?: string;
 		endBefore?: string;
 		isStaticIdle?: boolean;
-		workman?: string;
+		workerLane?: string;
 	};
 
 	let rows: RecurringScheduleRow[] = [];
@@ -86,7 +86,7 @@
 
 	const clusterId = () => $page.params.cluster;
 
-	// Carrega filtros salvos da localStorage
+	// Load saved filters from localStorage
 	function loadSavedFilters() {
 		const saved = readSavedFilter(`recurring-schedules-filters-${clusterId()}`, "");
 		if (!saved) return null;
@@ -97,7 +97,7 @@
 		}
 	}
 
-	// Inicializa com valores da URL se existirem
+	// Initialize with URL values if present
 	let selectedStatuses: string[] = _initParams.statuses.length > 0 ? [..._initParams.statuses] : [];
 	let sortDirection: "" | "asc" | "desc" = _initParams.sortDirection || "";
 
@@ -187,12 +187,12 @@
 		return Object.entries(r.metadata).filter(([k]) => k.startsWith("!"));
 	}
 
-	function scheduleBadge(r: RecurringScheduleRow): string {
-		return `badge ${RecurringSchedulesStatusUtil.getBadgeClassByStatus(r.status)}`;
+	function scheduleBadgeClass(r: RecurringScheduleRow): string {
+		return RecurringSchedulesStatusUtil.getBadgeClassByStatus(r.status);
 	}
 
-	function lastJobBadge(status: JobStatusLabel): string {
-		return `badge ${JobStatusUtil.getBadgeClass(status)}`;
+	function lastJobBadgeClass(status: JobStatusLabel): string {
+		return JobStatusUtil.getBadgeClass(status);
 	}
 
 	function mapScheduleStatus(status?: number | string): RecurringScheduleStatusLabel {
@@ -295,7 +295,7 @@
 					startBefore: schedule.startBefore ?? undefined,
 					endBefore: schedule.endBefore ?? undefined,
 					isStaticIdle: schedule.isStaticIdle ?? false,
-					workman: schedule.workman ?? schedule.agentWorkerId ?? undefined
+					workerLane: schedule.workerLane ?? undefined
 				};
 			});
 
@@ -318,17 +318,17 @@
 
 
 	onMount(() => {
-		// Se não tem params na URL, tenta carregar da localStorage
-		const hasUrlParams = $page.url.search.length > 0;
-		if (!hasUrlParams) {
+		const rawSearch = window.location.search;
+		const hasUserUrlParams = rawSearch.length > 0 && rawSearch !== "?" && new URLSearchParams(rawSearch).toString().length > 0;
+
+		if (!hasUserUrlParams) {
 			const savedFilters = loadSavedFilters();
 			if (savedFilters) {
-				// Carrega filtros salvos (respeita até arrays vazios)
 				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
 				sortDirection = savedFilters.sortDirection !== undefined ? savedFilters.sortDirection : DEFAULT_SORT_DIRECTION;
+				pageSize = savedFilters.pageSize !== undefined ? savedFilters.pageSize : 10;
 				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
 			} else {
-				// Aplica defaults quando não há localStorage
 				selectedStatuses = [...DEFAULT_STATUSES];
 				sortDirection = DEFAULT_SORT_DIRECTION;
 			}
@@ -342,12 +342,13 @@
 	onDestroy(() => {
 		if (poller) window.clearInterval(poller);
 
-		// Salva filtros atuais na localStorage no unmount
+		// Save current filters to localStorage on unmount
 		writeSavedFilter(
 			`recurring-schedules-filters-${clusterId()}`,
 			JSON.stringify({
 				statuses: selectedStatuses,
 				sortDirection,
+				pageSize,
 				createdAt: datetimeToParam(filterValues, "createdAt")
 			})
 		);
@@ -356,35 +357,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-			<div>
 				<h1 class="text-3xl font-semibold tracking-tight">Recurring Schedules</h1>
-			</div>
-
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refreshNow}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-
-
-			</div>
-		</div>
 
 		<div class="mt-6 flex items-center justify-between gap-4">
 			{#key filterKey}
@@ -400,20 +373,6 @@
 					bind:values={selectedStatuses}
 					on:change={() => { pageIndex = 0; }}
 				/>
-
-				<FilterDropdown
-					label="Sort By"
-					options={[
-						{ value: "desc", label: "Recents" },
-						{ value: "asc", label: "Olders" }
-					]}
-					value={sortDirection}
-					on:change={(e) => {
-						sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
-						pageIndex = 0;
-					}}
-				/>
-
 
 				<FilterContainer
 					initialValues={filterValues}
@@ -445,31 +404,43 @@
 			</div>
 			{/key}
 
-			<Pager
-				bind:pageIndex
-				bind:pageSize
-				totalCount={filtered.length}
-				currentCount={paged.length}
-				disabled={isRefreshing}
-				showPageSize={true}
-			/>
+			<div class="flex items-center gap-2">
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "desc", label: "Recents" },
+						{ value: "asc", label: "Olders" }
+					]}
+					value={sortDirection}
+					on:change={(e) => {
+						sortDirection = (e.detail as "" | "asc" | "desc") ?? "";
+						pageIndex = 0;
+					}}
+				/>
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					totalCount={filtered.length}
+					currentCount={paged.length}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
+				<button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
+			</div>
 		</div>
-
 		<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="overflow-x-auto">
-				<table class="table table-zebra">
+				<table class="table">
 					<thead>
 					<tr class="text-base-content/70">
 						<th>Id</th>
 						<th>Job Definition Id</th>
 						<th>Expression</th>
-						<th>Profile Id</th>
-						<th>Start Before</th>
-						<th>End Before</th>
-						<th>Is Static Idle</th>
-						<th>Workman</th>
-						<th>Metadata</th>
 						<th>Status</th>
+						<th>Worker Lane</th>
+						<th>Metadata</th>
+						<th>Start After</th>
+						<th>End Before</th>
 					</tr>
 					</thead>
 
@@ -497,38 +468,26 @@
 							</td>
 
 							<td>
-								{#if r.profileId}
-									<span class="font-medium opacity-90">{r.profileId}</span>
-								{:else}
-									<span class="opacity-60">—</span>
-								{/if}
+								<div class="flex flex-col gap-1">
+									<div class="flex items-center gap-2">
+										{#if r.isStaticIdle}
+											<span class="badge badge-sm badge-ghost whitespace-nowrap">Idle</span>
+										{:else}
+											<span class={"badge badge-sm whitespace-nowrap " + scheduleBadgeClass(r)}>{r.scheduleStatus}</span>
+										{/if}
+									</div>
+									{#if r.lastJobStatus}
+										<div class="flex items-center gap-1">
+											<span class={"badge badge-sm whitespace-nowrap " + lastJobBadgeClass(r.lastJobStatus)}>{r.lastJobStatus}</span>
+											<span class="text-xs opacity-60">{r.scheduleStatusAgo}</span>
+										</div>
+									{/if}
+								</div>
 							</td>
 
 							<td>
-								{#if r.startBefore}
-									<span class="text-sm">{DateDisplayUtil.formatDateTime(r.startBefore)}</span>
-								{:else}
-									<span class="opacity-60">—</span>
-								{/if}
-							</td>
-
-							<td>
-								{#if r.endBefore}
-									<span class="text-sm">{DateDisplayUtil.formatDateTime(r.endBefore)}</span>
-								{:else}
-									<span class="opacity-60">—</span>
-								{/if}
-							</td>
-
-							<td>
-								<span class="badge badge-sm {r.isStaticIdle ? 'badge-success' : 'badge-ghost'}">
-									{r.isStaticIdle ? 'Yes' : 'No'}
-								</span>
-							</td>
-
-							<td>
-								{#if r.workman}
-									<span class="font-medium opacity-90">{r.workman}</span>
+								{#if r.workerLane}
+									<span class="font-medium opacity-90">{r.workerLane}</span>
 								{:else}
 									<span class="opacity-60">—</span>
 								{/if}
@@ -538,7 +497,7 @@
 								{#if metadataPairs(r).length === 0}
 									<span class="opacity-60">—</span>
 								{:else}
-									<div class="flex flex-wrap gap-2">
+									<div class="flex flex-wrap gap-1">
 										{#each metadataPairs(r) as [k, v] (k)}
 											<span class="badge badge-ghost badge-sm">{k}={v}</span>
 										{/each}
@@ -547,24 +506,26 @@
 							</td>
 
 							<td>
-								<div class="flex flex-col gap-1">
-									<div class="flex items-center gap-2">
-										<span class={scheduleBadge(r)}>{r.scheduleStatus}</span>
-									</div>
-									{#if r.lastJobStatus}
-										<div class="flex items-center gap-2">
-											<span class={lastJobBadge(r.lastJobStatus)} style="font-size: 0.7rem;">{r.lastJobStatus}</span>
-											<span class="text-xs opacity-60">{r.scheduleStatusAgo}</span>
-										</div>
-									{/if}
-								</div>
+								{#if r.startBefore}
+									<span class="text-sm whitespace-nowrap">{DateDisplayUtil.formatDateTime(r.startBefore)}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
+							</td>
+
+							<td>
+								{#if r.endBefore}
+									<span class="text-sm whitespace-nowrap">{DateDisplayUtil.formatDateTime(r.endBefore)}</span>
+								{:else}
+									<span class="opacity-60">—</span>
+								{/if}
 							</td>
 						</tr>
 					{/each}
 
 					{#if filtered.length === 0}
 						<tr>
-							<td colspan="10">
+							<td colspan="8">
 								<div class="py-8 text-center opacity-70">No schedules found.</div>
 							</td>
 						</tr>
@@ -572,8 +533,7 @@
 					</tbody>
 				</table>
 			</div>
-
-			</div>
+		</div>
 	</div>
 
 </div>

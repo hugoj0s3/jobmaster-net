@@ -135,7 +135,7 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         if (useCache)
         {
             var all = await this.QueryAllAsync(useCache);
-            return all.FirstOrDefault(x => x.Id == agentConnectionId);
+            return all.FirstOrDefault(x => x.Id?.IdValue == agentConnectionId?.IdValue);
         }
 
         var agentConnectionRecord = await GetRecordAsync(agentConnectionId);

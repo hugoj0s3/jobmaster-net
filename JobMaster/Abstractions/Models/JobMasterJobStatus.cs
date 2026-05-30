@@ -55,8 +55,7 @@ public enum JobMasterJobStatus
 
     /// <summary>
     /// The job failed and all configured retries have been exhausted. This is a final
-    /// state. Use <see cref="Aborted"/> for jobs that were forcibly stopped rather than
-    /// failing through normal execution.
+    /// state.
     /// </summary>
     Failed = 7,
 

@@ -1,58 +1,31 @@
 <script lang="ts">
-	import { onDestroy, onMount } from "svelte";
+	import { onMount, onDestroy } from "svelte";
 	import { page } from "$app/stores";
 	import { goto } from "$app/navigation";
 	import Pager from "$lib/components/Pager.svelte";
 	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import FilterDropdownMulti from "$lib/components/filters/FilterDropdownMulti.svelte";
-	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
-	import FilterItem from "$lib/components/filters/FilterItem.svelte";
+	import { ApiClientUtil } from "$lib/api/api-client-util";
+	import type { components } from "$lib/api/schema";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
-	import {
-		parseDatetimeParam,
-		datetimeToParam,
-		passesDatetimeFilter,
-		type DatetimeFilterValue
-	} from "$lib/helper/datetime-filter-url";
+	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
 
-	type Health = "OK" | "Offline";
-
-	type AgentConnRow = {
-		id: string;
-		name: string;
-		sub: string;
-		cluster: string;
-		clusterSub: string;
-		health: Health;
-		workers: number;
-		bucketsUsed: number;
-		bucketsTotal: number;
-		draining?: number;
-		selected?: boolean;
-		createdAt?: string;
-	};
-
-	export let data: { agentConnections: any[]; error: string | null };
+	type ApiAgentConnection = components["schemas"]["ApiAgentConnection"];
 
 	const clusterId = () => $page.params.cluster;
-	const refreshIntervalSec = 15;
-
-	let isRefreshing = false;
-	let lastUpdatedAt = new Date();
-	let poller: number | undefined;
 
 	const urlParamDefs = {
-		sortDirection: { defaultValue: "desc" as "asc" | "desc" },
 		page: { defaultValue: 0, ...Serializers.number },
 		size: { defaultValue: 10, ...Serializers.number },
-		createdAt: { defaultValue: "" as string }
+		sortDirection: { defaultValue: "desc" as "asc" | "desc" }
 	};
 
 	let _initParams = readUrlParams(urlParamDefs);
 	let pageIndex = _initParams.page;
 	let pageSize = _initParams.size;
 	let sortDirection: "asc" | "desc" = _initParams.sortDirection;
+	let selectedHealths: string[] = [];
 
 	let filterKey = $page.url.search;
 	let lastSearch = $page.url.search;
@@ -63,308 +36,184 @@
 		pageSize = _initParams.size;
 		pageIndex = _initParams.page;
 		sortDirection = _initParams.sortDirection;
-		selectedHealths = [];
-		filterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
 		refreshNow();
 	}
 
 	function syncToUrl() {
-		writeUrlParams(urlParamDefs, {
-			sortDirection,
-			page: pageIndex,
-			size: pageSize,
-			createdAt: datetimeToParam(filterValues, "createdAt")
-		});
+		writeUrlParams(urlParamDefs, { page: pageIndex, size: pageSize, sortDirection });
 	}
 
-	let selectedHealths: string[] = [];
-
-	type FilterValues = Record<string, unknown>;
-	let filterValues: FilterValues = parseDatetimeParam(_initParams.createdAt, "createdAt");
-
-	$: filterValues, sortDirection, pageIndex, pageSize, syncToUrl();
+	$: sortDirection, pageIndex, pageSize, syncToUrl();
 
 	function resetFilters() {
 		selectedHealths = [];
-		filterValues = {};
 		sortDirection = "desc";
 		pageIndex = 0;
-		refreshNow();
+		syncToUrl();
 	}
 
-	let rows: AgentConnRow[] = [];
+	let rows: ApiAgentConnection[] = [];
+	let isRefreshing = false;
+	let refreshError: string | null = null;
 
-	function mapHealth(isAlive: any): Health {
-		return isAlive === true ? "OK" : "Offline";
-	}
-
-	function mapConnToRow(c: any): AgentConnRow {
-		const id = String(c?.id ?? c?.agentConnectionId ?? c?.name ?? "");
-		const name = String(c?.displayName ?? c?.name ?? id ?? "Unknown");
-		const health = mapHealth(c?.isAlive);
-
-		const bucketsUsed = Number(c?.bucketsUsed ?? c?.bucketUsed ?? c?.bucketCountUsed ?? 0);
-		const bucketsTotal = Number(c?.bucketsTotal ?? c?.bucketTotal ?? c?.bucketCountTotal ?? 0);
-		const draining = c?.draining != null ? Number(c.draining) : undefined;
-
-		return {
-			id,
-			name,
-			sub: String(c?.sub ?? c?.agentType ?? c?.type ?? "—"),
-			cluster: String(c?.cluster ?? clusterId()),
-			clusterSub: String(c?.clusterSub ?? c?.clusterType ?? "—"),
-			health,
-			workers: Number(c?.workers ?? c?.workersBound ?? c?.workerCount ?? 0),
-			bucketsUsed,
-			bucketsTotal: bucketsTotal || Math.max(bucketsUsed, 1),
-			draining,
-			selected: false,
-			createdAt: c?.createdAt ?? c?.connectedAt ?? c?.registeredAt ?? undefined
-		};
-	}
-
-	$: rows = (data?.agentConnections ?? []).map(mapConnToRow);
-
-	const healthBadge = (h: Health) => {
-		if (h === "OK") return "badge badge-success gap-2";
-		return "badge badge-error gap-2";
-	};
-
-	const healthIcon = (h: Health) => {
-		if (h === "OK") return "✅";
-		return "⛔";
-	};
-
-	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
-
-	$: filteredRows = rows.filter((r) => {
-		if (selectedHealths.length > 0 && !selectedHealths.includes(r.health)) return false;
-		if (!passesDatetimeFilter(createdAtFilter, r.createdAt)) return false;
-		return true;
+	$: filtered = rows.filter((r) => {
+		if (selectedHealths.length === 0) return true;
+		const health = r.isAlive === true ? "OK" : "Offline";
+		return selectedHealths.includes(health);
 	});
 
-	$: sorted = filteredRows.slice().sort((a, b) => {
+	$: sorted = filtered.slice().sort((a, b) => {
 		const dir = sortDirection === "asc" ? 1 : -1;
-		const safeTime = (iso: string | undefined) => {
+		const t = (iso: string | null | undefined) => {
 			if (!iso) return Number.MIN_SAFE_INTEGER;
-			const t = new Date(iso).getTime();
-			return Number.isFinite(t) ? t : Number.MIN_SAFE_INTEGER;
+			const v = new Date(iso).getTime();
+			return Number.isFinite(v) ? v : Number.MIN_SAFE_INTEGER;
 		};
-		return (safeTime(a.createdAt) - safeTime(b.createdAt)) * dir;
+		return (t(a.createdAt) - t(b.createdAt)) * dir;
 	});
 
-	$: list = sorted;
-	$: totalCount = list.length;
-	$: view = list.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
-	$: currentCount = view.length;
-	$: activeFiltersCount =
-		(selectedHealths.length > 0 ? 1 : 0) +
-		(filterValues?.createdAt ? 1 : 0) +
-		(sortDirection !== "desc" ? 1 : 0);
+	$: totalCount = sorted.length;
+	$: view = sorted.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize);
+
+	$: activeFiltersCount = (selectedHealths.length > 0 ? 1 : 0) + (sortDirection !== "desc" ? 1 : 0);
 
 	async function refreshNow() {
 		isRefreshing = true;
+		refreshError = null;
 		try {
-			// The data is already loaded via the page data function
-			// We just update the timestamp and trigger reactivity
-			lastUpdatedAt = new Date();
+			const cid = clusterId();
+			if (!cid) return;
+			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+			const response = await jm.GET("/{clusterId}/agent-connections", {
+				params: { path: { clusterId: cid } }
+			});
+			if (response.error) {
+				refreshError = "Failed to load agent connections.";
+				return;
+			}
+			rows = (response.data ?? []) as ApiAgentConnection[];
+		} catch (e) {
+			refreshError = e instanceof Error ? e.message : String(e);
 		} finally {
 			isRefreshing = false;
 		}
 	}
 
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshNow();
-		}, refreshIntervalSec * 1000);
-	}
-
-	function refresh() {
-		refreshNow();
-	}
-
 	onMount(() => {
+		const rawSearch = window.location.search;
+		const hasUserUrlParams = rawSearch.length > 0 && new URLSearchParams(rawSearch).toString().length > 0;
+		if (!hasUserUrlParams) {
+			const saved = readSavedFilter(`agent-connections-filters-${clusterId()}`, "");
+			if (saved) {
+				try {
+					const s = JSON.parse(saved);
+					selectedHealths = s.selectedHealths ?? [];
+					sortDirection = s.sortDirection ?? "desc";
+					pageSize = s.pageSize ?? 10;
+				} catch { /* ignore */ }
+			}
+			syncToUrl();
+		}
 		refreshNow();
-		restartPoller();
 	});
 
 	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
+		writeSavedFilter(
+			`agent-connections-filters-${clusterId()}`,
+			JSON.stringify({ selectedHealths, sortDirection, pageSize })
+		);
 	});
 </script>
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<div class="flex items-start justify-between gap-4">
-			<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
-			
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt)}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refresh}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-			</div>
-		</div>
+		<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
 
-		{#if data?.error}
-			<div class="alert alert-error text-sm mt-4">
-				<span>{data.error}</span>
-			</div>
+		{#if refreshError}
+			<div class="alert alert-error text-sm mt-4"><span>{refreshError}</span></div>
 		{/if}
 
-		<div class="flex items-center justify-between gap-4 mt-6">
+		<div class="mt-6 flex items-center justify-between gap-4">
 			{#key filterKey}
-				<div class="flex flex-wrap items-center gap-2">
-					<FilterDropdownMulti
-						label="Health"
-						options={[
-							{ value: "Ok", label: "Ok" },
-							{ value: "Offline", label: "Offline" }
-						]}
-						bind:values={selectedHealths}
-						on:change={() => {
-							pageIndex = 0;
-							refreshNow();
-						}}
-					/>
+			<div class="flex flex-wrap items-center gap-2">
+				<FilterDropdownMulti
+					label="Health"
+					options={[
+						{ value: "OK", label: "OK" },
+						{ value: "Offline", label: "Offline" }
+					]}
+					bind:values={selectedHealths}
+					on:change={() => { pageIndex = 0; }}
+				/>
 
-					<FilterDropdown
-						label="Sort By"
-						options={[
-							{ value: "desc", label: "Recents" },
-							{ value: "asc", label: "Olders" }
-						]}
-						value={sortDirection}
-						on:change={(e) => {
-							sortDirection = (e.detail as "asc" | "desc") ?? "desc";
-							pageIndex = 0;
-							refreshNow();
-						}}
-					/>
-
-					<FilterContainer
-						initialValues={filterValues}
-						onChange={(v) => {
-							filterValues = v;
-							pageIndex = 0;
-							refreshNow();
-						}}
+				{#if activeFiltersCount > 0}
+					<button
+						type="button"
+						class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
+						on:click={resetFilters}
 					>
-						<FilterItem
-							id="createdAt"
-							label="Created at"
-							type="datetime"
-							presets={[
-								{ type: "LAST_MINUTES", minutes: 15, label: "Last 15 min" },
-								{ type: "LAST_MINUTES", minutes: 30, label: "Last 30 min" },
-								{ type: "LAST_MINUTES", minutes: 60, label: "Last 60 min" }
-							]}
-						/>
-					</FilterContainer>
-
-					{#if activeFiltersCount > 0}
-						<button
-							type="button"
-							class="btn btn-sm bg-red-200 text-red-900 border border-red-300 hover:bg-red-300"
-							on:click={resetFilters}
-						>
-							Clear filters
-						</button>
-					{/if}
-				</div>
+						Clear filters
+					</button>
+				{/if}
+			</div>
 			{/key}
 
-			<Pager
-				bind:pageIndex
-				bind:pageSize
-				{totalCount}
-				{currentCount}
-				disabled={isRefreshing}
-				showPageSize={true}
-			/>
+			<div class="flex items-center gap-2">
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "desc", label: "Recents" },
+						{ value: "asc", label: "Olders" }
+					]}
+					value={sortDirection}
+					on:change={(e) => {
+						sortDirection = (e.detail as "asc" | "desc") ?? "desc";
+						pageIndex = 0;
+					}}
+				/>
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					{totalCount}
+					currentCount={view.length}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
+				<button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
+			</div>
 		</div>
 
-		<div class="mt-2 card bg-base-200/60 border border-base-300/60 shadow-lg">
+		<div class="mt-4 card bg-base-200/60 border border-base-300/60 shadow-lg">
 			<div class="overflow-x-auto">
 				<table class="table">
 					<thead>
 					<tr class="text-base-content/70">
-						<th>Agent Connection</th>
-						<th>Cluster</th>
+						<th>Name</th>
+						<th>Repository Type</th>
 						<th>Health</th>
-						<th class="text-right"># Workers</th>
-						<th>Buckets</th>
+						<th>Last Heartbeat</th>
+						<th>Created At</th>
 					</tr>
 					</thead>
-
 					<tbody>
 					{#each view as r (r.id)}
-						<tr
-							class="hover cursor-pointer transition"
-							on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}
-						>
+						<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}>
+							<td class="font-medium">{r.name ?? r.id ?? "—"}</td>
+							<td class="font-mono text-sm">{r.repositoryTypeId ?? "—"}</td>
 							<td>
-								<div class="flex flex-col">
-									<div class="font-semibold text-lg leading-tight">{r.name}</div>
-									<div class="text-sm text-base-content/60">{r.sub}</div>
-								</div>
+								<span class={"badge badge-sm whitespace-nowrap " + (r.isAlive ? "badge-success" : "badge-error")}>
+									{r.isAlive ? "OK" : "Offline"}
+								</span>
 							</td>
-
-							<td>
-								<div class="flex flex-col">
-									<div class="badge badge-ghost">{r.cluster}</div>
-									<div class="text-sm text-base-content/60 mt-1">{r.clusterSub}</div>
-								</div>
-							</td>
-
-							<td>
-									<span class={healthBadge(r.health)}>
-										<span aria-hidden="true">{healthIcon(r.health)}</span>
-										{r.health}
-									</span>
-							</td>
-
-							<td class="text-right font-semibold">{r.workers}</td>
-
-							<td class="min-w-[240px]">
-								<div class="flex items-center justify-between gap-3">
-									<div class="font-semibold">
-										{r.bucketsUsed} / {r.bucketsTotal}
-									</div>
-									{#if r.draining}
-										<div class="text-sm text-base-content/60">{r.draining} draining</div>
-									{/if}
-								</div>
-
-								<progress
-									class="progress progress-success w-full mt-2"
-									value={r.bucketsUsed}
-									max={r.bucketsTotal}
-								/>
-							</td>
+							<td class="whitespace-nowrap">{DateDisplayUtil.formatRelativeOrDate(r.lastHeartbeat)}</td>
+							<td class="whitespace-nowrap">{DateDisplayUtil.formatRelativeOrDate(r.createdAt)}</td>
 						</tr>
 					{/each}
 
 					{#if view.length === 0}
 						<tr>
-							<td colspan="5" class="py-10 text-center text-base-content/60">
-								No agent connections match your filters.
+							<td colspan="5" class="py-10 text-center opacity-60">
+								{isRefreshing ? "Loading..." : "No agent connections found."}
 							</td>
 						</tr>
 					{/if}

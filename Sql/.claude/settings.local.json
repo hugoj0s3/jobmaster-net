@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($lines = Select-String -Path \"C:\\\\Users\\\\NB-13342\\\\RiderProjects\\\\jobmaster-net\\\\Tests\\\\JobMaster.IntegrationTests\\\\bin\\\\Debug\\\\net8.0\\\\jobmaster-test-logs\\\\2116384e-cba4-45a7-8e68-63f61f4ad3d0\\\\cluster-postgres-Nats-debug.log\" -Pattern \"ExecuteJobAsync completed successfully\"; $last = $lines | Select-Object -Last 5; $last | ForEach-Object { \"$\\($_.LineNumber\\): $\\($_.Line\\)\" })",
+      "PowerShell($lines = Select-String -Path \"C:\\\\Users\\\\NB-13342\\\\RiderProjects\\\\jobmaster-net\\\\Tests\\\\JobMaster.IntegrationTests\\\\bin\\\\Debug\\\\net8.0\\\\jobmaster-test-logs\\\\2116384e-cba4-45a7-8e68-63f61f4ad3d0\\\\cluster-postgres-Nats-debug.log\" -Pattern \"Error|Warn\"; $lines | Where-Object { $_ -match \"19:08:|19:09:|19:10:\" } | Select-Object -First 20 | ForEach-Object { $_.Line })",
+      "PowerShell($logPath = \"C:\\\\Users\\\\NB-13342\\\\RiderProjects\\\\jobmaster-net\\\\Tests\\\\JobMaster.IntegrationTests\\\\bin\\\\Debug\\\\net8.0\\\\jobmaster-test-logs\\\\2116384e-cba4-45a7-8e68-63f61f4ad3d0\\\\cluster-postgres-Nats-debug.log\"; $lines = Get-Content $logPath; $filtered = $lines | Where-Object { \\($_ -match \"19:08:\" -or $_ -match \"19:09:\" -or $_ -match \"19:10:0\"\\) -and \\($_ -match \"\\\\[Error\\\\]\" -or $_ -match \"\\\\[Warn\\\\]\"\\) }; Write-Output \"Found $\\($filtered.Count\\) error/warn lines\"; $filtered | Select-Object -First 20)"
+    ]
+  }
+}

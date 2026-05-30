@@ -1,112 +1,69 @@
-<!-- src/routes/buckets/[id]/+page.svelte -->
 <script lang="ts">
 	import { onMount } from "svelte";
 	import { page } from "$app/stores";
+	import { goto } from "$app/navigation";
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus, JobStatus } from "$lib/api/enums";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
-	import { resolve } from '$app/paths';
-	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
-
-	type ActiveJob = {
-		name: string;
-		id: string;
-		since: string;
-		state: "Queued" | "Processing" | "Succeeded" | "Failed";
-		agent: string;
-		assigned: string;
-		queueTime: string;
-		runDuration: string;
-	};
-
+	import { workerCache } from "$lib/helper/worker-cache";
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
+	type ApiAgentWorker = components["schemas"]["ApiAgentWorker"];
 
 	const clusterId = () => $page.params.cluster;
 	const bucketId = () => $page.params.id;
 
 	let bucket: ApiBucketModel | null = null;
 	let isRefreshing = false;
-	let lastUpdatedAt = new Date();
 	let refreshError: string | null = null;
 	let notFound = false;
+	let workerName: string | null = null;
 
-	let activeJobs: ActiveJob[] = [];
 	let activeApiJobs: ApiJobModel[] = [];
-	let historyApiJobs: ApiJobModel[] = [];
-
-	// Pagination state
 	let activeJobsTotalCount = 0;
 	let pageIndex = 0;
 	let pageSize = 10;
 
-	const urlParamDefs = {
-		page: { defaultValue: 0, ...Serializers.number },
-		size: { defaultValue: 10, ...Serializers.number }
-	};
+	$: bucketName = bucket?.name ?? bucket?.id ?? "Bucket";
+	$: bucketStatusBadgeClass =
+		bucket?.status === BucketStatus.Active   ? "badge-success" :
+		bucket?.status === BucketStatus.Lost     ? "badge-error" :
+		(bucket?.status === BucketStatus.Draining || bucket?.status === BucketStatus.ReadyToDrain || bucket?.status === BucketStatus.Completing) ? "badge-warning" :
+		"badge-ghost";
 
-	let _initParams = readUrlParams(urlParamDefs);
-	pageIndex = _initParams.page;
-	pageSize = _initParams.size;
+	$: bucketStatusLabel =
+		bucket?.status === BucketStatus.Active        ? "Active" :
+		bucket?.status === BucketStatus.Completing    ? "Completing" :
+		bucket?.status === BucketStatus.ReadyToDrain  ? "Ready to Drain" :
+		bucket?.status === BucketStatus.Draining      ? "Draining" :
+		bucket?.status === BucketStatus.Lost          ? "Lost" :
+		bucket?.status === BucketStatus.ReadyToDelete ? "Ready to Delete" :
+		"—";
 
-	let filterKey = $page.url.search;
-	let lastSearch = $page.url.search;
-	$: if ($page.url.search !== lastSearch) {
-		lastSearch = $page.url.search;
-		filterKey = $page.url.search;
-		_initParams = readUrlParams(urlParamDefs);
-		pageIndex = _initParams.page;
-		pageSize = _initParams.size;
-		refreshNow();
-	}
-
-	function safeMsBetween(startIso: string | null | undefined, endIso: string | null | undefined): number | null {
-		if (!startIso || !endIso) return null;
-		const s = Date.parse(startIso);
-		const e = Date.parse(endIso);
-		if (!Number.isFinite(s) || !Number.isFinite(e)) return null;
-		const diff = e - s;
-		return diff >= 0 ? diff : null;
-	}
-
-	function avg(nums: number[]): number | null {
-		if (nums.length === 0) return null;
-		return nums.reduce((a, b) => a + b, 0) / nums.length;
-	}
-
-	function formatDuration(ms: number | null): string {
-		if (ms == null || Number.isNaN(ms)) return "—";
+	function formatDuration(startIso: string | null | undefined, endIso: string | null | undefined): string {
+		if (!startIso || !endIso) return "—";
+		const ms = new Date(endIso).getTime() - new Date(startIso).getTime();
+		if (!Number.isFinite(ms) || ms < 0) return "—";
 		if (ms < 1000) return `${Math.round(ms)}ms`;
-		return `${(ms / 1000).toFixed(1)}s`;
+		if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+		return `${Math.floor(ms / 60_000)}m ${Math.round((ms % 60_000) / 1000)}s`;
 	}
 
-	function safeFormatDateTime(d: string | null | undefined): string {
-		return DateDisplayUtil.formatRelativeOrDate(d);
+	function jobStatusBadgeClass(status: number | undefined): string {
+		if (status === JobStatus.Queued)      return "badge-ghost";
+		if (status === JobStatus.Processing)  return "badge-warning";
+		if (status === JobStatus.InBucket)    return "badge-info";
+		return "badge-ghost";
 	}
 
-	function syncToUrl() {
-		writeUrlParams(urlParamDefs, {
-			page: pageIndex,
-			size: pageSize
-		});
-	}
-
-	$: pageIndex, pageSize, syncToUrl();
-
-	let lastPageIndexForRefresh = pageIndex;
-	$: if (pageIndex !== lastPageIndexForRefresh) {
-		lastPageIndexForRefresh = pageIndex;
-		refreshNow();
-	}
-
-	let lastPageSizeForRefresh = pageSize;
-	$: if (pageSize !== lastPageSizeForRefresh) {
-		lastPageSizeForRefresh = pageSize;
-		pageIndex = 0;
-		refreshNow();
+	function jobStatusLabel(status: number | undefined): string {
+		if (status === JobStatus.Queued)      return "Queued";
+		if (status === JobStatus.Processing)  return "Processing";
+		if (status === JobStatus.InBucket)    return "In Bucket";
+		return "—";
 	}
 
 	async function refreshNow() {
@@ -119,7 +76,7 @@
 
 			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
 
-			const [bucketResp, activeJobsResp, activeJobsCountResp, historyJobsResp] = await Promise.all([
+			const [bucketResp, activeJobsResp, activeJobsCountResp] = await Promise.all([
 				jm.GET("/{clusterId}/buckets/{bucketId}", {
 					params: { path: { clusterId: cid, bucketId: bid } }
 				}),
@@ -128,105 +85,49 @@
 						path: { clusterId: cid },
 						query: {
 							BucketId: bid,
-							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.AssignedToBucket],
+							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.InBucket],
 							CountLimit: pageSize,
-							Offset: Math.max(0, pageIndex) * pageSize,
-							OrderByProperty: "createdAt",
-							OrderByAsc: false
+							Offset: Math.max(0, pageIndex) * pageSize
 						}
 					}
 				}),
 				jm.GET("/{clusterId}/jobs/count", {
 					params: {
 						path: { clusterId: cid },
-						query: {
-							BucketId: bid,
-							Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.AssignedToBucket]
-						}
+						query: { BucketId: bid, Statuses: [JobStatus.Queued, JobStatus.Processing, JobStatus.InBucket] }
 					}
-				}).then((r) => {
-					if (r.error) throw r.error;
-					return r.data as number;
-				}),
-				jm.GET("/{clusterId}/jobs", {
-					params: {
-						path: { clusterId: cid },
-						query: {
-							BucketId: bid,
-							Statuses: [JobStatus.Succeeded, JobStatus.Failed, JobStatus.Cancelled],
-							CountLimit: 50,
-							OrderByProperty: "succeedExecutedAt",
-							OrderByAsc: false
-						}
-					}
-				})
+				}).then((r) => (r.error ? 0 : (r.data as number) ?? 0))
 			]);
 
 			if (bucketResp.error) {
-				if (bucketResp.response?.status === 404) {
-					notFound = true;
-					return;
-				}
-				console.error("API error (bucket detail):", bucketResp.error);
+				if (bucketResp.response?.status === 404) { notFound = true; return; }
 				refreshError = "Failed to load bucket.";
 				return;
 			}
 			bucket = (bucketResp.data ?? null) as ApiBucketModel | null;
-			if (!bucket) {
-				notFound = true;
-				return;
+			if (!bucket) { notFound = true; return; }
+
+			if (bucket.agentWorkerId && workerCache.getMissing(cid, [bucket.agentWorkerId]).length > 0) {
+				try {
+					const wr = await jm.GET("/{clusterId}/workers/{workerId}", {
+						params: { path: { clusterId: cid, workerId: bucket.agentWorkerId } }
+					});
+					if (!wr.error && wr.data) workerCache.populate(cid, [wr.data as ApiAgentWorker]);
+				} catch { /* keep ID */ }
 			}
+			workerName = bucket.agentWorkerId
+				? (workerCache.get(cid, bucket.agentWorkerId)?.name ?? bucket.agentWorkerId)
+				: null;
 
 			if (activeJobsResp.error) {
-				console.error("API error (bucket active jobs):", activeJobsResp.error);
-				refreshError = "Failed to load bucket jobs.";
-				activeJobs = [];
 				activeApiJobs = [];
+				activeJobsTotalCount = 0;
 			} else {
-				const jobs = ((activeJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
-				activeApiJobs = jobs;
+				activeApiJobs = ((activeJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
 				activeJobsTotalCount = activeJobsCountResp as number;
-
-				const newMaxPageIndex = Math.max(0, Math.ceil(activeJobsTotalCount / pageSize) - 1);
-				if (pageIndex > newMaxPageIndex) {
-					pageIndex = newMaxPageIndex;
-					return refreshNow();
-				}
-
-				activeJobs = jobs.map((j) => {
-					const since = DateDisplayUtil.formatRelativeOrDate(j.createdAt);
-					const queueMs = safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null);
-					const runMs =
-						j.status === JobStatus.Processing && j.processingStartedAt
-							? safeMsBetween(j.processingStartedAt ?? null, new Date().toISOString())
-							: null;
-					const state =
-						j.status === JobStatus.Queued
-							? "Queued"
-							: j.status === JobStatus.Processing
-								? "Processing"
-								: "Queued";
-					return {
-						name: j.jobDefinitionId ?? j.id ?? "—",
-						id: j.id ?? "",
-						since,
-						state,
-						agent: j.agentConnectionId ?? "—",
-						assigned: j.agentWorkerId ?? "",
-						queueTime: formatDuration(queueMs),
-						runDuration: formatDuration(runMs)
-					};
-				});
+				const maxPage = Math.max(0, Math.ceil(activeJobsTotalCount / pageSize) - 1);
+				if (pageIndex > maxPage) { pageIndex = maxPage; return refreshNow(); }
 			}
-
-			if (historyJobsResp.error) {
-				console.error("API error (bucket history jobs):", historyJobsResp.error);
-				historyApiJobs = [];
-			} else {
-				historyApiJobs = ((historyJobsResp.data ?? []) as ApiJobModel[]).filter(Boolean);
-			}
-
-			lastUpdatedAt = new Date();
 		} catch (e) {
 			console.error("Failed to refresh bucket detail:", e);
 			refreshError = "Failed to refresh.";
@@ -235,263 +136,123 @@
 		}
 	}
 
-	onMount(() => {
+	let _lastPage = pageIndex;
+	let _lastSize = pageSize;
+	$: if (pageIndex !== _lastPage || pageSize !== _lastSize) {
+		_lastPage = pageIndex;
+		_lastSize = pageSize;
 		refreshNow();
-	});
+	}
 
-	$: bucketName = bucket?.name ?? bucket?.id ?? "Bucket";
-	$: bucketHost = bucket?.hostDisplayName ?? "—";
-	$: bucketAgent = bucket?.agentConnectionName ?? bucket?.agentConnectionId ?? "—";
-	$: bucketWorker = bucket?.workerLane ?? bucket?.agentWorkerId ?? "—";
-	$: bucketCreatedAt = bucket?.createdAt;
-	$: bucketLastExecutionAt = bucket?.lastStatusChangeAt;
-	$: lastUpdatedLabel = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
-	$: bucketStatus = bucket?.status;
-	$: bucketStatusBadge =
-		bucketStatus === BucketStatus.Active
-			? "badge-success"
-			: bucketStatus === BucketStatus.Lost
-				? "badge-error"
-				: bucketStatus === BucketStatus.Draining || bucketStatus === BucketStatus.ReadyToDrain || bucketStatus === BucketStatus.Completing
-					? "badge-warning"
-					: bucketStatus === BucketStatus.ReadyToDelete
-						? "badge-ghost"
-						: "badge-ghost";
-	$: bucketStatusDot =
-		bucketStatus === BucketStatus.Active
-			? "bg-success"
-			: bucketStatus === BucketStatus.Lost
-				? "bg-error"
-				: bucketStatus === BucketStatus.Draining || bucketStatus === BucketStatus.ReadyToDrain || bucketStatus === BucketStatus.Completing
-					? "bg-warning"
-					: "bg-base-content/30";
-
-	$: queuedJobsCount = activeApiJobs.filter((j) => j.status === JobStatus.Queued).length;
-	$: totalActiveJobsCount = activeJobsTotalCount;
-	$: avgQueueMs = avg(
-		activeApiJobs
-			.map((j) => safeMsBetween(j.createdAt ?? null, j.processingStartedAt ?? null))
-			.filter((v): v is number => v != null)
-	);
-	$: avgRunMs = avg(
-		historyApiJobs
-			.map((j) => safeMsBetween(j.processingStartedAt ?? null, j.succeedExecutedAt ?? null))
-			.filter((v): v is number => v != null)
-	);
-	$: avgQueueLabel = formatDuration(avgQueueMs);
-	$: avgRunLabel = formatDuration(avgRunMs);
-	$: deltaMs = (avgQueueMs != null && avgRunMs != null) ? avgQueueMs - avgRunMs : null;
-	$: deltaLabel = formatDuration(deltaMs);
-	$: deltaIsPositive = deltaMs != null && deltaMs > 0;
-
-
-	const stateBadge: Record<ActiveJob["state"], string> = {
-		Queued: "badge-ghost",
-		Processing: "badge-warning",
-		Succeeded: "badge-success",
-		Failed: "badge-error",
-	};
-
+	onMount(() => { refreshNow(); });
 </script>
 
 <div class="min-h-screen bg-base-100">
-	<div class="w-full px-6 py-6">
-		<div class="flex flex-wrap items-center justify-between gap-3">
-			<a class="link link-hover text-sm opacity-70" href={`/${clusterId()}/buckets`}>← Back to Buckets</a>
+	<div class="mx-auto max-w-full px-6 py-6">
 
-			<div class="flex items-center gap-3">
-				<div class="text-sm opacity-70">
-					<span class="hidden sm:inline">Last Refresh:</span>
-					<span class="font-semibold">{safeFormatDateTime(bucketLastExecutionAt)}</span>
-				</div>
-				<button
-					class="btn btn-sm btn-ghost btn-square"
-					aria-label="Refresh"
-					title={isRefreshing ? "Refreshing..." : "Refresh"}
-					disabled={isRefreshing}
-					on:click={refreshNow}
-				>
-					<span class={"i text-2xl leading-none " + (isRefreshing ? "animate-spin" : "")}>⟳</span>
-				</button>
+		<div class="space-y-2">
+			<div class="text-sm breadcrumbs opacity-70">
+				<ul>
+					<li><a href="/{clusterId()}/buckets" class="link link-hover">Buckets</a></li>
+					<li>{bucketName}</li>
+				</ul>
+			</div>
+			<h1 class="text-3xl font-semibold tracking-tight">{bucketName}</h1>
+			<div class="flex items-center gap-2">
+				<span class={"badge badge-sm badge-outline " + bucketStatusBadgeClass}>{bucketStatusLabel}</span>
 			</div>
 		</div>
 
 		{#if refreshError}
-			<div class="alert alert-error mt-4">
-				<span>{refreshError}</span>
-			</div>
+			<div class="alert alert-error mt-4"><span>{refreshError}</span></div>
 		{/if}
 
-		<!-- Title -->
-		<div class="mt-3">
-			<h1 class="text-2xl font-semibold">Bucket Detail</h1>
-		</div>
-
 		{#if notFound}
-			<div class="alert alert-error text-sm mt-4">
-				<span>Bucket not found.</span>
-			</div>
-		{:else}
-		<!-- Summary card -->
-		<div class="card mt-4 bg-base-200/60 border border-base-300/60 shadow-lg">
-			<div class="card-body gap-4">
-				<div class="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-					<div class="flex items-center gap-4">
-						<div>
-							<div class="flex items-center gap-2">
-								<div class="text-xl font-semibold">{bucketName}</div>
-								<span class={"badge badge-outline gap-2 " + bucketStatusBadge}>
-									<span class={"inline-block h-2 w-2 rounded-full " + bucketStatusDot}></span>
-								</span>
-							</div>
-							<div class="text-sm opacity-70">{bucket?.status ?? "—"}</div>
+			<div class="alert alert-error text-sm mt-4"><span>Bucket not found.</span></div>
+		{:else if bucket}
 
-							<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm opacity-80">
-								<span>Host: <span class="font-semibold">{bucketHost}</span></span>
-								<span class="opacity-40">|</span>
-								<span>Agent: <span class="font-semibold">{bucketAgent}</span></span>
-								<span class="opacity-40">|</span>
-								<span>Worker: <span class="font-semibold">🏷 {bucketWorker}</span></span>
-								<span class="opacity-40">|</span>
-								<span>{safeFormatDateTime(bucketCreatedAt)}</span>
-								<span class="opacity-40">|</span>
-								<span>‹ {bucket?.status ?? "—"}</span>
-								<span class="badge badge-ghost badge-sm">{lastUpdatedLabel}</span>
-							</div>
-						</div>
+		<!-- Info card -->
+		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
+			<div class="card-body">
+				<h2 class="card-title text-base">Details</h2>
+				<div class="divider my-2"></div>
+				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 text-sm">
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Host</span>
+						<span class="font-medium">{bucket.hostDisplayName ?? "—"}</span>
 					</div>
-				</div>
-
-				<!-- Stats row -->
-				<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
-
-					<!-- Amount Jobs -->
-					<div class="card bg-base-100 border border-base-300/60">
-						<div class="card-body">
-							<div class="text-sm opacity-70">Amount Jobs</div>
-							<div class="mt-1 text-3xl font-semibold">{totalActiveJobsCount}</div>
-							<div class="mt-2 text-xs opacity-60">{queuedJobsCount} queued</div>
-						</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Agent Connection</span>
+						<span class="font-medium">{bucket.agentConnectionName ?? bucket.agentConnectionId ?? "—"}</span>
 					</div>
-
-					<!-- Avg queue time -->
-					<div class="card bg-base-100 border border-base-300/60">
-						<div class="card-body">
-							<div class="text-sm opacity-70">Avg Queue Time</div>
-							<div class="mt-1 text-3xl font-semibold">{avgQueueLabel}</div>
-							<div class="mt-2 text-xs opacity-60">Time in queue</div>
-						</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Worker</span>
+						<a href="/{clusterId()}/workers/{bucket.agentWorkerId}" class="link link-hover link-primary font-medium">{workerName ?? "—"}</a>
 					</div>
-
-					<!-- Avg run duration -->
-					<div class="card bg-base-100 border border-base-300/60">
-						<div class="card-body">
-							<div class="text-sm opacity-70">Avg Run Duration</div>
-							<div class="mt-1 text-3xl font-semibold">{avgRunLabel}</div>
-							<div class="mt-2 text-xs opacity-60">Execution time</div>
-						</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Worker Lane</span>
+						<span class="font-medium">{bucket.workerLane ?? "—"}</span>
 					</div>
-
-					<!-- Delta -->
-					<div class="card bg-base-100 border border-base-300/60">
-						<div class="card-body">
-							<div class="text-sm opacity-70">Delta (Queue - Run)</div>
-							<div class="mt-1 text-3xl font-semibold flex items-center gap-2">
-								{#if deltaMs === null}
-									<span>—</span>
-								{:else if deltaIsPositive}
-									<span class="text-warning">+{deltaLabel}</span>
-									<span class="text-warning text-lg">↑</span>
-								{:else}
-									<span class="text-success">{deltaLabel}</span>
-									<span class="text-success text-lg">↓</span>
-								{/if}
-							</div>
-							<div class="mt-2 text-xs opacity-60">
-								{#if deltaMs === null}
-									No data
-								{:else if deltaIsPositive}
-									Queue slower than run
-								{:else}
-									Queue faster than run
-								{/if}
-							</div>
-						</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Created At</span>
+						<span class="font-medium">{DateDisplayUtil.formatRelativeOrDate(bucket.createdAt)}</span>
+					</div>
+					<div class="flex items-center justify-between gap-4">
+						<span class="opacity-70">Last Status Change</span>
+						<span class="font-medium">{DateDisplayUtil.formatRelativeOrDate(bucket.lastStatusChangeAt)}</span>
 					</div>
 				</div>
 			</div>
 		</div>
 
 		<!-- Active Jobs -->
-		<div class="mt-6">
-			<div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-				<div class="flex items-center gap-3">
-					<h2 class="text-xl font-semibold">Active Jobs</h2>
-					<span class="badge badge-ghost">{activeJobs.length} / {activeJobsTotalCount}</span>
-				</div>
-
-				<Pager
-					bind:pageIndex
-					bind:pageSize
-					totalCount={activeJobsTotalCount}
-					currentCount={activeJobs.length}
-					disabled={isRefreshing}
-					showPageSize={true}
-				/>
-			</div>
-
-			<div class="card mt-3 bg-base-200/60 border border-base-300/60 shadow-lg">
-				<div class="card-body p-0">
-					<div class="overflow-x-auto">
-						<table class="table table-zebra">
-							<thead>
-							<tr class="text-base-content/70">
-								<th>Job</th>
-								<th class="hidden md:table-cell">ID</th>
-								<th>Since</th>
-								<th>State</th>
-								<th class="hidden lg:table-cell">Agent</th>
-								<th class="hidden lg:table-cell">Assigned</th>
-								<th>Queue Time</th>
-								<th class="text-right">Run Duration</th>
-							</tr>
-							</thead>
-							<tbody>
-							{#each activeJobs as j (j.name + j.id)}
-								<tr class="hover cursor-pointer">
-									<td>
-										<div class="flex items-center gap-2">
-											<span class="text-success">♥</span>
-											<a
-												class="link link-hover font-medium"
-												href={resolve(`/${clusterId()}/jobs/${j.id}`)}
-												aria-label={`Open job ${j.name}`}
-												>{j.name}</a
-											>
-										</div>
-									</td>
-									<td class="hidden md:table-cell opacity-80">
-										<span class="tooltip tooltip-bottom" data-tip={j.id || "--"}>
-											{j.id ? j.id.substring(0, 8) + "..." : "--"}
-										</span>
-									</td>
-									<td class="opacity-80">{j.since}</td>
-									<td>
-										<span class={"badge badge-sm " + stateBadge[j.state]}>{j.state}</span>
-									</td>
-									<td class="hidden lg:table-cell opacity-80">{j.agent}</td>
-									<td class="hidden lg:table-cell opacity-80">{j.assigned || "--"}</td>
-									<td class="opacity-80">{j.queueTime}</td>
-									<td class="text-right opacity-80">{j.runDuration}</td>
-								</tr>
-							{/each}
-							</tbody>
-						</table>
+		<div class="mt-6 card bg-base-200/60 border border-base-300/60 shadow-lg">
+			<div class="card-body">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="card-title text-base">Active Jobs</h2>
+					<div class="flex items-center gap-2">
+						{#if isRefreshing}<span class="loading loading-spinner loading-sm"></span>{/if}
+						<Pager
+							bind:pageIndex
+							bind:pageSize
+							totalCount={activeJobsTotalCount}
+							currentCount={activeApiJobs.length}
+							disabled={isRefreshing}
+							showPageSize={true}
+						/>
+						<button class="btn btn-xs" on:click={refreshNow} disabled={isRefreshing}>Refresh</button>
 					</div>
+				</div>
+				<div class="divider my-2"></div>
+				<div class="overflow-x-auto">
+					<table class="table">
+						<thead>
+						<tr class="text-base-content/70">
+							<th>Job Definition</th>
+							<th>State</th>
+							<th>Scheduled At</th>
+							<th>Queue Time</th>
+							<th>Run Duration</th>
+						</tr>
+						</thead>
+						<tbody>
+						{#each activeApiJobs as j (j.id)}
+							<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/jobs/${j.id}`)}>
+								<td class="font-medium">{j.jobDefinitionId ?? j.id ?? "—"}</td>
+								<td><span class={"badge badge-sm " + jobStatusBadgeClass(j.status)}>{jobStatusLabel(j.status)}</span></td>
+								<td class="whitespace-nowrap opacity-70">{DateDisplayUtil.formatRelativeOrDate(j.scheduledAt)}</td>
+								<td class="opacity-70">{formatDuration(j.createdAt, j.processStartedAt)}</td>
+								<td class="opacity-70">{j.processStartedAt ? formatDuration(j.processStartedAt, new Date().toISOString()) : "—"}</td>
+							</tr>
+						{:else}
+							<tr><td colspan="5" class="text-center opacity-60 py-6">No active jobs.</td></tr>
+						{/each}
+						</tbody>
+					</table>
 				</div>
 			</div>
 		</div>
-		{/if}
 
+		{/if}
 	</div>
 </div>

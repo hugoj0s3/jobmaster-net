@@ -36,9 +36,6 @@
 
 	let rows: HostRow[] = [];
 	let isRefreshing = false;
-	let lastUpdatedAt = new Date();
-	let poller: number | undefined;
-	const refreshIntervalSec = 10;
 	let activeFiltersCount = 0;
 
 	const DEFAULT_STATUSES = ["Online"];
@@ -53,7 +50,7 @@
 
 	const LS_KEY_HOSTS_FILTERS = `hosts-filters-${$page.params.cluster}`;
 
-	// Carrega filtros salvos da localStorage
+	// Load saved filters from localStorage
 	function loadSavedFilters() {
 		const saved = readSavedFilter(LS_KEY_HOSTS_FILTERS, "");
 		if (!saved) return null;
@@ -131,7 +128,6 @@
 		return Math.round(online.reduce((acc, r) => acc + (r.memPercent ?? 0), 0) / online.length) + "%";
 	})();
 
-	$: lastUpdated = DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt);
 
 	function mapHostToRow(host: any): HostRow {
 		const memTotal = host.memoryTotalBytes ?? 0;
@@ -181,20 +177,12 @@
 
 			const apiHosts = (response.data ?? []) as ApiHostModel[];
 			rows = apiHosts.map(mapHostToRow);
-			lastUpdatedAt = new Date();
 		} catch (error) {
 			console.error("Failed to fetch hosts:", error);
 			rows = [];
 		} finally {
 			isRefreshing = false;
 		}
-	}
-
-	function restartPoller() {
-		if (poller) window.clearInterval(poller);
-		poller = window.setInterval(() => {
-			refreshNow();
-		}, refreshIntervalSec * 1000);
 	}
 
 	$: createdAtFilter = (filterValues.createdAt ?? {}) as DatetimeFilterValue;
@@ -244,35 +232,32 @@
 	}
 
 	onMount(() => {
-		// Se não tem params na URL, tenta carregar da localStorage
-		const hasUrlParams = $page.url.search.length > 0;
-		if (!hasUrlParams) {
+		const rawSearch = window.location.search;
+		const hasUserUrlParams = rawSearch.length > 0 && new URLSearchParams(rawSearch).toString().length > 0;
+		if (!hasUserUrlParams) {
 			const savedFilters = loadSavedFilters();
 			if (savedFilters) {
-				// Carrega filtros salvos (respeita até valores vazios)
 				selectedStatuses = savedFilters.statuses !== undefined ? savedFilters.statuses : [...DEFAULT_STATUSES];
 				sort = savedFilters.sort !== undefined ? savedFilters.sort : "recent";
+				pageSize = savedFilters.pageSize !== undefined ? savedFilters.pageSize : 10;
 				filterValues = savedFilters.createdAt ? parseDatetimeParam(savedFilters.createdAt, "createdAt") : {};
 			} else {
-				// Aplica defaults quando não há localStorage (primeira vez)
 				selectedStatuses = [...DEFAULT_STATUSES];
 				sort = "recent";
 			}
+			syncToUrl();
 		}
 
 		refreshNow();
-		restartPoller();
 	});
 
 	onDestroy(() => {
-		if (poller) window.clearInterval(poller);
-
-		// Salva filtros atuais na localStorage no unmount
 		writeSavedFilter(
 			LS_KEY_HOSTS_FILTERS,
 			JSON.stringify({
 				statuses: selectedStatuses,
 				sort,
+				pageSize,
 				createdAt: datetimeToParam(filterValues, "createdAt")
 			})
 		);
@@ -281,31 +266,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<div class="flex items-start justify-between gap-4">
 			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
-
-			<div class="flex items-center gap-3 text-sm opacity-80">
-				<span>Last Refresh: {lastUpdated}</span>
-				<button
-					class="btn btn-ghost btn-sm btn-square"
-					aria-label="Refresh now"
-					on:click={refresh}
-					disabled={isRefreshing}
-				>
-					<svg
-						xmlns="http://www.w3.org/2000/svg"
-						class={"h-4 w-4 " + (isRefreshing ? "animate-spin" : "")}
-						viewBox="0 0 24 24"
-						fill="none"
-						stroke="currentColor"
-						stroke-width="2"
-					>
-						<path d="M21 12a9 9 0 1 1-3-6.7" />
-						<path d="M21 3v6h-6" />
-					</svg>
-				</button>
-			</div>
-		</div>
 
 		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
@@ -387,20 +348,6 @@
 					on:change={() => { pageIndex = 0; }}
 				/>
 
-				<FilterDropdown
-					label="Sort By"
-					options={[
-						{ value: "recent", label: "Recents" },
-						{ value: "oldest", label: "Olders" },
-						{ value: "online", label: "Online" }
-					]}
-					value={sort}
-					on:change={(e) => {
-						sort = e.detail as "" | "recent" | "oldest" | "online";
-						pageIndex = 0;
-					}}
-				/>
-
 				<FilterContainer
 					initialValues={filterValues}
 					onChange={(v) => {
@@ -432,24 +379,39 @@
 			</div>
 			{/key}
 
-			<Pager
-				bind:pageIndex
-				bind:pageSize
-				{totalCount}
-				{currentCount}
-				disabled={isRefreshing}
-				showPageSize={true}
-			/>
+			<div class="flex items-center gap-2">
+				<FilterDropdown
+					label="Sort By"
+					options={[
+						{ value: "recent", label: "Recents" },
+						{ value: "oldest", label: "Olders" },
+						{ value: "online", label: "Online first" }
+					]}
+					value={sort}
+					on:change={(e) => {
+						sort = e.detail as "" | "recent" | "oldest" | "online";
+						pageIndex = 0;
+					}}
+				/>
+				<Pager
+					bind:pageIndex
+					bind:pageSize
+					{totalCount}
+					{currentCount}
+					disabled={isRefreshing}
+					showPageSize={true}
+				/>
+				<button class="btn btn-xs" on:click={refresh} disabled={isRefreshing}>Refresh</button>
+			</div>
 		</div>
-
 		<div class="card bg-base-200/60 border border-base-300/60 shadow-lg mt-4">
 			<div class="card-body gap-4">
 				<div class="overflow-x-auto">
 					<table class="table">
 						<thead>
 						<tr class="text-base-content/70">
-							<th>Status</th>
 							<th>Host</th>
+							<th>Status</th>
 							<th>CPU Load</th>
 							<th>Memory Usage</th>
 							<th>Workers</th>
@@ -460,14 +422,14 @@
 						{#each paginatedHosts as r (r.id)}
 							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(resolve(`/${clusterId()}/hosts/${r.id}`))}>
 								<td>
+									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
+								</td>
+
+								<td>
 									<div class="flex items-center gap-2">
 										<span class={`inline-block h-2.5 w-2.5 rounded-full ${dotClass(r.status)}`} />
 										<span class={`badge badge-outline ${badgeColor(r.status)}`}>{r.status}</span>
 									</div>
-								</td>
-
-								<td>
-									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
 								</td>
 
 								<td>
@@ -517,10 +479,7 @@
 					</table>
 				</div>
 
-				<div class="flex items-center gap-6 text-sm opacity-80">
-					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-success"></span> Online</div>
-					<div class="flex items-center gap-2"><span class="h-2 w-2 rounded-full bg-error"></span> Offline</div>
-				</div>
+	
 			</div>
 		</div>
 	</div>
