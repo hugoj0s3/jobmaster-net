@@ -133,13 +133,12 @@
             {:else if selectedProvider?.type === "JWT_SIMPLE"}
                 <label class="form-control w-full">
                     <div class="label"><span class="label-text">JWT Token</span></div>
-                    <input
-                        type="password"
-                        class="input input-bordered w-full"
-                        placeholder="Enter your JWT token"
+                    <textarea
+                        class="textarea textarea-bordered w-full h-24 font-mono text-xs"
+                        placeholder="Paste your JWT token here..."
                         bind:value={jwtToken}
                         required
-                    />
+                    ></textarea>
                 </label>
 
             {:else if selectedProvider?.type === "USER_PASSWORD"}
