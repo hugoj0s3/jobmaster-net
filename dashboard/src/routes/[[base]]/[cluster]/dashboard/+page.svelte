@@ -425,16 +425,16 @@
     <div class="mx-auto max-w-full px-6 py-6">
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="flex items-center gap-3">
-                <h1 class="text-3xl font-semibold tracking-tight">Overview</h1>
+                <h1 class="text-2xl font-semibold tracking-tight">Overview</h1>
 
-                <div class="badge badge-primary badge-lg font-semibold text-black">ACTIVE</div>
+                <div class="badge badge-primary badge-md font-semibold text-black">ACTIVE</div>
             </div>
 
-            <div class="flex items-center gap-3 text-sm opacity-80">
-							<span>Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt, uiNow)}</span>
+            <div class="flex items-center gap-2 text-sm opacity-80">
                 <button
                         class="btn btn-ghost btn-sm btn-square"
                         aria-label="Refresh now"
+                        title="Last Refresh: {DateDisplayUtil.formatRelativeOrDate(lastUpdatedAt, uiNow)}"
                         on:click={refreshNow}
                         disabled={isRefreshing}
                 >
@@ -520,7 +520,7 @@
             </div>
         {/if}
 
-        <div class="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div class="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
                     <div class="text-sm opacity-80">Upcoming Execution <span class="opacity-60">(next {settings.nextMinutes} min)</span></div>

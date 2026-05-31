@@ -273,7 +273,7 @@ async function refreshNow() {
 							<li>{job.id ?? "—"}</li>
 						</ul>
 					</div>
-					<h1 class="text-3xl font-semibold tracking-tight">Job Detail</h1>
+					<h1 class="text-2xl font-semibold tracking-tight">Job Detail</h1>
 				</div>
 
 			</div>

@@ -4,7 +4,7 @@ using JobMaster.Dashboard.Configurations.Public;
 using JobMaster.Dashboard.Configurations.Themes;
 using JobMaster.Dashboard.Ioc.Selectors;
 using JobMaster.Dashboard.Ioc.Selectors.Auth;
-using JobMaster.Dashboard.Ioc.Selectors.Credentials;
+using JobMaster.Dashboard.Ioc.Selectors.AuthRetention;
 using JobMaster.Dashboard.Ioc.Selectors.Themes;
 
 namespace JobMaster.Dashboard.Ioc.Selectors;
@@ -114,8 +114,8 @@ internal class JobMasterDashboardBuilder : IJobMasterDashboardBuilder
         return this;
     }
 
-    public IJobMasterDashboardCredentialsPersistenceSelector ConfigureCredentialsPersistence()
+    public IJobMasterDashboardAuthRetentionSelector ConfigureAuthRetention()
     {
-        return new JobMasterDashboardCredentialsPersistenceSelector(options.CredentialsPersistence);
+        return new JobMasterDashboardAuthRetentionSelector(options.AuthRetention);
     }
 }

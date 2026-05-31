@@ -60,7 +60,7 @@ public interface IJobMasterDashboardBuilder
     IJobMasterDashboardBuilder FromOpenApi(string urlOrPath);
 
     /// <summary>
-    /// Configures session persistence for authentication.
+    /// Configures auth retention for authentication.
     /// </summary>
-    Credentials.IJobMasterDashboardCredentialsPersistenceSelector ConfigureCredentialsPersistence();
+    AuthRetention.IJobMasterDashboardAuthRetentionSelector ConfigureAuthRetention();
 }

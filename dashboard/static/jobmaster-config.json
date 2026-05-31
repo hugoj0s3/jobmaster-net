@@ -1,19 +1,76 @@
 {
   "apiBaseUrl": "https://localhost:7247/jm-api",
-  "credentialsPersistenceEnabled": false,
+  "authRetentionMode": "client",
   "auth": {
-    "enabled": false,
+    "enabled": true,
     "providers": [
       {
         "type": "API_KEY",
         "displayName": "API Key",
-        "headerName": "X-JobMaster-Key",
+        "headerName": "x-api-key",
         "scheme": null,
         "userHeaderName": null,
         "passwordHeaderName": null,
         "tokenUrl": null,
         "transport": null,
         "fields": null
+      },
+      {
+        "type": "USER_PASSWORD",
+        "displayName": "Username & Password",
+        "headerName": null,
+        "scheme": null,
+        "userHeaderName": "X-JobMaster-User",
+        "passwordHeaderName": "X-JobMaster-Pwd",
+        "tokenUrl": null,
+        "transport": null,
+        "fields": null
+      },
+      {
+        "type": "JWT_SIMPLE",
+        "displayName": "Bearer Token",
+        "headerName": "Authorization",
+        "scheme": "Bearer",
+        "userHeaderName": null,
+        "passwordHeaderName": null,
+        "tokenUrl": null,
+        "transport": null,
+        "fields": null
+      },
+      {
+        "type": "JWT_CUSTOM_FORM",
+        "displayName": "Login",
+        "headerName": "authorization",
+        "scheme": "bearer",
+        "userHeaderName": null,
+        "passwordHeaderName": null,
+        "tokenUrl": "https://localhost:7247/jm-api/auth/token",
+        "fields": [
+          {
+            "id": "username",
+            "label": "Email",
+            "type": "text",
+            "isRequired": true,
+            "defaultValue": null,
+            "disabled": false
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "type": "password",
+            "isRequired": true,
+            "defaultValue": null,
+            "disabled": false
+          },
+          {
+            "id": "tenant",
+            "label": "Organization",
+            "type": "text",
+            "isRequired": false,
+            "defaultValue": "default",
+            "disabled": false
+          }
+        ]
       }
     ]
   },

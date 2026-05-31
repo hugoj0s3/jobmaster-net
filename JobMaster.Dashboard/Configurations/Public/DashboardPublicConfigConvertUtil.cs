@@ -14,7 +14,13 @@ internal static class DashboardPublicConfigConvertUtil
         {
             ApiBaseUrl = options.ApiUrl,
             BasePath = options.BasePath,
-            CredentialsPersistenceEnabled = options.CredentialsPersistence.PersistenceType != DashboardCredentialsPersistenceType.NoPersistence,
+            AuthRetentionMode = options.AuthRetention.AuthRetentionType switch
+            {
+                DashboardAuthRetentionType.ClientSideSessionStorage => "client",
+                DashboardAuthRetentionType.ServerSideInMemory       => "server",
+                DashboardAuthRetentionType.ServerSideDistributed    => "server",
+                _                                                   => "none",
+            },
             Auth = ToPublicAuth(options.Auth),
             Clusters = options.Clusters.Select(ToPublicCluster).ToList(),
             ThemeConfigs = ToPublicTheme(options.ThemeConfigs)
@@ -63,11 +69,8 @@ internal static class DashboardPublicConfigConvertUtil
                 break;
             case JwtFormAuthProviderConfig jwtForm:
                 config.TokenUrl = jwtForm.TokenUrl;
-                config.Transport = new PublicJwtTransportConfig
-                {
-                    Header = jwtForm.HeaderName,
-                    Scheme = jwtForm.Scheme
-                };
+                config.HeaderName = jwtForm.HeaderName;
+                config.Scheme = jwtForm.Scheme;
                 config.Fields = jwtForm.Fields.Select(ToPublicJwtFormField).ToList();
                 break;
         }
@@ -131,6 +134,7 @@ internal static class DashboardPublicConfigConvertUtil
     }
 
     private static bool HasColorOverrides(DashboardPublicColorOverrides o) =>
+        o.Logo != null || o.LogoContent != null ||
         o.Primary != null || o.PrimaryContent != null ||
         o.Secondary != null || o.SecondaryContent != null ||
         o.Accent != null || o.AccentContent != null ||

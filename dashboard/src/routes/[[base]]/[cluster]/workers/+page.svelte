@@ -166,7 +166,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<h1 class="text-3xl font-semibold tracking-tight">Workers</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">Workers</h1>
 
 		<section class="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">

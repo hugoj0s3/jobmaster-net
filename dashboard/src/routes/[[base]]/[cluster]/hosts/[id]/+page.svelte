@@ -153,7 +153,7 @@
 						<li>{hostName}</li>
 					</ul>
 				</div>
-				<h1 class="text-3xl font-semibold tracking-tight">{hostName}</h1>
+				<h1 class="text-2xl font-semibold tracking-tight">{hostName}</h1>
 				<div class="flex items-center gap-2">
 					<span class="inline-block h-2 w-2 rounded-full {hostStatus.dotClass}"></span>
 					<span class={hostStatus.badgeClass}>{hostStatus.label}</span>

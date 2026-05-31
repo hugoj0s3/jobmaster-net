@@ -266,7 +266,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-			<h1 class="text-3xl font-semibold tracking-tight">Hosts</h1>
+			<h1 class="text-2xl font-semibold tracking-tight">Hosts</h1>
 
 		<div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 mt-6">
 			<div class="card bg-base-200/60 border border-base-300/60 shadow-lg">

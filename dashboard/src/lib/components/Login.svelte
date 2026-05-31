@@ -1,4 +1,9 @@
 <script lang="ts">
+    import AppLogo from "$lib/components/AppLogo.svelte";
+    import { AuthRetentionUtil } from "$lib/api/auth-retention-util";
+    import { ApiClientUtil } from "$lib/api/api-client-util";
+    import type { Credentials } from "$lib/api/credentials";
+
     let { auth, onLogin } = $props();
 
     let selectedProvider = $state(auth.providers?.[0]);
@@ -6,156 +11,191 @@
     let apiKey = $state("");
     let user = $state("");
     let pwd = $state("");
+    let jwtToken = $state("");
 
     let jwtFieldValues = $state<Record<string, string>>({});
 
-    function clearStoredCredentials() {
-        sessionStorage.removeItem("jm_api_key");
-        sessionStorage.removeItem("jm_user");
-        sessionStorage.removeItem("jm_pwd");
-        sessionStorage.removeItem("jm_jwt");
-        sessionStorage.removeItem("jm_auth_provider");
+    let loginError = $state<string | null>(null);
+
+    async function validateCredentials(credentials: Credentials) {
+        const isValid = await ApiClientUtil.ValidateCredentials(credentials, fetch);
+        if (!isValid) {
+            throw new Error("Invalid credentials");
+        }
     }
 
-    function handleSubmit(e: SubmitEvent) {
+    async function storeSecretCredential(secretValue: string) {
+        if (!selectedProvider) return;
+
+        const credentials: Credentials = {
+            type: selectedProvider.type,
+            secretValue
+        };
+
+        await validateCredentials(credentials);
+        await AuthRetentionUtil.storeCredentials(credentials);
+    }
+
+    let isSubmitting = $state(false);
+
+    async function handleSubmit(e: SubmitEvent) {
         e.preventDefault();
+        loginError = null;
+        isSubmitting = true;
 
-        clearStoredCredentials();
+        AuthRetentionUtil.clear();
 
-        if (selectedProvider) {
-            sessionStorage.setItem("jm_auth_provider", JSON.stringify(selectedProvider));
-        }
+        try {
+            if (selectedProvider?.type === "API_KEY") {
+                await storeSecretCredential(apiKey);
 
-        if (selectedProvider?.type === "API_KEY") {
-            sessionStorage.setItem("jm_api_key", apiKey);
-        } else if (selectedProvider?.type === "USER_PASSWORD") {
-            sessionStorage.setItem("jm_user", user);
-            sessionStorage.setItem("jm_pwd", pwd);
-        } else if (selectedProvider?.type === "JWT_CUSTOM_FORM") {
-            for (const [k, v] of Object.entries(jwtFieldValues)) {
-                sessionStorage.setItem(`jm_jwt_field_${k}`, v ?? "");
+            } else if (selectedProvider?.type === "JWT_SIMPLE") {
+                await storeSecretCredential(jwtToken);
+
+            } else if (selectedProvider?.type === "USER_PASSWORD") {
+                const credentials: Credentials = {
+                    type: "USER_PASSWORD",
+                    userName: user,
+                    userPassword: pwd
+                };
+
+                await validateCredentials(credentials);
+                await AuthRetentionUtil.storeCredentials(credentials);
+
+            } else if (selectedProvider?.type === "JWT_CUSTOM_FORM") {
+                const body = new URLSearchParams();
+                for (const [k, v] of Object.entries(jwtFieldValues)) body.append(k, v ?? "");
+
+                const res = await fetch(selectedProvider.tokenUrl!, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+                    body: body.toString()
+                });
+
+                if (!res.ok) throw new Error(`Login failed (${res.status})`);
+
+                const data = await res.json();
+                const token: string = data.token ?? data.access_token ?? data.jwt;
+
+                if (!token) throw new Error("No token in response");
+
+                await storeSecretCredential(token);
             }
-        }
 
-        onLogin();
+            onLogin();
+        } catch (err) {
+            loginError = err instanceof Error ? err.message : "Login failed";
+        } finally {
+            isSubmitting = false;
+        }
     }
 </script>
 
-<div class="min-h-screen bg-base-100 text-base-content flex items-center justify-center p-6">
-    <div class="w-full max-w-md">
-        <!-- Header -->
-        <div class="text-center mb-6">
-            <h1 class="text-4xl font-black tracking-tight">
-                <span class="text-base-content">Job</span><span class="text-primary">Master</span>
+<main class="flex min-h-screen items-center justify-center bg-base-200 text-base-content">
+    <div class="mx-auto w-full max-w-md px-6">
+        <div class="flex flex-col items-center text-center">
+            <AppLogo class="mb-6 h-20 w-20" />
+            <h1 class="text-3xl tracking-tight leading-none flex items-baseline">
+                <span class="font-light text-base-content">Job</span><span class="font-extrabold text-base-content">Master</span>
             </h1>
-            <p class="opacity-50 text-sm mt-1">Orchestration Control Plane</p>
+            <p class="mt-2 text-sm text-base-content/60">Sign in to continue</p>
         </div>
 
-        <!-- Card -->
-        <div class="card w-full shadow-xl bg-base-200 border border-base-300">
-            <!-- Provider Tabs -->
-            <div class="p-4 pb-0">
-                <div class="tabs tabs-boxed bg-base-100 border border-base-300">
-                    {#each auth.providers as provider}
-                        <button
-                                type="button"
-                                class="tab flex-1 {selectedProvider?.type === provider.type ? 'tab-active' : ''}"
-                                onclick={() => (selectedProvider = provider)}
-                        >
-                            {provider.displayName}
-                        </button>
-                    {/each}
-                </div>
+        <div class="divider mt-8 mb-6"></div>
+
+        {#if (auth.providers?.length ?? 0) > 1}
+            <div class="tabs tabs-boxed mb-6 flex">
+                {#each auth.providers as provider}
+                    <button
+                        type="button"
+                        class="tab flex-1 {selectedProvider === provider ? 'tab-active' : ''}"
+                        onclick={() => { selectedProvider = provider; loginError = null; }}
+                    >
+                        {provider.displayName ?? provider.type}
+                    </button>
+                {/each}
             </div>
+        {/if}
 
-            <!-- Form -->
-            <form class="card-body pt-4" onsubmit={handleSubmit}>
-                {#if selectedProvider?.type === "API_KEY"}
-                    <div class="form-control w-full">
-                        <label class="label py-1">
-                            <span class="label-text font-semibold">API Secret Key</span>
-                        </label>
+        <form onsubmit={handleSubmit} class="space-y-4">
+            {#if selectedProvider?.type === "API_KEY"}
+                <label class="form-control w-full">
+                    <div class="label"><span class="label-text">API Key</span></div>
+                    <input
+                        type="password"
+                        class="input input-bordered w-full"
+                        placeholder="Enter your API key"
+                        bind:value={apiKey}
+                        required
+                    />
+                </label>
 
+            {:else if selectedProvider?.type === "JWT_SIMPLE"}
+                <label class="form-control w-full">
+                    <div class="label"><span class="label-text">JWT Token</span></div>
+                    <input
+                        type="password"
+                        class="input input-bordered w-full"
+                        placeholder="Enter your JWT token"
+                        bind:value={jwtToken}
+                        required
+                    />
+                </label>
+
+            {:else if selectedProvider?.type === "USER_PASSWORD"}
+                <label class="form-control w-full">
+                    <div class="label"><span class="label-text">Username</span></div>
+                    <input
+                        type="text"
+                        class="input input-bordered w-full"
+                        placeholder="Username"
+                        bind:value={user}
+                        required
+                    />
+                </label>
+                <label class="form-control w-full">
+                    <div class="label"><span class="label-text">Password</span></div>
+                    <input
+                        type="password"
+                        class="input input-bordered w-full"
+                        placeholder="Password"
+                        bind:value={pwd}
+                        required
+                    />
+                </label>
+
+            {:else if selectedProvider?.type === "JWT_CUSTOM_FORM"}
+                {#each selectedProvider.fields ?? [] as field (field.id)}
+                    <label class="form-control w-full">
+                        <div class="label"><span class="label-text">{field.label}</span></div>
                         <input
-                                type="password"
-                                placeholder="Paste your key here"
-                                class="input input-bordered w-full bg-base-100"
-                                required
-                                autocomplete="off"
-                                bind:value={apiKey}
+                            type={field.type}
+                            class="input input-bordered w-full"
+                            placeholder={field.label}
+                            value={jwtFieldValues[field.id] ?? field.defaultValue ?? ""}
+                            oninput={(e) => { jwtFieldValues[field.id] = (e.currentTarget as HTMLInputElement).value; }}
+                            required={field.isRequired}
+                            disabled={field.disabled}
                         />
+                    </label>
+                {/each}
+            {/if}
 
-                        <button type="submit" class="btn btn-primary w-full mt-4">Set Key</button>
-                    </div>
+            {#if loginError}
+                <div class="alert alert-error text-sm py-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{loginError}</span>
+                </div>
+            {/if}
 
-                {:else if selectedProvider?.type === "USER_PASSWORD"}
-                    <div class="form-control w-full">
-                        <label class="label py-1">
-                            <span class="label-text font-semibold">Username</span>
-                        </label>
-                        <input
-                                type="text"
-                                class="input input-bordered w-full bg-base-100"
-                                required
-                                autocomplete="username"
-                                bind:value={user}
-                        />
-                    </div>
-
-                    <div class="form-control w-full mt-3">
-                        <label class="label py-1">
-                            <span class="label-text font-semibold">Password</span>
-                        </label>
-                        <input
-                                type="password"
-                                class="input input-bordered w-full bg-base-100"
-                                required
-                                autocomplete="current-password"
-                                bind:value={pwd}
-                        />
-                    </div>
-
-                    <button type="submit" class="btn btn-primary w-full mt-5">Login</button>
-
-                {:else if selectedProvider?.type === "JWT_CUSTOM_FORM"}
-                    {#each selectedProvider.fields as field (field.id)}
-                        <div class="form-control w-full mt-3">
-                            <label class="label py-1">
-                                <span class="label-text font-semibold">{field.label}</span>
-                            </label>
-
-                            <input
-                                    type={field.type}
-                                    class="input input-bordered w-full bg-base-100"
-                                    required={field.isRequired === true}
-                                    autocomplete={field.id === "username" ? "username" : field.id === "password" ? "current-password" : "off"}
-                                    value={jwtFieldValues[field.id] ?? ""}
-                                    oninput={(e) => {
-                                        jwtFieldValues = { ...jwtFieldValues, [field.id]: (e.currentTarget as HTMLInputElement).value };
-                                    }}
-                            />
-                        </div>
-                    {/each}
-
-                    <button type="submit" class="btn btn-primary w-full mt-5">Login</button>
-
-                {:else if selectedProvider?.type === "JWT_SSO"}
-                    <div class="py-4 text-center space-y-4">
-                        <div class="p-4 bg-base-100 rounded-lg border border-base-300 border-dashed">
-                            <p class="text-[10px] font-bold opacity-50 tracking-widest">EXTERNAL IDENTITY PROVIDER</p>
-                        </div>
-
-                        <button type="button" class="btn btn-primary btn-block shadow-lg" onclick={() => onLogin()}>
-                            Proceed to SSO
-                        </button>
-                    </div>
+            <button type="submit" class="btn btn-primary btn-block mt-2" disabled={isSubmitting}>
+                {#if isSubmitting}
+                    <span class="loading loading-spinner loading-sm"></span>
                 {/if}
-            </form>
-        </div>
-
-        <!-- Footer -->
-        <div class="mt-6 text-center text-[10px] opacity-40 font-mono">
-            JobMaster Dashboard
-        </div>
+                Sign In
+            </button>
+        </form>
     </div>
-</div>
+</main>

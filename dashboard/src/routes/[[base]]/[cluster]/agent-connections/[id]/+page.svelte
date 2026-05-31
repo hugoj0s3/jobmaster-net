@@ -70,7 +70,7 @@
 					<li>{connName}</li>
 				</ul>
 			</div>
-			<h1 class="text-3xl font-semibold tracking-tight">{connName}</h1>
+			<h1 class="text-2xl font-semibold tracking-tight">{connName}</h1>
 			<div class="flex items-center gap-2">
 				<span class="inline-block h-2 w-2 rounded-full {isAlive ? 'bg-success' : 'bg-error'}"></span>
 				<span class={"badge badge-sm badge-outline " + (isAlive ? "badge-success" : "badge-error")}>{isAlive ? "OK" : "Offline"}</span>

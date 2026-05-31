@@ -270,7 +270,7 @@
 						</ul>
 					</div>
 
-					<h1 class="text-3xl font-semibold tracking-tight">{scheduleName}</h1>
+					<h1 class="text-2xl font-semibold tracking-tight">{scheduleName}</h1>
 				</div>
 
 

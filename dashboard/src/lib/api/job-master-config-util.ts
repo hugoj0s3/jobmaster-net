@@ -1,4 +1,6 @@
 export interface PublicColorOverrides {
+    logo: string | null;
+    logoContent: string | null;
     base100: string | null;
     base200: string | null;
     base300: string | null;
@@ -22,9 +24,10 @@ export interface PublicColorOverrides {
 }
 
 export interface PublicStyleOverrides {
-    fontFamily: string[] | null;
+    fontFamilySans: string[] | null;
+    fontUrlSans: string | null;
     fontFamilyMono: string[] | null;
-    fontFamilySerif: string[] | null;
+    fontUrlMono: string | null;
     borderRadiusBox: string | null;
     borderRadiusBtn: string | null;
     borderRadiusBadge: string | null;
@@ -67,7 +70,6 @@ export interface PublicAuthProviderConfig {
     userHeaderName: string | null;
     passwordHeaderName: string | null;
     tokenUrl: string | null;
-    transport: { header: string; scheme: string } | null;
     fields: PublicJwtFormFieldConfig[] | null;
 }
 
@@ -84,7 +86,7 @@ export interface PublicClusterConfig {
 
 export interface DashboardPublicConfig {
     apiBaseUrl: string;
-    credentialsPersistenceEnabled: boolean;
+    authRetentionMode: 'none' | 'client' | 'server';
     auth: PublicAuthConfig;
     clusters: PublicClusterConfig[];
     themeConfigs: PublicThemeConfig;
@@ -111,7 +113,7 @@ export class JobMasterConfigUtil {
         return `${base}/${clusterId}${path}`;
     }
 
-    static async loadConfig(fetchFn: typeof fetch): Promise<DashboardPublicConfig> {
+    static async loadConfig(): Promise<DashboardPublicConfig> {
         if (JobMasterConfigUtil.configCache) return JobMasterConfigUtil.configCache;
 
         // In production the C# middleware injects window.__JM__ into index.html,
@@ -119,7 +121,7 @@ export class JobMasterConfigUtil {
         const injected = typeof window !== 'undefined' ? (window as any).__JM__ : undefined;
         if (injected?.basePath !== undefined) {
             const prefix: string = injected.basePath;
-            const res = await fetchFn(`${prefix}/jobmaster-config.json`);
+            const res = await fetch(`${prefix}/jobmaster-config.json`);
             if (!res.ok) throw new Error(`${res.status} ${res.statusText} - jobmaster-config.json`);
             const cfg = (await res.json()) as DashboardPublicConfig;
             _resolvedBasePath = prefix;
@@ -133,7 +135,7 @@ export class JobMasterConfigUtil {
 
         for (let i = parts.length; i >= 0; i--) {
             const prefix = i > 0 ? '/' + parts.slice(0, i).join('/') : '';
-            const res = await fetchFn(`${prefix}/jobmaster-config.json`);
+            const res = await fetch(`${prefix}/jobmaster-config.json`);
             if (!res.ok) continue;
             const ct = res.headers.get('content-type') ?? '';
             if (!ct.includes('json')) continue;

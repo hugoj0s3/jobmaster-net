@@ -5,7 +5,7 @@ public class PublicAuthProviderConfig
     public string Type { get; set; } = string.Empty;
     public string? DisplayName { get; set; }
 
-    // API_KEY + JWT_SIMPLE
+    // API_KEY + JWT_SIMPLE + JWT_CUSTOM_FORM
     public string? HeaderName { get; set; }
 
     // JWT_SIMPLE
@@ -15,8 +15,7 @@ public class PublicAuthProviderConfig
     public string? UserHeaderName { get; set; }
     public string? PasswordHeaderName { get; set; }
 
-    // JWT_CUSTOM_FORM
+    // JWT_CUSTOM_FORM + JWT_SIMPLE
     public string? TokenUrl { get; set; }
-    public PublicJwtTransportConfig? Transport { get; set; }
     public IList<PublicJwtFormFieldConfig>? Fields { get; set; }
 }

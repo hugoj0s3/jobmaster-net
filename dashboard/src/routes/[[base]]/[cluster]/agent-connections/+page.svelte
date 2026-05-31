@@ -127,7 +127,7 @@
 
 <div class="min-h-screen bg-base-100">
 	<div class="mx-auto max-w-full px-6 py-6">
-		<h1 class="text-3xl font-semibold tracking-tight">Agent Connections</h1>
+		<h1 class="text-2xl font-semibold tracking-tight">Agent Connections</h1>
 
 		{#if refreshError}
 			<div class="alert alert-error text-sm mt-4"><span>{refreshError}</span></div>

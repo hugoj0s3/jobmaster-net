@@ -6,10 +6,12 @@
     import { goto } from "$app/navigation";
     import Login from "$lib/components/Login.svelte";
     import Sidebar from "$lib/components/Sidebar.svelte";
-    import logoSvg from "$lib/assets/jobmaster-logo.svg";
+    import AppLogo from "$lib/components/AppLogo.svelte";
 
     import {resolveThemeId, setStoredTheme} from "$lib/theme-helper";
+    import { AuthRetentionUtil } from "$lib/api/auth-retention-util";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
+    import { ApiClientUtil } from '$lib/api/api-client-util';
 
     let {children} = $props();
 
@@ -19,8 +21,22 @@
     let currentTheme = $state<any>(null);
 
     onMount(async () => {
-        config = await JobMasterConfigUtil.loadConfig(fetch);
-        if (sessionStorage.getItem("jm_auth") === "true" || config.auth?.enabled != true) isLoggedIn = true;
+        config = await JobMasterConfigUtil.loadConfig();
+        if (config.auth?.enabled != true) isLoggedIn = true;
+
+        const credentials = await AuthRetentionUtil.getCredentials();
+        if (!credentials) {
+            isLoggedIn = false;
+            return;
+        }
+
+        const isValidCredentials = await ApiClientUtil.ValidateCredentials(credentials, fetch);
+        if (!isValidCredentials) {
+            isLoggedIn = false;
+            return;
+        }
+
+        isLoggedIn = true;
     });
 
     function getUrlClusterIdFromPathname(pathname: string) {
@@ -101,6 +117,8 @@
     });
 
     const themeVarMap: Record<string, string> = {
+        logo: "--color-logo",
+        logoContent: "--color-logo-content",
         primary: "--color-primary",
         primaryContent: "--color-primary-content",
         secondary: "--color-secondary",
@@ -123,8 +141,19 @@
         errorContent: "--color-error-content",
     };
 
+    const injectedFontUrls = new Set<string>();
+
+    function injectFontUrl(url: string) {
+        if (injectedFontUrls.has(url)) return;
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = url;
+        document.head.appendChild(link);
+        injectedFontUrls.add(url);
+    }
+
     const styleVarList = [
-        "--font-sans", "--font-mono", "--font-serif",
+        "--font-sans", "--font-mono",
         "--rounded-box", "--rounded-btn", "--rounded-badge",
         "--tab-radius", "--border-btn", "--tab-border",
         "--animation-btn", "--animation-input", "--btn-focus-scale",
@@ -167,10 +196,11 @@
 
         if (theme.styleOverrides) {
             const so = theme.styleOverrides;
-            if (so.fontFamily?.length)     root.setProperty("--font-sans",          so.fontFamily.join(", "));
+            if (so.fontUrlSans)             injectFontUrl(so.fontUrlSans);
+            if (so.fontFamilySans?.length)  root.setProperty("--font-sans",          so.fontFamilySans.join(", "));
+            if (so.fontUrlMono)             injectFontUrl(so.fontUrlMono);
             if (so.fontFamilyMono?.length)  root.setProperty("--font-mono",         so.fontFamilyMono.join(", "));
-            if (so.fontFamilySerif?.length) root.setProperty("--font-serif",        so.fontFamilySerif.join(", "));
-            if (so.borderRadiusBox)         root.setProperty("--rounded-box",       so.borderRadiusBox);
+if (so.borderRadiusBox)         root.setProperty("--rounded-box",       so.borderRadiusBox);
             if (so.borderRadiusBtn)         root.setProperty("--rounded-btn",       so.borderRadiusBtn);
             if (so.borderRadiusBadge)       root.setProperty("--rounded-badge",     so.borderRadiusBadge);
             if (so.tabRadius)               root.setProperty("--tab-radius",        so.tabRadius);
@@ -187,8 +217,8 @@
     }
 
 
-    function logout() {
-        sessionStorage.removeItem("jm_auth");
+    async function logout() {
+        AuthRetentionUtil.clear();
         isLoggedIn = false;
     }
 </script>
@@ -208,7 +238,7 @@
 
             <div class="flex-1 flex flex-col min-w-0">
                 <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center px-4 shrink-0">
-                    <div class="dropdown dropdown-end">
+                    <div class="dropdown dropdown-center">
                         <button
                                 tabindex="0"
                                 class="btn btn-ghost btn-sm h-10 px-3 flex items-center gap-2.5 border border-base-300 bg-base-100 hover:bg-base-200"
@@ -233,20 +263,30 @@
 
                         <ul
                                 tabindex="0"
-                                class="dropdown-content menu p-2 shadow-2xl bg-base-200 rounded-box w-72 mt-2 border border-base-300 z-[100] space-y-2"
+                                class="dropdown-content menu flex-nowrap p-2 shadow-2xl bg-base-200 rounded-box w-[28rem] mt-2 border border-base-300 z-[100] space-y-2 max-h-[32rem] overflow-y-auto"
                         >
-                            <li class="menu-title text-[12px] font-black opacity-40">Cluster</li>
-                            {#each config.clusters as cluster}
-                                <li>
-                                    <button
-                                            class="flex flex-col items-start py-2 w-full {currentCluster?.id === cluster.id ? 'active' : ''}"
-                                            onclick={() => handleClusterChange(cluster.id)}
-                                    >
-                                        <span class="text-[12px] font-bold">{cluster.id}</span>
-                                        <span class="text-[10px] opacity-50 font-mono">{cluster.environmentName}</span>
-                                    </button>
-                                </li>
-                            {/each}
+                            <li class="menu-title flex flex-row items-center justify-between pr-2 text-[12px] font-black">
+                                <span class="opacity-40">Cluster</span>
+                                <button
+                                        class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-bold text-[11px] h-6 min-h-6 px-2"
+                                        onclick={logout}
+                                >
+                                    Logout
+                                </button>
+                            </li>
+                            <div class="grid grid-cols-2 gap-1 p-2">
+                                {#each config.clusters as cluster}
+                                    <li>
+                                        <button
+                                                class="flex flex-col items-start py-2 w-full {currentCluster?.id === cluster.id ? 'active' : ''}"
+                                                onclick={() => handleClusterChange(cluster.id)}
+                                        >
+                                            <span class="text-[12px] font-bold">{cluster.id}</span>
+                                            <span class="text-[10px] opacity-50 font-mono">{cluster.environmentName}</span>
+                                        </button>
+                                    </li>
+                                {/each}
+                            </div>
 
                             <div class="divider my-0"></div>
 
@@ -261,19 +301,11 @@
                                     </button>
                                 {/each}
                             </div>
-
-                            <div class="divider my-0"></div>
-
-                            <li>
-                                <button class="text-error font-bold text-[12px] justify-center" onclick={logout}>
-                                    Logout Session
-                                </button>
-                            </li>
                         </ul>
                     </div>
                 </header>
 
-                <main class="flex-1 overflow-y-auto pr-2 py-8 bg-base-100">
+                <main class="flex-1 overflow-y-auto pr-2 pt-2 pb-8 bg-base-100">
                     <div class="max-w-[1600px]">
                         {@render children()}
                     </div>
@@ -284,7 +316,7 @@
         <main class="flex min-h-screen items-center justify-center bg-base-200 text-base-content">
             <div class="mx-auto w-full max-w-md px-6">
                 <div class="flex flex-col items-center text-center">
-                    <img src={logoSvg} alt="JobMaster" class="mb-6 h-20 w-20" />
+                    <AppLogo class="mb-6 h-20 w-20" />
                     <h1 class="text-3xl tracking-tight leading-none flex items-baseline">
                         <span class="font-light text-base-content">Job</span><span class="font-extrabold text-base-content">Master</span>
                     </h1>

@@ -2,6 +2,7 @@ namespace JobMaster.Dashboard.Ioc.Selectors.Themes;
 
 public interface IJobMasterDashboardThemeColorSelector<out TReturn>
 {
+    TReturn Logo(string color, string content = null);
     TReturn Primary(string color, string content = null);
     TReturn Secondary(string color, string content = null);
     TReturn Accent(string color, string content = null);

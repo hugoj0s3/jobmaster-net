@@ -25,7 +25,7 @@ internal class DashboardOptions
 
     public DashboardAuthConfig Auth { get; set; } = new DashboardAuthConfig();
 
-    public DashboardCredentialsPersistenceConfig CredentialsPersistence { get; set; } = new DashboardCredentialsPersistenceConfig();
+    public DashboardAuthRetentionConfig AuthRetention { get; set; } = new DashboardAuthRetentionConfig();
 
     /// <summary>
     /// Controls OpenAPI-based auto-configuration.

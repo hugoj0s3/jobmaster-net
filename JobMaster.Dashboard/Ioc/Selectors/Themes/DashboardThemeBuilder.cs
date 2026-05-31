@@ -51,12 +51,12 @@ internal sealed class DashboardThemeBuilder : IJobMasterDashboardThemeSelector, 
 
     // ── IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector> ──
 
-    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>.SetFontSans(params string[] fontFamilies) => ApplyFontSans(fontFamilies);
-    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>.SetFontMono(params string[] fontFamilies) => ApplyFontMono(fontFamilies);
-    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>.SetFontSerif(params string[] fontFamilies) => ApplyFontSerif(fontFamilies);
+    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>.SetFontSans(string[] fontFamilies, string fontUrl) => ApplyFontSans(fontFamilies, fontUrl);
+    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>.SetFontMono(string[] fontFamilies, string fontUrl) => ApplyFontMono(fontFamilies, fontUrl);
 
     // ── IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector> ──
 
+    IJobMasterDashboardThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector>.Logo(string color, string content) => ApplyLogo(color, content);
     IJobMasterDashboardThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector>.Primary(string color, string content) => ApplyPrimary(color, content);
     IJobMasterDashboardThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector>.Secondary(string color, string content) => ApplySecondary(color, content);
     IJobMasterDashboardThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector>.Accent(string color, string content) => ApplyAccent(color, content);
@@ -69,6 +69,7 @@ internal sealed class DashboardThemeBuilder : IJobMasterDashboardThemeSelector, 
 
     // ── IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector> ──
 
+    IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector>.Logo(string color, string content) => ApplyLogo(color, content);
     IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector>.Primary(string color, string content) => ApplyPrimary(color, content);
     IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector>.Secondary(string color, string content) => ApplySecondary(color, content);
     IJobMasterDashboardPrimaryThemeSelector IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector>.Accent(string color, string content) => ApplyAccent(color, content);
@@ -81,6 +82,7 @@ internal sealed class DashboardThemeBuilder : IJobMasterDashboardThemeSelector, 
 
     // ── Private helpers ───────────────────────────────────────────────────────
 
+    private DashboardThemeBuilder ApplyLogo(string color, string content) { theme.ColorOverrides.Logo = color; theme.ColorOverrides.LogoContent = content; return this; }
     private DashboardThemeBuilder ApplyPrimary(string color, string content) { theme.ColorOverrides.Primary = color; theme.ColorOverrides.PrimaryContent = content; return this; }
     private DashboardThemeBuilder ApplySecondary(string color, string content) { theme.ColorOverrides.Secondary = color; theme.ColorOverrides.SecondaryContent = content; return this; }
     private DashboardThemeBuilder ApplyAccent(string color, string content) { theme.ColorOverrides.Accent = color; theme.ColorOverrides.AccentContent = content; return this; }
@@ -99,7 +101,6 @@ internal sealed class DashboardThemeBuilder : IJobMasterDashboardThemeSelector, 
         return this;
     }
 
-    private DashboardThemeBuilder ApplyFontSans(string[] fontFamilies) { theme.StyleOverrides.FontFamily = fontFamilies; return this; }
-    private DashboardThemeBuilder ApplyFontMono(string[] fontFamilies) { theme.StyleOverrides.FontFamilyMono = fontFamilies; return this; }
-    private DashboardThemeBuilder ApplyFontSerif(string[] fontFamilies) { theme.StyleOverrides.FontFamilySerif = fontFamilies; return this; }
+    private DashboardThemeBuilder ApplyFontSans(string[] fontFamilies, string fontUrl) { theme.StyleOverrides.FontFamilySans = fontFamilies; theme.StyleOverrides.FontUrlSans = fontUrl; return this; }
+    private DashboardThemeBuilder ApplyFontMono(string[] fontFamilies, string fontUrl) { theme.StyleOverrides.FontFamilyMono = fontFamilies; theme.StyleOverrides.FontUrlMono = fontUrl; return this; }
 }

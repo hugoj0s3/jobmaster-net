@@ -3,19 +3,32 @@ namespace JobMaster.Dashboard.Configurations.Themes;
 public class DashboardStyleAttributeOverrides
 {
     /// <summary>
-    /// Controls the sans-serif font family stack (--font-sans).
+    /// The sans-serif font family stack applied to <c>--font-sans</c>.
+    /// Use standard CSS font-family values, e.g. <c>["Geist", "ui-sans-serif"]</c>.
+    /// Pair with <see cref="FontUrlSans"/> if the font needs to be loaded from an external stylesheet.
     /// </summary>
-    public string[]? FontFamily { get; set; }
+    public string[]? FontFamilySans { get; set; }
 
     /// <summary>
-    /// Controls the monospace font family stack (--font-mono).
+    /// URL of a CSS stylesheet that loads the font declared in <see cref="FontFamilySans"/>.
+    /// The dashboard injects a <c>&lt;link rel="stylesheet"&gt;</c> tag at runtime with this URL.
+    /// Accepts Google Fonts, Bunny Fonts, or any self-hosted stylesheet URL.
+    /// </summary>
+    public string? FontUrlSans { get; set; }
+
+    /// <summary>
+    /// The monospace font family stack applied to <c>--font-mono</c>.
+    /// Use standard CSS font-family values, e.g. <c>["Fira Code", "monospace"]</c>.
+    /// Pair with <see cref="FontUrlMono"/> if the font needs to be loaded from an external stylesheet.
     /// </summary>
     public string[]? FontFamilyMono { get; set; }
 
     /// <summary>
-    /// Controls the serif font family stack (--font-serif).
+    /// URL of a CSS stylesheet that loads the font declared in <see cref="FontFamilyMono"/>.
+    /// The dashboard injects a <c>&lt;link rel="stylesheet"&gt;</c> tag at runtime with this URL.
+    /// Accepts Google Fonts, Bunny Fonts, or any self-hosted stylesheet URL.
     /// </summary>
-    public string[]? FontFamilySerif { get; set; }
+    public string? FontUrlMono { get; set; }
 
     /// <summary>
     /// Controls the border radius for large components like Cards, Modals, and Alerts (--rounded-box).

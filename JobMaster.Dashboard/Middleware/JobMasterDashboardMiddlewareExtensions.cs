@@ -57,8 +57,10 @@ public static class JobMasterDashboardMiddlewareExtensions
                 var relativePath = path.Substring(basePath.Length);
                 if (!provider.GetFileInfo(relativePath).Exists)
                 {
+                    var trimmedPath = path.TrimEnd('/');
+                    bool hasExtension = System.IO.Path.HasExtension(trimmedPath);
                     bool acceptsHtml = ctx.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase);
-                    if (acceptsHtml || !System.IO.Path.HasExtension(path))
+                    if (!hasExtension && acceptsHtml)
                     {
                         ctx.Response.StatusCode = 200;
                         ctx.Response.ContentType = "text/html; charset=utf-8";

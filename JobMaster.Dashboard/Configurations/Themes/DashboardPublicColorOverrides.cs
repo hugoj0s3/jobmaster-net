@@ -2,6 +2,8 @@ namespace JobMaster.Dashboard.Configurations.Themes;
 
 public class DashboardPublicColorOverrides
 {
+    public string? Logo { get; set; }
+    public string? LogoContent { get; set; }
     public string? Base100 { get; set; }
     public string? Base200 { get; set; }
     public string? Base300 { get; set; }

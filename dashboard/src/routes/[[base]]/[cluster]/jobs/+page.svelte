@@ -448,7 +448,7 @@
 
 <div class="min-h-screen bg-base-100">
     <div class="mx-auto max-w-full px-6 py-6">
-                <h1 class="text-3xl font-semibold tracking-tight">Jobs</h1>
+                <h1 class="text-2xl font-semibold tracking-tight">Jobs</h1>
 
         <div class="flex items-center justify-between gap-4 mt-4">
             {#key filterKey}

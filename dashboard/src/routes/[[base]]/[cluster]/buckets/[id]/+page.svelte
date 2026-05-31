@@ -157,7 +157,7 @@
 					<li>{bucketName}</li>
 				</ul>
 			</div>
-			<h1 class="text-3xl font-semibold tracking-tight">{bucketName}</h1>
+			<h1 class="text-2xl font-semibold tracking-tight">{bucketName}</h1>
 			<div class="flex items-center gap-2">
 				<span class={"badge badge-sm badge-outline " + bucketStatusBadgeClass}>{bucketStatusLabel}</span>
 			</div>

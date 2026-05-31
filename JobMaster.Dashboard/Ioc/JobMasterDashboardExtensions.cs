@@ -1,5 +1,5 @@
 using JobMaster.Dashboard.Configurations;
-using JobMaster.Dashboard.Credentials;
+using JobMaster.Dashboard.AuthRetention;
 using JobMaster.Dashboard.Endpoints;
 using JobMaster.Dashboard.Ioc.Selectors;
 using JobMaster.Dashboard.OpenApi;
@@ -23,7 +23,7 @@ public static class JobMasterDashboardExtensions
         configure(builder);
 
         services.AddSingleton(options);
-        services.AddCredentialsPersistence(options);
+        services.AddAuthRetention(options);
         services.AddRateSessionLimiter(options);
 
         if (options.OpenApiUrl is not null)
@@ -50,7 +50,7 @@ public static class JobMasterDashboardExtensions
 
         endpoints
             .MapDashboardConfigEndpoints(basePath)
-            .MapDashboardCredentialsEndpoints(basePath);
+            .MapDashboardAuthRetentionEndpoints(basePath);
 
         endpoints.MapGet($"{basePath}/debug-resources", () =>
             typeof(JobMasterDashboardExtensions).Assembly.GetManifestResourceNames());
@@ -67,19 +67,19 @@ public static class JobMasterDashboardExtensions
         return endpoints;
     }
 
-    private static IServiceCollection AddCredentialsPersistence(this IServiceCollection services, DashboardOptions options)
+    private static IServiceCollection AddAuthRetention(this IServiceCollection services, DashboardOptions options)
     {
-        switch (options.CredentialsPersistence.PersistenceType)
+        switch (options.AuthRetention.AuthRetentionType)
         {
-            case DashboardCredentialsPersistenceType.ServerSideInMemory:
+            case DashboardAuthRetentionType.ServerSideInMemory:
                 services.AddMemoryCache();
-                services.AddSingleton<ICredentialsPersistenceService, InMemoryCredentialsPersistenceService>();
+                services.AddSingleton<IAuthRetentionService, InMemoryAuthRetentionService>();
                 break;
-            case DashboardCredentialsPersistenceType.ServerSideDistributed:
-                services.AddSingleton<ICredentialsPersistenceService, DistributedCredentialsPersistenceService>();
+            case DashboardAuthRetentionType.ServerSideDistributed:
+                services.AddSingleton<IAuthRetentionService, DistributedAuthRetentionService>();
                 break;
             default:
-                services.AddSingleton<ICredentialsPersistenceService, NullCredentialsPersistenceService>();
+                services.AddSingleton<IAuthRetentionService, NullAuthRetentionService>();
                 break;
         }
 
@@ -88,22 +88,22 @@ public static class JobMasterDashboardExtensions
 
     private static IServiceCollection AddRateSessionLimiter(this IServiceCollection services, DashboardOptions options)
     {
-        var config = options.CredentialsPersistence;
+        var config = options.AuthRetention;
 
-        if (config.PersistenceType == DashboardCredentialsPersistenceType.ServerSideDistributed)
+        if (config.AuthRetentionType == DashboardAuthRetentionType.ServerSideDistributed)
         {
             services.AddSingleton<IRateSessionLimiter>(sp =>
                 new DistributedRateSessionLimiter(
                     sp.GetRequiredService<IDistributedCache>(),
-                    max: DashboardCredentialsPersistenceConfig.OpenSessionRateLimit,
-                    window: DashboardCredentialsPersistenceConfig.OpenSessionRateWindow));
+                    max: DashboardAuthRetentionConfig.OpenSessionRateLimit,
+                    window: DashboardAuthRetentionConfig.OpenSessionRateWindow));
         }
         else
         {
             services.AddSingleton<IRateSessionLimiter>(
                 new LocalRateSessionLimiter(
-                    max: DashboardCredentialsPersistenceConfig.OpenSessionRateLimit,
-                    window: DashboardCredentialsPersistenceConfig.OpenSessionRateWindow));
+                    max: DashboardAuthRetentionConfig.OpenSessionRateLimit,
+                    window: DashboardAuthRetentionConfig.OpenSessionRateWindow));
         }
 
         return services;
