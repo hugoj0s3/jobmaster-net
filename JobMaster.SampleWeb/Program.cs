@@ -14,7 +14,6 @@ using Serilog;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
-using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.IdentityModel.Tokens;
 
@@ -240,8 +239,7 @@ builder.Services.AddJobMasterDashboard(dashboard =>
     dashboard.ConfigJwtFormAuth("/jm-api/auth/token")
         .WithDisplayName("Login")
         .AddField("username", "UserName")
-        .AddField("password", "Password", DashboardJwtFormFieldType.Password)
-        .AddField("tenant", "Organization", isRequired: false, defaultValue: "default");
+        .AddField("password", "Password", DashboardJwtFormFieldType.Password);
 
     dashboard.ConfigureAuthRetention()
         .SetAuthRetentionType(DashboardAuthRetentionType.ServerSideInMemory);
@@ -293,14 +291,11 @@ app.MapPost("/jm-api/auth/token", async (HttpRequest req) =>
     var form = await req.ReadFormAsync();
     var username = form["username"].FirstOrDefault();
     var password = form["password"].FirstOrDefault();
-    var tenant   = form["tenant"].FirstOrDefault();
 
-    var orgOk  = string.Equals(tenant, "jobmaster", StringComparison.OrdinalIgnoreCase);
-    var userOk = string.Equals(username, "master", StringComparison.OrdinalIgnoreCase);
-    var pwdOk  = !string.IsNullOrEmpty(password);
+    var valid = string.Equals(username, "admin", StringComparison.OrdinalIgnoreCase)
+             && string.Equals(password, devPassword, StringComparison.Ordinal);
 
-    if (!orgOk || !userOk || !pwdOk)
-        return Results.Unauthorized();
+    if (!valid) return Results.Unauthorized();
 
     var token = GenerateDummyJwt(username!, jwtTvp);
     return Results.Ok(new { token });
