@@ -180,8 +180,8 @@ builder.Services.AddJobMasterDashboard(dashboard =>
     dashboard.UseBasePath("/jm-dashboard");
     dashboard.UseApiUrl("/jm-api");
     
-    dashboard.ConfigCluster("Cluster-1", "NATS Cluster");
-    dashboard.ConfigCluster("Cluster-Standalone-1", "Standalone Cluster");
+    dashboard.ConfigCluster("Cluster-1", "QA");
+    dashboard.ConfigCluster("Cluster-Standalone-1", "DEV");
     dashboard.AddPrimaryTheme(DashboardBuiltInTheme.JobMasterLight, "JobMaster Light")
         .SetBorderRadii(box: "0.75rem", selector: "0.5rem", field: "0.5rem")
         .SetFontSans(["Inter", "system-ui", "sans-serif"])
@@ -225,13 +225,10 @@ builder.Services.AddJobMasterDashboard(dashboard =>
         .Error("oklch(62% 0.22 25)", "oklch(15% 0.04 25)");
     //
     dashboard.ConfigApiKeyAuth()
-        .WithDisplayName("API Key")
-        .WithHeaderName("X-JobMaster-Key");
-    
+        .WithDisplayName("API Key");
+
     dashboard.ConfigUserPasswordAuth()
-        .WithDisplayName("Username & Password")
-        .WithUserHeaderName("X-JobMaster-User")
-        .WithPasswordHeaderName("X-JobMaster-Pwd");
+        .WithDisplayName("Username & Password");
     
     dashboard.ConfigSimpleJwtAuth()
         .WithDisplayName("Bearer Token");

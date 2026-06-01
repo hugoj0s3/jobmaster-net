@@ -22,7 +22,7 @@ internal static class DashboardPublicConfigConvertUtil
                 _                                                   => "none",
             },
             Auth = ToPublicAuth(options.Auth),
-            Clusters = options.Clusters.Select(ToPublicCluster).ToList(),
+            Clusters = options.Clusters.Where(c => !c.Disabled).Select(ToPublicCluster).ToList(),
             ThemeConfigs = ToPublicTheme(options.ThemeConfigs)
         };
     }
@@ -42,7 +42,7 @@ internal static class DashboardPublicConfigConvertUtil
         return new PublicAuthConfig
         {
             Enabled = auth.Enabled,
-            Providers = auth.Providers.Select(ToPublicAuthProvider).ToList()
+            Providers = auth.Providers.Where(p => !p.Disabled).Select(ToPublicAuthProvider).ToList()
         };
     }
 
