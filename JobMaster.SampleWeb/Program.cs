@@ -94,26 +94,6 @@ var standalonePostgres = ApplySecrets(
     ?? "Host=[POSTGRES_HOST];Port=[POSTGRES_PORT];Database=jobmaster_standalone;Username=[POSTGRES_USER];Password=[POSTGRES_PASSWORD];Maximum Pool Size=300",
     builder.Configuration);
 
-var apiKeyOwner = ApplySecrets(
-    builder.Configuration["JobMaster:SampleWeb:ApiKeyOwner"]
-    ?? "[JM_API_KEY_OWNER]",
-    builder.Configuration);
-
-var apiKey = ApplySecrets(
-    builder.Configuration["JobMaster:SampleWeb:ApiKey"]
-    ?? "[JM_API_KEY]",
-    builder.Configuration);
-
-var apiUser = ApplySecrets(
-    builder.Configuration["JobMaster:SampleWeb:ApiUser"]
-    ?? "[JM_API_USER]",
-    builder.Configuration);
-
-var apiPassword = ApplySecrets(
-    builder.Configuration["JobMaster:SampleWeb:ApiPassword"]
-    ?? "[JM_API_PASSWORD]",
-    builder.Configuration);
-
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
@@ -159,10 +139,22 @@ builder.Services.AddJobMasterCluster(c => {
     
 });
 
+var devApiKey  = Convert.ToBase64String(RandomNumberGenerator.GetBytes(24)).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+var devPassword = Convert.ToBase64String(RandomNumberGenerator.GetBytes(12)).Replace("+", "-").Replace("/", "_").TrimEnd('=');
+var jwtSecret  = RandomNumberGenerator.GetBytes(32);
+
+Console.WriteLine("╔══════════════════════════════════════╗");
+Console.WriteLine("║     JobMaster Dev Credentials        ║");
+Console.WriteLine("╠══════════════════════════════════════╣");
+Console.WriteLine($"║  API Key  : {devApiKey,-26}║");
+Console.WriteLine($"║  Username : {"admin",-26}║");
+Console.WriteLine($"║  Password : {devPassword,-26}║");
+Console.WriteLine("╚══════════════════════════════════════╝");
+
 var jwtTvp = new TokenValidationParameters
 {
     ValidateIssuerSigningKey = true,
-    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("jobmaster-dev-secret-jwt-key-256bits-or-more")),
+    IssuerSigningKey = new SymmetricSecurityKey(jwtSecret),
     ValidateIssuer = false,
     ValidateAudience = false,
     ValidateLifetime = true,
@@ -175,15 +167,13 @@ builder.Services.UseJobMasterApi(o =>
     o.RequireAuthentication = true;
     o.EnableSwagger = true;
     o.UseApiKeyAuth()
-        .AddApiKey("ApiKeyUser", "I9DY0MJZVgpjyaEbeMSpG4m8ErauFVWS");
-    
+        .AddApiKey("dev", devApiKey);
+
     o.UseUserPwdAuth()
-        .AddUserPwd("AdminWithPwd", "Pwd123");
+        .AddUserPwd("admin", devPassword);
+
     var selector = o.UseJwtBearerAuth();
     selector.RegisterDefaultJwtBearerAuthProvider(jwtTvp);
-
-    // o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
-    // o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
 });
 
 builder.Services.AddJobMasterDashboard(dashboard =>
