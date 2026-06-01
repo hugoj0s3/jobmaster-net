@@ -41,11 +41,11 @@ internal sealed class DashboardThemeBuilder : IJobMasterDashboardThemeSelector, 
 
     // ── IJobMasterDashboardPrimaryThemeSelector ───────────────────────────────
 
-    public IJobMasterDashboardPrimaryThemeSelector SetBorderRadii(string box = null, string btn = null, string badge = null)
+    public IJobMasterDashboardPrimaryThemeSelector SetBorderRadii(string? box = null, string? selector = null, string? field = null)
     {
         if (box is not null) theme.StyleOverrides.BorderRadiusBox = box;
-        if (btn is not null) theme.StyleOverrides.BorderRadiusBtn = btn;
-        if (badge is not null) theme.StyleOverrides.BorderRadiusBadge = badge;
+        if (selector is not null) theme.StyleOverrides.BorderRadiusBtn = selector;
+        if (field is not null) theme.StyleOverrides.BorderRadiusBadge = field;
         return this;
     }
 

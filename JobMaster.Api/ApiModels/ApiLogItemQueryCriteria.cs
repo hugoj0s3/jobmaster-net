@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using Microsoft.AspNetCore.Http;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -49,8 +50,14 @@ public class ApiLogItemQueryCriteria
 
         if (!string.IsNullOrEmpty(ReferenceGuid))
         {
-            var guid = ReferenceGuid.ParseFlexible();
-            criteria.ReferenceId = guid.ToString("N");
+            try
+            {
+                criteria.ReferenceId = ReferenceGuid.ParseFlexible().ToString("N");
+            }
+            catch (Exception)
+            {
+                throw new BadHttpRequestException($"Invalid ReferenceGuid value '{ReferenceGuid}'.");
+            }
         }
 
         return criteria;

@@ -12,36 +12,11 @@ internal static class DashboardAuthRetentionEndpoints
     internal static IEndpointRouteBuilder MapDashboardAuthRetentionEndpoints(this IEndpointRouteBuilder endpoints, string basePath)
     {
         // Creates the session and sets the HttpOnly cookie. No credentials stored yet.
-        // Rate-limited per client ID (or IP when no client ID cookie is present).
-        endpoints.MapPost($"{basePath}/credentials/open-session", async (
+        endpoints.MapPost($"{basePath}/credentials/open-session", (
             HttpContext ctx,
-            DashboardOptions options,
-            IRateSessionLimiter rateLimiter,
-            CancellationToken ct) =>
+            DashboardOptions options) =>
         {
-            var config = options.AuthRetention;
-
-            var clientId = ctx.Request.Cookies[options.ClientIdCookieName];
-            var isNewClient = clientId is null;
-            if (isNewClient)
-                clientId = ctx.Connection.RemoteIpAddress?.ToString() ?? Guid.NewGuid().ToString("N");
-
             var newSessionId = Guid.NewGuid().ToString("N");
-            var result = await rateLimiter.TryOpenSessionAsync(clientId, newSessionId, ct);
-            if (!result.Allowed)
-                return Results.StatusCode(429);
-
-            if (isNewClient)
-            {
-                ctx.Response.Cookies.Append(options.ClientIdCookieName, clientId, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = true,
-                    SameSite = SameSiteMode.Strict,
-                    MaxAge = TimeSpan.FromDays(365)
-                });
-            }
-
             AppendSessionCookie(ctx, options, newSessionId);
             return Results.Ok();
         });

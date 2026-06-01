@@ -5,7 +5,6 @@ using JobMaster.Dashboard.Ioc.Selectors;
 using JobMaster.Dashboard.OpenApi;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
 
@@ -23,8 +22,8 @@ public static class JobMasterDashboardExtensions
         configure(builder);
 
         services.AddSingleton(options);
+        services.AddSingleton<OpenApiJsonConfigSeeder>();
         services.AddAuthRetention(options);
-        services.AddRateSessionLimiter(options);
 
         if (options.OpenApiUrl is not null)
         {
@@ -85,26 +84,4 @@ public static class JobMasterDashboardExtensions
         return services;
     }
 
-    private static IServiceCollection AddRateSessionLimiter(this IServiceCollection services, DashboardOptions options)
-    {
-        var config = options.AuthRetention;
-
-        if (config.AuthRetentionType == DashboardAuthRetentionType.ServerSideDistributed)
-        {
-            services.AddSingleton<IRateSessionLimiter>(sp =>
-                new DistributedRateSessionLimiter(
-                    sp.GetRequiredService<IDistributedCache>(),
-                    max: DashboardAuthRetentionConfig.OpenSessionRateLimit,
-                    window: DashboardAuthRetentionConfig.OpenSessionRateWindow));
-        }
-        else
-        {
-            services.AddSingleton<IRateSessionLimiter>(
-                new LocalRateSessionLimiter(
-                    max: DashboardAuthRetentionConfig.OpenSessionRateLimit,
-                    window: DashboardAuthRetentionConfig.OpenSessionRateWindow));
-        }
-
-        return services;
-    }
 }

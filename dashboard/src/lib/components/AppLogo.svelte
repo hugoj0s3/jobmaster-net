@@ -17,5 +17,5 @@
         <circle cx="60" cy="100" r="3"/><circle cx="140" cy="100" r="3"/>
         <circle cx="60" cy="140" r="3"/><circle cx="100" cy="140" r="3"/><circle cx="140" cy="140" r="3"/>
     </g>
-    <text x="100" y="118" text-anchor="middle" font-family="'Nunito Variable','Nunito',system-ui,sans-serif" font-weight="800" font-size="72" letter-spacing="-2" style="fill: var(--color-logo-content)">JM</text>
+    <text x="100" y="118" text-anchor="middle" font-weight="800" font-size="72" letter-spacing="-2" style="fill: var(--color-logo-content); font-family: var(--font-sans)">JM</text>
 </svg>

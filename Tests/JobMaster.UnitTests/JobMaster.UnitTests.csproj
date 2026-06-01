@@ -7,6 +7,7 @@
 
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
+        <UseProjectRefs>true</UseProjectRefs>
     </PropertyGroup>
 
     <ItemGroup>
@@ -25,7 +26,13 @@
     </ItemGroup>
 
     <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
       <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+      <ProjectReference Include="..\..\JobMaster.Api\JobMaster.Api.csproj" />
+      <ProjectReference Include="..\..\JobMaster.Dashboard\JobMaster.Dashboard.csproj" />
     </ItemGroup>
 
 </Project>

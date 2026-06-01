@@ -7,12 +7,12 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Dashboard.OpenApi;
 
-internal static class OpenApiConfigSeeder
+internal sealed class OpenApiJsonConfigSeeder
 {
-    private static int isSeeded = 0;
-    private static readonly SemaphoreSlim seederLock = new(1, 1);
+    private int isSeeded;
+    private readonly SemaphoreSlim seederLock = new(1, 1);
 
-    public static async Task EnsureSeededAsync(DashboardOptions options, HttpContext ctx)
+    public async Task EnsureSeededAsync(DashboardOptions options, HttpContext ctx)
     {
         if (options.OpenApiUrl is null) return;
         if (isSeeded == 1) return;
@@ -39,62 +39,40 @@ internal static class OpenApiConfigSeeder
 
         if (IsAbsoluteUrl(rawUrlOrPath))
         {
-            // The Url is external - only accepts full path.
             var json = await FetchHttpAsync(rawUrlOrPath, httpClientFactory);
             Apply(options, json);
         }
+        else if (HasJsonExtension(rawUrlOrPath))
+        {
+            var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
+            var fullPath = Path.IsPathRooted(rawUrlOrPath)
+                ? rawUrlOrPath
+                : Path.Combine(env.ContentRootPath, rawUrlOrPath.TrimStart('/', '\\', '.'));
+
+            if (!File.Exists(fullPath))
+                throw new InvalidOperationException($"JobMaster Dashboard: OpenAPI JSON file not found at '{fullPath}'.");
+
+            var content = await File.ReadAllTextAsync(fullPath);
+            Apply(options, content);
+        }
         else
         {
-            // The url is internal:
-            if (HasFileExtension(rawUrlOrPath))
+            var baseApiUrl = string.IsNullOrEmpty(rawUrlOrPath) ? options.ApiUrl : rawUrlOrPath;
+            baseApiUrl = baseApiUrl.TrimEnd('/');
+
+            var scheme = ctx.Request.Scheme;
+            var host = ctx.Request.Host.Value;
+
+            var jsonUrl = $"{scheme}://{host}{baseApiUrl}/openapi/v1/openapi.json";
+            try
             {
-                // It is pointing to the json or yaml like full path read this file.
-                var env = ctx.RequestServices.GetRequiredService<IWebHostEnvironment>();
-                var fullPath = Path.IsPathRooted(rawUrlOrPath)
-                    ? rawUrlOrPath
-                    : Path.Combine(env.ContentRootPath, rawUrlOrPath.TrimStart('/', '\\', '.'));
-
-                if (!File.Exists(fullPath))
-                    throw new InvalidOperationException($"JobMaster Dashboard: OpenAPI spec file not found at '{fullPath}'.");
-
-                var content = await File.ReadAllTextAsync(fullPath);
-                Apply(options, content);
+                var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
+                Apply(options, jsonContent);
             }
-            else
+            catch (Exception ex)
             {
-                // It is not full path assume it is the base url append default. try json and then try yaml.
-                var baseApiUrl = string.IsNullOrEmpty(rawUrlOrPath) ? options.ApiUrl : rawUrlOrPath;
-                baseApiUrl = baseApiUrl.TrimEnd('/');
-
-                var scheme = ctx.Request.Scheme;
-                var host = ctx.Request.Host.Value;
-
-                // Try JSON first: /openapi/v1/openapi.json
-                var jsonUrl = $"{scheme}://{host}{baseApiUrl}/openapi/v1/openapi.json";
-                try
-                {
-                    var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
-                    Apply(options, jsonContent);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    // If JSON fails, try YAML: /openapi/v1/openapi.yaml
-                    var yamlUrl = $"{scheme}://{host}{baseApiUrl}/openapi/v1/openapi.yaml";
-                    try
-                    {
-                        var yamlContent = await FetchHttpAsync(yamlUrl, httpClientFactory);
-                        Apply(options, yamlContent);
-                        return;
-                    }
-                    catch (Exception exYaml)
-                    {
-                        throw new InvalidOperationException(
-                            $"JobMaster Dashboard: Failed to load OpenAPI spec from internal base API URL '{baseApiUrl}'. " +
-                            $"Tried JSON ({jsonUrl}): {ex.Message}. " +
-                            $"Tried YAML ({yamlUrl}): {exYaml.Message}", exYaml);
-                    }
-                }
+                throw new InvalidOperationException(
+                    $"JobMaster Dashboard: Failed to load OpenAPI JSON spec from '{jsonUrl}': {ex.Message}", ex);
             }
         }
     }
@@ -105,10 +83,8 @@ internal static class OpenApiConfigSeeder
         return await client.GetStringAsync(url);
     }
 
-    private static bool HasFileExtension(string path) =>
-        path.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
-        path.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase) ||
-        path.EndsWith(".yml", StringComparison.OrdinalIgnoreCase);
+    private static bool HasJsonExtension(string path) =>
+        path.EndsWith(".json", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsAbsoluteUrl(string url) =>
         url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
@@ -119,9 +95,8 @@ internal static class OpenApiConfigSeeder
         using var doc = JsonDocument.Parse(rawContent);
         var root = doc.RootElement;
 
-        // Namespace check: Verify it is a valid JobMaster API document
-        if (!root.TryGetProperty("info", out var info) || 
-            !info.TryGetProperty("x-jobmaster-doc", out var docExt) || 
+        if (!root.TryGetProperty("info", out var info) ||
+            !info.TryGetProperty("x-jobmaster-doc", out var docExt) ||
             !string.Equals(docExt.GetString(), "JobMaster.Api.627b34633149493c9f293298ab209809", StringComparison.OrdinalIgnoreCase))
         {
             throw new InvalidOperationException("JobMaster Dashboard: The provided OpenAPI spec is not a valid JobMaster API document (missing or invalid 'x-jobmaster-doc' extension).");
@@ -160,11 +135,7 @@ internal static class OpenApiConfigSeeder
             if (string.IsNullOrEmpty(id)) continue;
             if (options.Clusters.Any(c => c.Id == id)) continue;
 
-            var environmentName = item.TryGetProperty("environmentName", out var envProp)
-                ? envProp.GetString() ?? id
-                : id;
-
-            options.Clusters.Add(new DashboardClusterConfig { Id = id, EnvironmentName = environmentName });
+            options.Clusters.Add(new DashboardClusterConfig { Id = id, EnvironmentName = id });
         }
     }
 
@@ -178,6 +149,9 @@ internal static class OpenApiConfigSeeder
         {
             var provider = MapScheme(scheme.Name, scheme.Value);
             if (provider is null) continue;
+
+            // User config (including explicit disables) always wins — one provider per type.
+            if (options.Auth.Providers.Any(p => p.ProviderId == provider.ProviderId)) continue;
 
             options.Auth.Enabled = true;
             options.Auth.Providers.Add(provider);

@@ -2,7 +2,6 @@ using JobMaster.Dashboard.Configurations;
 using JobMaster.Dashboard.Configurations.Auth;
 using JobMaster.Dashboard.Configurations.Public;
 using JobMaster.Dashboard.Configurations.Themes;
-using JobMaster.Dashboard.Ioc.Selectors;
 using JobMaster.Dashboard.Ioc.Selectors.Auth;
 using JobMaster.Dashboard.Ioc.Selectors.AuthRetention;
 using JobMaster.Dashboard.Ioc.Selectors.Themes;
@@ -36,15 +35,27 @@ internal class JobMasterDashboardBuilder : IJobMasterDashboardBuilder
         return this;
     }
 
-    public IJobMasterDashboardBuilder AddCluster(string id, string environmentName)
+    public IJobMasterDashboardBuilder ConfigCluster(string id, string? environmentName = null, bool disabled = false)
     {
-        options.Clusters.Add(new DashboardClusterConfig()
+        var existing = options.Clusters.FirstOrDefault(c => c.Id == id);
+        if (existing is not null)
         {
-            Id = id,
-            EnvironmentName = environmentName,
-        });
+            if (environmentName is not null) existing.EnvironmentName = environmentName;
+            existing.Disabled = disabled;
+        }
+        else
+        {
+            options.Clusters.Add(new DashboardClusterConfig
+            {
+                Id = id,
+                EnvironmentName = environmentName,
+                Disabled = disabled
+            });
+        }
         return this;
     }
+
+    public IJobMasterDashboardBuilder DisableCluster(string id) => ConfigCluster(id, disabled: true);
 
     public IJobMasterDashboardThemeSelector AddTheme(DashboardBuiltInTheme theme, string? displayName = null)
     {
@@ -70,45 +81,79 @@ internal class JobMasterDashboardBuilder : IJobMasterDashboardBuilder
         return new DashboardThemeBuilder(options, config);
     }
 
-    public IJobMasterDashboardApiKeyAuthSelector AddApiKeyAuth()
+    public IJobMasterDashboardApiKeyAuthSelector ConfigApiKeyAuth()
     {
+        var existing = options.Auth.Providers.OfType<ApiKeyAuthProviderConfig>().FirstOrDefault();
+        if (existing is not null)
+            return new JobMasterDashboardApiKeyAuthSelector(existing);
+
         options.Auth.Enabled = true;
         var config = new ApiKeyAuthProviderConfig();
         options.Auth.Providers.Add(config);
         return new JobMasterDashboardApiKeyAuthSelector(config);
     }
 
-    public IJobMasterDashboardUserPasswordAuthSelector AddUserPasswordAuth()
+    public IJobMasterDashboardUserPasswordAuthSelector ConfigUserPasswordAuth()
     {
+        var existing = options.Auth.Providers.OfType<UserPasswordAuthProviderConfig>().FirstOrDefault();
+        if (existing is not null)
+            return new JobMasterDashboardUserPasswordAuthSelector(existing);
+
         options.Auth.Enabled = true;
         var config = new UserPasswordAuthProviderConfig();
         options.Auth.Providers.Add(config);
         return new JobMasterDashboardUserPasswordAuthSelector(config);
     }
 
-    public IJobMasterDashboardSimpleJwtAuthSelector AddSimpleJwtAuth()
+    public IJobMasterDashboardSimpleJwtAuthSelector ConfigSimpleJwtAuth()
     {
+        var existing = options.Auth.Providers.OfType<SimpleJwtAuthProviderConfig>().FirstOrDefault();
+        if (existing is not null)
+            return new JobMasterDashboardSimpleJwtAuthSelector(existing);
+
         options.Auth.Enabled = true;
         var config = new SimpleJwtAuthProviderConfig();
         options.Auth.Providers.Add(config);
         return new JobMasterDashboardSimpleJwtAuthSelector(config);
     }
 
-    public IJobMasterDashboardJwtFormAuthSelector AddJwtFormAuth(string tokenUrl)
+    public IJobMasterDashboardJwtFormAuthSelector ConfigJwtFormAuth(string tokenUrl)
     {
+        var existing = options.Auth.Providers.OfType<JwtFormAuthProviderConfig>().FirstOrDefault();
+        if (existing is not null)
+        {
+            existing.TokenUrl = tokenUrl;
+            return new JobMasterDashboardJwtFormAuthSelector(existing);
+        }
+
         options.Auth.Enabled = true;
         var config = new JwtFormAuthProviderConfig { TokenUrl = tokenUrl };
         options.Auth.Providers.Add(config);
         return new JobMasterDashboardJwtFormAuthSelector(config);
     }
 
-    public IJobMasterDashboardBuilder FromOpenApi()
+    public IJobMasterDashboardBuilder DisableAuth(DashboardAuthProviderId providerId)
     {
-        options.OpenApiUrl = string.Empty;
+        var existing = options.Auth.Providers.FirstOrDefault(p => p.ProviderId == providerId);
+        if (existing is not null)
+        {
+            existing.Disabled = true;
+            return this;
+        }
+
+        DashboardAuthProviderConfig placeholder = providerId switch
+        {
+            DashboardAuthProviderId.ApiKey => new ApiKeyAuthProviderConfig { Disabled = true },
+            DashboardAuthProviderId.UserPassword => new UserPasswordAuthProviderConfig { Disabled = true },
+            DashboardAuthProviderId.SimpleJwt => new SimpleJwtAuthProviderConfig { Disabled = true },
+            DashboardAuthProviderId.JwtForm => new JwtFormAuthProviderConfig { Disabled = true },
+            _ => throw new ArgumentOutOfRangeException(nameof(providerId))
+        };
+        options.Auth.Providers.Add(placeholder);
         return this;
     }
 
-    public IJobMasterDashboardBuilder FromOpenApi(string urlOrPath)
+    public IJobMasterDashboardBuilder FromOpenApiJson(string urlOrPath = "")
     {
         options.OpenApiUrl = urlOrPath;
         return this;

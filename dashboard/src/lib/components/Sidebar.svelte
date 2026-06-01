@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { page } from "$app/stores";
+    import { page } from "$app/state";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
     import AppLogo from "$lib/components/AppLogo.svelte";
 
@@ -16,7 +16,7 @@
     ];
 
     function resolveHref(path: string) {
-        const cluster = $page.params.cluster;
+        const cluster = page.params.cluster;
         return JobMasterConfigUtil.resolveHref(path, cluster);
     }
 </script>

@@ -94,10 +94,12 @@
 <main class="flex min-h-screen items-center justify-center bg-base-200 text-base-content">
     <div class="mx-auto w-full max-w-md px-6">
         <div class="flex flex-col items-center text-center">
-            <AppLogo class="mb-6 h-20 w-20" />
-            <h1 class="text-3xl tracking-tight leading-none flex items-baseline">
-                <span class="font-light text-base-content">Job</span><span class="font-extrabold text-base-content">Master</span>
-            </h1>
+            <div class="flex items-center gap-3">
+                <h1 class="text-3xl tracking-tight leading-none flex items-baseline">
+                    <span class="font-light text-base-content">Job</span><span class="font-extrabold text-base-content">Master</span>
+                </h1>
+                <AppLogo class="h-11 w-11 -rotate-12" />
+            </div>
             <p class="mt-2 text-sm text-base-content/60">Sign in to continue</p>
         </div>
 

@@ -18,6 +18,4 @@ internal class DashboardAuthRetentionConfig
     public TimeSpan DefaultCredentialsExpiry { get; set; } = TimeSpan.FromMinutes(30);
 
     internal static readonly TimeSpan SessionIdleExpiry = TimeSpan.FromHours(24);
-    internal const int OpenSessionRateLimit = 5;
-    internal static readonly TimeSpan OpenSessionRateWindow = TimeSpan.FromSeconds(60);
 }

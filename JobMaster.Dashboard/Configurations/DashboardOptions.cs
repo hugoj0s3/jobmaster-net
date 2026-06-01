@@ -40,12 +40,6 @@ internal class DashboardOptions
     /// </summary>
     public string SessionCookieName => $"{DeriveSlug(BasePath)}-credentials-session";
 
-    /// <summary>
-    /// Permanent client-identity cookie name, derived from <see cref="BasePath"/>.
-    /// e.g. "/jm-dashboard" → "jm-dashboard-client-id"
-    /// </summary>
-    public string ClientIdCookieName => $"{DeriveSlug(BasePath)}-client-id";
-
     private static string DeriveSlug(string basePath)
     {
         var path = basePath.TrimStart('/');

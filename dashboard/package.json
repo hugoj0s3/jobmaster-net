@@ -44,7 +44,7 @@
 	},
 	"dependencies": {
 		"@fontsource-variable/jetbrains-mono": "^5.2.8",
-		"@fontsource-variable/nunito": "^5.2.7",
+		"@fontsource-variable/plus-jakarta-sans": "^5.2.8",
 		"openapi-fetch": "^0.17.0"
 	}
 }

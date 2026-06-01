@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { page } from '$app/stores';
+	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 
-	$: statusCode = $page.status;
-	$: errorMessage = $page.error?.message || 'An unexpected error occurred';
+	let statusCode = $derived(page.status);
+	let errorMessage = $derived(page.error?.message ?? 'An unexpected error occurred');
 </script>
 
 <div class="min-h-screen bg-base-100 flex items-center justify-center px-6">

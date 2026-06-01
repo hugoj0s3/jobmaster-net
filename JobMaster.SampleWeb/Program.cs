@@ -190,11 +190,11 @@ builder.Services.AddJobMasterDashboard(dashboard =>
 {
     dashboard.UseBasePath("/jm-dashboard");
     dashboard.UseApiUrl("/jm-api");
-
-    dashboard.AddCluster("Cluster-1", "NATS Cluster");
-    dashboard.AddCluster("Cluster-Standalone-1", "Standalone Cluster");
+    
+    dashboard.ConfigCluster("Cluster-1", "NATS Cluster");
+    dashboard.ConfigCluster("Cluster-Standalone-1", "Standalone Cluster");
     dashboard.AddPrimaryTheme(DashboardBuiltInTheme.JobMasterLight, "JobMaster Light")
-        .SetBorderRadii(box: "0.75rem", btn: "0.5rem", badge: "99rem")
+        .SetBorderRadii(box: "0.75rem", selector: "0.5rem", field: "0.5rem")
         .SetFontSans(["Inter", "system-ui", "sans-serif"])
         .SetFontMono(["JetBrains Mono", "Fira Code", "monospace"])
         .Primary("oklch(55.04% 0.184 264.09)", "oklch(97% 0.01 264)")
@@ -235,21 +235,21 @@ builder.Services.AddJobMasterDashboard(dashboard =>
         .BaseColors("oklch(12% 0.010 280)", "oklch(9% 0.008 280)", "oklch(7% 0.006 280)", "oklch(88% 0.015 264)")
         .Error("oklch(62% 0.22 25)", "oklch(15% 0.04 25)");
     //
-    dashboard.AddApiKeyAuth()
+    dashboard.ConfigApiKeyAuth()
         .WithDisplayName("API Key")
         .WithHeaderName("X-JobMaster-Key");
     
-    dashboard.AddUserPasswordAuth()
+    dashboard.ConfigUserPasswordAuth()
         .WithDisplayName("Username & Password")
         .WithUserHeaderName("X-JobMaster-User")
         .WithPasswordHeaderName("X-JobMaster-Pwd");
     
-    dashboard.AddSimpleJwtAuth()
+    dashboard.ConfigSimpleJwtAuth()
         .WithDisplayName("Bearer Token");
     
-    dashboard.AddJwtFormAuth("/jm-api/auth/token")
+    dashboard.ConfigJwtFormAuth("/jm-api/auth/token")
         .WithDisplayName("Login")
-        .AddField("username", "Email")
+        .AddField("username", "UserName")
         .AddField("password", "Password", DashboardJwtFormFieldType.Password)
         .AddField("tenant", "Organization", isRequired: false, defaultValue: "default");
 

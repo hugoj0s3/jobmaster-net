@@ -1,4 +1,4 @@
-@import '@fontsource-variable/nunito/wght.css';
+@import '@fontsource-variable/plus-jakarta-sans/wght.css';
 @import '@fontsource-variable/jetbrains-mono/wght.css';
 
 @config "../tailwind.config.js";
@@ -8,7 +8,7 @@
 }
 
 @theme {
-    --font-sans: "Nunito Variable", ui-sans-serif, system-ui;
+    --font-sans: "Plus Jakarta Sans Variable", ui-sans-serif, system-ui;
     --font-mono: "JetBrains Mono Variable", monospace;
 }
 
