@@ -11,7 +11,12 @@ using JobMaster.NatsJetStream;
 using JobMaster.SampleWeb;
 using JobMaster.Postgres;
 using Serilog;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -154,12 +159,29 @@ builder.Services.AddJobMasterCluster(c => {
     
 });
 
+var jwtTvp = new TokenValidationParameters
+{
+    ValidateIssuerSigningKey = true,
+    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes("jobmaster-dev-secret-jwt-key-256bits-or-more")),
+    ValidateIssuer = false,
+    ValidateAudience = false,
+    ValidateLifetime = true,
+    ClockSkew = TimeSpan.Zero
+};
+
 builder.Services.UseJobMasterApi(o =>
 {
     o.BasePath = "/jm-api";
-    o.RequireAuthentication = false;
+    o.RequireAuthentication = true;
     o.EnableSwagger = true;
+    o.UseApiKeyAuth()
+        .AddApiKey("ApiKeyUser", "I9DY0MJZVgpjyaEbeMSpG4m8ErauFVWS");
     
+    o.UseUserPwdAuth()
+        .AddUserPwd("AdminWithPwd", "Pwd123");
+    var selector = o.UseJwtBearerAuth();
+    selector.RegisterDefaultJwtBearerAuthProvider(jwtTvp);
+
     // o.UseApiKeyAuth().AddApiKey(apiKeyOwner, apiKey);
     // o.UseUserPwdAuth().AddUserPwd(apiUser, apiPassword);
 });
@@ -171,11 +193,10 @@ builder.Services.AddJobMasterDashboard(dashboard =>
 
     dashboard.AddCluster("Cluster-1", "NATS Cluster");
     dashboard.AddCluster("Cluster-Standalone-1", "Standalone Cluster");
-
     dashboard.AddPrimaryTheme(DashboardBuiltInTheme.JobMasterLight, "JobMaster Light")
         .SetBorderRadii(box: "0.75rem", btn: "0.5rem", badge: "99rem")
-        .SetFontSans("Inter", "system-ui", "sans-serif")
-        .SetFontMono("JetBrains Mono", "Fira Code", "monospace")
+        .SetFontSans(["Inter", "system-ui", "sans-serif"])
+        .SetFontMono(["JetBrains Mono", "Fira Code", "monospace"])
         .Primary("oklch(55.04% 0.184 264.09)", "oklch(97% 0.01 264)")
         .Secondary("oklch(58% 0.15 200)", "oklch(97% 0.01 200)")
         .Accent("oklch(68% 0.18 330)", "oklch(20% 0.05 330)")
@@ -214,26 +235,26 @@ builder.Services.AddJobMasterDashboard(dashboard =>
         .BaseColors("oklch(12% 0.010 280)", "oklch(9% 0.008 280)", "oklch(7% 0.006 280)", "oklch(88% 0.015 264)")
         .Error("oklch(62% 0.22 25)", "oklch(15% 0.04 25)");
     //
-    // dashboard.AddApiKeyAuth()
-    //     .WithDisplayName("API Key")
-    //     .WithHeaderName("X-JobMaster-Key");
-    //
-    // dashboard.AddUserPasswordAuth()
-    //     .WithDisplayName("Username & Password")
-    //     .WithUserHeaderName("X-JobMaster-User")
-    //     .WithPasswordHeaderName("X-JobMaster-Pwd");
-    //
-    // dashboard.AddSimpleJwtAuth()
-    //     .WithDisplayName("Bearer Token");
-    //
-    // dashboard.AddJwtFormAuth("/jm-api/auth/token")
-    //     .WithDisplayName("Login")
-    //     .AddField("username", "Email")
-    //     .AddField("password", "Password", DashboardJwtFormFieldType.Password)
-    //     .AddField("tenant", "Organization", isRequired: false, defaultValue: "default");
+    dashboard.AddApiKeyAuth()
+        .WithDisplayName("API Key")
+        .WithHeaderName("X-JobMaster-Key");
+    
+    dashboard.AddUserPasswordAuth()
+        .WithDisplayName("Username & Password")
+        .WithUserHeaderName("X-JobMaster-User")
+        .WithPasswordHeaderName("X-JobMaster-Pwd");
+    
+    dashboard.AddSimpleJwtAuth()
+        .WithDisplayName("Bearer Token");
+    
+    dashboard.AddJwtFormAuth("/jm-api/auth/token")
+        .WithDisplayName("Login")
+        .AddField("username", "Email")
+        .AddField("password", "Password", DashboardJwtFormFieldType.Password)
+        .AddField("tenant", "Organization", isRequired: false, defaultValue: "default");
 
-    dashboard.ConfigureCredentialsPersistence()
-        .SetPersistenceType(DashboardCredentialsPersistenceType.ServerSideInMemory);
+    dashboard.ConfigureAuthRetention()
+        .SetAuthRetentionType(DashboardAuthRetentionType.ServerSideInMemory);
 });
 
 builder.Services.AddEndpointsApiExplorer();
@@ -276,6 +297,27 @@ if (app.Environment.IsDevelopment())
 app.MapJobMasterApi();
 app.UseJobMasterDashboard();
 app.MapJobMasterDashboard();
+
+app.MapPost("/jm-api/auth/token", async (HttpRequest req) =>
+{
+    var form = await req.ReadFormAsync();
+    var username = form["username"].FirstOrDefault();
+    var password = form["password"].FirstOrDefault();
+    var tenant   = form["tenant"].FirstOrDefault();
+
+    var orgOk  = string.Equals(tenant, "jobmaster", StringComparison.OrdinalIgnoreCase);
+    var userOk = string.Equals(username, "master", StringComparison.OrdinalIgnoreCase);
+    var pwdOk  = !string.IsNullOrEmpty(password);
+
+    if (!orgOk || !userOk || !pwdOk)
+        return Results.Unauthorized();
+
+    var token = GenerateDummyJwt(username!, jwtTvp);
+    return Results.Ok(new { token });
+})
+.WithOpenApi()
+.WithTags("Auth")
+.WithSummary("Dummy token endpoint for dashboard login testing");
 
 await app.Services.StartJobMasterRuntimeAsync();
 
@@ -326,6 +368,18 @@ app.MapDelete("/cancel-recurring-schedule-job", (Guid id, IJobMasterScheduler jo
 
 
 app.Run();
+
+static string GenerateDummyJwt(string username, TokenValidationParameters tvp)
+{
+    var handler = new JwtSecurityTokenHandler();
+    var descriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity([new Claim("sub", username)]),
+        Expires = DateTime.UtcNow.AddHours(8),
+        SigningCredentials = new SigningCredentials(tvp.IssuerSigningKey, SecurityAlgorithms.HmacSha256)
+    };
+    return handler.WriteToken(handler.CreateToken(descriptor));
+}
 
 
 

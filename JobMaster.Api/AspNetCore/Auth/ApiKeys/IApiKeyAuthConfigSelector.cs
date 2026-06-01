@@ -15,7 +15,7 @@ public interface IApiKeyAuthConfigSelector
     /// <param name="ownerName">A descriptive label for the key owner (e.g. "service-account", "admin").</param>
     /// <param name="key">The secret API key value that callers must supply in the request header.</param>
     /// <param name="claims">Optional dictionary of claim name/value pairs to attach to the authenticated identity.</param>
-    void AddApiKey(string ownerName, string key, IDictionary<string, string>? claims = null);
+    IApiKeyAuthConfigSelector AddApiKey(string ownerName, string key, IDictionary<string, string>? claims = null);
 
     /// <summary>
     /// Registers a custom API key authentication provider.
@@ -23,12 +23,12 @@ public interface IApiKeyAuthConfigSelector
     /// key lookup, validation, and claims mapping.
     /// </summary>
     /// <typeparam name="T">A class that implements <see cref="IJobMasterApiKeyAuthProvider"/> and is registered in DI.</typeparam>
-    void RegisterApiKeyAuthProvider<T>() where T : class, IJobMasterApiKeyAuthProvider;
+    IApiKeyAuthConfigSelector RegisterApiKeyAuthProvider<T>() where T : class, IJobMasterApiKeyAuthProvider;
 
     /// <summary>
     /// Overrides the HTTP header name from which the API key is read.
     /// Defaults to <c>X-Api-Key</c>.
     /// </summary>
     /// <param name="headerName">The custom header name to use for API key extraction.</param>
-    void ApiKeyHeader(string headerName);
+    IApiKeyAuthConfigSelector ApiKeyHeader(string headerName);
 }

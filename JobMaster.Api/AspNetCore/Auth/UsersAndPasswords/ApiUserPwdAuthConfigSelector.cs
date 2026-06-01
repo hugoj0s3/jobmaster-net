@@ -10,7 +10,7 @@ internal class ApiUserPwdAuthConfigSelector : IApiUserPwdAuthConfigSelector
         this.jobMasterOptions = jobMasterOptions;
     }
     
-    public void AddUserPwd(string userName, string planPwd, IDictionary<string, string>? claims = null)
+    public IApiUserPwdAuthConfigSelector AddUserPwd(string userName, string planPwd, IDictionary<string, string>? claims = null)
     {
         this.jobMasterOptions.EnsureUserPwdOptionsIsEnabled();
         this.jobMasterOptions.UserPwdOptions!.FixedIdentityPlanPwdList.Add(
@@ -20,23 +20,27 @@ internal class ApiUserPwdAuthConfigSelector : IApiUserPwdAuthConfigSelector
                 HashedPassword = JobMasterPasswordHasher.Hash(planPwd),
                 Claims = claims
             });
+        return this;
     }
 
-    public void RegisterUserPwdAuthProvider<T>() where T : class, IJobMasterUserPwdAuthProvider
+    public IApiUserPwdAuthConfigSelector RegisterUserPwdAuthProvider<T>() where T : class, IJobMasterUserPwdAuthProvider
     {
         this.jobMasterOptions.EnsureUserPwdOptionsIsEnabled();
         this.jobMasterOptions.UserPwdOptions!.UserPwdAuthProviderType = typeof(T);
+        return this;
     }
 
-    public void UserNameHeaderName(string headerName)
+    public IApiUserPwdAuthConfigSelector UserNameHeaderName(string headerName)
     {
         this.jobMasterOptions.EnsureUserPwdOptionsIsEnabled();
         this.jobMasterOptions.UserPwdOptions!.UserHeaderName = headerName;
+        return this;
     }
 
-    public void PwdHeaderName(string headerName)
+    public IApiUserPwdAuthConfigSelector PwdHeaderName(string headerName)
     {
         this.jobMasterOptions.EnsureUserPwdOptionsIsEnabled();
         this.jobMasterOptions.UserPwdOptions!.PwdHeaderName = headerName;
+        return this;
     }
 }

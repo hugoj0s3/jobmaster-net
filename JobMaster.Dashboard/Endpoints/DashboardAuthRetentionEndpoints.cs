@@ -62,7 +62,7 @@ internal static class DashboardAuthRetentionEndpoints
             var expiresAt = DateTime.UtcNow.Add(expiry);
             var stored = new StoredAuth
             {
-                Headers = request.Headers,
+                Secrets = request.Secrets,
                 ExpiresAt = expiresAt
             };
 
@@ -87,7 +87,7 @@ internal static class DashboardAuthRetentionEndpoints
             if (stored.ExpiresAt < DateTime.UtcNow) return Results.NotFound();
 
             AppendSessionCookie(ctx, options, sessionId);
-            return Results.Ok(new CredentialsResponse { Headers = stored.Headers, ExpiryAt = stored.ExpiresAt });
+            return Results.Ok(new CredentialsResponse { Secrets = stored.Secrets, ExpiryAt = stored.ExpiresAt });
         });
 
         // Destroys the session cookie. Stored credential entries orphan and expire via TTL.

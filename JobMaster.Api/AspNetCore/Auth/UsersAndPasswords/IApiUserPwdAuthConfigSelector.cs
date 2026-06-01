@@ -13,23 +13,23 @@ public interface IApiUserPwdAuthConfigSelector
     /// <param name="userName"></param>
     /// <param name="planPwd"></param>
     /// <param name="claims"></param>
-    void AddUserPwd(string userName, string planPwd, IDictionary<string, string>? claims = null);
+    IApiUserPwdAuthConfigSelector AddUserPwd(string userName, string planPwd, IDictionary<string, string>? claims = null);
 
     /// <summary>
     /// Register a custom User Password authentication provider.
     /// </summary>
     /// <typeparam name="T"></typeparam>
-    void RegisterUserPwdAuthProvider<T>() where T : class, IJobMasterUserPwdAuthProvider;
+    IApiUserPwdAuthConfigSelector RegisterUserPwdAuthProvider<T>() where T : class, IJobMasterUserPwdAuthProvider;
     
     /// <summary>
     /// Configure the User Name header name.
     /// </summary>
     /// <param name="headerName">The header name to use for User Name authentication. Default is "X-User-Name".</param>
-    void UserNameHeaderName(string headerName);
+    IApiUserPwdAuthConfigSelector UserNameHeaderName(string headerName);
     
     /// <summary>
     /// Configure the Password header name.
     /// </summary>
     /// <param name="headerName">The header name to use for Password authentication. Default is "X-Password".</param>
-    void PwdHeaderName(string headerName);
+    IApiUserPwdAuthConfigSelector PwdHeaderName(string headerName);
 }

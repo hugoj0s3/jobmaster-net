@@ -520,7 +520,7 @@
             </div>
         {/if}
 
-        <div class="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <div class="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-5">
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
                     <div class="text-sm opacity-80">Upcoming Execution <span class="opacity-60">(next {settings.nextMinutes} min)</span></div>
@@ -659,7 +659,6 @@
             </div>
         </div>
 
-        {#if recentlyExecutedJobs.length > 0}
             <div class="mt-6">
                 <div class="card bg-base-200/60 border border-base-300/60 shadow-lg">
                     <div class="card-body">
@@ -712,6 +711,14 @@
                                         <td class="text-right font-mono opacity-80">{j.durationText ?? "—"}</td>
                                     </tr>
                                 {/each}
+
+                                {#if recentlyExecutedJobs.length === 0}
+                                    <tr>
+                                        <td colspan="5" class="py-10 text-center text-sm opacity-60">
+                                            No recently executed jobs found.
+                                        </td>
+                                    </tr>
+                                {/if}
                                 </tbody>
                             </table>
                         </div>
@@ -719,6 +726,5 @@
                     </div>
                 </div>
             </div>
-        {/if}
     </div>
 </div>

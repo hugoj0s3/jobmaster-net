@@ -29,7 +29,6 @@ public static class JobMasterDashboardExtensions
         if (options.OpenApiUrl is not null)
         {
             services.AddHttpClient();
-            services.AddHostedService<OpenApiConfigSeedService>();
         }
 
         return services;
