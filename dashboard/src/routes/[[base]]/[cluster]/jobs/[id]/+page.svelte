@@ -11,6 +11,7 @@
 	import { bucketNameCache } from "$lib/helper/bucket-name-cache";
 	import { workerCache, type WorkerCacheEntry } from "$lib/helper/worker-cache";
 	import { LogCategory, LogLevel, logLevelLabel, logLevelBadgeClass, LogLevelFilterOptions, workerModeLabel } from "$lib/api/enums";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
@@ -246,7 +247,7 @@ async function refreshNow() {
 						</p>
 					</div>
 					<div class="mt-8 flex gap-4 justify-center">
-						<button class="btn btn-primary" on:click={() => goto(`/${clusterId()}/jobs`)}>
+						<button class="btn btn-primary" on:click={() => goto(JobMasterConfigUtil.resolveHref('/jobs', clusterId()))}>
 							Go to Jobs List
 						</button>
 						<button class="btn btn-ghost" on:click={() => window.history.back()}>
@@ -269,7 +270,7 @@ async function refreshNow() {
 				<div class="space-y-2">
 					<div class="text-sm breadcrumbs opacity-70">
 						<ul>
-							<li><a href="/{clusterId()}/jobs" class="link link-hover">Jobs</a></li>
+							<li><a href={JobMasterConfigUtil.resolveHref('/jobs', clusterId())} class="link link-hover">Jobs</a></li>
 							<li>{job.id ?? "—"}</li>
 						</ul>
 					</div>
@@ -330,7 +331,7 @@ async function refreshNow() {
 								<span class="opacity-70">Bucket</span>
 								<span class="font-mono font-medium">
 									{#if job.bucketId}
-										<a href="/{clusterId()}/buckets/{job.bucketId}" class="link link-hover link-primary">{bucketName ?? job.bucketId}</a>
+										<a href={JobMasterConfigUtil.resolveHref(`/buckets/${job.bucketId}`, clusterId())} class="link link-hover link-primary">{bucketName ?? job.bucketId}</a>
 									{:else}
 										—
 									{/if}
@@ -340,7 +341,7 @@ async function refreshNow() {
 								<span class="opacity-70">Agent Connection</span>
 								<span class="font-medium">
 									{#if job.agentConnectionId}
-										<a href="/{clusterId()}/agent-connections/{job.agentConnectionId}" class="link link-hover link-primary">{job.agentConnectionName ?? job.agentConnectionId}</a>
+										<a href={JobMasterConfigUtil.resolveHref(`/agent-connections/${job.agentConnectionId}`, clusterId())} class="link link-hover link-primary">{job.agentConnectionName ?? job.agentConnectionId}</a>
 									{:else}
 										—
 									{/if}
@@ -350,7 +351,7 @@ async function refreshNow() {
 								<span class="opacity-70">Worker</span>
 								<span class="font-medium flex items-center gap-1">
 									{#if job.agentWorkerId}
-										<a href="/{clusterId()}/workers/{job.agentWorkerId}" class="link link-hover link-primary">{workerEntry?.name ?? job.agentWorkerId}</a>
+										<a href={JobMasterConfigUtil.resolveHref(`/workers/${job.agentWorkerId}`, clusterId())} class="link link-hover link-primary">{workerEntry?.name ?? job.agentWorkerId}</a>
 										{#if workerEntry?.mode != null}
 											<span class="badge badge-ghost badge-sm">{workerModeLabel(workerEntry.mode)}</span>
 										{/if}
@@ -363,7 +364,7 @@ async function refreshNow() {
 								<span class="opacity-70">Host</span>
 								<span class="font-medium">
 									{#if job.hostId}
-										<a href="/{clusterId()}/hosts/{job.hostId}" class="link link-hover link-primary">{job.hostDisplayName ?? job.hostId}</a>
+										<a href={JobMasterConfigUtil.resolveHref(`/hosts/${job.hostId}`, clusterId())} class="link link-hover link-primary">{job.hostDisplayName ?? job.hostId}</a>
 									{:else}
 										{job.hostDisplayName ?? "—"}
 									{/if}

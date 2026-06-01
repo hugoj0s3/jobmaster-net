@@ -17,6 +17,7 @@
 	import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
 	import { readSavedFilter, writeSavedFilter } from '$lib/helper/filter-persistence';
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type RecurringScheduleStatus = components["schemas"]["RecurringScheduleStatus"];
 	type RecurringScheduleType = components["schemas"]["RecurringScheduleType"];
@@ -229,7 +230,7 @@
 	}
 
 	function navigateToDetail(scheduleId: string) {
-		goto(`/${clusterId()}/recurring-schedules/${scheduleId}`);
+		goto(JobMasterConfigUtil.resolveHref(`/recurring-schedules/${scheduleId}`, clusterId()));
 	}
 
 	async function refreshNow() {

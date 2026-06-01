@@ -7,6 +7,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { HostStatusUtil, type HostStatusLabel } from "$lib/helper/host-status-utils";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 
 
@@ -131,7 +132,7 @@
 					<div class="mt-8 flex gap-4 justify-center">
 						<button
 							class="btn btn-primary"
-							on:click={() => goto(`/${clusterId()}/hosts`)}
+							on:click={() => goto(JobMasterConfigUtil.resolveHref('/hosts', clusterId()))}
 						>
 							Go to Hosts List
 						</button>
@@ -149,7 +150,7 @@
 			<div class="space-y-2">
 				<div class="text-sm breadcrumbs opacity-70">
 					<ul>
-						<li><a href="/{clusterId()}/hosts" class="link link-hover">Hosts</a></li>
+						<li><a href={JobMasterConfigUtil.resolveHref('/hosts', clusterId())} class="link link-hover">Hosts</a></li>
 						<li>{hostName}</li>
 					</ul>
 				</div>
@@ -229,7 +230,7 @@
 								</thead>
 								<tbody>
 								{#each pagedWorkers as w (w.id)}
-									<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${w.id}`)}>
+									<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/workers/${w.id}`, clusterId()))}>
 										<td class="font-medium">{w.name ?? w.displayName ?? w.id ?? '—'}</td>
 										<td class="opacity-80">{w.workerLane ?? '—'}</td>
 										<td>

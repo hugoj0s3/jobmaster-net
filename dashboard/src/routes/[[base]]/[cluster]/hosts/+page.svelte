@@ -10,7 +10,7 @@
 	import FilterContainer from "$lib/components/filters/FilterContainer.svelte";
 	import FilterItem from "$lib/components/filters/FilterItem.svelte";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
-	import { resolve } from "$app/paths";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { parseDatetimeParam, datetimeToParam, passesDatetimeFilter, type DatetimeFilterValue } from "$lib/helper/datetime-filter-url";
 	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
@@ -420,7 +420,7 @@
 						</thead>
 						<tbody>
 						{#each paginatedHosts as r (r.id)}
-							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(resolve(`/${clusterId()}/hosts/${r.id}`))}>
+							<tr class="hover cursor-pointer {r.status === 'Offline' ? 'opacity-80' : ''}" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/hosts/${r.id}`, clusterId()))}>
 								<td>
 									<div class="font-medium">{r.hostDisplayName ?? r.host}</div>
 								</td>

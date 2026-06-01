@@ -12,7 +12,7 @@
     import { DateDisplayUtil } from "$lib/helper/date-display-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { PriorityUtil, type PriorityLabel } from "$lib/helper/priority-util";
-		import { resolve } from '$app/paths';
+		import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 		import { copyText, createCopyFeedback } from '$lib/helper/clipboard-util';
 		import { readUrlParams, writeUrlParams, Serializers } from '$lib/helper/url-filters';
 		import { parseDatetimeParam, datetimeToParam, computeDateRange, type DatetimeFilterValue } from '$lib/helper/datetime-filter-url';
@@ -572,7 +572,7 @@
 															<span class="tooltip tooltip-bottom" data-tip={j.jobId}>
 																	<a
 																		class="link link-hover"
-																		href={resolve(`/${clusterId()}/jobs/${j.jobId}`)}
+																		href={JobMasterConfigUtil.resolveHref(`/jobs/${j.jobId}`, clusterId())}
 																		aria-label={`Open job ${j.jobId}`}
 																	>
 																			{j.jobId}
@@ -674,7 +674,7 @@
                                 {#if j.bucketId}
                                     <a
                                         class="link link-hover link-primary"
-                                        href={resolve(`/${clusterId()}/buckets/${j.bucketId}`)}
+                                        href={JobMasterConfigUtil.resolveHref(`/buckets/${j.bucketId}`, clusterId())}
                                         title={j.bucketId}
                                     >{j.bucketName ?? j.bucketId}</a>
                                 {:else}

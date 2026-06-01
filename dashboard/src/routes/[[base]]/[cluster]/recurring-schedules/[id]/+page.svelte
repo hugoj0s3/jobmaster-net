@@ -15,6 +15,7 @@
 	import { copyText, createCopyFeedback } from "$lib/helper/clipboard-util";
 	import FilterDropdown from "$lib/components/filters/FilterDropdown.svelte";
 	import { LogCategory, LogLevel, logLevelLabel, logLevelBadgeClass, LogLevelFilterOptions } from "$lib/api/enums";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type RecurringSchedule = any;
 
@@ -166,7 +167,7 @@
 	}
 
 	function goBack() {
-		goto(`/${clusterId()}/recurring-schedules`);
+		goto(JobMasterConfigUtil.resolveHref('/recurring-schedules', clusterId()));
 	}
 
 	function formatJobDateTime(timestamp?: string): string {
@@ -265,7 +266,7 @@
 				<div class="space-y-2">
 					<div class="text-sm breadcrumbs">
 						<ul>
-							<li><a href="/{clusterId()}/recurring-schedules" class="link link-hover">Recurring Schedules</a></li>
+							<li><a href={JobMasterConfigUtil.resolveHref('/recurring-schedules', clusterId())} class="link link-hover">Recurring Schedules</a></li>
 							<li>{scheduleName}</li>
 						</ul>
 					</div>
@@ -418,7 +419,7 @@
 												<tr>
 													<td>
 														<div class="flex items-center gap-2">
-															<a class="link link-hover font-mono text-sm" href={`/${clusterId()}/jobs/${job.id}`}>
+															<a class="link link-hover font-mono text-sm" href={JobMasterConfigUtil.resolveHref(`/jobs/${job.id}`, clusterId())}>
 																{job.id}
 															</a>
 															<button

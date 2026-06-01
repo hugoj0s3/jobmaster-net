@@ -8,6 +8,7 @@
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 	import { workerCache } from "$lib/helper/worker-cache";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type ApiBucketModel = components["schemas"]["ApiBucketModel"];
 	type ApiJobModel = components["schemas"]["ApiJobModel"];
@@ -153,7 +154,7 @@
 		<div class="space-y-2">
 			<div class="text-sm breadcrumbs opacity-70">
 				<ul>
-					<li><a href="/{clusterId()}/buckets" class="link link-hover">Buckets</a></li>
+					<li><a href={JobMasterConfigUtil.resolveHref('/buckets', clusterId())} class="link link-hover">Buckets</a></li>
 					<li>{bucketName}</li>
 				</ul>
 			</div>
@@ -187,7 +188,7 @@
 					</div>
 					<div class="flex items-center justify-between gap-4">
 						<span class="opacity-70">Worker</span>
-						<a href="/{clusterId()}/workers/{bucket.agentWorkerId}" class="link link-hover link-primary font-medium">{workerName ?? "—"}</a>
+						<a href={JobMasterConfigUtil.resolveHref(`/workers/${bucket.agentWorkerId}`, clusterId())} class="link link-hover link-primary font-medium">{workerName ?? "—"}</a>
 					</div>
 					<div class="flex items-center justify-between gap-4">
 						<span class="opacity-70">Worker Lane</span>
@@ -237,7 +238,7 @@
 						</thead>
 						<tbody>
 						{#each activeApiJobs as j (j.id)}
-							<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/jobs/${j.id}`)}>
+							<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/jobs/${j.id}`, clusterId()))}>
 								<td class="font-medium">{j.jobDefinitionId ?? j.id ?? "—"}</td>
 								<td><span class={"badge badge-sm " + jobStatusBadgeClass(j.status)}>{jobStatusLabel(j.status)}</span></td>
 								<td class="whitespace-nowrap opacity-70">{DateDisplayUtil.formatRelativeOrDate(j.scheduledAt)}</td>

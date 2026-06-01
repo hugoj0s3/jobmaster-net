@@ -5,6 +5,7 @@
 	import { ApiClientUtil } from "$lib/api/api-client-util";
 	import type { components } from "$lib/api/schema";
 	import { BucketStatus as BucketStatusEnum, workerModeLabel } from "$lib/api/enums";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 
@@ -88,7 +89,7 @@
 		<div class="space-y-2">
 			<div class="text-sm breadcrumbs opacity-70">
 				<ul>
-					<li><a href="/{clusterId()}/workers" class="link link-hover">Workers</a></li>
+					<li><a href={JobMasterConfigUtil.resolveHref('/workers', clusterId())} class="link link-hover">Workers</a></li>
 					<li>{workerName}</li>
 				</ul>
 			</div>
@@ -129,7 +130,7 @@
 						</div>
 						<div class="flex items-center justify-between gap-4">
 							<span class="opacity-70">Host</span>
-							<a href="/{clusterId()}/hosts/{worker.hostId}" class="link link-hover link-primary font-medium">{worker.hostDisplayName ?? "—"}</a>
+							<a href={JobMasterConfigUtil.resolveHref(`/hosts/${worker.hostId}`, clusterId())} class="link link-hover link-primary font-medium">{worker.hostDisplayName ?? "—"}</a>
 						</div>
 						<div class="flex items-center justify-between gap-4">
 							<span class="opacity-70">Last Heartbeat</span>
@@ -167,7 +168,7 @@
 							</thead>
 							<tbody>
 							{#each pagedBuckets as b}
-								<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/buckets/${b.id}`)}>
+								<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/buckets/${b.id}`, clusterId()))}>
 									<td class="font-medium">{b.name ?? b.id ?? "—"}</td>
 									<td class="opacity-70">{b.agentConnectionName ?? b.agentConnectionId ?? "—"}</td>
 									<td class="opacity-70">{b.workerLane ?? "—"}</td>

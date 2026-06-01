@@ -10,6 +10,7 @@
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type ApiAgentConnection = components["schemas"]["ApiAgentConnection"];
 
@@ -197,7 +198,7 @@
 					</thead>
 					<tbody>
 					{#each view as r (r.id)}
-						<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/agent-connections/${r.id}`)}>
+						<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/agent-connections/${r.id}`, clusterId()))}>
 							<td class="font-medium">{r.name ?? r.id ?? "—"}</td>
 							<td class="font-mono text-sm">{r.repositoryTypeId ?? "—"}</td>
 							<td>

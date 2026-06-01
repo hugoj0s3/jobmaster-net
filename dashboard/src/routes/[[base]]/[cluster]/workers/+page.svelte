@@ -11,6 +11,7 @@
 	import { readUrlParams, writeUrlParams, Serializers } from "$lib/helper/url-filters";
 	import { WorkerMode, workerModeLabel, workerModeBadgeClass } from "$lib/api/enums";
 	import { readSavedFilter, writeSavedFilter } from "$lib/helper/filter-persistence";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type WorkerStatus = "Online" | "Offline";
 
@@ -280,7 +281,7 @@
 					</thead>
 					<tbody>
 					{#each filtered as r (r.id)}
-						<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${r.id}`)}>
+						<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/workers/${r.id}`, clusterId()))}>
 							<td class="font-medium">{r.name}</td>
 
 							<td>

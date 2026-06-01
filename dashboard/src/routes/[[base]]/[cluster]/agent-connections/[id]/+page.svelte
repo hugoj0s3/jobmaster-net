@@ -7,6 +7,7 @@
 	import { DateDisplayUtil } from "$lib/helper/date-display-util";
 	import Pager from "$lib/components/Pager.svelte";
 	import { workerModeLabel } from "$lib/api/enums";
+	import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
 
 	type ApiAgentWorker = components["schemas"]["ApiAgentWorker"];
 
@@ -66,7 +67,7 @@
 		<div class="space-y-2">
 			<div class="text-sm breadcrumbs opacity-70">
 				<ul>
-					<li><a href="/{clusterId()}/agent-connections" class="link link-hover">Agent Connections</a></li>
+					<li><a href={JobMasterConfigUtil.resolveHref('/agent-connections', clusterId())} class="link link-hover">Agent Connections</a></li>
 					<li>{connName}</li>
 				</ul>
 			</div>
@@ -134,7 +135,7 @@
 						</thead>
 						<tbody>
 						{#each pagedWorkers as w (w.id)}
-							<tr class="hover cursor-pointer" on:click={() => goto(`/${clusterId()}/workers/${w.id}`)}>
+							<tr class="hover cursor-pointer" on:click={() => goto(JobMasterConfigUtil.resolveHref(`/workers/${w.id}`, clusterId()))}>
 								<td class="font-medium">{w.name ?? w.id ?? "—"}</td>
 								<td><span class="badge badge-ghost badge-sm">{workerModeLabel(w.mode)}</span></td>
 								<td class="opacity-70">{w.workerLane ?? "—"}</td>
