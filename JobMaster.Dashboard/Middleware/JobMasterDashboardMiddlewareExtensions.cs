@@ -6,9 +6,9 @@ using Microsoft.Extensions.FileProviders;
 
 namespace JobMaster.Dashboard.Middleware;
 
-public static class JobMasterDashboardMiddlewareExtensions
+internal static class JobMasterDashboardMiddlewareExtensions
 {
-    public static IApplicationBuilder UseJobMasterDashboard(this IApplicationBuilder app)
+    internal static IApplicationBuilder UseJobMasterDashboard(this IApplicationBuilder app)
     {
         var options = app.ApplicationServices.GetService<DashboardOptions>()
             ?? new DashboardOptions();

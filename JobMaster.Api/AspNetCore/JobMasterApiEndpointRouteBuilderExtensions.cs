@@ -4,13 +4,11 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using JobMaster.Api.AspNetCore.Auth;
-using JobMaster.Sdk.Abstractions.Keys;
-using JobMaster.Api.AspNetCore.Internals;
+using JobMaster.Api.AspNetCore.Swagger;
 using JobMaster.Api.Endpoints;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
-using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
@@ -24,7 +22,7 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
         var group = endpoints.GetJobMasterEndpointGroup();
         var options = endpoints.GetJobMasterApiOptions();
 
-        group.WithGroupName($"{JobMasterApiNamespaceKey.Key}")
+        group.WithGroupName(JobMasterApiSwaggerSupport.DocName)
             .AddEndpointFilter(async (context, next) =>
             {
                 var identityProvider =

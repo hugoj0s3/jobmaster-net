@@ -20,7 +20,7 @@ internal static class DashboardConfigEndpoints
 
             var config = DashboardPublicConfigConvertUtil.ToPublicConfig(options);
             return Results.Ok(config);
-        });
+        }).ExcludeFromDescription();
 
         return endpoints;
     }

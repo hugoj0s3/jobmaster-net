@@ -15,14 +15,13 @@ export class DateTimeUtil {
     }
 
     static formatDateTime(d: Date): string {
-        return d.toLocaleString("en-US", {
+        return d.toLocaleString(undefined, {
             month: "numeric",
             day: "numeric",
             year: "numeric",
             hour: "numeric",
             minute: "2-digit",
             second: "2-digit",
-            hour12: true
         });
     }
 }

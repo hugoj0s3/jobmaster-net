@@ -3,7 +3,9 @@ using JobMaster.Dashboard.AuthRetention;
 using JobMaster.Dashboard.Endpoints;
 using JobMaster.Dashboard.Ioc.Selectors;
 using JobMaster.Dashboard.OpenApi;
+using JobMaster.Dashboard.Middleware;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.FileProviders;
@@ -34,9 +36,16 @@ public static class JobMasterDashboardExtensions
     }
 
     /// <summary>
-    /// Maps JobMaster Dashboard endpoints.
+    /// Registers the JobMaster Dashboard middleware and maps all dashboard endpoints.
     /// </summary>
-    public static IEndpointRouteBuilder MapJobMasterDashboard(this IEndpointRouteBuilder endpoints)
+    public static WebApplication StartJobMasterDashboard(this WebApplication app)
+    {
+        app.UseJobMasterDashboard();
+        app.MapJobMasterDashboard();
+        return app;
+    }
+
+    internal static IEndpointRouteBuilder MapJobMasterDashboard(this IEndpointRouteBuilder endpoints)
     {
         var options = endpoints.ServiceProvider.GetRequiredService<DashboardOptions>();
 
@@ -51,7 +60,8 @@ public static class JobMasterDashboardExtensions
             .MapDashboardAuthRetentionEndpoints(basePath);
 
         endpoints.MapGet($"{basePath}/debug-resources", () =>
-            typeof(JobMasterDashboardExtensions).Assembly.GetManifestResourceNames());
+            typeof(JobMasterDashboardExtensions).Assembly.GetManifestResourceNames())
+            .ExcludeFromDescription();
 
         var assembly = typeof(JobMasterDashboardExtensions).Assembly;
         var provider = new ManifestEmbeddedFileProvider(assembly, "Embedded");

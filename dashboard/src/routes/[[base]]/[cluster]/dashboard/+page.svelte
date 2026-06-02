@@ -29,8 +29,7 @@
             breakdown: UpcomingJobsBreakdown;
         };
         failures: {
-            jobsFailedExceededRetries: number;
-            failedExecutions: number;
+            failedJobs: number;
         };
         workers: {
             onlineTotal: number;
@@ -92,8 +91,7 @@
                 }
             },
             failures: {
-                jobsFailedExceededRetries: 0,
-                failedExecutions: 0
+                failedJobs: 0
             },
             workers: {
                 onlineTotal: 0,
@@ -191,9 +189,8 @@
                     bucketsDrainingCount,
                     bucketsLostCount,
                     bucketsReadyToDeleteCount,
-                    succeededJobs,
-                    failedJobs,
-                    cancelledJobs,
+                    recentJobs,
+                    failedCount,
                     apiWorkers
                 ] = await Promise.all([
                     jmApi.GET("/{clusterId}/jobs/count", {
@@ -288,24 +285,17 @@
                     }),
 
                     jmApi.GET("/{clusterId}/jobs", {
-                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Succeeded, CountLimit: 10, Offset: 0 } }
+                        params: { path: { clusterId: cid }, query: { Statuses: [ApiJobStatus.Succeeded, ApiJobStatus.Failed] as any, CountLimit: 10, Offset: 0 } }
                     }).then((r) => {
                         if (r.error) throw r.error;
                         return r.data as ApiJobModel[];
                     }),
-                    
-                    jmApi.GET("/{clusterId}/jobs", {
-                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Failed, CountLimit: 10, Offset: 0 } }
+
+                    jmApi.GET("/{clusterId}/jobs/count", {
+                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Failed, ScheduledFrom: new Date(Date.now() - settings.lastHours * 60 * 60 * 1000).toISOString() } }
                     }).then((r) => {
                         if (r.error) throw r.error;
-                        return r.data as ApiJobModel[];
-                    }),
-                    
-                    jmApi.GET("/{clusterId}/jobs", {
-                        params: { path: { clusterId: cid }, query: { Status: ApiJobStatus.Cancelled, CountLimit: 10, Offset: 0 } }
-                    }).then((r) => {
-                        if (r.error) throw r.error;
-                        return r.data as ApiJobModel[];
+                        return r.data as number;
                     }),
 
                     jmApi.GET("/{clusterId}/workers", {
@@ -339,8 +329,7 @@
                         }
                     },
                     failures: {
-                        jobsFailedExceededRetries: failedJobs.length,
-                        failedExecutions: failedJobs.length
+                        failedJobs: failedCount
                     },
                     workers: {
                         onlineTotal: onlineWorkers.length,
@@ -364,7 +353,7 @@
                     }
                 };
 
-                const merged = [...succeededJobs, ...failedJobs, ...cancelledJobs]
+                const merged = [...recentJobs]
                     .sort(
                         (a, b) =>
                             new Date(bestJobTimestampIso(b)).getTime() -
@@ -528,7 +517,7 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <a href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.OnMaster}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Persisted in the master store, waiting to be assigned to a bucket." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.OnMaster}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.OnMaster}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.OnMaster, "badge-primary")} font-mono text-base font-semibold`}
@@ -536,7 +525,7 @@
                                 {metrics.upcomingJobs.breakdown.OnMaster}
                             </span>
                         </a>
-                        <a href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.InBucket}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Assigned to a bucket per the transient threshold window, waiting for its execution time." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.InBucket}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.InBucket}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.InBucket, "badge-secondary")} font-mono text-base font-semibold`}
@@ -544,7 +533,7 @@
                                 {metrics.upcomingJobs.breakdown.InBucket}
                             </span>
                         </a>
-                        <a href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Onboarded}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Accepted by the worker and held in memory, ~30 seconds before scheduled execution." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Onboarded}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Onboarded}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Onboarded, "badge-info")} font-mono text-base font-semibold`}
@@ -552,7 +541,7 @@
                                 {metrics.upcomingJobs.breakdown.Onboarded}
                             </span>
                         </a>
-                        <a href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Queued}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Waiting for a free execution slot on the worker." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Queued}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Queued}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Queued, "badge-warning")} font-mono text-base font-semibold`}
@@ -560,7 +549,7 @@
                                 {metrics.upcomingJobs.breakdown.Queued}
                             </span>
                         </a>
-                        <a href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Processing}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Actively being executed by its registered job handler." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Processing}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Processing}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Processing, "badge-accent")} font-mono text-base font-semibold`}
@@ -574,16 +563,9 @@
 
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
-                    <div class="text-sm opacity-80">Failed (Exceeded Retries) <span class="opacity-60">(last {settings.lastHours}h)</span></div>
+                    <div class="text-sm opacity-80">Failed Jobs <span class="opacity-60">(last {settings.lastHours}h)</span></div>
                     <div class="mt-2 text-5xl font-semibold text-error">
-                        {metrics.failures.jobsFailedExceededRetries}
-                    </div>
-
-                    <div class="mt-3 text-xs opacity-70">
-                        <div class="flex items-center justify-between">
-                            <span>Failed Executions</span>
-                            <span class="font-mono text-base font-semibold">{metrics.failures.failedExecutions}</span>
-                        </div>
+                        {metrics.failures.failedJobs}
                     </div>
                 </div>
             </div>

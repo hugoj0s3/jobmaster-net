@@ -280,8 +280,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapJobMasterApi();
-app.UseJobMasterDashboard();
-app.MapJobMasterDashboard();
+app.StartJobMasterDashboard();
 
 app.MapPost("/jm-api/auth/token", async (HttpRequest req) =>
 {

@@ -1,22 +1,56 @@
-﻿# 🌐 JobMaster API
+# 🌐 JobMaster API
 
-The `JobMaster.Api` package transforms your orchestrator into a manageable service. It provides RESTful endpoints to monitor and manage clusters, jobs, and workers.
+The `JobMaster.Api` package exposes your JobMaster clusters as a RESTful HTTP service — query jobs, inspect workers, manage recurring schedules, and stream logs, all from a single authenticated endpoint.
+
+> **The API server only needs access to the master database.** It does not need to run workers or agents, and it does not need to share a process with the consumer/producer servers. You can deploy it as a dedicated monitoring and operations server that connects directly to the master DB over the network — completely independent from where jobs are actually processed.
+
+---
 
 ## ⚠️ Prerequisites
-The API acts as a gateway to your JobMaster data. For the API to function, you must have:
-1.  **A Cluster Configured**: At least one Master connection must be registered.
-2.  **Runtime Started**: The JobMaster runtime must be running (`StartJobMasterRuntimeAsync`) so the API can resolve the cluster components.
 
-## 1. Installation
-Add the API package to your project:
+1. **Master DB access**: at least one cluster master connection must be reachable from the API server.
+2. **Runtime initialised**: `StartJobMasterRuntimeAsync()` must be called so the API can resolve cluster components. Without workers this is lightweight — it opens DB connections but starts no background processing.
+
+## 📦 Installation
+
 ```bash
 dotnet add package JobMaster
 dotnet add package JobMaster.Api
 ```
 
+## 🔗 Cluster Connection
 
+The API connects to one or more clusters by registering their master database connections. No workers or agent connections are required — the master DB is the only dependency.
+
+```csharp
+// Single cluster
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("payroll-cluster");
+    config.UsePostgresForMaster("Host=db.internal;Database=jobmaster_payroll;Username=app;Password=...;");
+});
+```
+
+Multiple clusters can be registered independently. The API will serve endpoints for each of them under their own cluster ID path segment (e.g. `/jm-api/payroll-cluster/jobs`).
+
+```csharp
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("payroll-cluster");
+    config.UsePostgresForMaster(payrollConnectionString);
+});
+
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("notifications-cluster");
+    config.UsePostgresForMaster(notificationsConnectionString);
+});
+```
+
+See [ClusterConfiguration.md](ClusterConfiguration.md) and [Providers.md](Providers.md) for the full set of cluster options and supported database providers.
 
 ## ⚙️ Base Configuration
+
 The API is configured during the service registration phase. You must call `app.MapJobMasterApi()` after building the app to map the internal routes.
 
 ```csharp
@@ -34,7 +68,19 @@ var app = builder.Build();
 app.MapJobMasterApi();
 ```
 
-## 🛡️ Authentication: API Keys
+## 🛡️ Authentication
+
+Set `RequireAuthentication = true` in the base configuration to enforce authentication globally, then configure one of the providers below.
+
+```csharp
+builder.Services.UseJobMasterApi(o =>
+{
+    o.RequireAuthentication = true;
+    o.UseApiKeyAuth()...  // or UseUserPwdAuth() / UseJwtBearerAuth()
+});
+```
+
+### API Keys
 
 Ideal for server-to-server communication or simple monitoring tools.
 
@@ -48,7 +94,7 @@ builder.Services.UseJobMasterApi(o =>
 });
 ```
 
-## 👤 Authentication: User & Password
+### User & Password
 
 Provides credential-based access. Passwords are encrypted using **PBKDF2 (SHA256)** with 100,000 iterations.
 
@@ -62,9 +108,10 @@ builder.Services.UseJobMasterApi(o =>
 });
 ```
 
-## 🔑 Authentication: JWT Bearer
+### JWT Bearer
 
 Integrate with your existing Identity Provider (IdentityServer, Auth0, etc.) or use the built-in provider. The default provider automatically detects the key type to use the appropriate signing algorithm:
+
 - **Symmetric Keys**: Uses HmacSha256Signature.
 - **Asymmetric Keys (RSA)**: Uses RsaSha256.
 
@@ -77,19 +124,22 @@ builder.Services.UseJobMasterApi(o =>
      .RegisterDefaultJwtBearerAuthProvider(new TokenValidationParameters
      {
          ValidateIssuer = true,
-         ValidIssuer = "[https://your-auth-server.com](https://your-auth-server.com)",
+         ValidIssuer = "https://your-auth-server.com",
          IssuerSigningKey = mySecurityKey
          // ... other standard parameters
      });
 });
 ```
-[!TIP] **Pro-Tip**: The default provider also includes a GenerateToken method via IJobMasterJwtBearerAuthProvider. 
-                    This is perfect for generating internal tokens without requiring an external Identity Server. This interface is automatically registered in your DI container.
 
-## 🏗️ Advanced Customization
+> [!TIP]
+> The default provider also exposes a `GenerateToken` method via `IJobMasterJwtBearerAuthProvider`. This is perfect for issuing internal tokens without requiring an external Identity Server — the interface is automatically registered in your DI container.
+
+### Advanced Customization
+
 Completely replace how JobMaster identifies and authorizes requests across all mechanisms.
 
-### Global Identity & Authorization Overrides
+#### Global Identity & Authorization Overrides
+
 - **Custom Identity**
 
 ```csharp
@@ -97,15 +147,18 @@ o.UseCustomizeJobMasterIdentityProvider<MyExternalIdProvider>();
 ```
 
 - **Custom Authorization**
+
 ```csharp
 o.UseCustomizeJobMasterAuthorizationProvider<MyExternalAuthorizationProvider>();
 ```
 
-### Specific Auth Type Overrides
+#### Specific Auth Type Overrides
+
 Keep the API infrastructure but change the credential retrieval logic for a specific type:
-   - **RegisterApiKeyAuthProvider**: Fetch identity details from a database based on the API key.
-   - **RegisterUserPwdAuthProvider**: Validate credentials against your own User store.
-   - **RegisterJwtBearerAuthProvider**: Replace the default JWT validation logic entirely.
+
+- **RegisterApiKeyAuthProvider**: Fetch identity details from a database based on the API key.
+- **RegisterUserPwdAuthProvider**: Validate credentials against your own User store.
+- **RegisterJwtBearerAuthProvider**: Replace the default JWT validation logic entirely.
 
 ## 📖 Isolated Swagger UI
 
@@ -114,3 +167,25 @@ JobMaster API comes with a dedicated Swagger interface. It is kept separate from
 * **URL:** `{BasePath}/swagger` (e.g., `http://localhost:5000/jm-api/swagger`)
 * **Features:** Supports testing **API Key**, **Basic Auth**, and **JWT Bearer** directly from the UI.
 * **Isolation:** Your host application's endpoints will not appear here, and JobMaster endpoints will not appear in your host's primary Swagger.
+
+### Cluster Discovery via OpenAPI
+
+Call `IncludeClusterIdsInOpenApi()` to embed all registered cluster IDs into the OpenAPI document's info extensions. This allows other tools — such as the **JobMaster Dashboard** — to discover which clusters are available without requiring separate configuration.
+
+```csharp
+builder.Services.UseJobMasterApi(o =>
+{
+    o.EnableSwagger = true;
+    o.IncludeClusterIdsInOpenApi(); // Adds x-jobmaster-clusters to the OpenAPI info
+});
+```
+
+The cluster IDs are published under the `x-jobmaster-clusters` extension key in the OpenAPI `info` object:
+
+```json
+{
+  "info": {
+    "x-jobmaster-clusters": ["payroll-cluster", "notifications-cluster"]
+  }
+}
+```

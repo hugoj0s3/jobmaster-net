@@ -19,7 +19,7 @@ internal static class DashboardAuthRetentionEndpoints
             var newSessionId = Guid.NewGuid().ToString("N");
             AppendSessionCookie(ctx, options, newSessionId);
             return Results.Ok();
-        });
+        }).ExcludeFromDescription();
 
         endpoints.MapPost($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
@@ -45,7 +45,7 @@ internal static class DashboardAuthRetentionEndpoints
 
             AppendSessionCookie(ctx, options, sessionId);
             return Results.Ok(expiresAt);
-        });
+        }).ExcludeFromDescription();
 
         endpoints.MapGet($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
@@ -58,12 +58,11 @@ internal static class DashboardAuthRetentionEndpoints
             if (sessionId is null) return Results.NotFound();
 
             var stored = await persistence.GetAsync(sessionId, credentialKey, ct);
-            if (stored is null) return Results.NotFound();
-            if (stored.ExpiresAt < DateTime.UtcNow) return Results.NotFound();
+            if (stored is null || stored.ExpiresAt < DateTime.UtcNow) return Results.NotFound();
 
             AppendSessionCookie(ctx, options, sessionId);
             return Results.Ok(new CredentialsResponse { Secrets = stored.Secrets, ExpiryAt = stored.ExpiresAt });
-        });
+        }).ExcludeFromDescription();
 
         // Destroys the session cookie. Stored credential entries orphan and expire via TTL.
         endpoints.MapDelete($"{basePath}/credentials/close-session", (
@@ -72,7 +71,7 @@ internal static class DashboardAuthRetentionEndpoints
         {
             ctx.Response.Cookies.Delete(options.SessionCookieName);
             return Results.NoContent();
-        });
+        }).ExcludeFromDescription();
 
         endpoints.MapDelete($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
@@ -87,7 +86,7 @@ internal static class DashboardAuthRetentionEndpoints
                 await persistence.RemoveAsync(sessionId, credentialKey, ct);
 
             return Results.NoContent();
-        });
+        }).ExcludeFromDescription();
 
         return endpoints;
     }

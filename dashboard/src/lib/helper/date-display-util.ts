@@ -4,7 +4,12 @@ export class DateDisplayUtil {
     static toDate(value: string | Date | null | undefined): Date | null {
         if (!value) return null;
 
-        const d = value instanceof Date ? value : new Date(value);
+        // Treat bare datetime strings (no Z / offset) as UTC so the browser
+        // timezone conversion is applied correctly when formatting.
+        const normalized = typeof value === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value) && !/[Z+\-]\d*$/.test(value)
+            ? value + "Z"
+            : value;
+        const d = normalized instanceof Date ? normalized : new Date(normalized);
         return Number.isNaN(d.getTime()) ? null : d;
     }
 

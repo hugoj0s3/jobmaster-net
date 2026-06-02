@@ -63,17 +63,32 @@ internal sealed class OpenApiJsonConfigSeeder
             var scheme = ctx.Request.Scheme;
             var host = ctx.Request.Host.Value;
 
-            var jsonUrl = $"{scheme}://{host}{baseApiUrl}/openapi/v1/openapi.json";
-            try
+            // Try the current doc name first, then fall back to the legacy "v1" path.
+            var urls = new[]
             {
-                var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
-                Apply(options, jsonContent);
-            }
-            catch (Exception ex)
+                $"{scheme}://{host}{baseApiUrl}/openapi/jobmaster/openapi.json",
+                $"{scheme}://{host}{baseApiUrl}/openapi/v1/openapi.json",
+                $"{scheme}://{host}{baseApiUrl}/openapi.json"
+            };
+
+            Exception? lastEx = null;
+            foreach (var jsonUrl in urls)
             {
-                throw new InvalidOperationException(
-                    $"JobMaster Dashboard: Failed to load OpenAPI JSON spec from '{jsonUrl}': {ex.Message}", ex);
+                try
+                {
+                    var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
+                    Apply(options, jsonContent);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                }
             }
+
+            throw new InvalidOperationException(
+                $"JobMaster Dashboard: Failed to load OpenAPI JSON spec from '{baseApiUrl}'. " +
+                $"Tried: {string.Join(", ", urls)}. Last error: {lastEx?.Message}", lastEx);
         }
     }
 
