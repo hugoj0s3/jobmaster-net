@@ -1,0 +1,120 @@
+{
+  "apiBaseUrl": "https://localhost:7247/jm-api",
+  "authRetentionMode": "client",
+  "auth": {
+    "enabled": true,
+    "providers": [
+      {
+        "type": "API_KEY",
+        "displayName": "API Key",
+        "headerName": "x-api-key",
+        "scheme": null,
+        "userHeaderName": null,
+        "passwordHeaderName": null,
+        "tokenUrl": null,
+        "transport": null,
+        "fields": null
+      },
+      {
+        "type": "USER_PASSWORD",
+        "displayName": "Username & Password",
+        "headerName": null,
+        "scheme": null,
+        "userHeaderName": "X-JobMaster-User",
+        "passwordHeaderName": "X-JobMaster-Pwd",
+        "tokenUrl": null,
+        "transport": null,
+        "fields": null
+      },
+      {
+        "type": "JWT_SIMPLE",
+        "displayName": "Bearer Token",
+        "headerName": "Authorization",
+        "scheme": "Bearer",
+        "userHeaderName": null,
+        "passwordHeaderName": null,
+        "tokenUrl": null,
+        "transport": null,
+        "fields": null
+      },
+      {
+        "type": "JWT_CUSTOM_FORM",
+        "displayName": "Login",
+        "headerName": "authorization",
+        "scheme": "bearer",
+        "userHeaderName": null,
+        "passwordHeaderName": null,
+        "tokenUrl": "https://localhost:7247/jm-api/auth/token",
+        "fields": [
+          {
+            "id": "username",
+            "label": "Email",
+            "type": "text",
+            "isRequired": true,
+            "defaultValue": null,
+            "disabled": false
+          },
+          {
+            "id": "password",
+            "label": "Password",
+            "type": "password",
+            "isRequired": true,
+            "defaultValue": null,
+            "disabled": false
+          },
+          {
+            "id": "tenant",
+            "label": "Organization",
+            "type": "text",
+            "isRequired": false,
+            "defaultValue": "default",
+            "disabled": false
+          }
+        ]
+      }
+    ]
+  },
+  "clusters": [
+    { "id": "Cluster-1",           "environmentName": "NATS Cluster",       "themeId": null },
+    { "id": "Cluster-Standalone-1","environmentName": "Standalone Cluster",  "themeId": null }
+  ],
+  "themeConfigs": {
+    "primaryThemeId": "jobmaster-light",
+    "themes": [
+      { "id": "jobmaster-light",  "displayName": "JobMaster Light",  "baseTheme": "jobmaster-light",  "isPrimaryTheme": true,  "colorOverrides": null, "styleOverrides": null },
+      { "id": "jobmaster-dark",   "displayName": "JobMaster Dark",   "baseTheme": "jobmaster-dark",   "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "light",            "displayName": "Light",            "baseTheme": "light",            "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "dark",             "displayName": "Dark",             "baseTheme": "dark",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "cupcake",          "displayName": "Cupcake",          "baseTheme": "cupcake",          "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "bumblebee",        "displayName": "Bumblebee",        "baseTheme": "bumblebee",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "emerald",          "displayName": "Emerald",          "baseTheme": "emerald",          "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "corporate",        "displayName": "Corporate",        "baseTheme": "corporate",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "synthwave",        "displayName": "Synthwave",        "baseTheme": "synthwave",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "retro",            "displayName": "Retro",            "baseTheme": "retro",            "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "cyberpunk",        "displayName": "Cyberpunk",        "baseTheme": "cyberpunk",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "valentine",        "displayName": "Valentine",        "baseTheme": "valentine",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "halloween",        "displayName": "Halloween",        "baseTheme": "halloween",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "garden",           "displayName": "Garden",           "baseTheme": "garden",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "forest",           "displayName": "Forest",           "baseTheme": "forest",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "aqua",             "displayName": "Aqua",             "baseTheme": "aqua",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "lofi",             "displayName": "Lo-Fi",            "baseTheme": "lofi",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "pastel",           "displayName": "Pastel",           "baseTheme": "pastel",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "fantasy",          "displayName": "Fantasy",          "baseTheme": "fantasy",          "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "wireframe",        "displayName": "Wireframe",        "baseTheme": "wireframe",        "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "black",            "displayName": "Black",            "baseTheme": "black",            "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "luxury",           "displayName": "Luxury",           "baseTheme": "luxury",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "dracula",          "displayName": "Dracula",          "baseTheme": "dracula",          "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "cmyk",             "displayName": "CMYK",             "baseTheme": "cmyk",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "autumn",           "displayName": "Autumn",           "baseTheme": "autumn",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "business",         "displayName": "Business",         "baseTheme": "business",         "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "acid",             "displayName": "Acid",             "baseTheme": "acid",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "lemonade",         "displayName": "Lemonade",         "baseTheme": "lemonade",         "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "night",            "displayName": "Night",            "baseTheme": "night",            "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "coffee",           "displayName": "Coffee",           "baseTheme": "coffee",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "winter",           "displayName": "Winter",           "baseTheme": "winter",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "dim",              "displayName": "Dim",              "baseTheme": "dim",              "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "nord",             "displayName": "Nord",             "baseTheme": "nord",             "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null },
+      { "id": "sunset",           "displayName": "Sunset",           "baseTheme": "sunset",           "isPrimaryTheme": false, "colorOverrides": null, "styleOverrides": null }
+    ]
+  }
+}
