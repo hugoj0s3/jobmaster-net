@@ -4,6 +4,59 @@
 > Documents new features, breaking changes, and user-visible fixes for each release.
 > For internal implementation details see [ChangeLog.internal.md](ChangeLog.internal.md).
 
+---
+
+## JobMaster.Dashboard 0.0.1-alpha
+
+Initial release of the `JobMaster.Dashboard` package. The dashboard is versioned independently from the core JobMaster packages — it has no dependency on `JobMaster` or its agents and can be deployed alongside any JobMaster API instance.
+
+### Added
+
+- **`StartJobMasterDashboard()`**: single call that registers middleware and maps all dashboard endpoints. `UseJobMasterDashboard` and `MapJobMasterDashboard` are now internal — `StartJobMasterDashboard` is the only public entry point.
+
+- **Dashboard overview KPIs**: Upcoming Execution breakdown (On Master, In Bucket, Onboarded, Queued, Processing), Failed Jobs count with configurable time window, Workers Online, Hosts, and Buckets cards.
+
+- **Failed Jobs time window**: the Failed Jobs KPI respects the configured `lastHours` setting, passing `ScheduledFrom` to the API count endpoint so only jobs scheduled within the window are counted.
+
+- **Status tooltips**: hovering any status row in the Upcoming Execution breakdown shows a description of what that status means in the job lifecycle.
+
+- **Recently Executed Jobs table**: shows the most recent Succeeded and Failed jobs in a single merged query, sorted by finalized time.
+
+- **Date display localisation**: all dates are displayed in the browser's local timezone using the browser's locale. UTC strings without a `Z` suffix are normalised before parsing so the timezone offset is always applied correctly.
+
+- **Per-cluster theme assignment**: themes can be pinned to a specific cluster ID so users get an immediate visual cue about which environment they are in (e.g. blue for production, amber for QA).
+
+- **`IncludeClusterIdsInOpenApi()`** on `JobMaster.Api`: embeds all registered cluster IDs in the OpenAPI document under `x-jobmaster-clusters`, enabling the dashboard's `FromOpenApiJson()` auto-discovery to resolve clusters without manual configuration.
+
+- **`jobmaster-config.example.json`**: reference template for the dashboard's static config file, used when running the frontend standalone outside the C# host.
+
+### Documentation
+
+- `ApiConfiguration.md`: full guide covering cluster connection, base configuration, all authentication providers (API Key, User & Password, JWT Bearer), advanced customisation, and the isolated Swagger UI with cluster discovery.
+- `DashboardConfiguration.md`: full guide covering registration, base path, cluster configuration, all auth provider types, auth retention, themes (including per-cluster assignment), OpenAPI auto-config, and a complete wiring example.
+
+---
+
+## JobMaster.Api 0.0.8-alpha
+
+### Changed
+
+- **Swagger document name**: the internal OpenAPI document is now registered under `"jobmaster"` instead of `"v1"`, ensuring it never conflicts with a host application that already uses `"v1"` as its own document name.
+
+- **Swagger endpoint isolation**: endpoint filtering is now based solely on the `DocName` tag — the previous `x-jobmaster-doc` extension double-check on the inclusion predicate has been removed, simplifying the logic without changing behaviour.
+
+- **Host docs in JobMaster UI**: the JobMaster Swagger UI now also surfaces any host application Swagger documents alongside the JobMaster document, so the isolated UI is a complete view of the application.
+
+- **Guard for empty host Swagger configuration**: a fallback `"v1"` document is registered when the host application has no Swagger docs, preventing Swashbuckle from throwing on startup.
+
+- **Default API key header corrected**: the Swagger security scheme default for API key auth was `"api-key"`, now `"X-Api-Key"` to match the actual header name used at runtime.
+
+### Added
+
+- **`IncludeClusterIdsInOpenApi()`** on `JobMasterApiOptions`: embeds all registered cluster IDs in the OpenAPI document info under the `x-jobmaster-clusters` extension key. Used by the dashboard's `FromOpenApiJson()` to auto-discover clusters without manual configuration.
+
+---
+
 ## 0.0.7-alpha
 
 ### Added
