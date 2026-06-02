@@ -212,8 +212,13 @@ jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1
   - Postgres, MySQL, SQL Server, NATS JetStream
   - See: [docs/Providers.md](docs/Providers.md)
 
-- ** Api
-  - [docs/ApiConfiguration.md](docs/ApiConfiguration.md)
+- **API**
+  - Expose clusters as a RESTful HTTP service with authentication and isolated Swagger UI
+  - See: [docs/ApiConfiguration.md](docs/ApiConfiguration.md)
+
+- **Dashboard**
+  - Browser-based SPA for monitoring and managing clusters — connects to the API over HTTP
+  - See: [docs/DashboardConfiguration.md](docs/DashboardConfiguration.md)
 
 ## 🐞 Internal Debugging
   - Easy way to see the logs while we don't have UI/Api. Cluster level config.
