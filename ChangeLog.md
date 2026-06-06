@@ -6,6 +6,18 @@
 
 ---
 
+## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha
+
+### Fixed
+
+- **Dashboard: worker mode display** (`JobMaster.Dashboard`): the Workers Online KPI on the dashboard overview incorrectly swapped the `Execution` and `Full` worker counts. Workers running in `Full` mode were reported as `Execution` and vice versa.
+
+- **Dashboard: OpenAPI auto-discovery** (`JobMaster.Api`, `JobMaster.Dashboard`): `FromOpenApiJson()` failed to auto-discover clusters and auth providers on first load. Two root causes: the `x-jobmaster-doc` extension value used to identify the JobMaster OpenAPI document was written incorrectly, and the `x-jobmaster-clusters` extension was written to the wrong location in the document. Both are now fixed — clusters and auth schemes are discovered correctly without any manual `ConfigCluster` or auth configuration.
+
+- **Dashboard: config endpoint returning 500** (`JobMaster.Dashboard`): the `/jobmaster-config.json` endpoint returned a 500 error when the OpenAPI spec was not yet reachable at startup. The endpoint now returns 404 when the spec responds with 404, and includes a startup retry so transient timing issues are handled automatically.
+
+---
+
 ## JobMaster.Dashboard 0.0.1-alpha
 
 Initial release of the `JobMaster.Dashboard` package. The dashboard is versioned independently from the core JobMaster packages — it has no dependency on `JobMaster` or its agents and can be deployed alongside any JobMaster API instance.
