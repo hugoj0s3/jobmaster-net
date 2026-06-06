@@ -1,9 +1,9 @@
-<script lang="ts">
+﻿<script lang="ts">
     import { onDestroy, onMount } from "svelte";
     import { page } from "$app/stores";
     import { ApiClientUtil } from "$lib/api/api-client-util";
     import type { components } from "$lib/api/schema";
-    import { BucketStatus, JobStatus as ApiJobStatus } from "$lib/api/enums";
+    import { BucketStatus, JobStatus as ApiJobStatus, WorkerMode } from "$lib/api/enums";
     import { DateDisplayUtil } from "$lib/helper/date-display-util";
     import { JobStatusUtil, type JobStatusLabel } from "$lib/helper/job-status-util";
     import { SettingsStorage, type DashboardSettings } from "$lib/dashboard-settings-storage";
@@ -333,9 +333,9 @@
                     },
                     workers: {
                         onlineTotal: onlineWorkers.length,
-                        executionMode: workerModes.filter((m) => m === 1).length,
-                        drainingMode: workerModes.filter((m) => m === 3).length,
-                        fullMode: workerModes.filter((m) => m === 2).length,
+                        executionMode: workerModes.filter((m) => m === WorkerMode.Execution).length,
+                        drainingMode: workerModes.filter((m) => m === WorkerMode.Drain).length,
+                        fullMode: workerModes.filter((m) => m === WorkerMode.Full).length,
                         lastHeartbeatText: DateDisplayUtil.formatRelativeOrDate(lastHb, uiNow)
                     },
                     hosts: {

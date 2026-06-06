@@ -47,7 +47,7 @@ internal static class JobMasterApiSwaggerSupport
                 Version = JobMasterApiAssemblyInfo.GetVersion(),
                 Extensions = new Dictionary<string, IOpenApiExtension>
                 {
-                    ["x-jobmaster-doc"] = new OpenApiString(DocName)
+                    ["x-jobmaster-doc"] = new OpenApiString(JobMasterApiNamespaceKey.Key.ToString())
                 }
             });
 
@@ -201,6 +201,8 @@ internal sealed class JobMasterApiSecurityDocumentFilter : IDocumentFilter
         foreach (var id in ids)
             array.Add(new OpenApiString(id));
 
-        swaggerDoc.Info.Extensions["x-jobmaster-clusters"] = array;
+        // Write at the document root so the dashboard seeder can read it from root["x-jobmaster-clusters"]
+        swaggerDoc.Extensions ??= new Dictionary<string, IOpenApiExtension>();
+        swaggerDoc.Extensions["x-jobmaster-clusters"] = array;
     }
 }

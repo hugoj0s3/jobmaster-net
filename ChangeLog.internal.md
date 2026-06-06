@@ -4,6 +4,23 @@
 > Documents implementation details, class-level changes, architectural decisions, and bug root causes for each release.
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
+### 0.0.9-alpha / Dashboard 0.0.2-alpha
+#### Fixed
+
+- **`x-jobmaster-doc` extension value** (`JobMaster.Api`, `JobMaster.Dashboard`): The Swagger document filter wrote `"jobmaster"` (the doc name) as the `x-jobmaster-doc` value, but the dashboard seeder validated against `JobMasterApiNamespaceKey.Key.ToString()` (`"JobMaster.Api.627b34633149493c9f293298ab209809"`). The two values never matched, so the seeder's identity guard always threw and no auth schemes or cluster IDs were ever applied. Fixed by writing `JobMasterApiNamespaceKey.Key.ToString()` in `JobMasterApiSwaggerSupport.ConfigureServices`.
+
+- **`x-jobmaster-clusters` location** (`JobMaster.Api`, `JobMaster.Dashboard`): Cluster IDs were written to `swaggerDoc.Info.Extensions` but the seeder read them from `root["x-jobmaster-clusters"]` (document root). As a result the cluster list was never populated. Fixed by writing to `swaggerDoc.Extensions` (root) in `JobMasterApiSecurityDocumentFilter.ApplyClusterIds`.
+
+- **`x-jobmaster-clusters` format** (`JobMaster.Dashboard`): The seeder assumed each array item was a JSON object with an `"id"` property, but the API writes plain string items. Fixed in `OpenApiJsonConfigSeeder.ApplyClusters` to handle both `JsonValueKind.String` and object items with an `"id"` property.
+
+- **Dashboard seeder startup timing** (`JobMaster.Dashboard`): On first request the OpenAPI endpoint could still be initializing, causing `SeedAsync` to fail immediately. Fixed with a two-pass retry: immediate attempt, then a 1.5 s delay before the second attempt across the candidate URL list.
+
+- **Worker mode counters swapped** (`dashboard`): In the dashboard metrics page, the `executionMode` counter filtered on value `1` (which is `Full`, not `Execution`) and `fullMode` filtered on value `2` (which is `Execution`, not `Full`). The counters displayed the wrong worker counts. Fixed by importing the `WorkerMode` enum and replacing magic numbers with `WorkerMode.Execution`, `WorkerMode.Full`, and `WorkerMode.Drain` constants.
+
+- **`jobmaster-config.json` returns 500 instead of 404** (`JobMaster.Dashboard`): When the seeder's `SeedAsync` threw (e.g. the OpenAPI endpoint returned 404), the exception propagated as an unhandled 500. Fixed in `DashboardConfigEndpoints`: the endpoint now catches `HttpRequestException` with `StatusCode == NotFound` and returns `Results.NotFound()`; all other exceptions still propagate to produce a 500.
+
+---
+
 ### 0.0.7-alpha
 #### Added
 - **Swagger & Sdk XML Documentation on API & Core Abstractions**: Added extensive XML `<summary>` comments to all public models, properties, authentication interfaces (such as `IJobMasterUserPwdAuthProvider`, `IJobMasterJwtBearerAuthProvider`, and configuration selectors), and core Sdk interfaces (like `IJobMasterScheduler`, `IJobHandler`, and DI configuration builders) across the entire framework to enable a rich developer/IntelliSense experience and auto-generated OpenAPI documentation.

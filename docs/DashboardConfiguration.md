@@ -2,7 +2,9 @@
 
 The `JobMaster.Dashboard` package provides a browser-based single-page application for monitoring and managing your clusters. The dashboard is configured independently using its own fluent builder, giving you full control over routing, authentication presentation, credential persistence, and visual theming.
 
-![JobMaster Dashboard overview](images/dashboard-overview.png)
+![JobMaster Dashboard overview](img/dashboard/dashboard-overview.png)
+
+> 📸 See [Dashboard Screenshots](DashboardScreenshots.md) for annotated screenshots of every dashboard page.
 
 > **The dashboard connects to the JobMaster API over HTTP — it does not require the API to be in the same application.** You can host the dashboard alongside the API on the same server (using a relative URL like `/jm-api`) or point it at a remote API (using an absolute URL like `https://api.example.com/jm-api`). You only need `JobMaster.Api` installed if both live in the same process.
 

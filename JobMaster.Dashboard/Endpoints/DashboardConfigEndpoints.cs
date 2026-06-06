@@ -16,7 +16,17 @@ internal static class DashboardConfigEndpoints
             DashboardOptions options,
             OpenApiJsonConfigSeeder seeder) =>
         {
-            await seeder.EnsureSeededAsync(options, ctx);
+            try
+            {
+                await seeder.EnsureSeededAsync(options, ctx);
+            }
+            catch (Exception ex)
+            {
+                var httpEx = (ex as HttpRequestException) ?? (ex.InnerException as HttpRequestException);
+                if (httpEx?.StatusCode == System.Net.HttpStatusCode.NotFound)
+                    return Results.NotFound();
+                throw;
+            }
 
             var config = DashboardPublicConfigConvertUtil.ToPublicConfig(options);
             return Results.Ok(config);

@@ -72,17 +72,25 @@ internal sealed class OpenApiJsonConfigSeeder
             };
 
             Exception? lastEx = null;
-            foreach (var jsonUrl in urls)
+
+            // Two passes: immediate attempt, then retry after a brief delay in case the
+            // swagger endpoint is still initializing at startup.
+            for (var pass = 0; pass < 2; pass++)
             {
-                try
+                if (pass == 1) await Task.Delay(1500);
+
+                foreach (var jsonUrl in urls)
                 {
-                    var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
-                    Apply(options, jsonContent);
-                    return;
-                }
-                catch (Exception ex)
-                {
-                    lastEx = ex;
+                    try
+                    {
+                        var jsonContent = await FetchHttpAsync(jsonUrl, httpClientFactory);
+                        Apply(options, jsonContent);
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastEx = ex;
+                    }
                 }
             }
 
@@ -146,11 +154,14 @@ internal sealed class OpenApiJsonConfigSeeder
 
         foreach (var item in clusters.EnumerateArray())
         {
-            var id = item.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
+            // Support both plain string items ("TestCluster") and object items ({"id":"TestCluster"})
+            var id = item.ValueKind == JsonValueKind.String
+                ? item.GetString()
+                : (item.TryGetProperty("id", out var idProp) ? idProp.GetString() : null);
             if (string.IsNullOrEmpty(id)) continue;
             if (options.Clusters.Any(c => c.Id == id)) continue;
 
-            options.Clusters.Add(new DashboardClusterConfig { Id = id, EnvironmentName = id });
+            options.Clusters.Add(new DashboardClusterConfig { Id = id });
         }
     }
 

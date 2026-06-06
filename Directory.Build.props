@@ -1,6 +1,6 @@
 <Project>
   <PropertyGroup>
-    <VersionPrefix>0.0.8</VersionPrefix>
+    <VersionPrefix>0.0.9</VersionPrefix>
     <VersionSuffix>alpha</VersionSuffix>
 
     <!-- Package version string used by PackageReference entries -->
