@@ -49,6 +49,41 @@ builder.Services.AddJobMasterCluster(config =>
 
 See [ClusterConfiguration.md](ClusterConfiguration.md) and [Providers.md](Providers.md) for the full set of cluster options and supported database providers.
 
+## 🏗️ Deploying as a Dedicated API Server
+
+Because the API only requires a master DB connection, you can deploy it as a completely independent application — separate from the processes that publish and/or run jobs. This is the recommended pattern when you want centralized monitoring across multiple clusters without coupling the API to any worker infrastructure.
+
+A dedicated API server has no agent connections and no workers registered. `StartJobMasterRuntimeAsync` is still required, but without workers it is lightweight — it opens database connections and starts no background threads.
+
+```csharp
+// Dedicated API server — master DB only, no workers, no agent connections
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("payroll-cluster");
+    config.UsePostgresForMaster("Host=db.internal;Database=jobmaster_payroll;...");
+    // No AddAgentConnectionConfig() — not needed
+    // No AddWorker()              — not needed
+});
+
+builder.Services.UseJobMasterApi(o =>
+{
+    o.BasePath = "/jm-api";
+    o.RequireAuthentication = true;
+    o.EnableSwagger = true;
+    o.IncludeClusterIdsInOpenApi();
+    o.UseApiKeyAuth().AddApiKey("dashboard", "secure-key-here");
+});
+
+var app = builder.Build();
+
+await app.Services.StartJobMasterRuntimeAsync();
+
+app.MapJobMasterApi();
+app.Run();
+```
+
+Multiple clusters can be registered in the same API server — each one needs only its master DB connection string.
+
 ## ⚙️ Base Configuration
 
 The API is configured during the service registration phase. You must call `app.MapJobMasterApi()` after building the app to map the internal routes.
