@@ -7,16 +7,16 @@ A single application instance can host multiple workers, each potentially pointi
 ```csharp
 builder.Services.AddJobMasterCluster(config =>
 {
-config.ClusterId("My-Cluster");
+    config.ClusterId("My-Cluster");
 
     config.AddWorker()
         .AgentConnName("Postgres-1")         // Links to an Agent connection
-        .WorkerName("Payroll-Worker-01")    // Unique name for this instance
-        .WorkerLane("Payroll")           // Logical isolation lane
-        .TransferBatchSize(1000)            // Jobs pulled per DB round-trip for bucket transfers and other bulk operations
-        .BucketBufferSize(250)              // Max jobs held in memory per bucket awaiting execution
-        .BucketBufferLeadTime(TimeSpan.FromSeconds(30)) // How far ahead to look when filling the in-memory buffer (max 30s)
-        .ParallelismFactor(2)               // Scaler for concurrent execution
+        .WorkerName("Payroll-Worker-01")     // Unique name for this instance
+        .WorkerLane("Payroll")               // Logical isolation lane
+        .TransferBatchSize(1000)             // Jobs pulled per DB round-trip for bucket transfers and other bulk operations
+        .BucketBufferSize(250)               // Max jobs held in memory per bucket awaiting execution
+        .BucketBufferLeadTime(TimeSpan.FromSeconds(15)) // How far ahead to look when filling the in-memory buffer (max 30s)
+        .ParallelismFactor(2.0)              // Scaler for concurrent execution
         .SetWorkerMode(AgentWorkerMode.Full)
         .BucketQtyConfig(JobMasterPriority.Critical, 3);
 });
@@ -78,7 +78,7 @@ Role:
 Benefit:
 - Even if execution nodes are at 100% CPU, the system remains responsive and continues to onboard new work on time.
 
-### Execution
+#### Execution
 The Muscle. These nodes are “Master-Agnostic.”
 
 Role:
@@ -88,16 +88,13 @@ Benefit:
 - Zero “scanning” load on the Source of Truth, enabling near-infinite horizontal scaling of compute.
 
 #### Drain
-The Cluster Janitor. Use this mode when you need to stop a server for updates or scaling down.
-
-Graceful Exit:
-- Stops accepting new assignments and finishes current tasks.
+A dedicated recovery mode. Deploy Drain workers alongside your Executor fleet to handle orphan recovery when workers crash or are replaced.
 
 Orphan Recovery:
-- Identifies orphaned buckets (lost by crashed workers) and redirects their jobs back to the Master DB for re-assignment.
+- Claims orphaned buckets (`Lost`) from crashed or replaced workers and redirects their jobs back to the Master DB for re-assignment.
 
 Safety:
-- Once all buckets are drained and synced, the process can be safely terminated without data loss.
+- Once all buckets are drained and synced, the Drain worker exits cleanly without data loss.
 
 This matrix explains exactly which internal processes are active in each mode. Use this to design your cluster topology.
 | Feature                                  | Full | Coordinator | Execution | Drain |
@@ -111,9 +108,6 @@ This matrix explains exactly which internal processes are active in each mode. U
 | **Recovery of Orphaned Buckets (Drain)** | ✅ | ✅ |   ❌   | ✅ 
 
 ---
-
-### The Parallelism Factor & Backpressure
-JobMaster manages its own internal `TaskQueueControl` for each bucket to prevent CPU and Memory exhaustion. You don't need to manually calculate thread counts; you simply set a Factor.
 
 ### The Parallelism Factor & Backpressure
 
@@ -208,10 +202,10 @@ Controls how far ahead in time the worker pre-loads jobs into the in-memory buff
 * **Range:** between `250ms` and `30s` (enforced at startup).
 * **Too short:** The buffer may run dry between fills, leaving execution slots idle.
 * **Too long:** Jobs sit in memory longer than necessary. Under heavy load, if a job cannot be executed within its deadline window it is redirected back to the Master as `HeldOnMaster` and rescheduled — adding latency before it runs.
-* **Default:** `30s`
+* **Default:** `15s`
 
 ```csharp
-.BucketBufferLeadTime(TimeSpan.FromSeconds(30))
+.BucketBufferLeadTime(TimeSpan.FromSeconds(15))
 ```
 
 > [!TIP]

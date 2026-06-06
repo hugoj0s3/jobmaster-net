@@ -64,18 +64,19 @@ To enable an instance to only process work, define the connection and bind a wor
 
 ```csharp
 config.AddAgentConnectionConfig("Postgres-1") // Must match the Producer!
-.UsePostgresForAgent(connectionString);
+    .UsePostgresForAgent(connectionString);
 
 config.AddWorker()
-.AgentConnName("Postgres-1") // Binds this worker to that specific 'address'
+    .AgentConnName("Postgres-1"); // Binds this worker to that specific 'address'
 ```
 ### Scaling & The Hand-off
 This separation allows for independent scaling of your infrastructure. You can have 10 API instances handing off work to 50 dedicated Worker instances.
 
-**Immediate Job Flow**: When you schedule a job for immediate execution:
-1. The Producer saves the job into the Master DB. 
-2. The job bypasses the `HeldOnMaster` status if it is scheduled within the `TransientThreshold` window.
-3. It is automatically set to `AssignedToBucket`, allowing the next available Agent Worker to pick it up and move it to Queued within milliseconds.
+**Immediate Job Flow**: When you schedule a job using SavePending:
+1. The Producer writes the job to the **Agent ephemeral transport** — the Master DB is not touched on the hot path.
+2. A background runner evaluates the job's planned start time against the `TransientThreshold`:
+   - **Within the window (YES path):** The job is written to the Master DB for auditing and routed directly to an active bucket (`AssignedToBucket`) for near-immediate execution.
+   - **Outside the window (NO path):** The job is flushed to the Master DB as `HeldOnMaster` and picked up later by the Coordinator scan.
 
 
 See: [ClusterConfiguration](ClusterConfiguration.md)

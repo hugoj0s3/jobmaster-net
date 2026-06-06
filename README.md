@@ -29,6 +29,9 @@ var app = builder.Build();
 await app.Services.StartJobMasterRuntimeAsync();
 ```
 
+> [!TIP]
+> The cluster mode can be changed later as your needs grow — see [Scaling to a Distributed Setup](#-scalling-non-standalone-configurations).
+
 ### 🛠️ Implementing a Job Handler
 
 A Job Handler is a simple class that contains your background logic. JobMaster handles the instantiation and execution; you just focus on the code.
@@ -171,8 +174,6 @@ The compute power of the system.
     - **Atomic Locks**: Workers claim available jobs using provider-specific atomic operations.
     - **Horizontal Scalling**: Spin up as many worker instances as needed with zero downtime.
 
-Note: A Standalone cluster can be migrated to a Distributed configuration by introducing separate Agents. However, this is a one-way operation. 
-Reverting to Standalone mode may result in data loss for jobs currently residing in the Agent's ephemeral transport layer.
 
 ## 📅 Recurrence Expressions
 JobMaster supports recurrence expressions using the [NaturalCron](https://github.com/hugoj0s3/NaturalCron) library.

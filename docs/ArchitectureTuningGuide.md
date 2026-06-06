@@ -8,44 +8,15 @@ This guide provides the architectural blueprints and tuning formulas to help you
 
 ---
 
-## 1. Decoupling the Topology: Brains vs. Muscle
-
-In a large-scale cluster, JobMaster separates operational responsibilities into independent, specialized modes. This decoupling ensures that database query bottlenecks never starve your compute resources, and heavy execution workloads never choke your orchestration plane.
-
-### Decoupled Topology Diagram
-Here is how JobMaster separates responsibilities into independent, specialized planes to scale compute horizontally without overloading the central database:
-
-![JobMaster — Decoupled Architecture Topology](img/decoupled-topology.svg)
-
-### Orchestration & Durable Storage (Master DB)
-* **Role**: The source of truth for orchestration, topological health, policies, and detailed job execution audit trails to facilitate debugging and manual/historical executions.
-* **Tuning Goal**: Keep hot-path read/write queries to a minimum.
-* **How**: Jobs are scheduled here, but once execution begins, workers bypass polling the Master DB on the hot path.
-* **Storage-Agnostic**: Fully supports standard relational databases (PostgreSQL, SQL Server, MySQL) and is designed to support other database backends in the future when reliable.
-
-### The Brains (Coordinator Mode)
-* **Role**: Polls the Master DB for pending work, acquires jobs in bulk, and distributes them into **Agent Buckets**.
-* **Resource Profile**: CPU-light, network/I/O-dense. Needs strong connectivity to the Master DB.
-* **Benefit**: Because compute execution is isolated, Coordinators can continue on-boarding work on time even if executor nodes are at 100% CPU.
-
-### The Muscle (Executor Mode)
-* **Role**: Pulls jobs from assigned **Agent Buckets** and runs your `IJobHandler` logic.
-* **Resource Profile**: CPU/Memory-heavy. **Master-Agnostic**—these nodes do not poll or touch the Master DB on the hot path; they interact purely with the fast Agent Ephemeral Transport.
-* **Benefit**: Horizontal scaling. You can scale your execution worker fleet horizontally without placing a lock contention bottleneck on your Master DB.
-
-### Multi-Transport Workload Isolation
-JobMaster allows you to **scale across multiple different transport layers simultaneously** to perfectly isolate different workloads. For example:
-* Route high-velocity, lightweight jobs (e.g., real-time webhooks, emails) to a high-speed **NATS JetStream** transport layer.
-* Route long-running, resource-intensive analytics tasks to an **RDBMS** transport layer (e.g. PostgreSQL or SQL Server).
-
----
-
-## 2. Configuring and Tuning Cluster Settings: Sizing Your Configurations
+## 1. Configuring and Tuning Cluster Settings: Sizing Your Configurations
 
 When scaling your cluster, you have six major parameters to adjust. Here is how to toggle them to fit your workload:
 
 ### Parameter 1: How many Coordinators do I need?
-Under normal conditions, **no more than 5 Coordinators** are enough for the entire cluster (using 2 or more provides active-passive High Availability / Failover).
+Under normal conditions, **1–2% of the total execution capacity** is sufficient for the coordinator pool across the entire cluster. Running **at least two coordinators** is recommended — this provides active/passive high availability with automatic failover.
+
+> [!TIP]
+> Before scaling up coordinator count, consider raising the `TransientThreshold` first. A higher threshold keeps jobs buffered in the bucket longer, reducing pressure on the master node and often deferring the need for additional coordinators.
 
 * **Why**: A Coordinator's job is extremely fast. It queries, acquires, and pushes.
 * **Tuning `TransferBatchSize`**: 
@@ -69,6 +40,39 @@ Buckets are the fundamental unit of concurrency partitioning. They act like **lo
 > **The Sizing Rule of Thumb**:
 > To ensure perfect load distribution, the **total number of active buckets** in a cluster lane should always be **equal to or greater than** the total number of active **Executor nodes** (`Total Buckets >= Total Executors`). If you have 10 workers and only 4 buckets, 6 workers will sit completely idle!
 
+#### Priority isolation: dedicating workers to a single priority
+Beyond sizing bucket quantities, you can assign workers to serve only specific priorities by setting others to `0` buckets. Since the default per priority is `1` bucket, you must explicitly zero out every priority you want to exclude. This reserves a dedicated executor fleet exclusively for high-urgency work — guaranteeing that Critical jobs are never starved by lower-priority processing, even under peak load.
+
+Use this when a specific priority carries SLA-bound or user-facing work that cannot tolerate any queueing delay caused by lower-priority jobs competing for the same workers.
+
+```csharp
+// GENERAL workers — handle VeryLow through High; Critical is excluded
+config.AddWorker()
+    .AgentConnName("Nats-1")
+    .WorkerName("General-Executor")
+    .SetWorkerMode(AgentWorkerMode.Execution)
+    .BucketQtyConfig(JobMasterPriority.VeryLow, 1)
+    .BucketQtyConfig(JobMasterPriority.Low, 2)
+    .BucketQtyConfig(JobMasterPriority.Medium, 4)
+    .BucketQtyConfig(JobMasterPriority.High, 6)
+    .BucketQtyConfig(JobMasterPriority.Critical, 0) // excluded — never picks up Critical jobs
+    .ParallelismFactor(2.0);
+
+// CRITICAL-ONLY workers — reserved exclusively for urgent jobs
+config.AddWorker()
+    .AgentConnName("Nats-1")
+    .WorkerName("Critical-Executor")
+    .SetWorkerMode(AgentWorkerMode.Execution)
+    .BucketQtyConfig(JobMasterPriority.VeryLow, 0)  // excluded
+    .BucketQtyConfig(JobMasterPriority.Low, 0)       // excluded
+    .BucketQtyConfig(JobMasterPriority.Medium, 0)    // excluded
+    .BucketQtyConfig(JobMasterPriority.High, 0)      // excluded
+    .BucketQtyConfig(JobMasterPriority.Critical, 10)
+    .ParallelismFactor(6.0);
+```
+
+This pattern composes naturally with `WorkerLane` — you can combine lane isolation and priority isolation for granular control over which workers serve which workloads.
+
 ---
 
 ### Parameter 3: When should I create a separate Worker Lane (`WorkerLane`)?
@@ -89,6 +93,7 @@ Think of Lanes as **logically isolated queues** or dedicated execution zones. By
   builder.Services.AddJobMasterCluster(config =>
   {
       config.ClusterId("SMB-Enterprise-Cluster");
+      config.UsePostgresForMaster("...");
 
       // 1. Register Connections
       // Fast Ephemeral Transport for real-time webhooks & emails
@@ -181,6 +186,74 @@ It governs two critical parts of the JobMaster lifecycle:
 
 ---
 
+### Parameter 7: How many Drain workers do I need?
+Drain workers are persistent background processes, but significantly lighter than Coordinators or Executors. When a bucket becomes lost, the cluster distributes it across available Drain workers — each one can handle **multiple orphaned buckets concurrently**, spawning a dedicated set of recovery runners per bucket until the jobs are redirected back to the Master DB.
+
+When running in a **decoupled topology**, the right count depends on how frequently Executor nodes go offline — whether due to crashes or intentional replacement (e.g., rolling updates in Kubernetes):
+
+* **Stable environments** (rare turnover, long-lived processes): **1 Drain worker** is sufficient.
+* **Dynamic environments** (frequent worker replacement, e.g., Kubernetes rolling updates or aggressive auto-scaling): target roughly **1–10% of your Executor count** — more Drain workers distribute the recovery load when many Executors go offline in quick succession.
+
+> [!TIP]
+> A shorter `TransientThreshold` also reduces orphan volume — fewer jobs are pre-allocated into buckets at any given moment, which means less work per recovery event regardless of Drain worker count.
+
+---
+
+## 2. Separating Publishers from Consumers
+
+An application instance can be configured with a JobMaster cluster but **no workers registered**. This turns it into a pure publisher — it can schedule jobs and benefit from the SavePending short-circuit without running any coordination or execution logic in that process.
+
+This pattern is useful when:
+* Your API tier (stateless web pods) needs to schedule jobs quickly without carrying coordinator or executor thread overhead.
+* You want to scale publishers and consumers independently.
+* Workers live in a dedicated service or container separate from the web API.
+
+### The agent connection requirement
+
+Even a publisher-only instance **must have an agent connection configured**. When a job is scheduled and falls within the `TransientThreshold` (the YES path), the SavePending mechanism writes directly to the agent ephemeral transport to enable the execution short-circuit. Without an agent connection, the short-circuit cannot engage and all scheduling falls back to the NO path — persisted to the Master DB and picked up later by the Coordinator scan.
+
+```csharp
+// PUBLISHER INSTANCE (e.g., Web API — no workers)
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("My-Cluster");
+    config.UsePostgresForMaster("Host=db;Database=jobmaster;...");
+
+    // Required for the SavePending short-circuit (YES path) to engage
+    config.AddAgentConnectionConfig("Nats-1")
+        .UseNatsJetStream("nats://nats:4222");
+
+    // No AddWorker() calls — this instance only schedules jobs
+});
+
+// CONSUMER INSTANCE (e.g., dedicated worker service)
+builder.Services.AddJobMasterCluster(config =>
+{
+    config.ClusterId("My-Cluster"); // must match the publisher
+    config.UsePostgresForMaster("Host=db;Database=jobmaster;...");
+
+    config.AddAgentConnectionConfig("Nats-1")
+        .UseNatsJetStream("nats://nats:4222");
+
+    config.AddWorker()
+        .AgentConnName("Nats-1")
+        .WorkerName("Coordinator-01")
+        .SetWorkerMode(AgentWorkerMode.Coordinator);
+
+    config.AddWorker()
+        .AgentConnName("Nats-1")
+        .WorkerName("Executor-01")
+        .SetWorkerMode(AgentWorkerMode.Execution)
+        .BucketQtyConfig(JobMasterPriority.High, 10)
+        .ParallelismFactor(4);
+});
+```
+
+> [!IMPORTANT]
+> Both instances must share the **same Cluster ID**, the **same Master DB**, and the **same Agent connection**. The cluster ID is what binds publishers and consumers together.
+
+---
+
 ## 3. Self-Healing & Orphan Recovery (The Lost Bucket Rescue)
 
 If an **Agent Worker** crashes or loses connectivity, JobMaster automatically recovers the orphaned work without losing a single job:
@@ -209,7 +282,11 @@ Here is how to configure your JobMaster cluster for three classic operational pa
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Ingestion-Cluster");
+    config.UsePostgresForMaster("...");
+    config.AddAgentConnectionConfig("Nats-1").UseNatsJetStream("nats://...");
+
     config.AddWorker()
+        .AgentConnName("Nats-1")
         .WorkerName("Central-Brain-01")
         .SetWorkerMode(AgentWorkerMode.Coordinator)
         .TransferBatchSize(5000); // Massive batch onboarding in 1 DB tick
@@ -219,10 +296,14 @@ builder.Services.AddJobMasterCluster(config =>
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Ingestion-Cluster");
+    config.UsePostgresForMaster("...");
+    config.AddAgentConnectionConfig("Nats-1").UseNatsJetStream("nats://...");
+
     config.AddWorker()
+        .AgentConnName("Nats-1")
         .WorkerName("Event-Muscle")
         .SetWorkerMode(AgentWorkerMode.Execution) // Bypasses Master DB completely
-        .ParallelismFactor(4) // High thread utilization per core
+        .ParallelismFactor(4.0) // High thread utilization per core
         .BucketBufferSize(1000) // Large pre-fetch cache to eliminate gaps
         .BucketQtyConfig(JobMasterPriority.Critical, 20); // 20 buckets = High parallelism
 });
@@ -238,13 +319,16 @@ builder.Services.AddJobMasterCluster(config =>
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Enterprise-Cluster");
-    
+    config.UsePostgresForMaster("...");
+    config.AddAgentConnectionConfig("Nats-1").UseNatsJetStream("nats://...");
+
     // Dedicated Worker for Heavy Compute only
     config.AddWorker()
+        .AgentConnName("Nats-1")
         .WorkerName("Compute-Node-01")
         .WorkerLane("Heavy-Compute") // Fully isolated pipeline
         .SetWorkerMode(AgentWorkerMode.Full)
-        .ParallelismFactor(1) // Process strictly one at a time per core
+        .ParallelismFactor(1.0) // Process strictly one at a time per core
         .BucketBufferSize(5) // Prevent pre-fetching heavy tasks into memory
         .BucketBufferLeadTime(TimeSpan.FromSeconds(5))
         .BucketQtyConfig(JobMasterPriority.Medium, 1); // 1 bucket = Strict sequential order
@@ -261,13 +345,16 @@ builder.Services.AddJobMasterCluster(config =>
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("App-Cluster");
-    
+    config.UsePostgresForMaster("...");
+    config.AddAgentConnectionConfig("Nats-1").UseNatsJetStream("nats://...");
+
     config.AddWorker()
+        .AgentConnName("Nats-1")
         .WorkerName("Standard-Worker")
         .SetWorkerMode(AgentWorkerMode.Full) // Single process does both brains and muscle
         .TransferBatchSize(500)
         .BucketBufferSize(100)
-        .ParallelismFactor(2)
+        .ParallelismFactor(2.0)
         .BucketQtyConfig(JobMasterPriority.Medium, 3)
         .BucketQtyConfig(JobMasterPriority.High, 2);
 });

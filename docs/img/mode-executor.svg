@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="950" height="420" viewBox="0 0 950 420">
+<defs>
+  <marker id="ag" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#22c55e"/>
+  </marker>
+  <marker id="ab" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+    <polygon points="0 0,10 3.5,0 7" fill="#3b82f6"/>
+  </marker>
+  <filter id="sh">
+    <feDropShadow dx="0" dy="4" stdDeviation="8" flood-opacity="0.45"/>
+  </filter>
+  <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
+    <circle cx="14" cy="14" r="0.7" fill="#ffffff0d"/>
+  </pattern>
+</defs>
+
+<!-- Background -->
+<rect width="950" height="420" fill="#09111f"/>
+<rect width="950" height="420" fill="url(#dots)"/>
+
+<!-- Title -->
+<text x="475" y="36" fill="#e2e8f0" font-family="'Segoe UI',Arial,sans-serif" font-size="20" font-weight="700" text-anchor="middle" letter-spacing="0.5">JobMaster — Executor Mode</text>
+<line x1="60" y1="50" x2="890" y2="50" stroke="#1e3a5f" stroke-width="1"/>
+
+<!-- ═══════════════════ EXECUTOR WORKER CONTAINER ═══════════════════ -->
+<rect x="20" y="66" width="510" height="262" rx="14" fill="#051208" stroke="#166534" stroke-width="1.5" filter="url(#sh)"/>
+<text x="275" y="90" fill="#86efac" font-family="'Segoe UI',Arial,sans-serif" font-size="15" font-weight="700" text-anchor="middle">Executor Worker</text>
+<text x="275" y="106" fill="#166534" font-family="Arial" font-size="10.5" text-anchor="middle">owns its buckets exclusively — zero contention</text>
+
+<!-- ─────────── BUCKET (inside container, left) ─────────── -->
+<rect x="36" y="116" width="196" height="198" rx="10" fill="#061a0a" stroke="#15803d" stroke-width="1" filter="url(#sh)"/>
+<text x="134" y="137" fill="#4ade80" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">Bucket</text>
+
+<!-- Bucket shape: trapezoid + ellipse top + handle -->
+<path d="M 60,155 L 208,155 L 197,240 L 71,240 Z" fill="#062010" stroke="#22c55e" stroke-width="1.5"/>
+<ellipse cx="134" cy="155" rx="74" ry="11" fill="#082a12" stroke="#22c55e" stroke-width="1.5"/>
+<path d="M 87,152 Q 134,126 181,152" fill="none" stroke="#22c55e" stroke-width="2.5" stroke-linecap="round"/>
+<text x="134" y="200" dominant-baseline="central" fill="#bbf7d0" font-family="Arial" font-size="12" font-weight="bold" text-anchor="middle">jobs</text>
+<text x="134" y="220" dominant-baseline="central" fill="#4ade80" font-family="Arial" font-size="9.5" text-anchor="middle">STATUS = InBucket</text>
+
+<!-- ─────────── ARROW: Bucket → Executor (inside container) ─────────── -->
+<line x1="234" y1="200" x2="294" y2="200" stroke="#22c55e" stroke-width="2.5" marker-end="url(#ag)"/>
+<text x="264" y="188" fill="#86efac" font-family="Arial" font-size="10.5" font-weight="bold" text-anchor="middle">pull</text>
+
+<!-- ─────────── EXECUTOR (inside container, right) ─────────── -->
+<rect x="296" y="116" width="218" height="198" rx="10" fill="#061a08" stroke="#15803d" stroke-width="1" filter="url(#sh)"/>
+<text x="405" y="137" fill="#86efac" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700" text-anchor="middle">Executor</text>
+
+<!-- Lightning bolt icon -->
+<circle cx="405" cy="204" r="30" fill="#0a2010" stroke="#166534" stroke-width="2"/>
+<circle cx="405" cy="204" r="19" fill="#0d3018" stroke="#22c55e" stroke-width="1.5"/>
+<path d="M 410,180 L 396,205 L 405,205 L 400,228 L 416,201 L 407,201 Z" fill="#4ade80"/>
+
+<text x="405" y="258" fill="#64748b" font-family="Arial" font-size="10" text-anchor="middle">Master-Agnostic</text>
+<text x="405" y="271" fill="#15803d" font-family="Arial" font-size="9.5" text-anchor="middle">no Master DB on hot path</text>
+
+<!-- ═══════════════════ ARROW: Executor → IJobHandler (exits container) ═══════════════════ -->
+<line x1="532" y1="197" x2="628" y2="197" stroke="#22c55e" stroke-width="2.5" marker-end="url(#ag)"/>
+<text x="580" y="184" fill="#86efac" font-family="Arial" font-size="10.5" font-weight="bold" text-anchor="middle">run handler</text>
+
+<!-- ═══════════════════ IJOBHANDLER (right, external) ═══════════════════ -->
+<rect x="630" y="96" width="215" height="200" rx="12" fill="#0e141e" stroke="#334155" stroke-width="1.5" filter="url(#sh)"/>
+<text x="737" y="118" fill="#e2e8f0" font-family="'Segoe UI',Arial,sans-serif" font-size="15" font-weight="700" text-anchor="middle">IJobHandler</text>
+<text x="737" y="135" fill="#475569" font-family="Arial" font-size="11" text-anchor="middle">Your business logic</text>
+
+<!-- Code lines icon -->
+<rect x="665" y="152" width="145" height="100" rx="6" fill="#0a1020" stroke="#1e293b" stroke-width="1"/>
+<line x1="678" y1="168" x2="760" y2="168" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="678" y1="182" x2="785" y2="182" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="678" y1="196" x2="740" y2="196" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="678" y1="210" x2="775" y2="210" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="678" y1="224" x2="720" y2="224" stroke="#60a5fa" stroke-width="1.5" stroke-linecap="round"/>
+<line x1="678" y1="238" x2="760" y2="238" stroke="#818cf8" stroke-width="1.5" stroke-linecap="round"/>
+
+<!-- ═══════════════════ DASHED ARROW: Executor → Master DB ═══════════════════ -->
+<line x1="405" y1="330" x2="405" y2="362" stroke="#3b82f6" stroke-width="2" stroke-dasharray="6,4" marker-end="url(#ab)"/>
+<text x="428" y="350" fill="#60a5fa" font-family="Arial" font-size="9.5" font-weight="bold">status &amp; audit only</text>
+
+<!-- ═══════════════════ MASTER DB (small, bottom) ═══════════════════ -->
+<rect x="318" y="364" width="175" height="38" rx="10" fill="#0c1d38" stroke="#1e4080" stroke-width="1.5" filter="url(#sh)"/>
+
+<!-- Small DB cylinder -->
+<ellipse cx="358" cy="376" rx="18" ry="5" fill="#1e4585" stroke="#3b82f6" stroke-width="1.2"/>
+<rect x="340" y="376" width="36" height="12" fill="#16316b"/>
+<line x1="340" y1="376" x2="340" y2="388" stroke="#3b82f6" stroke-width="1.2"/>
+<line x1="376" y1="376" x2="376" y2="388" stroke="#3b82f6" stroke-width="1.2"/>
+<ellipse cx="358" cy="388" rx="18" ry="5" fill="#1e4585" stroke="#3b82f6" stroke-width="1.2"/>
+
+<text x="420" y="379" fill="#60a5fa" font-family="'Segoe UI',Arial,sans-serif" font-size="13" font-weight="700">Master DB</text>
+<text x="420" y="395" fill="#3b82f6" font-family="Arial" font-size="9.5">not on the hot path</text>
+</svg>

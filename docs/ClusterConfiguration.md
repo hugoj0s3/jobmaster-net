@@ -44,6 +44,9 @@ Controls the automatic lifecycle of job history and audit logs in the Master dat
 * **Scope:** Automatically cleans up completed jobs, expired schedules, and execution logs.
 * **Tuning:** Set to `null` to keep history indefinitely. In high-throughput environments, a lower TTL is vital to keep the Master database indices performing optimally and prevent excessive storage growth.
 
+> [!NOTE]
+> `DataRetentionTtl` is not configurable through the fluent builder. It is managed at runtime via the **Dashboard or Management API**.
+
 ---
 
 ### Implementation Example
