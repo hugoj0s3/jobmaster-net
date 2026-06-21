@@ -104,12 +104,8 @@ Both can run in a completely separate process from your workers — all they nee
 Full documentation is available at **[docs.jobmaster.hugoj0s3.dev](https://docs.jobmaster.hugoj0s3.dev)**:
 
 - [Getting Started](https://docs.jobmaster.hugoj0s3.dev/docs/getting-started/getting-started)
+- [Scheduling] (https://docs.jobmaster.hugoj0s3.dev/docs/scheduling/one-off-scheduling)
 - [Architecture Overview](https://docs.jobmaster.hugoj0s3.dev/docs/core-concepts/architecture-overview)
-- [Scaling Up](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/scalling-up-introduction)
-- [Providers](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/providers)
-- [Recurring Schedules](https://docs.jobmaster.hugoj0s3.dev/docs/scheduling/recurring-schedule)
-- [Dashboard](https://docs.jobmaster.hugoj0s3.dev/docs/dashboard/configuration)
-- [API](https://docs.jobmaster.hugoj0s3.dev/docs/api/api-configuration)
 
 ---
 
