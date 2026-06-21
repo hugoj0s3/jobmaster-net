@@ -1,18 +1,18 @@
-# JobMaster .Net
-## Distributed job orchestration engine for .NET. Oriented to horizontal scalling and flexibility
+# <img src="img/logo.svg" width="52" valign="middle" /> JobMaster
 
-JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. By decoupling coordination from execution, it allows developers to scale their infrastructure horizontally based on workload demands.
+**Distributed job orchestration engine for .NET. Built for horizontal scale, designed for resilience.**
 
 [![NuGet (pre)](https://img.shields.io/nuget/vpre/JobMaster?label=JobMaster)](https://www.nuget.org/packages/JobMaster)
 
-## 📋 Overview
-JobMaster provides a architecture to handle job lifecycles. It is built to be transport-agnostic, supporting RDBMS (PostgreSQL, SQL Server, MySQL) and Message Brokers (NATS JetStream).
+📖 **[docs.jobmaster.hugoj0s3.dev](https://docs.jobmaster.hugoj0s3.dev)**
 
-## 🚀 Quick Start (Standalone Setup)
-Standalone setup is the easiest way to start. It uses a single database connection for both coordination and job storage, with no external brokers/database required.
+---
 
-### Configuration
-Register JobMaster in your `Program.cs`. This sets up the database and attaches a background worker automatically.
+## Quick Start
+
+Standalone is the simplest way to run JobMaster. A single database connection handles coordination, job storage, and the transport layer — no additional brokers required.
+
+### Register in Program.cs
 
 ```csharp
 builder.Services.AddJobMasterCluster(config =>
@@ -20,220 +20,102 @@ builder.Services.AddJobMasterCluster(config =>
     config.UseStandaloneCluster()
           .ClusterId("Local-Cluster-01")
           .UsePostgres("Host=localhost;Database=jobmaster_db;Username=postgres;Password=pwd")
-          .AddWorker();   // Starts the worker to execute jobs.
+          .AddWorker();
 });
 
 var app = builder.Build();
 
-// Start the JobMaster runtime loops
 await app.Services.StartJobMasterRuntimeAsync();
 ```
 
 > [!TIP]
-> The cluster mode can be changed later as your needs grow — see [Scaling to a Distributed Setup](#-scalling-non-standalone-configurations).
+> Standalone keeps things simple. You can add dedicated databases or message brokers for the transport layer at any time — see [Scaling Up](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/scalling-up-introduction).
 
-### 🛠️ Implementing a Job Handler
-
-A Job Handler is a simple class that contains your background logic. JobMaster handles the instantiation and execution; you just focus on the code.
-
-### Basic Implementation
-Create a class that implements the `IJobHandler` interface.
+### Implement a Job Handler
 
 ```csharp
-using JobMaster.Sdk.Abstractions.Models;
-
-public class ProcessImageHandler : IJobHandler
+public sealed class HelloJobHandler : IJobHandler
 {
-    // The HandleAsync method is the entry point for the worker
     public async Task HandleAsync(JobContext job)
     {
-        // 1. Retrieve data sent during scheduling
-        var imageUrl = job.MsgData.GetStringValue("SourceUrl");
-        var filterType = job.MsgData.GetStringValue("Filter");
-
-        Console.WriteLine($"[Job {job.Id}] Processing image: {imageUrl} with {filterType}");
-
-        // 2. Perform your business logic
-        await Task.Delay(500); // Simulating work
-
-        // 3. Handlers are async-ready
+        var name = job.MsgData.TryGetStringValue("Name") ?? "World";
+        Console.WriteLine($"Hello {name}");
         await Task.CompletedTask;
     }
 }
 ```
 
-### Schedule from a Minimal API 
-The `IJobMasterScheduler` is registered in the DI container. You can inject it into your endpoints to trigger background work instantly or at a specific time.
+Handlers are resolved from the .NET DI container — inject your services (repositories, HTTP clients, etc.) directly into the constructor.
+
+### Schedule a Job
+
+`IJobMasterScheduler` is registered automatically. Inject it anywhere in your application.
 
 ```csharp
-    app.MapPost("/schedule-job", async (IJobMasterScheduler jobScheduler) =>
-    {
-        // Build a fluent message data object
-        var msg = WriteableMessageData.New().SetStringValue("Name", "John Doe");
-    
-        // Enqueue the job for immediate execution
-        await jobScheduler.OnceNowAsync<HelloJobHandler>(msg);
-        
-        return Results.Accepted();
-    
-    }).WithOpenApi();
+app.MapPost("/schedule-job", async (IJobMasterScheduler jobScheduler) =>
+{
+    var msg = WriteableMessageData.New().SetStringValue("Name", "John Doe");
+
+    await jobScheduler.OnceNowAsync<HelloJobHandler>(msg);
+
+    return Results.Accepted();
+}).WithOpenApi();
 ```
 
-### Accessing Job Context
-The `JobContext` provides metadata and payload data for the current execution:
-
-| Property | Description |
-| :--- | :--- |
-| `job.Id` | The unique identifier of the job. |
-| `job.MsgData` | The data payload (arguments) sent to the job. |
-| `job.Metadata` | Non-business data (e.g., correlation IDs, tracking tags). |
 ---
 
-### Dependency Injection
-JobMaster is fully integrated with the .NET Dependency Injection container. You can inject your services (Repositories, HTTP Clients, etc.) directly into the constructor of your Handler.
+## Core Concepts
 
-```csharp
-public class NotificationHandler : IJobHandler
-{
-    private readonly IEmailService _emailService;
+JobMaster separates responsibilities into three layers:
 
-    // Services are resolved automatically from the DI container
-    public NotificationHandler(IEmailService emailService)
-    {
-        _emailService = emailService;
-    }
+- **Cluster Database (Master)** — source of truth. Stores jobs, coordinates agents, and persists configuration.
+- **Agents (Transport Layer)** — ephemeral, high-speed buffers for in-flight jobs. Supports PostgreSQL, MySQL, SQL Server, and NATS JetStream.
+- **Workers (Execution Layer)** — claim and execute jobs using atomic locks. Scale horizontally with zero downtime.
 
-    public async Task HandleAsync(JobContext job)
-    {
-        var email = job.MsgData.GetStringValue("UserEmail");
-        await _emailService.SendAsync(email, "Your report is ready!");
-    }
-}
-```
+---
 
-## 📈 Scalling non-standalone configurations
-For high-throughput or distributed scenarios, you can define multiple agents and specialized workers.
+## Recurring Schedules
 
-### Configuration
-
-Register the JobMaster services in your Program.cs. This sets up the cluster identity and the storage provider.
-Fluent API is used to configure the JobMaster services.
-
-```csharp
-// Program.cs
-builder.Services.AddJobMasterCluster(config =>
-{
-    // Configure the main cluster database
-    config.ClusterId("Cluster-1")
-          .UsePostgresForMaster("[master-connection-string]");
-
-    // Define agent connections
-    config.AddAgentConnectionConfig("Postgres-1")
-          .UsePostgresForAgent("[agent-connection-string]");
-    
-    config.AddAgentConnectionConfig("SqlServer-1")
-          .UseSqlServerForAgent("[agent-connection-string]");
-    
-    config.AddAgentConnectionConfig("Nats-1")
-          .UseNatsJetStream("[agent-connection-string]");
-    
-    /// ... Many more agents as needed
-    
-    // Attach a worker to a specific connection
-    config.AddWorker()
-          .AgentConnName("Postgres-1");
-    
-    config.AddWorker()
-          .AgentConnName("SqlServer-1");
-     
-     config.AddWorker()
-          .AgentConnName("Nats-1");
-});
-
-// Start the runtime
-await app.Services.StartJobMasterRuntimeAsync();
-````
-
-## 🏗️ Core Architecture Overview
-To achieve horizontal scalling and resilience, JobMaster divides responsibilities into three distinct layers:
-
-### 1. The Cluster Database (Master)
-The Source of Truth for the entire ecosystem.
-
-   - **Coordination**: Manages agent registrations and workload distribution.
-   - **Persistence**: Stores jobs long-term, providing a full audit trail.
-   - **Configuration**: Centralized storage for cluster settings and job definitions.
-
-### 2. Agents (Transport Layer)
-Ephemeral storage for jobs ready for immediate execution.
-  - **High-Speed Buffering**: Only stores "in-flight" tasks.
-  - **Performance Buffering**: New jobs are persisted to Agents first for near-instant execution, then synced asynchronously to the Master.
-
-### Workers (Execution Layer)
-The compute power of the system.
-    - **Atomic Locks**: Workers claim available jobs using provider-specific atomic operations.
-    - **Horizontal Scalling**: Spin up as many worker instances as needed with zero downtime.
-
-
-## 📅 Recurrence Expressions
 JobMaster supports recurrence expressions using the [NaturalCron](https://github.com/hugoj0s3/NaturalCron) library.
 
 ```csharp
-// FLuent build
-var schedule = NaturalCronBuilder.Every(1).Minutes().Build();
-jobScheduler.Recurring<HelloJobHandler>(schedule, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
+// Fluent builder
+var expression = NaturalCronBuilder.Every(1).Minutes().Build();
+await jobScheduler.RecurringAsync<HelloJobHandler>(expression);
 
-// Via expression string
-jobScheduler.Recurring<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1 minutes", WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
+// Expression string
+await jobScheduler.RecurringAsync<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1 minutes");
 ```
 
-## 📚 Documentation
+---
 
-- **Scheduling**
-  - One-off and recurring scheduling, `IJobHandler`, attributes and metadata
-  - See: [docs/Scheduling.md](docs/Scheduling.md)
+## Dashboard & API
 
-- **Architecture Overview**
-  - Core concepts, planes (Orchestration & Durable Storage vs. Transport Layer), and standard assignment vs. high-speed SavePending shortcut flows.
-  - See: [docs/ArchitectureOverview.md](docs/ArchitectureOverview.md)
+JobMaster ships a browser-based dashboard and a REST API for monitoring clusters, jobs, workers, buckets, and agent connections in real time.
 
-- **Cluster, Agent Connections, and Workers Configuration**
-  - Cluster setup, agent connections, workers, lanes, buckets, batch sizing
-  - See:
-    - [docs/BucketsConfiguration.md](docs/BucketsConfiguration.md)
-    - [docs/WorkersConfiguration.md](docs/WorkersConfiguration.md)
-    - [docs/AgentsConfiguration.md](docs/AgentsConfiguration.md)
-    - [docs/ClusterConfiguration.md](docs/ClusterConfiguration.md)
+```bash
+dotnet add package JobMaster.Api
+dotnet add package JobMaster.Dashboard
+```
 
-- **Architecture & Performance Tuning Guide**
-  - Tuning JobMaster like a database: sizing coordinators, workers, lanes, and bucket partitions.
-  - See: [docs/ArchitectureTuningGuide.md](docs/ArchitectureTuningGuide.md)
-
-- **Repositories / Transport Providers**
-  - Postgres, MySQL, SQL Server, NATS JetStream
-  - See: [docs/Providers.md](docs/Providers.md)
-
-- **API**
-  - Expose clusters as a RESTful HTTP service with authentication and isolated Swagger UI
-  - See: [docs/ApiConfiguration.md](docs/ApiConfiguration.md)
-
-- **Dashboard**
-  - Browser-based SPA for monitoring and managing clusters — connects to the API over HTTP
-  - See: [docs/DashboardConfiguration.md](docs/DashboardConfiguration.md)
-
-## 🐞 Internal Debugging
-  - Easy way to see the logs while we don't have UI/Api. Cluster level config.
-  ```csharp
-  .DebugJsonlFileLogger("[path-to-dir]")
-  ```
+Both can run in a completely separate process from your workers — all they need is access to the master database.
 
 ---
 
-## 🗺️ Roadmap
+## Documentation
 
-📖 **See the roadmap:** [docs/Roadmap.md](docs/Roadmap.md)
+Full documentation is available at **[docs.jobmaster.hugoj0s3.dev](https://docs.jobmaster.hugoj0s3.dev)**:
+
+- [Getting Started](https://docs.jobmaster.hugoj0s3.dev/docs/getting-started/getting-started)
+- [Architecture Overview](https://docs.jobmaster.hugoj0s3.dev/docs/core-concepts/architecture-overview)
+- [Scaling Up](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/scalling-up-introduction)
+- [Providers](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/providers)
+- [Recurring Schedules](https://docs.jobmaster.hugoj0s3.dev/docs/scheduling/recurring-schedule)
+- [Dashboard](https://docs.jobmaster.hugoj0s3.dev/docs/dashboard/configuration)
+- [API](https://docs.jobmaster.hugoj0s3.dev/docs/api/api-configuration)
 
 ---
 
+## Roadmap
 
-
+See [docs.jobmaster.hugoj0s3.dev/docs/roadmap](https://docs.jobmaster.hugoj0s3.dev/docs/roadmap).

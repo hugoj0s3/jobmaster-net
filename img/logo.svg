@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="-20 -20 240 240">
+  <g transform="rotate(-12, 100, 100)">
+    <rect x="10" y="10" width="180" height="180" rx="40" ry="40" fill="oklch(0.55 0.20 270)"/>
+    <g stroke="white" stroke-opacity="0.12" stroke-width="1.2" fill="none">
+      <line x1="60" y1="30" x2="60" y2="170"/>
+      <line x1="100" y1="30" x2="100" y2="170"/>
+      <line x1="140" y1="30" x2="140" y2="170"/>
+      <line x1="30" y1="60" x2="170" y2="60"/>
+      <line x1="30" y1="100" x2="170" y2="100"/>
+      <line x1="30" y1="140" x2="170" y2="140"/>
+    </g>
+    <g fill="white" opacity="0.25">
+      <circle cx="60" cy="60" r="3"/>
+      <circle cx="100" cy="60" r="3"/>
+      <circle cx="140" cy="60" r="3"/>
+      <circle cx="60" cy="100" r="3"/>
+      <circle cx="140" cy="100" r="3"/>
+      <circle cx="60" cy="140" r="3"/>
+      <circle cx="100" cy="140" r="3"/>
+      <circle cx="140" cy="140" r="3"/>
+    </g>
+    <text x="100" y="118"
+      text-anchor="middle"
+      font-family="system-ui, sans-serif"
+      font-weight="800"
+      font-size="72"
+      letter-spacing="-2"
+      fill="white">JM</text>
+  </g>
+</svg>
