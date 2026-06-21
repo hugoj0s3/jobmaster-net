@@ -28,9 +28,6 @@ var app = builder.Build();
 await app.Services.StartJobMasterRuntimeAsync();
 ```
 
-> [!TIP]
-> Standalone keeps things simple. You can add dedicated databases or message brokers for the transport layer at any time — see [Scaling Up](https://docs.jobmaster.hugoj0s3.dev/docs/advanced/scalling-up-introduction).
-
 ### Implement a Job Handler
 
 ```csharp
