@@ -6,9 +6,9 @@ public interface IJobMasterDashboardThemeBaseSelector
     IJobMasterDashboardThemeSelector DefaultForClusterId(string clusterIds);
     IJobMasterDashboardPrimaryThemeSelector MakePrimary();
 }
-public interface IJobMasterDashboardThemeSelector : 
+public interface IJobMasterDashboardThemeSelector :
     IJobMasterDashboardThemeBaseSelector,
     IJobMasterDashboardThemeColorSelector<IJobMasterDashboardThemeSelector>
 {
-    
+
 }

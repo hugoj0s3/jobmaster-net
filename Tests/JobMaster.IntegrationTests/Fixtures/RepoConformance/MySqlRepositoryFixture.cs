@@ -84,7 +84,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
                 .UseMySqlForAgent(agentCnn)
                 .UseSqlTablePrefixForAgent(AgentTablePrefix);
 
-            cfg.ClusterMode(ClusterMode.Active);
+            cfg.Mode(ClusterMode.Active);
         });
 
         Services = services.BuildServiceProvider();

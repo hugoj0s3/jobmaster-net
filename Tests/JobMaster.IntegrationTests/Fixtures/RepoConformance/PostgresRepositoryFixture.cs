@@ -84,7 +84,7 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
                 .UsePostgresForAgent(agentCnn)
                 .UseSqlTablePrefixForAgent(AgentTablePrefix);
 
-            cfg.ClusterMode(ClusterMode.Active);
+            cfg.Mode(ClusterMode.Active);
         });
 
         Services = services.BuildServiceProvider();

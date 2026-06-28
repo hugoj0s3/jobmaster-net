@@ -1,6 +1,6 @@
 namespace JobMaster.Dashboard.Ioc.Selectors.Themes;
 
-public interface IJobMasterDashboardPrimaryThemeSelector : 
+public interface IJobMasterDashboardPrimaryThemeSelector :
     IJobMasterDashboardThemeBaseSelector,
     IJobMasterDashboardThemeColorSelector<IJobMasterDashboardPrimaryThemeSelector>,
     IJobMasterDashboardFontFamilySelector<IJobMasterDashboardPrimaryThemeSelector>

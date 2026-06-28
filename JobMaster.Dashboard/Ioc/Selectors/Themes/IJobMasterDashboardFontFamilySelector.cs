@@ -13,7 +13,7 @@ public interface IJobMasterDashboardFontFamilySelector<out TReturn>
     /// Optional URL of a CSS stylesheet that loads the font, e.g.
     /// <c>"https://fonts.googleapis.com/css2?family=Geist:wght@300;400;800&amp;display=swap"</c>.
     /// </param>
-    TReturn SetFontSans(string[] fontFamilies, string fontUrl = null);
+    TReturn SetFontSans(string[] fontFamilies, string? fontUrl = null);
 
     /// <summary>
     /// Sets the monospace font family stack (<c>--font-mono</c>).
@@ -26,5 +26,5 @@ public interface IJobMasterDashboardFontFamilySelector<out TReturn>
     /// Optional URL of a CSS stylesheet that loads the font, e.g.
     /// <c>"https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;700&amp;display=swap"</c>.
     /// </param>
-    TReturn SetFontMono(string[] fontFamilies, string fontUrl = null);
+    TReturn SetFontMono(string[] fontFamilies, string? fontUrl = null);
 }

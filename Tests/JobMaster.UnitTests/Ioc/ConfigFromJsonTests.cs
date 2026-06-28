@@ -465,7 +465,7 @@ public class ConfigFromJsonTests
         """;
 
         var b = Builder();
-        b.ConfigFromJson(json).ClusterDefaultMaxRetryCount(99);
+        b.ConfigFromJson(json).DefaultMaxRetryCount(99);
 
         b.clusterDefinition.DefaultMaxRetryCount.Should().Be(99);
     }

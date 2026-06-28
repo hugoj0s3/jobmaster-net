@@ -204,7 +204,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                     cfg.UseSqlTablePrefixForMaster(ToSafeSqlIdentifier(c.MasterTablePrefix));
                 }
 
-                cfg.ClusterTransientThreshold(TimeSpan.FromMinutes(1));
+                cfg.TransientThreshold(TimeSpan.FromMinutes(1));
                 
                 // cfg.DebugJsonlFileLogger("/home/hugo/log/");
                 
@@ -294,7 +294,7 @@ public abstract class JobMasterBaseSchedulerFixture : IAsyncLifetime
                     }
                 }
 
-                cfg.ClusterMode(ClusterMode.Active);
+                cfg.Mode(ClusterMode.Active);
             });
 
             ClusterIds.Add(c.ClusterName);

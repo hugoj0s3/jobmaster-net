@@ -140,7 +140,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
             {
                 using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
                 await jsContext!.PublishAsync(subject, data, headers: headers, cancellationToken: pubCts.Token);
-                return supposedId; 
+                return supposedId!; 
             }
             catch (NatsJSTimeoutException ex)
             {
@@ -155,7 +155,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
                 logger.Error($"JetStream publish failed after {attempt} attempts.", exception: ex);
                 
                 // Ambiguous outcome: throw special exception with supposed published id for dedup correlation.
-                throw new PublishOutcomeUnknownException("Publish timed out; outcome unknown.", supposedPublishedId: supposedId, ex);
+                throw new PublishOutcomeUnknownException("Publish timed out; outcome unknown.", supposedPublishedId: supposedId!, ex);
             } 
             catch (Exception ex)
             {

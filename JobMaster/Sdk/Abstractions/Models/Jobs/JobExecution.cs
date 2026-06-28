@@ -69,12 +69,12 @@ internal class JobExecution : JobMasterBaseModel
 
         if (!string.IsNullOrEmpty(rec.AgentConnectionId))
         {
-            ex.AgentConnectionId = new AgentConnectionId(rec.AgentConnectionId);
+            ex.AgentConnectionId = new AgentConnectionId(rec.AgentConnectionId!);
         }
 
         if (!string.IsNullOrEmpty(rec.HostId))
         {
-            ex.HostId = HostId.Recover(rec.HostDisplayName ?? string.Empty, rec.HostId);
+            ex.HostId = HostId.Recover(rec.HostDisplayName ?? string.Empty, rec.HostId!);
         }
 
         return ex;

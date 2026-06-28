@@ -96,9 +96,9 @@ var standalonePostgres = ApplySecrets(
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
-          .ClusterTransientThreshold(TimeSpan.FromMinutes(1))
+          .TransientThreshold(TimeSpan.FromMinutes(1))
           .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
-          .ClusterMode(ClusterMode.Active);
+          .Mode(ClusterMode.Active);
 
     // Master database (must be SQL)
     config.UsePostgresForMaster(masterPostgres);
