@@ -1,8 +1,5 @@
-using System;
-using System.Threading.Tasks;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
@@ -25,7 +22,7 @@ internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
-        using var connection = await dbConnectionManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var connection = await dbConnectionManager.OpenAsync(connString, additionalConnConfig);
         var fingerprint = await connection.QueryFirstOrDefaultAsync<string>(@$"
 SELECT fingerprint
 FROM {FingerprintTableName()}

@@ -41,7 +41,6 @@ public class ApiMasterBucketQueryCriteria
             WorkerLane = WorkerLane,
             BucketType = BucketType,
             BucketIds = BucketIds ?? [],
-            ReadIsolationLevel = ReadIsolationLevel.FastSync,
         };
     }
 }

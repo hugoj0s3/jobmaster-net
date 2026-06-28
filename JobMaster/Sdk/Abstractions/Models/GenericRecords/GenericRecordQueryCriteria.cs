@@ -16,8 +16,6 @@ internal sealed class GenericRecordQueryCriteria
     public int? Limit { get; set; }
     public int? Offset { get; set; }
     
-    public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.FastSync;
-    
     public GenericRecordQueryOrderByTypeId OrderBy { get; set; } = GenericRecordQueryOrderByTypeId.CreatedAtDesc;
 }
 

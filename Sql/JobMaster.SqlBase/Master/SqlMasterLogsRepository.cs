@@ -1,9 +1,7 @@
 using System.Data;
 using System.Text;
 using Dapper;
-using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
@@ -68,7 +66,7 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
         var (whereSql, args) = BuildWhere(criteria);
         var sqlText = $"SELECT * FROM {t} {whereSql} ORDER BY timestamp_utc DESC\n{sql.OffsetQueryFor(criteria.CountLimit, criteria.Offset)}";
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var rows = await conn.QueryAsync<LogPersistenceRecord>(sqlText, args);
         return rows.Select(ToLogItem).ToList();
     }
@@ -79,7 +77,7 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
         var (whereSql, args) = BuildWhere(criteria);
         var sqlText = $"SELECT COUNT(*) FROM {t} {whereSql}";
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         return await conn.ExecuteScalarAsync<int>(sqlText, args);
     }
 

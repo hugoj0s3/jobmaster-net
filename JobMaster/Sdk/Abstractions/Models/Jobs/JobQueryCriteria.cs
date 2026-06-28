@@ -41,6 +41,4 @@ internal class JobQueryCriteria
     public IList<Guid> ExcludeJobIds { get; set; } = new List<Guid>();
     
     public SortByCriteria? SortBy { get; set; }
-    
-    public ReadIsolationLevel ReadIsolationLevel { get; set; } = ReadIsolationLevel.Consistent;
 }

@@ -94,9 +94,8 @@ public class ApiJobQueryCriteria
             HostId = HostId,
             BucketId = BucketId,
             WorkerId = WorkerId,
-            ReadIsolationLevel = ReadIsolationLevel.FastSync,
-            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property) 
-                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending } 
+            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property)
+                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending }
                 : null,
         };
     }

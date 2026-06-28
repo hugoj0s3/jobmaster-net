@@ -66,9 +66,8 @@ public class ApiRecurringScheduleQueryCriteria
             MetadataFilters = ApiGenericRecordValueFilterMappings.ParseMetadataFiltersJson(MetadataFiltersJson),
             CountLimit = CountLimit ?? 25,
             Offset = Offset ?? 0,
-            ReadIsolationLevel = ReadIsolationLevel.FastSync,
-            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property) 
-                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending } 
+            SortBy = SortBy != null && !string.IsNullOrWhiteSpace(SortBy.Property)
+                ? new SortByCriteria { Property = SortBy.Property, Ascending = SortBy.Ascending }
                 : null,
         };
     }

@@ -39,7 +39,7 @@ internal class MySqlMasterJobsRepository : SqlMasterJobsRepository
         var expiresAtUtcKind = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
         var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {

@@ -45,7 +45,21 @@ config.AddAgentConnectionConfig("Sql-Transport")
           .AgentConnName("Sql-Transport");
 ```
 
-### Part 4: Features
+### Part 4: Database Setup Recommendation
+
+## ⚡ Enable READ_COMMITTED_SNAPSHOT (Recommended)
+
+JobMaster relies on non-blocking reads for counts, queries, and heartbeats. On SQL Server, the safest way to achieve this is to enable **READ_COMMITTED_SNAPSHOT isolation (RCSI)** at the database level:
+
+```sql
+ALTER DATABASE YourDatabaseName SET READ_COMMITTED_SNAPSHOT ON;
+```
+
+With RCSI enabled, `READ COMMITTED` queries use row-version snapshots instead of shared locks — readers never block writers and writers never block readers. This significantly reduces contention under concurrent workloads without any application-level changes.
+
+> **Note:** RCSI requires brief exclusive database access to apply. Run during a maintenance window on production databases.
+
+### Part 5: Features
 ## 🛠 Features
 * **Atomic Locking:** Utilizes SQL Server application locks to ensure job execution safety and prevent double-processing across multiple nodes.
 * **Auto-Schema Management:** Automatically handles the creation of necessary tables, indexes, and stored procedures on startup.

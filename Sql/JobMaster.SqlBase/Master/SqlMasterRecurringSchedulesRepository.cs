@@ -52,7 +52,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
 
         var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
@@ -86,7 +86,7 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
 
             if (rowsAffected == 0) return new List<RecurringScheduleRawModel>();
 
-            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig);
             return await QueryLockedSchedulesAsync(partitionLockId, nowUtcWithSkew, conn2);
         }
         catch
@@ -260,7 +260,7 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
 
     public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = conn.Query<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListToDomain(linearRows);
@@ -269,7 +269,7 @@ WHERE {Col(x => x.Id)} IN ({queryIdsSql})
 
     public async Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
@@ -385,7 +385,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
 
     public long Count(RecurringScheduleQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = connManager.Open(connString, additionalConnConfig);
         var (whereSql, args) = BuildWhere(queryCriteria);
         var t = TableName();
         var sqlText = $"SELECT COUNT(*) FROM {t} s {whereSql}";
@@ -397,7 +397,7 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
         if (queryCriteria.MetadataFilters.Count > 0)
             throw new NotSupportedException("ProbeCountForAcquire does not support MetadataFilters.");
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
         var t = TableName();
         var sqlText = $"SELECT COUNT(*) FROM {t} s {whereSql}";

@@ -1,9 +1,5 @@
-using System;
 using System.Data;
-using System.Diagnostics;
-using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.SqlBase.Connections;
 using MySqlConnector;
 
@@ -12,34 +8,32 @@ namespace JobMaster.MySql;
 internal class MySqlDbConnectionManager : DbConnectionManager, IDbConnectionManager
 {
     public override IDbConnection Open(
-        string connectionString, 
-        JobMasterConfigDictionary? additionalConnConfig = null,
-        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent)
+        string connectionString,
+        JobMasterConfigDictionary? additionalConnConfig = null)
     {
         var conn = new MySqlConnection(connectionString);
-        conn.Open(); 
-        
+        conn.Open();
+
         using var cmd = conn.CreateCommand();
-        cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
+        cmd.CommandText = "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
         cmd.ExecuteNonQuery();
-        
+
         return conn;
     }
 
     public override async Task<IDbConnection> OpenAsync(
-        string connectionString, 
-        JobMasterConfigDictionary? additionalConnConfig = null,
-        ReadIsolationLevel isolationLevel = ReadIsolationLevel.Consistent)
+        string connectionString,
+        JobMasterConfigDictionary? additionalConnConfig = null)
     {
         var conn = new MySqlConnection(connectionString);
         try
         {
             await conn.OpenAsync();
-        
+
             await using var cmd = conn.CreateCommand();
-            cmd.CommandText = $"SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
+            cmd.CommandText = "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED;";
             await cmd.ExecuteNonQueryAsync();
-        
+
             return conn;
         }
         catch
@@ -47,14 +41,5 @@ internal class MySqlDbConnectionManager : DbConnectionManager, IDbConnectionMana
             await conn.DisposeAsync();
             throw;
         }
-    }
-    
-    private static string IsolationLevelToSql(ReadIsolationLevel isolationLevel)
-    {
-        return isolationLevel switch
-        {
-            ReadIsolationLevel.FastSync => "READ UNCOMMITTED",
-            _ => "READ COMMITTED"
-        };
     }
 }

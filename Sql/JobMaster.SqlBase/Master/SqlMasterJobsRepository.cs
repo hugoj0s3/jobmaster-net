@@ -258,7 +258,7 @@ ORDER BY started_at DESC";
     
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = conn.Query<JobPersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListRecord(linearRows);
@@ -267,7 +267,7 @@ ORDER BY started_at DESC";
 
     public async Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, queryCriteria.ReadIsolationLevel);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
         var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
@@ -297,7 +297,7 @@ ORDER BY started_at DESC";
 
     public long Count(JobQueryCriteria queryCriteria)
     {
-        using var conn = connManager.Open(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = connManager.Open(connString, additionalConnConfig);
         var (whereSql, args) = BuildWhere(queryCriteria);
         args.Add("GroupId", MasterGenericRecordGroupIds.JobMetadata);
         var t = TableName();
@@ -314,7 +314,7 @@ LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON
         if (queryCriteria.MetadataFilters.Count > 0)
             throw new NotSupportedException("ProbeForAcquire does not support MetadataFilters.");
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.FastSync);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         
         var (whereSql, args) = BuildWhere(queryCriteria, isLocked: false);
         var t = TableName();
@@ -521,7 +521,7 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
         
         var unlockedGuard = $"({Col(x => x.PartitionLockId)} IS NULL OR {Col(x => x.PartitionLockExpiresAt)} < @LockNowUtc)";
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
@@ -553,7 +553,7 @@ where {Col(x => x.Id)} in ({queryIdsSql})
             
             if (rowsAffected == 0) return new List<JobRawModel>();
 
-            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig, ReadIsolationLevel.Consistent);
+            using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig);
             return await QueryLockedJobsAsync(partitionLockId, nowUtcWithSkew, conn2);
         }
         catch

@@ -193,7 +193,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         return await QueryAsync(new MasterBucketQueryCriteria()
         {
             Status = bucketStatus,
-            ReadIsolationLevel = ReadIsolationLevel.Consistent,
         });
     }
 
@@ -202,7 +201,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
         return Query(new MasterBucketQueryCriteria()
         {
             Status = bucketStatus,
-            ReadIsolationLevel = ReadIsolationLevel.Consistent,
         });
     }
 
@@ -437,8 +435,6 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             foreach (var id in criteria.BucketIds)
                 genericRecordQueryCriteria.EntryIds.Add(id);
         }
-
-        genericRecordQueryCriteria.ReadIsolationLevel = criteria.ReadIsolationLevel;
 
         return genericRecordQueryCriteria;
     }

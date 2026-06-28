@@ -80,7 +80,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             () => masterJobsService.Count(new JobQueryCriteria
             {
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "count-total",
             clusterId: clusterId));
@@ -90,7 +89,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 Status = JobMasterJobStatus.Succeeded,
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "count-succeeded",
             clusterId: clusterId));
@@ -100,7 +98,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 Status = JobMasterJobStatus.OnMaster,
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "count-held-on-master",
             clusterId: clusterId));
@@ -110,7 +107,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 Status = JobMasterJobStatus.Failed,
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "count-failed",
             clusterId: clusterId));
@@ -129,7 +125,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             () => masterJobsService.Count(new JobQueryCriteria
             {
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "drain-poll-total", clusterId: clusterId));
 
@@ -138,7 +133,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 Status = JobMasterJobStatus.Succeeded,
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "drain-poll-succeeded", clusterId: clusterId));
 
@@ -147,7 +141,6 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             {
                 Status = JobMasterJobStatus.OnMaster,
                 MetadataFilters = sessionMetadataFilters,
-                ReadIsolationLevel = ReadIsolationLevel.FastSync,
             }),
             operation: "drain-poll-onmaster", clusterId: clusterId));
 
@@ -167,8 +160,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     Status = bucketStatus,
                     ExcludeBucketIds = fallbackBucketIds,
                     MetadataFilters = sessionMetadataFilters,
-                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                }),
+                    }),
                 operation: $"drain-poll-pending-{bucketStatus}",
                 clusterId: clusterId));
         }
@@ -194,8 +186,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     MetadataFilters = sessionMetadataFilters,
                     CountLimit = pageSize,
                     Offset = offset,
-                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                }),
+                    }),
                 operation: $"query-succeeded-ids-offset-{offset}",
                 clusterId: clusterId);
 
@@ -786,8 +777,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                     {
                         MetadataFilters = sessionMetadataFilters,
                         CountLimit = int.MaxValue,
-                        ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                    });
+                            });
 
                     var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
                     var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded);
@@ -885,8 +875,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 {
                     MetadataFilters = sessionMetadataFilters,
                     CountLimit = int.MaxValue,
-                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                });
+                    });
 
                 var succeeded = allJobs.Count(j => j.Status == JobMasterJobStatus.Succeeded);
                 var other = allJobs.Count(j => j.Status != JobMasterJobStatus.Succeeded);
@@ -1079,8 +1068,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                 {
                     MetadataFilters = sessionMetadataFilters,
                     CountLimit = int.MaxValue,
-                    ReadIsolationLevel = ReadIsolationLevel.FastSync,
-                });
+                    });
 
                 allJobsFromDb.AddRange(jobs);
             }
