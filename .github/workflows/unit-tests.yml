@@ -1,0 +1,29 @@
+name: Unit Tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore JobMaster.sln
+
+      - name: Build
+        run: dotnet build JobMaster.sln --no-restore --configuration Release
+
+      - name: Test
+        run: dotnet test Tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj --no-build --configuration Release --verbosity normal

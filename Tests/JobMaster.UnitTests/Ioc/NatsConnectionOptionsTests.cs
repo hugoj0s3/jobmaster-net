@@ -86,7 +86,7 @@ public class NatsConnectionOptionsTests
         var sel = Selector();
         Strategy().SetOptions(sel, new Dictionary<string, object> { ["credentialsFile"] = "/etc/nats/my.creds" });
 
-        CapturedAuth(sel)!.CredsFile.Should().Be("/etc/nats/my.creds");
+        CapturedAuth(sel).CredsFile.Should().Be("/etc/nats/my.creds");
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public class NatsConnectionOptionsTests
         });
 
         var auth = CapturedAuth(sel);
-        auth!.NKey.Should().Be("SUANQ...");
+        auth.NKey.Should().Be("SUANQ...");
         auth.Jwt.Should().Be("eyJ...");
     }
 
@@ -126,8 +126,7 @@ public class NatsConnectionOptionsTests
         });
 
         var tls = CapturedTls(sel);
-        tls.Should().NotBeNull();
-        tls!.CertBundleFile.Should().Be("/etc/nats/bundle.pfx");
+        tls.CertBundleFile.Should().Be("/etc/nats/bundle.pfx");
         tls.CertBundleFilePassword.Should().Be("pfxpass");
     }
 
@@ -137,7 +136,7 @@ public class NatsConnectionOptionsTests
         var sel = Selector();
         Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsCaFile"] = "/etc/ca.pem" });
 
-        CapturedTls(sel)!.CaFile.Should().Be("/etc/ca.pem");
+        CapturedTls(sel).CaFile.Should().Be("/etc/ca.pem");
     }
 
     [Fact]
@@ -146,11 +145,11 @@ public class NatsConnectionOptionsTests
         var sel = Selector();
         Strategy().SetOptions(sel, new Dictionary<string, object>
         {
-            ["tlsCaFile"]            = "/etc/ca.pem",
+            ["tlsCaFile"]             = "/etc/ca.pem",
             ["tlsInsecureSkipVerify"] = "true"
         });
 
-        CapturedTls(sel)!.InsecureSkipVerify.Should().BeTrue();
+        CapturedTls(sel).InsecureSkipVerify.Should().BeTrue();
     }
 
     [Fact]
@@ -163,7 +162,7 @@ public class NatsConnectionOptionsTests
             ["tlsInsecureSkipVerify"] = "false"
         });
 
-        CapturedTls(sel)!.InsecureSkipVerify.Should().BeFalse();
+        CapturedTls(sel).InsecureSkipVerify.Should().BeFalse();
     }
 
     [Theory]
@@ -177,7 +176,7 @@ public class NatsConnectionOptionsTests
         var sel = Selector();
         Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsMode"] = input });
 
-        CapturedTls(sel)!.Mode.Should().Be(expected);
+        CapturedTls(sel).Mode.Should().Be(expected);
     }
 
     [Fact]
@@ -210,17 +209,17 @@ public class NatsConnectionOptionsTests
     }
 
     [Theory]
-    [InlineData("Username")]
-    [InlineData("PASSWORD")]
-    [InlineData("Token")]
-    [InlineData("TlsCaFile")]
-    [InlineData("TLSMODE")]
-    public void SetOptions_KeysCaseInsensitive_DoesNotThrow(string key)
+    [InlineData("Username",  "alice")]
+    [InlineData("PASSWORD",  "secret")]
+    [InlineData("Token",     "tok123")]
+    [InlineData("TlsCaFile", "/etc/ca.pem")]
+    [InlineData("TLSMODE",   "Require")]
+    public void SetOptions_KeysCaseInsensitive_DoesNotThrow(string key, string value)
     {
         var sel = Selector();
         var act = () => Strategy().SetOptions(
             sel,
-            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [key] = "value" });
+            new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [key] = value });
 
         act.Should().NotThrow();
     }
@@ -231,9 +230,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_ClusterSelector_ThrowsInvalidOperationException()
     {
         var cluster = new ClusterConfigBuilder(null, new ServiceCollection());
-        var act = () => Strategy().SetOptions(
-            (IClusterConfigSelector)cluster,
-            new Dictionary<string, object> { ["username"] = "u" });
+        var act = () => Strategy().SetOptions(cluster, new Dictionary<string, object> { ["username"] = "u" });
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*cluster master*");
     }
@@ -265,13 +262,10 @@ public class NatsConnectionOptionsTests
 
         var agentConfig = b.clusterDefinition.AgentConnections[0].AgentAdditionalConnConfig;
         agentConfig.Should().NotBeNull();
-
-        var auth = agentConfig!.TryGetValue<NatsAuthOpts>(
-            NatsJetStreamConfigKey.NamespaceUniqueKey,
-            NatsJetStreamConfigKey.NatsAuthOptsKey);
-        auth.Should().NotBeNull();
-        auth!.Username.Should().Be("natsuser");
-        auth.Password.Should().Be("natssecret");
+        agentConfig
+            .TryGetValue<NatsAuthOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey)
+            .Should().NotBeNull()
+            .And.BeEquivalentTo(new { Username = "natsuser", Password = "natssecret" });
     }
 
     [Fact]
@@ -298,12 +292,11 @@ public class NatsConnectionOptionsTests
         b.ConfigFromJson(json);
 
         var agentConfig = b.clusterDefinition.AgentConnections[0].AgentAdditionalConnConfig;
-        var tls = agentConfig!.TryGetValue<NatsTlsOpts>(
-            NatsJetStreamConfigKey.NamespaceUniqueKey,
-            NatsJetStreamConfigKey.NatsTlsOptsKey);
-        tls.Should().NotBeNull();
-        tls!.CaFile.Should().Be("/etc/ca.pem");
-        tls.Mode.Should().Be(TlsMode.Require);
+        agentConfig.Should().NotBeNull();
+        agentConfig
+            .TryGetValue<NatsTlsOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey)
+            .Should().NotBeNull()
+            .And.BeEquivalentTo(new { CaFile = "/etc/ca.pem", Mode = TlsMode.Require });
     }
 
     [Fact]
@@ -350,11 +343,13 @@ public class NatsConnectionOptionsTests
         """;
 
         var b = new ClusterConfigBuilder(null, new ServiceCollection());
-        var act = () => b.ConfigFromJson(json);
+        b.ConfigFromJson(json);
 
-        act.Should().NotThrow();
-        var auth = b.clusterDefinition.AgentConnections[0].AgentAdditionalConnConfig!
-            .TryGetValue<NatsAuthOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey);
-        auth!.Username.Should().Be("alice");
+        var agentConfig = b.clusterDefinition.AgentConnections[0].AgentAdditionalConnConfig;
+        agentConfig.Should().NotBeNull();
+        agentConfig
+            .TryGetValue<NatsAuthOpts>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsAuthOptsKey)
+            .Should().NotBeNull()
+            .And.BeEquivalentTo(new { Username = "alice" });
     }
 }

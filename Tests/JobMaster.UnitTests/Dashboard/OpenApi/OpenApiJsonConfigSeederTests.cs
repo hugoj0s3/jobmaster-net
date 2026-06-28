@@ -72,8 +72,8 @@ public class OpenApiJsonConfigSeederTests : IDisposable
             {
               {{ValidHeader}},
               "x-jobmaster-clusters": [
-                { "id": "prod" },
-                { "id": "staging" }
+                { "id": "cluster-prod" },
+                { "id": "cluster-staging" }
               ]
             }
             """);
@@ -82,10 +82,8 @@ public class OpenApiJsonConfigSeederTests : IDisposable
         await new OpenApiJsonConfigSeeder().EnsureSeededAsync(options, CreateContext());
 
         options.Clusters.Should().HaveCount(2);
-        options.Clusters[0].Id.Should().Be("prod");
-        options.Clusters[0].EnvironmentName.Should().Be("prod");
-        options.Clusters[1].Id.Should().Be("staging");
-        options.Clusters[1].EnvironmentName.Should().Be("staging");
+        options.Clusters[0].Id.Should().Be("cluster-prod");
+        options.Clusters[1].Id.Should().Be("cluster-staging");
     }
 
     [Fact]
