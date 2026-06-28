@@ -14,6 +14,8 @@
 
 ### Changed
 
+- **`ReadIsolationLevel` removed** — The internal `ReadIsolationLevel` enum and all `ReadIsolationLevel` properties on query criteria classes have been removed. All database reads now use `READ COMMITTED`. SQL Server users are recommended to enable `READ_COMMITTED_SNAPSHOT` (RCSI) on their database to achieve equivalent non-blocking read behaviour without dirty reads.
+
 - **`IClusterConfigSelector` method renames** — The `Cluster` prefix has been removed from cluster configuration methods (`DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `Mode`). Old names still compile but are marked obsolete and will be removed in a future release. `ClusterId` is unchanged.
 
 ---
