@@ -1,8 +1,8 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using Microsoft.Extensions.Configuration;
 
 namespace JobMaster.Abstractions.Ioc.Selectors;
 
@@ -33,6 +33,10 @@ public interface IClusterConfigSelector
     /// Default: <see cref="JobMasterDefaults.DefaultJobTimeout"/> (1 minute).
     /// </summary>
     /// <param name="defaultJobTimeout">The maximum allowed execution duration per job.</param>
+    public IClusterConfigSelector DefaultJobTimeout(TimeSpan defaultJobTimeout);
+
+    /// <inheritdoc cref="DefaultJobTimeout"/>
+    [Obsolete("Use DefaultJobTimeout instead.")]
     public IClusterConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout);
 
     /// <summary>
@@ -41,6 +45,10 @@ public interface IClusterConfigSelector
     /// Default: <see cref="JobMasterDefaults.TransientThreshold"/> (10 minutes).
     /// </summary>
     /// <param name="transientThreshold">The look-ahead dispatch window.</param>
+    public IClusterConfigSelector TransientThreshold(TimeSpan transientThreshold);
+
+    /// <inheritdoc cref="TransientThreshold"/>
+    [Obsolete("Use TransientThreshold instead.")]
     public IClusterConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold);
 
     /// <summary>
@@ -48,6 +56,10 @@ public interface IClusterConfigSelector
     /// Default: <see cref="JobMasterDefaults.MaxRetryCount"/> (3 retries).
     /// </summary>
     /// <param name="defaultMaxRetryCount">The number of retry attempts allowed per job.</param>
+    public IClusterConfigSelector DefaultMaxRetryCount(int defaultMaxRetryCount);
+
+    /// <inheritdoc cref="DefaultMaxRetryCount"/>
+    [Obsolete("Use DefaultMaxRetryCount instead.")]
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount);
 
     /// <summary>
@@ -57,6 +69,10 @@ public interface IClusterConfigSelector
     /// Default: <see cref="JobMasterDefaults.MaxMessageByteSize"/> (128 KB).
     /// </summary>
     /// <param name="maxMessageByteSize">The maximum message size in bytes.</param>
+    public IClusterConfigSelector MaxMessageByteSize(int maxMessageByteSize);
+
+    /// <inheritdoc cref="MaxMessageByteSize"/>
+    [Obsolete("Use MaxMessageByteSize instead.")]
     public IClusterConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize);
 
     /// <summary>
@@ -65,16 +81,28 @@ public interface IClusterConfigSelector
     /// Default: the local system time zone.
     /// </summary>
     /// <param name="ianaTimeZoneId">A valid IANA time zone identifier.</param>
+    public IClusterConfigSelector IanaTimeZoneId(string ianaTimeZoneId);
+
+    /// <inheritdoc cref="IanaTimeZoneId"/>
+    [Obsolete("Use IanaTimeZoneId instead.")]
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId);
 
     /// <summary>
     /// Registers a worker that picks up and executes jobs for this cluster.
-    /// Optionally binds the worker to a named agent connection and configures how many jobs it pulls per cycle.
     /// </summary>
     /// <param name="workerName">Optional logical name for this worker instance.</param>
     /// <param name="agentConnectionName">The name of the agent connection this worker belongs to. Required when more than one agent connection is registered.</param>
-    /// <param name="transferBatchSize">Number of jobs pulled from the master per transfer cycle. Default: 250.</param>
-    public IAgentWorkerSelector AddWorker(string? workerName = null, string? agentConnectionName = null, int transferBatchSize = 250);
+    /// <param name="transferBatchSize">
+    /// Number of jobs pulled from the master DB per transfer cycle.
+    /// Higher values reduce round-trip overhead at the cost of more memory per cycle.
+    /// Default: <see cref="JobMasterDefaults.Worker.TransferBatchSize"/> (1000).
+    /// </param>
+    /// <param name="bucketBufferSize">
+    /// Maximum number of job buckets held in the worker's local in-memory buffer.
+    /// A larger buffer keeps the worker busier during bursts but uses more memory.
+    /// Default: <see cref="JobMasterDefaults.Worker.BucketBufferSize"/> (250).
+    /// </param>
+    public IAgentWorkerSelector AddWorker(string? workerName = null, string? agentConnectionName = null, int transferBatchSize = 1000, int bucketBufferSize = 250);
 
     /// <summary>
     /// Registers an agent connection that allows this cluster to communicate with a remote worker node.
@@ -94,6 +122,10 @@ public interface IClusterConfigSelector
     /// See <see cref="ClusterMode"/> for a description of each mode.
     /// </summary>
     /// <param name="mode">The desired cluster mode.</param>
+    public IClusterConfigSelector Mode(ClusterMode mode);
+
+    /// <inheritdoc cref="Mode"/>
+    [Obsolete("Use Mode instead.")]
     public IClusterConfigSelector ClusterMode(ClusterMode mode);
 
     /// <summary>
@@ -102,6 +134,28 @@ public interface IClusterConfigSelector
     /// Returns a selector to apply standalone-specific settings.
     /// </summary>
     public IClusterStandaloneConfigSelector UseStandaloneCluster();
+
+    /// <summary>
+    /// Bootstraps the full cluster configuration from an <see cref="IConfiguration"/> section,
+    /// mirroring what the fluent API exposes. The section should match the cluster JSON schema.
+    /// </summary>
+    /// <param name="section">The configuration section to bind (e.g. <c>builder.Configuration.GetSection("JobMaster:Cluster")</c>).</param>
+    public IClusterConfigSelector ConfigFromJson(IConfiguration section);
+
+    /// <summary>
+    /// Bootstraps the full cluster configuration from a raw JSON string or a JSON file path.
+    /// If the value ends with <c>.json</c> or resolves to an existing file it is loaded from disk;
+    /// otherwise the value is treated as a raw JSON string.
+    /// </summary>
+    /// <param name="jsonOrFilePath">A raw JSON string or an absolute/relative path to a <c>.json</c> file.</param>
+    public IClusterConfigSelector ConfigFromJson(string jsonOrFilePath);
+
+    /// <summary>
+    /// Bootstraps the full cluster configuration by deserializing a JSON stream.
+    /// Useful for loading configuration from embedded resources or other <see cref="Stream"/> sources.
+    /// </summary>
+    /// <param name="stream">A readable stream containing JSON that matches the cluster JSON schema.</param>
+    public IClusterConfigSelector ConfigFromJson(Stream stream);
 
     internal IAgentConnectionConfigSelector AddAgentConnectionConfig(
         string agentConnectionName,

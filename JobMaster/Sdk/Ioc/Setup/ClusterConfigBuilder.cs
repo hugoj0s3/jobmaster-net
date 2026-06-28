@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Abstractions.Models;
@@ -17,15 +19,18 @@ using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.BucketSelector;
+using JobMaster.Sdk.Ioc.Setup.Json;
 using JobMaster.Sdk.Ioc.Setup.Selectors;
 using JobMaster.Sdk.Repositories;
 using JobMaster.Sdk.Services;
 using JobMaster.Sdk.Services.Agents;
 using JobMaster.Sdk.Services.Master;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
+using JobMaster.Sdk.Ioc.Setup.Strategies;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
@@ -233,35 +238,45 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
-    public IClusterConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout)
+    public IClusterConfigSelector DefaultJobTimeout(TimeSpan defaultJobTimeout)
     {
         this.clusterDefinition.DefaultJobTimeout = defaultJobTimeout;
         return this;
     }
 
-    public IClusterConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold)
+    public IClusterConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout) => DefaultJobTimeout(defaultJobTimeout);
+
+    public IClusterConfigSelector TransientThreshold(TimeSpan transientThreshold)
     {
         this.clusterDefinition.TransientThreshold = transientThreshold;
         return this;
     }
 
-    public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount)
+    public IClusterConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold) => TransientThreshold(transientThreshold);
+
+    public IClusterConfigSelector DefaultMaxRetryCount(int defaultMaxRetryCount)
     {
         this.clusterDefinition.DefaultMaxRetryCount = defaultMaxRetryCount;
         return this;
     }
 
-    public IClusterConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize)
+    public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {
         this.clusterDefinition.MaxMessageByteSize = maxMessageByteSize;
         return this;
     }
 
-    public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId)
+    public IClusterConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize) => MaxMessageByteSize(maxMessageByteSize);
+
+    public IClusterConfigSelector IanaTimeZoneId(string ianaTimeZoneId)
     {
         this.clusterDefinition.IanaTimeZoneId = ianaTimeZoneId;
         return this;
     }
+
+    public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId) => IanaTimeZoneId(ianaTimeZoneId);
 
     public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
@@ -320,11 +335,13 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return AddAgentConnectionConfig(agentConnectionName, repoType, cnnString, null);
     }
 
-    public IClusterConfigSelector ClusterMode(ClusterMode mode)
+    public IClusterConfigSelector Mode(ClusterMode mode)
     {
         clusterDefinition.ClusterMode = mode;
         return this;
     }
+
+    public IClusterConfigSelector ClusterMode(ClusterMode mode) => Mode(mode);
 
     public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
@@ -347,22 +364,143 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             AgentAdditionalConnConfig = additionalConnConfig,
         };
         clusterDefinition.AgentConnections.Add(def);
-        return new AgentConnectionConfigSelector(this, def);
+        return new AgentConnectionConfigSelector(def);
     }
 
     public IAgentWorkerSelector AddWorker(
-        string? workerName = null, 
-        string? agentConnectionName = null, 
-        int transferBatchSize = 1000)
+        string? workerName = null,
+        string? agentConnectionName = null,
+        int transferBatchSize = JobMasterDefaults.Worker.TransferBatchSize,
+        int bucketBufferSize = JobMasterDefaults.Worker.BucketBufferSize)
     {
         var def = new WorkerDefinition
         {
             AgentConnectionName = agentConnectionName ?? string.Empty,
             WorkerName = workerName ?? string.Empty,
             TransferBatchSize = transferBatchSize,
+            BucketBufferSize = bucketBufferSize,
         };
         clusterDefinition.Workers.Add(def);
         return new AgentWorkerSelector(this, def);
+    }
+
+    public IClusterConfigSelector ConfigFromJson(IConfiguration section)
+    {
+        var config = section.Get<ClusterJsonConfig>()
+            ?? throw new ArgumentException("Could not bind the configuration section to ClusterJsonConfig.");
+        return ApplyJsonConfig(config);
+    }
+
+    public IClusterConfigSelector ConfigFromJson(string jsonOrFilePath)
+    {
+        var trimmed = jsonOrFilePath.TrimStart();
+        bool isFilePath = !trimmed.StartsWith("{", StringComparison.Ordinal) &&
+                          (jsonOrFilePath.EndsWith(".json", StringComparison.OrdinalIgnoreCase) ||
+                           File.Exists(jsonOrFilePath));
+
+        var json = isFilePath ? File.ReadAllText(jsonOrFilePath) : jsonOrFilePath;
+        var config = JsonSerializer.Deserialize<ClusterJsonConfig>(json, JsonOptions)
+            ?? throw new ArgumentException("Could not deserialize the JSON string to ClusterJsonConfig.");
+        return ApplyJsonConfig(config);
+    }
+
+    public IClusterConfigSelector ConfigFromJson(Stream stream)
+    {
+        using var reader = new StreamReader(stream);
+        var json = reader.ReadToEnd();
+        var config = JsonSerializer.Deserialize<ClusterJsonConfig>(json, JsonOptions)
+            ?? throw new ArgumentException("Could not deserialize the stream to ClusterJsonConfig.");
+        return ApplyJsonConfig(config);
+    }
+
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
+    private static Dictionary<string, object> ToIgnoreCase(Dictionary<string, object> source)
+        => new(source, StringComparer.OrdinalIgnoreCase);
+
+    private IClusterConfigSelector ApplyJsonConfig(ClusterJsonConfig config)
+    {
+        if (config.ClusterId != null) ClusterId(config.ClusterId);
+        if (config.SetAsDefault) SetAsDefault();
+
+        if (config.Mode != null)
+        {
+            if (!Enum.TryParse(config.Mode, ignoreCase: true, out ClusterMode mode))
+                throw new ArgumentException($"Invalid ClusterMode value: '{config.Mode}'.");
+            Mode(mode);
+        }
+
+        if (config.TransientThreshold != null)
+            TransientThreshold(TimeSpan.Parse(config.TransientThreshold, CultureInfo.InvariantCulture));
+        if (config.DefaultJobTimeout != null)
+            DefaultJobTimeout(TimeSpan.Parse(config.DefaultJobTimeout, CultureInfo.InvariantCulture));
+        if (config.DefaultMaxRetryCount.HasValue)
+            DefaultMaxRetryCount(config.DefaultMaxRetryCount.Value);
+        if (config.MaxMessageByteSize.HasValue)
+            MaxMessageByteSize(config.MaxMessageByteSize.Value);
+        if (config.IanaTimeZoneId != null)
+            IanaTimeZoneId(config.IanaTimeZoneId);
+
+        if (config.Standalone)
+        {
+            var standalone = UseStandaloneCluster();
+            if (config.RepoType != null) standalone.ClusterRepoType(config.RepoType);
+            if (config.ConnectionString != null) standalone.ClusterConnString(config.ConnectionString);
+            foreach (var w in config.Workers ?? [])
+            {
+                if (w.TransferBatchSize.HasValue)
+                    standalone.AddWorker(w.WorkerName, w.TransferBatchSize.Value);
+                else
+                    standalone.AddWorker(w.WorkerName);
+            }
+        }
+        else
+        {
+            if (config.RepoType != null) ClusterRepoType(config.RepoType);
+            if (config.ConnectionString != null) ClusterConnString(config.ConnectionString);
+            if (config.ConnectionOptions != null && config.RepoType != null)
+                ConnectionOptionsStrategyFactory.Create(config.RepoType).SetOptions(this, ToIgnoreCase(config.ConnectionOptions));
+
+            foreach (var agent in config.AgentConnections ?? [])
+            {
+                var agentSel = AddAgentConnectionConfig(agent.Name!, agent.RepositoryType, agent.ConnectionString);
+                if (agent.ProtectConnectionChanges.HasValue)
+                    agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
+                if (agent.ConnectionOptions != null && agent.RepositoryType != null)
+                    ConnectionOptionsStrategyFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+            }
+
+            foreach (var w in config.Workers ?? [])
+            {
+                var workerSel = AddWorker(
+                    w.WorkerName,
+                    w.AgentConnectionName,
+                    w.TransferBatchSize ?? JobMasterDefaults.Worker.TransferBatchSize,
+                    w.BucketBufferSize ?? JobMasterDefaults.Worker.BucketBufferSize);
+
+                if (w.WorkerLane != null) workerSel.WorkerLane(w.WorkerLane);
+                if (w.ParallelismFactor.HasValue) workerSel.ParallelismFactor(w.ParallelismFactor.Value);
+                if (w.SkipWarmUpTime == true) workerSel.SkipWarmUpTime();
+
+                if (w.WorkerMode != null)
+                {
+                    if (!Enum.TryParse(w.WorkerMode, ignoreCase: true, out AgentWorkerMode workerMode))
+                        throw new ArgumentException($"Invalid AgentWorkerMode value: '{w.WorkerMode}'.");
+                    workerSel.SetWorkerMode(workerMode);
+                }
+
+                foreach (var kvp in w.BucketQtyConfig ?? new Dictionary<string, int>())
+                {
+                    if (Enum.TryParse(kvp.Key, ignoreCase: true, out JobMasterPriority priority))
+                        workerSel.BucketQtyConfig(priority, kvp.Value);
+                }
+            }
+        }
+
+        return this;
     }
 }
 

@@ -33,6 +33,7 @@
       <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
       <ProjectReference Include="..\..\JobMaster.Api\JobMaster.Api.csproj" />
       <ProjectReference Include="..\..\JobMaster.Dashboard\JobMaster.Dashboard.csproj" />
+      <ProjectReference Include="..\..\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
     </ItemGroup>
 
 </Project>

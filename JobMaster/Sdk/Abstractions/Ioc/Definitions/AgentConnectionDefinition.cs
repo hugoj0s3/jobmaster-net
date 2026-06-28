@@ -10,6 +10,5 @@ internal sealed class AgentConnectionDefinition
     public string? AgentConnString { get; set; }
     public int? RuntimeDbOperationLimit { get; set; }
     public JobMasterConfigDictionary? AgentAdditionalConnConfig { get; set; }
-
     public bool ProtectConnectionChanges { get; set; } = true;
 }

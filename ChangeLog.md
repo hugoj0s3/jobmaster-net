@@ -6,6 +6,18 @@
 
 ---
 
+## [Unreleased]
+
+### Added
+
+- **`ConfigFromJson` — full cluster config from JSON** — The entire cluster setup (cluster settings, agent connections, workers) can now be driven from a JSON file or string via `ConfigFromJson`, removing the need for code-level wiring. Provider-specific connection settings (e.g. NATS auth and TLS) are supported through a `connectionOptions` dictionary — `JobMaster.NatsJetStream` accepts auth keys (`username`, `password`, `token`, `credentialsFile`, `nkey`, `jwt`) and TLS keys (`tlsCertBundleFile`, `tlsCaFile`, `tlsMode`, etc.).
+
+### Changed
+
+- **`IClusterConfigSelector` method renames** — The `Cluster` prefix has been removed from cluster configuration methods (`DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `Mode`). Old names still compile but are marked obsolete and will be removed in a future release. `ClusterId` is unchanged.
+
+---
+
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha
 
 ### Fixed
