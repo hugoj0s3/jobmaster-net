@@ -45,7 +45,19 @@ config.AddAgentConnectionConfig("Sql-Transport")
           .AgentConnName("Sql-Transport");
 ```
 
-### Part 4: Features
+### Part 4: Connection String Requirement
+
+## ⚠️ Required: `UseAffectedRows=true`
+
+JobMaster relies on affected-row counts to detect lock races and partial updates. MySQL's default behaviour returns **matched** rows instead of **changed** rows, which breaks job acquisition and distributed locking.
+
+You **must** include `UseAffectedRows=true` in your connection string:
+
+```
+Server=localhost;Database=jobmaster;User=root;Password=secret;UseAffectedRows=true;
+```
+
+### Part 5: Features
 ## 🛠 Features
 * **Atomic Locking:** Utilizes MySQL named locks to ensure job execution safety and prevent double-processing across multiple nodes.
 * **Auto-Schema Management:** Automatically handles the creation of necessary tables, indexes, and stored procedures on startup.
