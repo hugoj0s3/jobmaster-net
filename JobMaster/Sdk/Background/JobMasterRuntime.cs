@@ -124,6 +124,15 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
             }
 
+            if (clusterDefinition.Workers.Any(w => w.Mode.Is(AgentWorkerMode.Coordinator)))
+            {
+                var fallbackConfig = clusterCnnCfg.GetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
+                var fallbackId = new AgentConnectionId(fallbackConfig.Id);
+                var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(fallbackConfig.Id);
+                var fingerprint = await fingerprintResolver.GiveYourFingerprintAsync(clusterDefinition.ClusterId!, fallbackConfig.Id);
+                await masterAgentConnectionService.SaveConnectionAsync(fallbackId, fallbackConfig.RepositoryTypeId, fingerprint, protectChanges: false);
+            }
+
             var workerDefinitions = clusterDefinition.Workers;
 
             var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
@@ -312,6 +321,33 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 throw new InvalidOperationException(
                     $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
+            }
+
+            if (agentDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.MasterFallbackAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used for other agents.");
+            }
+
+            if (workerDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.MasterFallbackAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used as a worker's AgentConnectionName.");
+            }
+
+            if (!clusterDefinition.IsStandalone && workerDefinitions.Any(x => string.Equals(
+                    x.AgentConnectionName,
+                    JobMasterConstants.StandaloneAgentConnName,
+                    StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone clusters. Cannot be used as a worker's AgentConnectionName in a non-standalone cluster.");
             }
 
             if (clusterDefinition.IsStandalone && agentDefinitions.Any())

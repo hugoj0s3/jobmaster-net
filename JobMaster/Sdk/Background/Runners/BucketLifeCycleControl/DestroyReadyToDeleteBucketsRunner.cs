@@ -78,7 +78,11 @@ internal class DestroyReadyToDeleteBucketsRunner : JobMasterRunner
                         continue;
                     }
                     
-                    if (await agentJobsDispatcherService.HasJobsAsync(freshBucket.AgentConnectionId, freshBucket.Id))
+                    // Fallback buckets are force-destroyed regardless of remaining jobs — see the
+                    // reasoning in AssignedLostBucketsRunner. They never carry save-pending jobs, only
+                    // jobs reserved for execution, which recover independently through the deadline runner.
+                    if (freshBucket.BucketType != BucketType.Fallback &&
+                        await agentJobsDispatcherService.HasJobsAsync(freshBucket.AgentConnectionId, freshBucket.Id))
                     {
                         logger.Warn($"Bucket {freshBucket.Id} has been marked as ready to delete but has jobs", JobMasterLogCategory.Bucket, freshBucket.Id);
                         freshBucket.MarkAsLost();

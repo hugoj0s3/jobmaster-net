@@ -99,4 +99,6 @@ internal static class JobMasterConstants
     }
     
     public const string StandaloneAgentConnName = "standalone-agent-conn";
+
+    public const string MasterFallbackAgentConnName = "master-fallback-agent-conn";
 }

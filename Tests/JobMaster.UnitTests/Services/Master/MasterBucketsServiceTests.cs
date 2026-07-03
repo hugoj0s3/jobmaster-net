@@ -264,6 +264,115 @@ public class MasterBucketsServiceTests
     }
 
     [Fact]
+    public async Task Destroy_ReadyToDeleteStandardBucket_WhenHasJobs_ShouldNotDelete()
+    {
+        var clusterId = NewClusterId();
+        var clusterConfig = CreateClusterConfig(clusterId);
+
+        var repo = NewRepoMock(clusterConfig);
+        var sentinel = NewSentinelMock(clusterConfig);
+        var locker = NewLockerMock(clusterConfig);
+        var workers = NewWorkersMock(clusterConfig);
+        var dispatcher = NewDispatcherMock(clusterConfig);
+        var masterConfig = NewMasterClusterConfigurationMock(clusterConfig);
+        var cache = NewCacheMock();
+        var selector = NewSelectorMock();
+        var logger = new Mock<IJobMasterLogger>();
+
+        var agent = new AgentConnectionId(clusterId, "agent");
+        var bucket = new BucketModel(clusterId)
+        {
+            Id = "b1",
+            Name = "b1",
+            AgentConnectionId = agent,
+            AgentWorkerId = "w",
+            Priority = JobMasterPriority.High,
+            Status = BucketStatus.ReadyToDelete,
+            BucketType = BucketType.Standard,
+            CreatedAt = DateTime.UtcNow,
+            RepositoryTypeId = "repo",
+            WorkerLane = "lane"
+        };
+
+        var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
+        repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
+        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id)).ReturnsAsync(true);
+
+        var sut = new MasterBucketsService(
+            clusterConfig,
+            selector.Object,
+            cache.Object,
+            repo.Object,
+            sentinel.Object,
+            locker.Object,
+            workers.Object,
+            dispatcher.Object,
+            masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
+            logger.Object);
+
+        await sut.DestroyAsync(bucket.Id);
+
+        repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Never);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Destroy_ReadyToDeleteFallbackBucket_WhenHasJobs_ShouldStillDelete()
+    {
+        var clusterId = NewClusterId();
+        var clusterConfig = CreateClusterConfig(clusterId);
+
+        var repo = NewRepoMock(clusterConfig);
+        var sentinel = NewSentinelMock(clusterConfig);
+        var locker = NewLockerMock(clusterConfig);
+        var workers = NewWorkersMock(clusterConfig);
+        var dispatcher = NewDispatcherMock(clusterConfig);
+        var masterConfig = NewMasterClusterConfigurationMock(clusterConfig);
+        var cache = NewCacheMock();
+        var selector = NewSelectorMock();
+        var logger = new Mock<IJobMasterLogger>();
+
+        var fallbackAgent = new AgentConnectionId(clusterId, "master-fallback-agent-conn");
+        var bucket = new BucketModel(clusterId)
+        {
+            Id = "fallback-b1",
+            Name = "fallback-b1",
+            AgentConnectionId = fallbackAgent,
+            AgentWorkerId = "w",
+            Priority = JobMasterPriority.Critical,
+            Status = BucketStatus.ReadyToDelete,
+            BucketType = BucketType.Fallback,
+            CreatedAt = DateTime.UtcNow,
+            RepositoryTypeId = "repo",
+        };
+
+        var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
+        repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
+        // Even though jobs are still present, a fallback bucket must be destroyed anyway.
+        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id)).ReturnsAsync(true);
+
+        var sut = new MasterBucketsService(
+            clusterConfig,
+            selector.Object,
+            cache.Object,
+            repo.Object,
+            sentinel.Object,
+            locker.Object,
+            workers.Object,
+            dispatcher.Object,
+            masterConfig.Object,
+            new Mock<IKnownExceptionIdentifier>().Object,
+            logger.Object);
+
+        await sut.DestroyAsync(bucket.Id);
+
+        repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Once);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == fallbackAgent.IdValue), bucket.Id), Times.Once);
+        dispatcher.Verify(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
     public void Get_WhenCacheHasItemAndNoChangesAfter_ShouldReturnCached()
     {
         var clusterId = NewClusterId();

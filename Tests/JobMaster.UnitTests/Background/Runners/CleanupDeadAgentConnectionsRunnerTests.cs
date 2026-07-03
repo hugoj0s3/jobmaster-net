@@ -1,4 +1,5 @@
 ﻿using FluentAssertions;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Background.Runners;
@@ -108,5 +109,23 @@ public class CleanupDeadAgentConnectionsRunnerTests
         await runner.OnTickAsync(CancellationToken.None);
 
         f.AgentConnectionService.DeletedConnectionIds.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(JobMasterConstants.StandaloneAgentConnName)]
+    [InlineData(JobMasterConstants.MasterFallbackAgentConnName)]
+    public async Task OnTickAsync_WhenReservedConnectionIsStale_ShouldNeverDeleteIt(string reservedName)
+    {
+        var f = RunnerFixture.Create();
+        // Reserved connections are expected to sit dead for long stretches (standalone with no
+        // standalone worker running, fallback with no fallback bucket active) — must never be deleted.
+        f.AgentConnectionService.Connections.Add(StaleConnection(f.ClusterId, reservedName));
+
+        var runner = new CleanupDeadAgentConnectionsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.AgentConnectionService.DeletedConnectionIds.Should().BeEmpty();
+        f.AgentConnectionService.Connections.Should().ContainSingle(c => c.Id.Name == reservedName);
     }
 }

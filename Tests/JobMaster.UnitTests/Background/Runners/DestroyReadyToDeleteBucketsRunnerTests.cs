@@ -134,4 +134,29 @@ public class DestroyReadyToDeleteBucketsRunnerTests
         result.Status.Should().Be(TicketResultStatus.Success);
         f.Buckets.DestroyedBucketIds.Should().ContainSingle(id => id == "eligible-bucket");
     }
+
+    [Fact]
+    public async Task OnTickAsync_WhenFallbackBucketStillHasJobs_ShouldDestroyItAnywayInsteadOfRevertingToLost()
+    {
+        var f = RunnerFixture.Create();
+        var bucket = new BucketModel(f.ClusterId)
+        {
+            Id = "fallback-has-jobs-bucket",
+            Status = BucketStatus.ReadyToDelete,
+            BucketType = BucketType.Fallback,
+            AgentConnectionId = new AgentConnectionId(f.ClusterId, "master-fallback-agent-conn"),
+            DeletesAt = DateTime.UtcNow.AddMinutes(-1),
+        };
+        f.Buckets.Buckets.Add(bucket);
+
+        // Jobs are still present in the agent-side tables — must not block destruction for Fallback.
+        f.JobsDispatcher.HasJobsResult = true;
+
+        var runner = new DestroyReadyToDeleteBucketsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.Buckets.DestroyedBucketIds.Should().ContainSingle(id => id == "fallback-has-jobs-bucket");
+        f.Buckets.UpdatedBuckets.Should().NotContain(b => b.Id == "fallback-has-jobs-bucket" && b.Status == BucketStatus.Lost);
+    }
 }

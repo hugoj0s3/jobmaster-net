@@ -1,4 +1,5 @@
-﻿using JobMaster.Sdk.Abstractions.Background;
+﻿using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -31,6 +32,11 @@ internal class CleanupDeadAgentConnectionsRunner : JobMasterRunner
             var connectionsToDelete = allConnections
                 .Where(c => (c.LastHeartbeatAt ?? c.FingerprintCreatedAt) < DateTime.UtcNow - DeadAgentConnectionThreshold)
                 .Where(c => !c.ProtectConnectionChanges)
+                // Reserved connections (standalone, fallback-bucket) are expected to sit dead for long
+                // stretches — the standalone one whenever no standalone worker is running, the fallback
+                // one whenever no fallback bucket is active. Never delete either.
+                .Where(c => c.Id.Name != JobMasterConstants.StandaloneAgentConnName &&
+                            c.Id.Name != JobMasterConstants.MasterFallbackAgentConnName)
                 .ToList();
             
             var deadProtectedConnections = allConnections

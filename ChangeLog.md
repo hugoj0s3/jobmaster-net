@@ -18,6 +18,12 @@
 
 - **`IClusterConfigSelector` method renames** — The `Cluster` prefix has been removed from cluster configuration methods (`DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `Mode`). Old names still compile but are marked obsolete and will be removed in a future release. `ClusterId` is unchanged.
 
+### Fixed
+
+- **Coordinator fallback bucket durability** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" now persists jobs to the master database (through a dedicated reserved connection) instead of an in-process queue, so they survive a Coordinator restart instead of being lost.
+
+- **Orphaned fallback buckets after a Coordinator crash** — If the worker that created a fallback bucket died, the bucket could get stuck forever instead of being cleaned up, leaking rows in the master database (the jobs themselves were never at risk — only the bucket's own bookkeeping). Fallback buckets are now destroyed automatically once their owning worker is confirmed dead.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha

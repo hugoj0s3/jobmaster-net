@@ -103,15 +103,33 @@ internal class JobMasterClusterConnectionConfig
         lock (InstanceLock)
         {
             var agentConnConfig = new JobMasterAgentConnectionConfig(
-                this.ClusterId, 
-                JobMasterConstants.StandaloneAgentConnName, 
-                this.ConnectionString, 
-                this.RepositoryTypeId, 
-                this.AdditionalConnConfig, 
+                this.ClusterId,
+                JobMasterConstants.StandaloneAgentConnName,
+                this.ConnectionString,
+                this.RepositoryTypeId,
+                this.AdditionalConnConfig,
                 this.RuntimeDbOperationLimit);
-                
+
             AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
-                    
+
+            return agentConnConfig;
+        }
+    }
+
+    public JobMasterAgentConnectionConfig AddMasterFallbackAgentConnectionString()
+    {
+        lock (InstanceLock)
+        {
+            var agentConnConfig = new JobMasterAgentConnectionConfig(
+                this.ClusterId,
+                JobMasterConstants.MasterFallbackAgentConnName,
+                this.ConnectionString,
+                this.RepositoryTypeId,
+                this.AdditionalConnConfig,
+                this.RuntimeDbOperationLimit);
+
+            AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
+
             return agentConnConfig;
         }
     }
@@ -140,7 +158,13 @@ internal class JobMasterClusterConnectionConfig
             {
                 return AddStandaloneAgentConnectionString();
             }
-            
+
+            if (string.Equals(JobMasterConstants.MasterFallbackAgentConnName, idOrName, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals($"{ClusterId}:{JobMasterConstants.MasterFallbackAgentConnName}", idOrName, StringComparison.OrdinalIgnoreCase))
+            {
+                return AddMasterFallbackAgentConnectionString();
+            }
+
             return null;
         }
             

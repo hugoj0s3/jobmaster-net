@@ -1,10 +1,16 @@
+using System.Reflection;
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 using JobMaster.Sdk.Utils;
+using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -112,5 +118,96 @@ public class AssignJobsToBucketsRunnerTests
         result.Status.Should().Be(TicketResultStatus.Success);
         // The job should have been bulk-updated (i.e. assigned to a bucket).
         f.JobsService.Jobs.Should().Contain(j => j.Id == job.Id && j.BucketId == "target-bucket");
+    }
+
+    // ── Fallback bucket ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task HandleJobFallbackAssignmentAsync_WhenThresholdElapsed_CreatesFallbackBucketOnReservedConnectionAndDispatches()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+
+        // Keep the fallback ManualJobsExecutionRunner's background loop inert.
+        var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
+        engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
+        engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+        var job = OnMasterJob();
+
+        // Seed the "first failure seen" clock so the fallback threshold is already elapsed —
+        // mirrors what OnTickAsync would build up over repeated ticks without a real bucket.
+        var firstFailureField = typeof(AssignJobsToBucketsRunner)
+            .GetField("bucketAssignFirstFailure", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var bucketAssignFirstFailure = (Dictionary<string, DateTime>)firstFailureField.GetValue(runner)!;
+        bucketAssignFirstFailure[$"{f.ClusterId}_{job.WorkerLane}_{job.Priority}"] = DateTime.UtcNow.AddMinutes(-10);
+
+        var handleFallbackMethod = typeof(AssignJobsToBucketsRunner)
+            .GetMethod("HandleJobFallbackAssignmentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        try
+        {
+            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+
+            var fallbackBucket = f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
+                .Subject;
+            fallbackBucket.AgentConnectionId.Name.Should().Be(JobMasterConstants.MasterFallbackAgentConnName);
+            fallbackBucket.AgentConnectionId.ClusterId.Should().Be(f.ClusterId);
+
+            f.WorkerClusterOps.Verify(
+                x => x.DispatchJobToBucketAsync(
+                    f.Worker.Object,
+                    It.Is<JobRawModel>(j => j.Id == job.Id),
+                    It.Is<BucketModel>(b => b.Id == fallbackBucket.Id)),
+                Times.Once);
+        }
+        finally
+        {
+            // Stop the internally-spawned fallback runner so it doesn't keep polling in the background.
+            var fallBackRunnerField = typeof(AssignJobsToBucketsRunner)
+                .GetField("fallBackRunner", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (fallBackRunnerField.GetValue(runner) is IJobMasterRunner fallBackRunner)
+            {
+                await fallBackRunner.StopAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenFallbackBucketExists_HeartbeatsItsReservedConnection()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+        var fallbackConnectionId = new AgentConnectionId(f.ClusterId, JobMasterConstants.MasterFallbackAgentConnName);
+        var fallbackBucketField = typeof(AssignJobsToBucketsRunner)
+            .GetField("fallbackBucket", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        fallbackBucketField.SetValue(runner, new BucketModel(f.ClusterId)
+        {
+            Id = "fallback-bucket",
+            AgentConnectionId = fallbackConnectionId,
+            BucketType = BucketType.Fallback
+        });
+
+        await runner.OnTickAsync(CancellationToken.None);
+
+        f.HeartbeatService.HeartbeatCalls.Should().Contain(
+            (ResourceHeartbeatType.AgentConnection, fallbackConnectionId.IdValue));
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenNoFallbackBucketExists_DoesNotHeartbeatFallbackConnection()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+
+        await runner.OnTickAsync(CancellationToken.None);
+
+        f.HeartbeatService.HeartbeatCalls.Should().BeEmpty();
     }
 }

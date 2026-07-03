@@ -74,6 +74,27 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
 
                 try
                 {
+                    if (bucket.BucketType == BucketType.Fallback)
+                    {
+                        // Draining exists to protect two things: save-pending jobs (at risk of being
+                        // lost if not yet durably queued) and jobs reserved for execution (fast
+                        // recovery back to master). A fallback bucket only ever receives jobs via the
+                        // direct-dispatch path (never save-pending), and only activates when a user
+                        // misconfigured a lane/priority so no real bucket ever matches — an exceptional,
+                        // mistake-driven case, not routine operation. So there's nothing at risk here:
+                        // no real worker can ever own the reserved fallback connection anyway (see
+                        // JobMasterRuntime.PreValidation), meaning this bucket can never be drained the
+                        // normal way. It's fine for its jobs to recover more slowly via the deadline
+                        // runner instead — send it straight to ReadyToDelete.
+                        if (bucket.ReadyToDelete())
+                        {
+                            logger.Info($"Lost fallback bucket {bucket.Id} has no assignable worker — marking ready to delete", JobMasterLogCategory.Bucket, bucket.Id);
+                            await masterBucketsService.UpdateAsync(bucket);
+                        }
+
+                        continue;
+                    }
+
                     var workerToSelect = workersAlive
                         .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
                         .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.

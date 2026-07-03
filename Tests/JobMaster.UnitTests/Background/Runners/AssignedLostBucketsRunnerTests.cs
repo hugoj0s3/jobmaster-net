@@ -142,4 +142,30 @@ public class AssignedLostBucketsRunnerTests
         result.Status.Should().Be(TicketResultStatus.Success);
         f.Buckets.UpdatedBuckets.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task OnTickAsync_WhenLostBucketIsFallback_ShouldMarkReadyToDeleteWithoutSearchingForWorker()
+    {
+        var f = RunnerFixture.Create();
+        var fallbackConnectionId = new AgentConnectionId(f.ClusterId, "master-fallback-agent-conn");
+
+        var lostFallbackBucket = new BucketModel(f.ClusterId)
+        {
+            Id = "lost-fallback-bucket",
+            Status = BucketStatus.Lost,
+            AgentConnectionId = fallbackConnectionId,
+            BucketType = BucketType.Fallback,
+            LastStatusChangeAt = DateTime.UtcNow.AddSeconds(-30),
+        };
+        f.Buckets.Buckets.Add(lostFallbackBucket);
+
+        // No worker could ever match the reserved fallback connection — irrelevant here either way.
+
+        var runner = new AssignedLostBucketsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.Buckets.UpdatedBuckets.Should().ContainSingle(b => b.Id == "lost-fallback-bucket");
+        f.Buckets.UpdatedBuckets[0].Status.Should().Be(BucketStatus.ReadyToDelete);
+    }
 }

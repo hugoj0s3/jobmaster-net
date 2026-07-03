@@ -88,7 +88,11 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             return;
         }
 
-        if (await this.masterAgentsDispatcherService.HasJobsAsync(bucketModel.AgentConnectionId, bucketId))
+        // Fallback buckets are force-destroyed regardless of remaining jobs — see the reasoning in
+        // AssignedLostBucketsRunner. They never carry save-pending jobs, only jobs reserved for
+        // execution, which recover independently through the deadline runner.
+        if (bucketModel.BucketType != BucketType.Fallback &&
+            await this.masterAgentsDispatcherService.HasJobsAsync(bucketModel.AgentConnectionId, bucketId))
         {
             logger.Error("Bucket has jobs", JobMasterLogCategory.Bucket, bucketId);
             return;

@@ -5,9 +5,11 @@ using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Background.ScanPlans;
@@ -35,6 +37,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private readonly IMasterAgentWorkersService masterAgentWorkersService;
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
+    private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
+    private readonly IMasterHeartbeatService masterHeartbeatService;
 
 
     private static readonly int ProbeWindowInSeconds = 10;
@@ -45,7 +49,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private readonly JobMasterLockKeys lockKeys;
 
     private ManualJobsExecutionRunner? fallBackRunner;
-    private FallbackBucketJobsOnboardingSource? fallbackOnboardingSource;
     private BucketModel? fallbackBucket;
 
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
@@ -66,6 +69,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         masterAgentWorkersService = backgroundAgentWorker.GetClusterAwareService<IMasterAgentWorkersService>();
         masterClusterConfigurationService =
             backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
+        agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
+        masterHeartbeatService = backgroundAgentWorker.GetClusterAwareService<IMasterHeartbeatService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
     }
 
@@ -74,6 +79,13 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         if (BackgroundAgentWorker.StopRequested)
         {
             return OnTickResult.Skipped(this);
+        }
+
+        // Only heartbeat the reserved fallback connection while it's actually backing a bucket —
+        // it staying "dead" in the dashboard the rest of the time is a good sign fallback isn't in use.
+        if (fallbackBucket is not null)
+        {
+            masterHeartbeatService.Heartbeat(ResourceHeartbeatType.AgentConnection, fallbackBucket.AgentConnectionId.IdValue);
         }
 
         var configuration = masterClusterConfigurationService.Get();
@@ -287,11 +299,11 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Using fallback bucket.",
                 JobMasterLogCategory.Job, job.Id);
 
-            var fallbackSource = await EnsureFallbackOnboardingSourceAsync();
+            var bucket = await EnsureFallbackBucketAsync();
             job.AdvanceNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold);
-            job.AssignToBucket(this.fallbackBucket!);
+            job.AssignToBucket(bucket);
             await masterJobsService.UpdateAsync(job);
-            await fallbackSource.PushAsync(job);
+            await DispatchJobToBucketAsync(new Dictionary<Guid, BucketModel> { [job.Id] = bucket }, job);
             return;
         }
         else
@@ -314,30 +326,33 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             job.WorkerLane);
     }
 
-    private async Task<FallbackBucketJobsOnboardingSource> EnsureFallbackOnboardingSourceAsync()
+    private async Task<BucketModel> EnsureFallbackBucketAsync()
     {
-        if (fallbackOnboardingSource is not null)
+        if (fallbackBucket is not null)
         {
-            return fallbackOnboardingSource;
+            return fallbackBucket;
         }
 
         await fallbackCreationLock.WaitAsync();
         try
         {
-            if (fallbackOnboardingSource is not null)
+            if (fallbackBucket is not null)
             {
-                return fallbackOnboardingSource;
+                return fallbackBucket;
             }
 
             this.logger.Critical(
                 $"Fallback bucket activated: no standard bucket could be assigned for over {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes} minutes. " +
                 "This usually means no bucket matches the required lane/priority, or all agents are offline. " +
-                "A temporary local bucket will be used to prevent job starvation. Review your worker lanes, priority configuration, and agent health.",
+                "A temporary bucket backed by the master database will be used to prevent job starvation. Review your worker lanes, priority configuration, and agent health.",
                 JobMasterLogCategory.AgentWorker,
                 BackgroundAgentWorker.AgentWorkerId);
 
+            var fallbackConnConfig = BackgroundAgentWorker.ClusterConnConfig.GetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
+            var fallbackConnectionId = new AgentConnectionId(fallbackConnConfig.Id);
+
             var bucket = await this.masterBucketsService.CreateAsync(
-                BackgroundAgentWorker.AgentConnectionId,
+                fallbackConnectionId,
                 BackgroundAgentWorker.AgentWorkerId,
                 JobMasterPriority.Critical,
                 BucketType.Fallback);
@@ -346,15 +361,14 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             // Register the fallback bucket so GetOrCreateEngine can validate it on the runner's first tick.
             BackgroundAgentWorker.RegisterRuntimeBucket(bucket);
 
-            var source = new FallbackBucketJobsOnboardingSource();
+            var source = new StandardBucketJobsOnboardingSource(agentJobsDispatcherService, fallbackConnectionId, bucket.Id);
             fallBackRunner = ManualJobsExecutionRunner.Create(
                 this.BackgroundAgentWorker,
                 source);
             fallBackRunner.DefineBucketId(bucket.Id, JobMasterPriority.Critical);
-            fallbackOnboardingSource = source;
             await fallBackRunner.StartAsync();
 
-            return fallbackOnboardingSource;
+            return fallbackBucket;
         }
         finally
         {

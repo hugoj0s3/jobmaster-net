@@ -214,8 +214,20 @@ internal static class RunnerFakes
 
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
-        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
-        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null) => throw new NotImplementedException();
+
+        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+        {
+            var idx = Jobs.FindIndex(j => j.Id == jobRaw.Id);
+            if (idx >= 0) Jobs[idx] = jobRaw;
+            if (addJobExecution != null) JobExecutions.Add(addJobExecution);
+        }
+
+        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+        {
+            Update(jobRaw, addJobExecution);
+            return Task.CompletedTask;
+        }
+
         public Task AddJobExecutionAsync(JobExecution jobExecution) { JobExecutions.Add(jobExecution); return Task.CompletedTask; }
         public Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId) => Task.FromResult<IList<JobExecution>>(JobExecutions.Where(e => e.JobId == jobId).ToList());
         public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
@@ -294,7 +306,19 @@ internal static class RunnerFakes
 
         public Task<BucketModel> CreateAsync(
             AgentConnectionId agentConnectionId, string workerId, JobMasterPriority priority, BucketType type = BucketType.Standard)
-            => throw new NotImplementedException();
+        {
+            var bucket = new BucketModel(agentConnectionId.ClusterId)
+            {
+                Id = $"{workerId}:{type}:{Guid.NewGuid():N}",
+                AgentConnectionId = agentConnectionId,
+                AgentWorkerId = workerId,
+                Priority = priority,
+                Status = BucketStatus.Active,
+                BucketType = type,
+            };
+            Buckets.Add(bucket);
+            return Task.FromResult(bucket);
+        }
 
         public void Update(BucketModel model) => throw new NotImplementedException();
 
