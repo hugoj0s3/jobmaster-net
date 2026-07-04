@@ -88,6 +88,25 @@ public interface IClusterConfigSelector
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId);
 
     /// <summary>
+    /// Sets the cluster-wide data retention window (TTL) for executed jobs, inactive recurring
+    /// schedules, and JobMaster logs, keeping dashboards consistent (e.g. a failed job remains
+    /// alongside its logs until both are purged together).
+    /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
+    /// </summary>
+    /// <param name="dataRetentionTtl">
+    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (5 minutes) when positive.
+    /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
+    /// Throws <see cref="ArgumentException"/> for positive values under 1 hour.
+    /// </param>
+    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl);
+
+    /// <summary>
+    /// Disables automatic data purging for this cluster. Executed jobs, inactive recurring schedules,
+    /// and JobMaster logs are kept indefinitely.
+    /// </summary>
+    public IClusterConfigSelector RetainDataForever();
+
+    /// <summary>
     /// Registers a worker that picks up and executes jobs for this cluster.
     /// </summary>
     /// <param name="workerName">Optional logical name for this worker instance.</param>

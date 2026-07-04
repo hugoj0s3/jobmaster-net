@@ -36,16 +36,13 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
             return OnTickResult.Skipped(this);
 
         var cfg = clusterConfigService.Get();
-        var ttl = cfg?.DataRetentionTtl;
-        if (ttl == null)
-        {
+        if (cfg == null || cfg.DataRetentionTtl <= TimeSpan.Zero)
             return OnTickResult.Skipped(SucceedInterval);
-        }
 
-        var cutoff = DateTime.UtcNow - ttl.Value;
+        var cutoff = DateTime.UtcNow - cfg.DataRetentionTtl;
 
         var desiredNext = SucceedInterval;
-        var burstNext = TimeSpan.FromMinutes(5);
+        var burstNext = TimeSpan.FromMinutes(1);
         var lockDuration = burstNext + TimeSpan.FromMinutes(1);
 
         var lockToken = locker.TryLock(lockKeys.GenericRecordsCleanupLock(), lockDuration);
@@ -66,5 +63,14 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
         }
     }
 
-    public override TimeSpan SucceedInterval => TimeSpan.FromHours(1);
+    public override TimeSpan SucceedInterval
+    {
+        get
+        {
+            var ttl = clusterConfigService.Get()?.DataRetentionTtl ?? TimeSpan.Zero;
+            if (ttl <= TimeSpan.Zero) return TimeSpan.FromHours(1);
+            var ticks = Math.Max(TimeSpan.FromMinutes(5).Ticks, Math.Min(ttl.Ticks / 2, TimeSpan.FromHours(1).Ticks));
+            return TimeSpan.FromTicks(ticks);
+        }
+    }
 }

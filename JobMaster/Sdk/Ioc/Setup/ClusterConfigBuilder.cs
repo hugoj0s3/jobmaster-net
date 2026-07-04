@@ -278,6 +278,23 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId) => IanaTimeZoneId(ianaTimeZoneId);
 
+    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl)
+    {
+        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
+            throw new ArgumentException(
+                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
+                $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
+                nameof(dataRetentionTtl));
+        this.clusterDefinition.DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+        return this;
+    }
+
+    public IClusterConfigSelector RetainDataForever()
+    {
+        this.clusterDefinition.DataRetentionTtl = TimeSpan.Zero;
+        return this;
+    }
+
     public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
         this.clusterDefinition.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
@@ -443,6 +460,8 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             MaxMessageByteSize(config.MaxMessageByteSize.Value);
         if (config.IanaTimeZoneId != null)
             IanaTimeZoneId(config.IanaTimeZoneId);
+        if (config.DataRetentionTtl != null)
+            DataRetentionTtl(TimeSpan.Parse(config.DataRetentionTtl, CultureInfo.InvariantCulture));
 
         if (config.Standalone)
         {
@@ -553,6 +572,23 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId)
     {
         clusterDefinition.IanaTimeZoneId = ianaTimeZoneId;
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl)
+    {
+        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
+            throw new ArgumentException(
+                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
+                $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
+                nameof(dataRetentionTtl));
+        clusterDefinition.DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector RetainDataForever()
+    {
+        clusterDefinition.DataRetentionTtl = TimeSpan.Zero;
         return this;
     }
 

@@ -24,8 +24,11 @@ public static class JobMasterDefaults
     /// <summary>Default cluster operational mode: <see cref="ClusterMode.Active"/>.</summary>
     public const ClusterMode DefaultClusterMode = ClusterMode.Active;
 
-    /// <summary>Default data retention window: 30 days.</summary>
-    public static readonly TimeSpan DataRetentionTtl = TimeSpan.FromDays(30);
+    /// <summary>Default data retention window: infinite (no automatic purge).</summary>
+    public static readonly TimeSpan DataRetentionTtl = TimeSpan.Zero;
+
+    /// <summary>Minimum accepted positive data retention TTL: 10 minutes. Cleanup runners check at TTL/2, so the minimum check interval is 5 minutes.</summary>
+    public static readonly TimeSpan MinDataRetentionTtl = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Default configuration values for individual workers.

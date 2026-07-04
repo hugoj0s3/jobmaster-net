@@ -39,7 +39,7 @@ public class DeleteOldFinalJobsRunnerTests
         var f = RunnerFixture.Create();
         f.ClusterConfig.Config = new ClusterConfigurationModel("test-cluster")
         {
-            DataRetentionTtl = null,
+            DataRetentionTtl = TimeSpan.Zero,
         };
 
         var runner = new DeleteOldFinalJobsRunner(f.Worker.Object);

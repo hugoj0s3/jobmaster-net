@@ -1,5 +1,6 @@
 using System.Text;
 using FluentAssertions;
+using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions;
 using JobMaster.Sdk.Ioc.Setup;
@@ -50,6 +51,104 @@ public class ConfigFromJsonTests
         d.MaxMessageByteSize.Should().Be(65536);
         d.IanaTimeZoneId.Should().Be("America/New_York");
         d.IsStandalone.Should().BeFalse();
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_MapsDataRetentionTtl()
+    {
+        const string json = """
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "Postgres",
+            "ConnectionString": "Host=localhost;",
+            "DataRetentionTtl": "30.00:00:00"
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.FromDays(30));
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_WhenDataRetentionTtlAbsent_LeavesItUnset()
+    {
+        const string json = """
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "Postgres",
+            "ConnectionString": "Host=localhost;"
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DataRetentionTtl.Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("00:00:00")]
+    [InlineData("-1.00:00:00")]
+    public void ConfigFromJson_String_WhenDataRetentionTtlZeroOrNegative_SetsTimeSpanZero(string ttlValue)
+    {
+        var json = $$"""
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "Postgres",
+            "ConnectionString": "Host=localhost;",
+            "DataRetentionTtl": "{{ttlValue}}"
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_WhenDataRetentionTtlBelowMinimum_Throws()
+    {
+        const string json = """
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "Postgres",
+            "ConnectionString": "Host=localhost;",
+            "DataRetentionTtl": "00:01:00"
+        }
+        """;
+
+        var b = Builder();
+        b.Invoking(x => x.ConfigFromJson(json))
+            .Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void RetainDataForever_SetsTimeSpanZero()
+    {
+        var b = Builder();
+        b.RetainDataForever();
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void DataRetentionTtl_WhenPositiveAndBelowMinimum_Throws()
+    {
+        var b = Builder();
+        b.Invoking(x => x.DataRetentionTtl(TimeSpan.FromMinutes(1)))
+            .Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void DataRetentionTtl_WhenNegative_SetsTimeSpanZero()
+    {
+        var b = Builder();
+        b.DataRetentionTtl(TimeSpan.FromHours(-1));
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.Zero);
     }
 
     [Fact]
@@ -468,6 +567,27 @@ public class ConfigFromJsonTests
         b.ConfigFromJson(json).DefaultMaxRetryCount(99);
 
         b.clusterDefinition.DefaultMaxRetryCount.Should().Be(99);
+    }
+
+    // ── fluent selector (non-JSON) ───────────────────────────────────────────
+
+    [Fact]
+    public void DataRetentionTtl_SetViaFluentSelector_UpdatesClusterDefinition()
+    {
+        var b = Builder();
+        b.ClusterId("Cluster-1").DataRetentionTtl(TimeSpan.FromDays(7));
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.FromDays(7));
+    }
+
+    [Fact]
+    public void ClusterDataRetentionTtl_SetViaStandaloneSelector_UpdatesClusterDefinition()
+    {
+        var b = Builder();
+        IClusterStandaloneConfigSelector standalone = b.UseStandaloneCluster();
+        standalone.ClusterDataRetentionTtl(TimeSpan.FromDays(14));
+
+        b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.FromDays(14));
     }
 
     // ── invalid enum ─────────────────────────────────────────────────────────

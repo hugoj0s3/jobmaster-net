@@ -48,9 +48,9 @@ internal class ClusterConfigurationModel : JobMasterBaseModel
     /// to keep dashboards consistent (e.g., failed jobs remain alongside their logs).
     ///
     /// Special values:
-    /// - null = keep data forever (no automatic purge)
+    /// - <see cref="TimeSpan.Zero"/> (or any non-positive value) = retain data forever (no automatic purge)
     /// </summary>
-    public TimeSpan? DataRetentionTtl { get; set; } = JobMasterDefaults.DataRetentionTtl;
+    public TimeSpan DataRetentionTtl { get; set; } = JobMasterDefaults.DataRetentionTtl;
 
     public bool IsStandalone { get; set; } = false;
 

@@ -143,6 +143,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.MaxMessageByteSize = clusterDefinition.MaxMessageByteSize ?? modelToSave.MaxMessageByteSize;
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
+            modelToSave.DataRetentionTtl = clusterDefinition.DataRetentionTtl ?? modelToSave.DataRetentionTtl;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
             modelToSave.IsStandalone = clusterDefinition.IsStandalone;
 

@@ -14,6 +14,7 @@ internal sealed class ClusterJsonConfig
     public int? DefaultMaxRetryCount { get; set; }
     public int? MaxMessageByteSize { get; set; }
     public string? IanaTimeZoneId { get; set; }
+    public string? DataRetentionTtl { get; set; }
     public List<AgentConnectionJsonConfig>? AgentConnections { get; set; }
     public List<WorkerJsonConfig>? Workers { get; set; }
 }

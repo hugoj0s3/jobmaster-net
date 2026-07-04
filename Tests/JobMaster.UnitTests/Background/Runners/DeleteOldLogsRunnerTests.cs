@@ -49,7 +49,7 @@ public class DeleteOldLogsRunnerTests
         var f = RunnerFixture.Create();
         f.ClusterConfig.Config = new ClusterConfigurationModel("test-cluster")
         {
-            DataRetentionTtl = null,
+            DataRetentionTtl = TimeSpan.Zero,
         };
 
         var runner = new DeleteOldLogsRunner(f.Worker.Object);

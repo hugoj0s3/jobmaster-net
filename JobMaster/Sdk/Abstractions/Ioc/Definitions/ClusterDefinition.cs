@@ -18,7 +18,8 @@ internal sealed class ClusterDefinition
     public int? MaxMessageByteSize { get; set; }
     public string? IanaTimeZoneId { get; set; }
     public TimeSpan? TransientThreshold { get; set; }
-    
+    public TimeSpan? DataRetentionTtl { get; set; }
+
     public int? RuntimeDbOperationLimit { get; set; }
     
     public ClusterMode? ClusterMode { get; set; }
