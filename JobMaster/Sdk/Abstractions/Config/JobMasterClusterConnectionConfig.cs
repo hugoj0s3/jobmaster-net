@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Utils;
 
@@ -58,11 +59,17 @@ internal class JobMasterClusterConnectionConfig
     
     public int? RuntimeDbOperationLimit { get; private set; }
 
+    private readonly HashSet<JobMasterPriority> _disabledPriorities = new HashSet<JobMasterPriority>();
+
+    public bool IsPriorityDisabled(JobMasterPriority priority) => _disabledPriorities.Contains(priority);
+
+    public void SetDisabledPriorities(ISet<JobMasterPriority> priorities) => _disabledPriorities.UnionWith(priorities);
+
     public void SetRuntimeDbOperationLimit(int? value)
     {
         RuntimeDbOperationLimit = value;
     }
-    
+
     public void SetMirrorLog(Action<LogItem>? mirrorLog)
     {
         MirrorLog = mirrorLog;

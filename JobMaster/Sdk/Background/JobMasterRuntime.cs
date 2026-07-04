@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -405,6 +407,32 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException(
                     $"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
             }
+
+            if (clusterDefinition.DisabledPriorities.Any())
+            {
+                var handlerTypes = AppDomain.CurrentDomain.GetAssemblies()
+                    .SelectMany(a =>
+                    {
+                        try { return a.GetTypes(); }
+                        catch { return Array.Empty<Type>(); }
+                    })
+                    .Where(t => !t.IsAbstract && !t.IsInterface && typeof(IJobMasterHandler).IsAssignableFrom(t));
+
+                foreach (var handlerType in handlerTypes)
+                {
+                    var p = handlerType.GetCustomAttributes(false)
+                        .OfType<JobMasterPriorityAttribute>()
+                        .FirstOrDefault()?.Priority ?? JobMasterPriority.Medium;
+
+                    if (clusterDefinition.DisabledPriorities.Contains(p))
+                    {
+                        throw new InvalidOperationException(
+                            $"Handler '{handlerType.FullName}' uses priority {p}, which is disabled " +
+                            $"on cluster '{clusterDefinition.ClusterId}'. " +
+                            $"Remove or change the [JobMasterPriority] attribute on that handler.");
+                    }
+                }
+            }
         }
     }
 
@@ -552,7 +580,28 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
 
 
-        // // 5) Upsert each desired (one-by-one)
+        // Validate schedule priorities against disabled priorities before upserting
+        foreach (var cfg in profileInfos)
+        {
+            var clusterDef = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c =>
+                string.Equals(c.ClusterId, cfg.info.ClusterId, StringComparison.OrdinalIgnoreCase));
+
+            if (clusterDef?.DisabledPriorities.Any() != true) continue;
+
+            foreach (var def in cfg.collection.ToReadOnly())
+            {
+                // null priority defers to the handler attribute — already validated in PreValidation.
+                // Only reject an explicitly-set disabled priority here.
+                if (def.Priority.HasValue && clusterDef.DisabledPriorities.Contains(def.Priority.Value))
+                {
+                    throw new InvalidOperationException(
+                        $"Static recurring schedule '{def.Id}' uses priority {def.Priority.Value}, " +
+                        $"which is disabled on cluster '{cfg.info.ClusterId}'.");
+                }
+            }
+        }
+
+        // Upsert each desired (one-by-one)
         foreach (var cfg in profileInfos)
         {
             var clusterId = cfg.info.ClusterId;

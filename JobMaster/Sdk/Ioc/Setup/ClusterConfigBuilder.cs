@@ -96,6 +96,14 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
+        if (clusterDefinition.DisabledPriorities.Any())
+        {
+            clusterCnnConfig.SetDisabledPriorities(clusterDefinition.DisabledPriorities);
+            foreach (var worker in clusterDefinition.Workers)
+                foreach (var p in clusterDefinition.DisabledPriorities)
+                    worker.BucketQty[p] = 0;
+        }
+
         // Apply cluster custom connection config (optional)
         clusterCnnConfig.SetJobMasterConfigDictionary(clusterDefinition.AdditionalConnConfig ?? new JobMasterConfigDictionary());
 
@@ -295,6 +303,14 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    public IClusterConfigSelector DisablePriority(JobMasterPriority priority)
+    {
+        if (priority == JobMasterPriority.Medium)
+            throw new ArgumentException("Medium priority cannot be disabled.", nameof(priority));
+        clusterDefinition.DisabledPriorities.Add(priority);
+        return this;
+    }
+
     public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
     {
         this.clusterDefinition.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
@@ -463,6 +479,13 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         if (config.DataRetentionTtl != null)
             DataRetentionTtl(TimeSpan.Parse(config.DataRetentionTtl, CultureInfo.InvariantCulture));
 
+        foreach (var raw in config.DisabledPriorities ?? [])
+        {
+            if (!Enum.TryParse(raw, ignoreCase: true, out JobMasterPriority disabledPriority))
+                throw new ArgumentException($"Invalid JobMasterPriority value in DisabledPriorities: '{raw}'.");
+            DisablePriority(disabledPriority);
+        }
+
         if (config.Standalone)
         {
             var standalone = UseStandaloneCluster();
@@ -589,6 +612,14 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     public IClusterStandaloneConfigSelector RetainDataForever()
     {
         clusterDefinition.DataRetentionTtl = TimeSpan.Zero;
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector DisablePriority(JobMasterPriority priority)
+    {
+        if (priority == JobMasterPriority.Medium)
+            throw new ArgumentException("Medium priority cannot be disabled.", nameof(priority));
+        clusterDefinition.DisabledPriorities.Add(priority);
         return this;
     }
 

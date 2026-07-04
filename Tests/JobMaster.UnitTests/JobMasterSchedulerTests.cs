@@ -2,6 +2,7 @@ using System.Reflection;
 using FluentAssertions;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
@@ -101,7 +102,133 @@ public class JobMasterSchedulerTests
         configServiceMock.Verify();
     }
 
+    [Fact]
+    public void OnceNow_WhenExplicitPriorityIsDisabled_Throws()
+    {
+        var clusterId = "c-disabled-explicit";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+        clusterCfg.SetDisabledPriorities(new HashSet<JobMasterPriority> { JobMasterPriority.VeryLow });
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock
+            .Setup(x => x.Get())
+            .Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock
+            .Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>())
+            .Returns(schedulerMock.Object);
+        factoryMock
+            .Setup(x => x.GetComponent<IMasterClusterConfigurationService>())
+            .Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        JobMasterScheduler.Instance
+            .Invoking(s => s.OnceNow<TestJobMasterHandler>(priority: JobMasterPriority.VeryLow))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("*VeryLow*disabled*");
+    }
+
+    [Fact]
+    public void OnceNow_WhenHandlerAttributePriorityIsDisabled_Throws()
+    {
+        var clusterId = "c-disabled-attr";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+        clusterCfg.SetDisabledPriorities(new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock
+            .Setup(x => x.Get())
+            .Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock
+            .Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>())
+            .Returns(schedulerMock.Object);
+        factoryMock
+            .Setup(x => x.GetComponent<IMasterClusterConfigurationService>())
+            .Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        // CriticalPriorityHandler has [JobMasterPriority(Critical)], no explicit priority arg
+        JobMasterScheduler.Instance
+            .Invoking(s => s.OnceNow<CriticalPriorityHandler>())
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("*Critical*disabled*");
+    }
+
+    [Fact]
+    public void OnceNow_WhenPriorityIsNotDisabled_Schedules()
+    {
+        var clusterId = "c-enabled-priority";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+        clusterCfg.SetDisabledPriorities(new HashSet<JobMasterPriority> { JobMasterPriority.VeryLow });
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock
+            .Setup(x => x.Get())
+            .Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<JobRawModel>(), It.IsAny<bool>()))
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock
+            .Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>())
+            .Returns(schedulerMock.Object);
+        factoryMock
+            .Setup(x => x.GetComponent<IMasterClusterConfigurationService>())
+            .Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        // Medium (default) is not disabled — should succeed
+        JobMasterScheduler.Instance
+            .Invoking(s => s.OnceNow<TestJobMasterHandler>())
+            .Should().NotThrow();
+
+        schedulerMock.Verify();
+    }
+
     private sealed class TestJobMasterHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    [JobMasterPriority(JobMasterPriority.Critical)]
+    private sealed class CriticalPriorityHandler : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }

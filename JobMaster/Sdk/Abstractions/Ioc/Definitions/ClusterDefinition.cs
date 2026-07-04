@@ -7,6 +7,8 @@ namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 internal sealed class ClusterDefinition
 {
     public string? ClusterId { get; set; }
+
+    public ISet<JobMasterPriority> DisabledPriorities { get; } = new HashSet<JobMasterPriority>();
     
     public string? RepoType { get; set; }
     public string? ConnString { get; set; }

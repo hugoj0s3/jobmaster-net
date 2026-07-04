@@ -15,6 +15,12 @@ internal sealed class ClusterJsonConfig
     public int? MaxMessageByteSize { get; set; }
     public string? IanaTimeZoneId { get; set; }
     public string? DataRetentionTtl { get; set; }
+    /// <summary>
+    /// Priority levels to disable for this cluster.
+    /// Accepted values: "VeryLow", "Low", "High", "Critical" (case-insensitive).
+    /// "Medium" cannot be disabled.
+    /// </summary>
+    public List<string>? DisabledPriorities { get; set; }
     public List<AgentConnectionJsonConfig>? AgentConnections { get; set; }
     public List<WorkerJsonConfig>? Workers { get; set; }
 }

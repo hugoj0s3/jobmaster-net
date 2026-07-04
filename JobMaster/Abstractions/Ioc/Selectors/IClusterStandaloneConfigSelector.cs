@@ -84,6 +84,17 @@ public interface IClusterStandaloneConfigSelector
     public IClusterStandaloneConfigSelector RetainDataForever();
 
     /// <summary>
+    /// Disables the specified priority level for this cluster.
+    /// Once disabled: no execution bucket is created for this priority at startup;
+    /// any job handler or static recurring schedule configured for this priority throws at startup;
+    /// and scheduling a job at this priority throws at scheduling time.
+    /// <see cref="JobMasterPriority.Medium"/> cannot be disabled — it is the fallback for all
+    /// handlers that do not declare an explicit <see cref="JobMasterPriority"/> attribute.
+    /// </summary>
+    /// <param name="priority">The priority to disable. Must not be <see cref="JobMasterPriority.Medium"/>.</param>
+    public IClusterStandaloneConfigSelector DisablePriority(JobMasterPriority priority);
+
+    /// <summary>
     /// Registers an in-process worker that picks up and executes jobs for this standalone cluster.
     /// </summary>
     /// <param name="workerName">Optional logical name for this worker instance.</param>

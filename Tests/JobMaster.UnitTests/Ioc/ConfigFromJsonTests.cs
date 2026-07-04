@@ -627,4 +627,79 @@ public class ConfigFromJsonTests
 
         act.Should().Throw<ArgumentException>().WithMessage("*Turbo*");
     }
+
+    // ── DisabledPriorities ────────────────────────────────────────────────────
+
+    [Fact]
+    public void ConfigFromJson_String_MapsDisabledPriorities()
+    {
+        const string json = """
+        {
+            "DisabledPriorities": ["VeryLow", "Critical"]
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DisabledPriorities.Should().BeEquivalentTo(
+            new[] { JobMasterPriority.VeryLow, JobMasterPriority.Critical });
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_DisabledPrioritiesCaseInsensitive()
+    {
+        const string json = """
+        {
+            "DisabledPriorities": ["verylow", "CRITICAL"]
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DisabledPriorities.Should().BeEquivalentTo(
+            new[] { JobMasterPriority.VeryLow, JobMasterPriority.Critical });
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_WhenDisabledPrioritiesAbsent_LeavesSetEmpty()
+    {
+        const string json = "{}";
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.DisabledPriorities.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_DisabledPriority_Medium_Throws()
+    {
+        const string json = """
+        {
+            "DisabledPriorities": ["Medium"]
+        }
+        """;
+
+        var b = Builder();
+        b.Invoking(x => x.ConfigFromJson(json))
+            .Should().Throw<ArgumentException>()
+            .WithMessage("*Medium*");
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_DisabledPriority_InvalidValue_Throws()
+    {
+        const string json = """
+        {
+            "DisabledPriorities": ["Extreme"]
+        }
+        """;
+
+        var b = Builder();
+        b.Invoking(x => x.ConfigFromJson(json))
+            .Should().Throw<ArgumentException>()
+            .WithMessage("*Extreme*");
+    }
 }

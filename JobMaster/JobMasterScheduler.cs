@@ -289,11 +289,20 @@ public class JobMasterScheduler : IJobMasterScheduler
         {
             throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
         }
-        
+
         EnsureCanSave(clusterId);
         var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
+
+        if (recurringSchMd.Priority.HasValue &&
+            JobMasterClusterConnectionConfig.TryGet(recurringSchMd.ClusterId, includeNotReady: true)
+                ?.IsPriorityDisabled(recurringSchMd.Priority.Value) == true)
+        {
+            throw new InvalidOperationException(
+                $"Priority {recurringSchMd.Priority.Value} is disabled on cluster '{recurringSchMd.ClusterId}'. " +
+                $"Cannot schedule recurring schedule '{recurringSchMd.JobDefinitionId}'.");
+        }
     }
 
     private void EnsureCanSave(string? clusterId, JobRawModel job)
@@ -302,11 +311,16 @@ public class JobMasterScheduler : IJobMasterScheduler
         {
             throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
         }
-        
+
         EnsureCanSave(clusterId);
         var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
+
+        if (JobMasterClusterConnectionConfig.TryGet(job.ClusterId, includeNotReady: true)?.IsPriorityDisabled(job.Priority) == true)
+            throw new InvalidOperationException(
+                $"Priority {job.Priority} is disabled on cluster '{job.ClusterId}'. " +
+                $"Cannot schedule job '{job.JobDefinitionId}'.");
     }
 
     private void EnsureCanSave(string? cluserId)
