@@ -1,4 +1,5 @@
 ﻿using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.SqlBase.Agents;
 using JobMaster.SqlBase.Connections;
@@ -8,16 +9,11 @@ namespace JobMaster.Postgres.Agents;
 
 internal class PostgresAgentFingerprintResolver : SqlAgentFingerprintResolver
 {
-    public PostgresAgentFingerprintResolver(IServiceProvider serviceProvider) : 
-        base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(PostgresRepositoryConstants.RepositoryTypeId))
+    public PostgresAgentFingerprintResolver(IServiceProvider serviceProvider) :
+        base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(PostgresRepositoryConstants.RepositoryTypeId),
+            serviceProvider.GetRequiredService<IKnownExceptionIdentifier>())
     {
     }
 
     public override string AgentRepoTypeId => PostgresRepositoryConstants.RepositoryTypeId;
-    
-    
-    
-    
-    
-    /// Updated.
 }

@@ -44,8 +44,8 @@ internal class RetryDeadlockPolicy
     /// Creates a policy bound to a provider-aware exception identifier.
     /// </summary>
     /// <param name="knownExceptionIdentifier">Translates a thrown exception to a
-    /// <see cref="JobMasterKnownExceptionId"/>. Must be cluster-scoped — the identifier
-    /// resolves the active provider strategy from the bound cluster's repository type.</param>
+    /// <see cref="JobMasterKnownExceptionId"/> via <see cref="IKnownExceptionIdentifier.Identify(Exception)"/>,
+    /// since a policy instance isn't bound to any single connection's repo type.</param>
     /// <param name="retryInterval">Base wait between attempts. Actual wait is
     /// <c>retryInterval + Random(0, retryInterval/2)</c> milliseconds (see
     /// <see cref="JitteredDelay"/>).</param>

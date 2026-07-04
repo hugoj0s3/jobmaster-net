@@ -603,7 +603,7 @@ WHERE j.{cClusterId} = @ClusterId
     
     protected virtual bool IsDupeViolation(Guid jobId, Exception ex)
     {
-        return knownExceptionIdentifier.Identify(ex) == JobMasterKnownExceptionId.DuplicateKey;
+        return knownExceptionIdentifier.Identify(this.ClusterConnConfig.RepositoryTypeId, ex) == JobMasterKnownExceptionId.DuplicateKey;
     }
 
     // SQL builders

@@ -1,5 +1,7 @@
+using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Utils;
 using JobMaster.SqlBase.Connections;
@@ -10,25 +12,23 @@ namespace JobMaster.SqlBase.Agents;
 internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
 {
     private readonly IDbConnectionManager dbConnectionManager;
+    private readonly IKnownExceptionIdentifier knownExceptionIdentifier;
 
     private JobMasterConfigDictionary additionalConnConfig = null!;
     private string connString = string.Empty;
     private ISqlGenerator sql = null!;
 
-    protected SqlAgentFingerprintResolver(IDbConnectionManager dbConnectionManager)
+    protected SqlAgentFingerprintResolver(IDbConnectionManager dbConnectionManager, IKnownExceptionIdentifier knownExceptionIdentifier)
     {
         this.dbConnectionManager = dbConnectionManager;
+        this.knownExceptionIdentifier = knownExceptionIdentifier;
     }
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
         using var connection = await dbConnectionManager.OpenAsync(connString, additionalConnConfig);
-        var fingerprint = await connection.QueryFirstOrDefaultAsync<string>(@$"
-SELECT fingerprint
-FROM {FingerprintTableName()}
-where cluster_id = @clusterId and
-      agent_connection_id = @agentConnectionId", new { clusterId, agentConnectionId });
 
+        var fingerprint = await ReadFingerprintAsync(connection, clusterId, agentConnectionId);
         if (!string.IsNullOrEmpty(fingerprint))
         {
             return fingerprint!;
@@ -36,26 +36,36 @@ where cluster_id = @clusterId and
 
         fingerprint = JobMasterRandomUtil.NewGuid4().ToString();
 
-        // insert fingerprint
-        await connection.ExecuteAsync($@"
+        try
+        {
+            // Plain insert relying on the (cluster_id, agent_connection_id) primary key for
+            // atomicity — a concurrent insert from another process racing to create the same
+            // row for the first time fails with a duplicate-key error instead of both silently
+            // succeeding and one overwriting the other's value.
+            await connection.ExecuteAsync($@"
 INSERT INTO {FingerprintTableName()} (cluster_id, agent_connection_id, fingerprint, last_updated_at)
-SELECT @clusterId, @agentConnectionId, @fingerprint, @lastUpdatedAt
-WHERE NOT EXISTS (
-    SELECT 1
-    FROM {FingerprintTableName()}
-    WHERE cluster_id = @clusterId
-      AND agent_connection_id = @agentConnectionId
-);
+VALUES (@clusterId, @agentConnectionId, @fingerprint, @lastUpdatedAt);",
+                new { clusterId, agentConnectionId, fingerprint, lastUpdatedAt = DateTime.UtcNow });
 
-UPDATE {FingerprintTableName()}
-SET fingerprint = @fingerprint,
-    last_updated_at = @lastUpdatedAt
-WHERE cluster_id = @clusterId
-  AND agent_connection_id = @agentConnectionId;
-",
-            new { clusterId, agentConnectionId, fingerprint, lastUpdatedAt = DateTime.UtcNow });
+            return fingerprint;
+        }
+        catch (Exception ex) when (knownExceptionIdentifier.Identify(AgentRepoTypeId, ex) == JobMasterKnownExceptionId.DuplicateKey)
+        {
+            // Someone else won the race and inserted first — defer to whatever they persisted
+            // instead of returning our own locally-generated value, which would silently
+            // diverge from what's actually stored.
+            var persisted = await ReadFingerprintAsync(connection, clusterId, agentConnectionId);
+            return persisted!;
+        }
+    }
 
-        return fingerprint;
+    private async Task<string?> ReadFingerprintAsync(IDbConnection connection, string clusterId, string agentConnectionId)
+    {
+        return await connection.QueryFirstOrDefaultAsync<string>(@$"
+SELECT fingerprint
+FROM {FingerprintTableName()}
+where cluster_id = @clusterId and
+      agent_connection_id = @agentConnectionId", new { clusterId, agentConnectionId });
     }
 
     public void Initialize(JobMasterAgentConnectionConfig config)

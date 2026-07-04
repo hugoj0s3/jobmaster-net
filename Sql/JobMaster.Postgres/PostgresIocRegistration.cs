@@ -33,5 +33,6 @@ internal static class PostgresIocRegistration
         registration.ClusterServices.AddKeyedSingleton<IDbConnectionManager, PostgresDbConnectionManager>(RepositoryType);
         registration.AddFingerprintResolver<PostgresAgentFingerprintResolver>(RepositoryType);
         registration.AddRepositoryDispatcher<PostgresJobsDispatcherRepository, PostgresRawMessagesDispatcherRepository, PostgresRawMessagesDispatcherRepository>(PostgresRepositoryConstants.RepositoryTypeId);
+        registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, PostgresKnownExceptionIdentifierStrategy>();
     }
 }

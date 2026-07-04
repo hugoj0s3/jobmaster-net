@@ -35,5 +35,6 @@ internal static class SqlServerIocRegistration
         registration.ClusterServices.AddKeyedSingleton<IAgentFingerprintResolver, SqlServerAgentFingerprintResolver>(RepositoryType);
         registration.AddFingerprintResolver<SqlServerAgentFingerprintResolver>(RepositoryType);
         registration.AddRepositoryDispatcher<SqlServerJobsDispatcherRepository, SqlServerRawMessagesDispatcherRepository, SqlServerRawMessagesDispatcherRepository>(RepositoryType);
+        registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, SqlServerKnownExceptionIdentifierStrategy>();
     }
 }

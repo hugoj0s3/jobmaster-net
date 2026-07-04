@@ -32,6 +32,8 @@
 
 - **Worker "alive" window standardized to 45 seconds** — Agent workers previously used a 30-second window with no allowance for clock drift between machines, while agent connections used 90 seconds and hosts used 45 seconds. All three now consistently use the same 45-second window (30s heartbeat threshold + 15s clock-skew allowance).
 
+- **SQL agent connections: possible false-positive "fingerprint has changed" failure on startup** — If two processes bootstrapped the same brand-new agent connection at the same moment (e.g. starting several instances together for the first time), a rare race could cause one of them to register a fingerprint that didn't match what was actually saved. On the next restart this could look like the connection had changed, which is a hard failure for connections with `ProtectConnectionChanges` enabled. The fingerprint registration is now atomic, so this can no longer happen.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha

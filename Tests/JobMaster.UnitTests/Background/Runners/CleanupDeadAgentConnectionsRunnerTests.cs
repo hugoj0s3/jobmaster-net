@@ -8,16 +8,16 @@ namespace JobMaster.UnitTests.Background.Runners;
 
 /// <summary>
 /// Unit tests for <see cref="CleanupDeadAgentConnectionsRunner"/>.
-/// Covers: no-op when all connections are alive, deletion of connections past the 10-minute
-/// dead threshold (protected and unprotected alike — protection is about detecting a silently
-/// changed connection at bootstrap, not deletion timing), preservation of connections within the
-/// threshold, and reserved connections (standalone/fallback) never being deleted regardless of
-/// staleness.
+/// Covers: no-op when all connections are alive, deletion of connections past the
+/// <c>DeleteAgentConnectionThreshold</c> (protected and unprotected alike — protection is about
+/// detecting a silently changed connection at bootstrap, not deletion timing), preservation of
+/// connections within the threshold, and reserved connections (standalone/fallback) never being
+/// deleted regardless of staleness.
 /// </summary>
 public class CleanupDeadAgentConnectionsRunnerTests
 {
-    // Connections older than 10 minutes are eligible for deletion.
-    private const int DeadThresholdMinutes = 10;
+    // Must match CleanupDeadAgentConnectionsRunner.DeleteAgentConnectionThreshold.
+    private const int DeadThresholdMinutes = 30;
 
     private static AgentConnectionModel FreshConnection(string clusterId, string name)
         => new(clusterId)
@@ -84,7 +84,7 @@ public class CleanupDeadAgentConnectionsRunnerTests
     {
         var f = RunnerFixture.Create();
         // Protection is about change-detection at bootstrap, not deletion timing — a protected
-        // connection past the same 10-minute threshold is just as eligible as an unprotected one.
+        // connection past the same threshold is just as eligible as an unprotected one.
         f.AgentConnectionService.Connections.Add(StaleConnection(f.ClusterId, "protected-conn", protect: true));
 
         var runner = new CleanupDeadAgentConnectionsRunner(f.Worker.Object);
@@ -99,7 +99,7 @@ public class CleanupDeadAgentConnectionsRunnerTests
     public async Task OnTickAsync_WhenProtectedConnectionIsRecentlyStale_ShouldNotDeleteIt()
     {
         var f = RunnerFixture.Create();
-        // Same 10-minute threshold applies regardless of protection — within it, not yet eligible.
+        // Same threshold applies regardless of protection — within it, not yet eligible.
         var recentProtected = new AgentConnectionModel(f.ClusterId)
         {
             Id = new AgentConnectionId(f.ClusterId, "recent-protected-conn"),
@@ -121,7 +121,7 @@ public class CleanupDeadAgentConnectionsRunnerTests
     public async Task OnTickAsync_WhenConnectionIsRecentlyStale_ShouldNotDeleteIt()
     {
         var f = RunnerFixture.Create();
-        // Heartbeat is just 2 minutes ago â€” within the 10-minute threshold.
+        // Heartbeat is just 2 minutes ago — well within the threshold.
         var recent = new AgentConnectionModel(f.ClusterId)
         {
             Id = new AgentConnectionId(f.ClusterId, "recent-conn"),
