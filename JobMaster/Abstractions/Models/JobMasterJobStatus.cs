@@ -42,7 +42,7 @@ public enum JobMasterJobStatus
     Queued = 6,
 
     /// <summary>
-    /// The job is actively being executed by its registered <c>IJobHandler</c>. Execution
+    /// The job is actively being executed by its registered <c>IJobMasterHandler</c>. Execution
     /// metadata (<c>JobExecution</c>) is created and persisted when this state is entered.
     /// </summary>
     Processing = 4,

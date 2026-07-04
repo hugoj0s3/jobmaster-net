@@ -27,7 +27,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         
         var handlerTypes = assemblies
             .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobHandler).IsAssignableFrom(t) && 
+            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) && 
                         !t.IsInterface && 
                         !t.IsAbstract)
             .Select(x => new

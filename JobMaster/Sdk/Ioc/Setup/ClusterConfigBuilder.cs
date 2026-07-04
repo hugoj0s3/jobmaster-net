@@ -191,10 +191,10 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             clusterServiceRegistration.ClusterServices.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
         }
         
-        // Automatically register all IJobHandler implementations
+        // Automatically register all IJobMasterHandler implementations
         var handlerTypes = assemblies
             .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobHandler).IsAssignableFrom(t) && 
+            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) && 
                         !t.IsInterface && 
                         !t.IsAbstract)
             .ToList();

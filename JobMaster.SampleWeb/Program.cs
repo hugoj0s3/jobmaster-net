@@ -313,9 +313,9 @@ app.MapPost("/schedule-job", async(int qty, string ? lane, string? clusterId, Ti
     {
         var data = WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName());
         if (delay.HasValue)
-            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobHandler>(delay.Value, data, metadata: meta, workerLane: lane, clusterId: clusterId));
+            tasks.Add(jobScheduler.OnceAfterAsync<HelloJobMasterHandler>(delay.Value, data, metadata: meta, workerLane: lane, clusterId: clusterId));
         else
-            tasks.Add(jobScheduler.OnceNowAsync<HelloJobHandler>(data, metadata: meta, workerLane: lane, clusterId: clusterId));
+            tasks.Add(jobScheduler.OnceNowAsync<HelloJobMasterHandler>(data, metadata: meta, workerLane: lane, clusterId: clusterId));
     }
 
     await Task.WhenAll(tasks);
@@ -327,7 +327,7 @@ app.MapPost("/schedule-job", async(int qty, string ? lane, string? clusterId, Ti
 
 app.MapPost("/recurring-schedule-job", (string expressionType, string expression, string? lane, IJobMasterScheduler jobScheduler) =>
 {
-    jobScheduler.Recurring<HelloJobHandler>(expressionType, expression, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
+    jobScheduler.Recurring<HelloJobMasterHandler>(expressionType, expression, WriteableMessageData.New().SetStringValue("Name", Faker.Name.FullName()), metadata: WritableMetadata.New().SetStringValue("expression", expression), workerLane: lane);
     
 }).WithOpenApi();
 
@@ -366,7 +366,7 @@ static string GenerateDummyJwt(string username, TokenValidationParameters tvp)
 
 // namespace JobMaster.SampleWeb
 // {
-//     public class HelloJobHandler : IJobHandler
+//     public class HelloJobHandler : IJobMasterHandler
 //     {
 //         public HelloJobHandler()
 //         {
@@ -391,7 +391,7 @@ static string GenerateDummyJwt(string username, TokenValidationParameters tvp)
 //
 //
 //
-//     public class HelloJobLongRunHandler : IJobHandler
+//     public class HelloJobLongRunHandler : IJobMasterHandler
 //     {
 //         public async Task HandleAsync(Job job)
 //         {

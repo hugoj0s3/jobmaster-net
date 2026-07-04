@@ -20,6 +20,8 @@
 
 - **Coordinator workers no longer take an agent connection — and now must not have one** — A Coordinator only assigns jobs to buckets and manages their lifecycle; it never owns a bucket or claims one for draining, so it has no use for an agent connection of its own. Configuring an `AgentConnectionName` for a Coordinator worker now throws at startup instead of being silently accepted. Every other mode (`Full`, `Execution`, `Drain`) is unaffected and still requires one.
 
+- **`IJobHandler` renamed to `IJobMasterHandler`** — Brings the interface you implement to define a job in line with the rest of the library's naming (`IJobMasterScheduler`, `IJobMasterLogger`, etc.). Existing code implementing `IJobHandler` keeps compiling as-is — it's now marked obsolete and will be removed in a future release, so there's no rush to migrate, but new handlers should implement `IJobMasterHandler` directly.
+
 ### Fixed
 
 - **Coordinator fallback bucket durability** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" now persists jobs to the master database (through a dedicated reserved connection) instead of an in-process queue, so they survive a Coordinator restart instead of being lost.

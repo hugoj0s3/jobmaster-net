@@ -51,7 +51,7 @@ public class JobMasterSchedulerTests
 
         JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
 
-        var ctx = JobMasterScheduler.Instance.OnceNow<TestJobHandler>();
+        var ctx = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>();
 
         ctx.ClusterId.Should().Be(clusterId);
         schedulerMock.Verify();
@@ -94,14 +94,14 @@ public class JobMasterSchedulerTests
 
         JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
 
-        var ctx = await JobMasterScheduler.Instance.OnceNowAsync<TestJobHandler>();
+        var ctx = await JobMasterScheduler.Instance.OnceNowAsync<TestJobMasterHandler>();
 
         ctx.ClusterId.Should().Be(clusterId);
         schedulerMock.Verify();
         configServiceMock.Verify();
     }
 
-    private sealed class TestJobHandler : IJobHandler
+    private sealed class TestJobMasterHandler : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }

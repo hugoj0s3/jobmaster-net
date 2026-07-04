@@ -25,7 +25,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
     private static readonly ConcurrentDictionary<string, Type> JobDefinitionIdMap = new();
 
     /// <summary>
-    /// Resolves the <see cref="IJobHandler"/> implementation type for the given <paramref name="jobdefinitionId"/>.
+    /// Resolves the <see cref="IJobMasterHandler"/> implementation type for the given <paramref name="jobdefinitionId"/>.
     /// Returns <c>null</c> if no matching type is found.
     /// </summary>
     public static Type? GetJobHandlerTypeFromId(string jobdefinitionId)
@@ -35,7 +35,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
             return result;
         }
 
-        var type = typeof(IJobHandler);
+        var type = typeof(IJobMasterHandler);
         var types = AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(s => s.GetTypes())
             .Where(p => type.IsAssignableFrom(p))

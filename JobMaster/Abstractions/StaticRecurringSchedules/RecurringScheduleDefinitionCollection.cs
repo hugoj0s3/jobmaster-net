@@ -57,7 +57,7 @@ public sealed class RecurringScheduleDefinitionCollection
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
-        where Th : class, IJobHandler
+        where Th : class, IJobMasterHandler
     {
         var compiled = RecurrenceExprCompiler.Compile(expressionType, expression);
         return Add<Th>(compiled, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
@@ -83,7 +83,7 @@ public sealed class RecurringScheduleDefinitionCollection
         DateTime? startAfter = null,
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null)
-        where Th : class, IJobHandler
+        where Th : class, IJobMasterHandler
     {
         if (!string.IsNullOrEmpty(defId) && !JobMasterStringUtils.IsValidForId(defId!))
         {

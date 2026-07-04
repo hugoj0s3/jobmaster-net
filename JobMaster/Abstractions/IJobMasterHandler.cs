@@ -8,11 +8,16 @@ namespace JobMaster.Abstractions;
 /// <see cref="HandleAsync"/> when a scheduled job of that type is due.
 /// Register handlers with the cluster via the IoC configuration.
 /// </summary>
-public interface IJobHandler
+public interface IJobMasterHandler
 {
     /// <summary>
     /// Executes the job. Called by the runtime when the job is due.
     /// </summary>
     /// <param name="job">Context object containing the job's payload, metadata, and scheduling information.</param>
     Task HandleAsync(JobContext job);
+}
+
+[Obsolete("IJobHandler has been renamed to IJobMasterHandler. Implement IJobMasterHandler instead; this alias will be removed in a future release.")]
+public interface IJobHandler : IJobMasterHandler
+{
 }

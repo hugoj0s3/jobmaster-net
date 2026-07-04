@@ -3,7 +3,7 @@ using JobMaster.Abstractions.Models;
 
 namespace JobMaster.SampleWeb;
 
-public class ServerBackupHandler : IJobHandler
+public class ServerBackupMasterHandler : IJobMasterHandler
 {
     public Task HandleAsync(JobContext job)
     {

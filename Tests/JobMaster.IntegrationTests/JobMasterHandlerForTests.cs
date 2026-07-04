@@ -6,7 +6,7 @@ using JobMaster.Abstractions.Models.Attributes;
 namespace JobMaster.IntegrationTests;
 
 [JobMasterDefinitionId("JobHandlerForTests")]
-public class JobHandlerForTests : IJobHandler
+public class JobMasterHandlerForTests : IJobMasterHandler
 {
     public static ConcurrentDictionary<string, TestExecutionCount> ExecutionsByTestId = new ConcurrentDictionary<string, TestExecutionCount>();
     

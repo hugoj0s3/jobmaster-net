@@ -30,7 +30,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Schedules <typeparamref name="T"/> to run at the specified UTC date and time.
@@ -45,7 +45,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Schedules <typeparamref name="T"/> to run after the specified delay from now.
@@ -60,7 +60,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceNow{T}"/>.</summary>
     Task<JobContext> OnceNowAsync<T>(
@@ -70,7 +70,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAt{T}"/>.</summary>
     Task<JobContext> OnceAtAsync<T>(
@@ -81,7 +81,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAfter{T}"/>.</summary>
     Task<JobContext> OnceAfterAsync<T>(
@@ -92,7 +92,7 @@ public interface IJobMasterScheduler
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to <paramref name="expression"/>.
@@ -118,7 +118,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync<T>(
@@ -131,7 +131,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Creates or updates a recurring schedule using a raw expression type ID and expression string.
@@ -152,7 +152,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="Recurring{T}(string, string, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync<T>(
@@ -166,7 +166,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler;
+        string? clusterId = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Cancels the one-time job with the given ID.

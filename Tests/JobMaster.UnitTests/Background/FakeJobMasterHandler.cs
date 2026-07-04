@@ -4,8 +4,8 @@ using JobMaster.Abstractions.Models.Attributes;
 
 namespace JobMaster.UnitTests.Background;
 
-[JobMasterDefinitionIdAttribute(FakeJobHandler.DefinitionId)]
-internal sealed class FakeJobHandler : IJobHandler
+[JobMasterDefinitionIdAttribute(FakeJobMasterHandler.DefinitionId)]
+internal sealed class FakeJobMasterHandler : IJobMasterHandler
 {
     public const string DefinitionId = "fake-job";
 

@@ -107,7 +107,7 @@ internal class Job : JobMasterBaseModel
         JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
         ClusterConfigurationModel? masterConfig = null,
         string? workerLane = null)
-        where T : IJobHandler
+        where T : IJobMasterHandler
     {
         return New(
             clusterId,

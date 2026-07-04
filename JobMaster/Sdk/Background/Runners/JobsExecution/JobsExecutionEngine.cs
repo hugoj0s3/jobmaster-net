@@ -778,9 +778,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                         $"Ensure the handler is in an assembly that is scanned during cluster configuration.");
                 }
 
-                if (handler is not IJobHandler jobHandler)
+                if (handler is not IJobMasterHandler jobHandler)
                 {
-                    throw new InvalidOperationException($"Job handler type {handlerType} does not implement IJobHandler");
+                    throw new InvalidOperationException($"Job handler type {handlerType} does not implement IJobMasterHandler");
                 }
 
                 timeoutCancellationToken.ThrowIfCancellationRequested();

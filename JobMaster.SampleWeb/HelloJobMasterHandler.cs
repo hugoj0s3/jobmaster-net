@@ -9,11 +9,11 @@ namespace JobMaster.SampleWeb;
 [JobMasterTimeout(10)]
 [JobMasterMaxNumberOfRetries(3)]
 [JobMasterPriority(JobMasterPriority.Medium)]
-public class HelloJobHandler : IJobHandler
+public class HelloJobMasterHandler : IJobMasterHandler
 {
     public static int Counter = 0;
     
-    public HelloJobHandler()
+    public HelloJobMasterHandler()
     {
     }
 
@@ -50,11 +50,11 @@ public class HelloJobHandler : IJobHandler
 
 [JobMasterMetadata("Attribute1", 10)]
 [JobMasterWorkerLane("Lane1")]
-public class HelloJobHandler2 : IJobHandler
+public class HelloJobMasterHandler2 : IJobMasterHandler
 {
     public static int Counter = 0;
     
-    public HelloJobHandler2()
+    public HelloJobMasterHandler2()
     {
     }
 

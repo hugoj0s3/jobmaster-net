@@ -21,7 +21,7 @@ internal sealed record EngineFixture(
     Mock<IMasterRecurringSchedulesService> Schedules,
     Mock<IMasterBucketsService> Buckets,
     Mock<IMasterClusterConfigurationService> ClusterCfg,
-    FakeJobHandler Handler,
+    FakeJobMasterHandler MasterHandler,
     string BucketId,
     string ClusterId,
     int BufferSize,
@@ -47,13 +47,13 @@ internal static class JobsExecutionEngineFixture
         var clusterCfg = new Mock<IMasterClusterConfigurationService>(MockBehavior.Loose);
 
         // ── service provider chain for ExecuteJobAsync ────────────────────────
-        var handler = new FakeJobHandler();
+        var handler = new FakeJobMasterHandler();
         var innerSp = new Mock<IServiceProvider>();
         var serviceScope = new Mock<IServiceScope>();
         var scopeFactory = new Mock<IServiceScopeFactory>();
         var serviceProvider = new Mock<IServiceProvider>();
 
-        innerSp.Setup(x => x.GetService(typeof(FakeJobHandler))).Returns(handler);
+        innerSp.Setup(x => x.GetService(typeof(FakeJobMasterHandler))).Returns(handler);
         serviceScope.SetupGet(x => x.ServiceProvider).Returns(innerSp.Object);
         scopeFactory.Setup(x => x.CreateScope()).Returns(serviceScope.Object);
         serviceProvider.Setup(x => x.GetService(typeof(IServiceScopeFactory))).Returns(scopeFactory.Object);
@@ -150,7 +150,7 @@ internal static class JobsExecutionEngineFixture
     /// </summary>
     public static JobRawModel CreateInBucketJob(
         DateTime? nextPlanExecutionAt = null,
-        string jobDefinitionId = FakeJobHandler.DefinitionId)
+        string jobDefinitionId = FakeJobMasterHandler.DefinitionId)
     {
         return new JobRawModel
         {
@@ -170,7 +170,7 @@ internal static class JobsExecutionEngineFixture
     public static IList<JobRawModel> CreateInBucketJobMany(
         DateTime? nextPlanExecutionAt = null,
         int count = 50,
-        string jobDefinitionId = FakeJobHandler.DefinitionId)
+        string jobDefinitionId = FakeJobMasterHandler.DefinitionId)
     {
         return new object[count].Select(_ => CreateInBucketJob(nextPlanExecutionAt, jobDefinitionId)).ToList();
     }
@@ -186,7 +186,7 @@ internal static class JobsExecutionEngineFixture
         {
             Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
-            JobDefinitionId = FakeJobHandler.DefinitionId,
+            JobDefinitionId = FakeJobMasterHandler.DefinitionId,
             SourceId = sourceId,
             TriggerSourceType = triggerType,
             NextPlanExecutionAt = DateTime.UtcNow.AddMinutes(-1),
@@ -206,7 +206,7 @@ internal static class JobsExecutionEngineFixture
         {
             Id = JobMasterRandomUtil.NewGuid4(),
             Status = JobMasterJobStatus.InBucket,
-            JobDefinitionId = FakeJobHandler.DefinitionId,
+            JobDefinitionId = FakeJobMasterHandler.DefinitionId,
             NextPlanExecutionAt = DateTime.UtcNow.AddMinutes(-5),
             ProcessDeadline = DateTime.UtcNow.AddMinutes(-1),
             Timeout = TimeSpan.FromMinutes(5),

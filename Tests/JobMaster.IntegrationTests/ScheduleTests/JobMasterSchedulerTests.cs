@@ -336,7 +336,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                             {
                                 try
                                 {
-                                    await scheduler.OnceAfterAsync<JobHandlerForTests>(
+                                    await scheduler.OnceAfterAsync<JobMasterHandlerForTests>(
                                         TimeSpan.FromSeconds(afterSeconds),
                                         metadata: metadata,
                                         clusterId: qty.ClusterId,
@@ -487,7 +487,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             }
 
             // Get execution count for this test
-            var executionCount = JobHandlerForTests.GetExecutionCount(testExecutionId);
+            var executionCount = JobMasterHandlerForTests.GetExecutionCount(testExecutionId);
             Assert.NotNull(executionCount);
             
             output.WriteLine("==== Drain Mode Test Report ====");
@@ -662,7 +662,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                             if (!scheduleAfter)
                             {
                                 // Schedules job for immediate execution.
-                                await scheduler.OnceNowAsync<JobHandlerForTests>(
+                                await scheduler.OnceNowAsync<JobMasterHandlerForTests>(
                                     metadata: metadata,
                                     clusterId: qty.ClusterId,
                                     workerLane: qty.WorkerLane,
@@ -671,7 +671,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
                             else
                             {
                                 // Schedules job with a specific delay.
-                                await scheduler.OnceAfterAsync<JobHandlerForTests>(
+                                await scheduler.OnceAfterAsync<JobMasterHandlerForTests>(
                                     TimeSpan.FromMinutes(2),
                                     metadata: metadata,
                                     clusterId: qty.ClusterId,
@@ -703,12 +703,12 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             output.WriteLine($"SchedulerTest completed in {schedulingStopwatch.Elapsed}");
 
             // Get execution count for this test
-            var executionCount = JobHandlerForTests.GetExecutionCount(testExecutionId);
+            var executionCount = JobMasterHandlerForTests.GetExecutionCount(testExecutionId);
             
             var timeoutAt = DateTime.UtcNow.AddMinutes(timeoutInMinutes);
             while (DateTime.UtcNow < timeoutAt && (executionCount == null || executionCount.JobExecutionCounts.Count < expectedTotal))
             {
-                executionCount = JobHandlerForTests.GetExecutionCount(testExecutionId);
+                executionCount = JobMasterHandlerForTests.GetExecutionCount(testExecutionId);
                 
                 // Fail fast: stop at the first detected duplicate execution
                 if (executionCount != null && executionCount.TotalDuplicates > 0)
@@ -970,7 +970,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
         {
             var scheduler = fixture.Services.GetRequiredService<IJobMasterScheduler>();
             
-            await scheduler.OnceNowAsync<JobHandlerForTests>(
+            await scheduler.OnceNowAsync<JobMasterHandlerForTests>(
                 metadata: WritableMetadata.New().SetStringValue("TestExecutionId", "WarmupJob"));
             // Nats consumer can take few seconds to initialize, if the gap is too small, some jobs may be missed
             await Task.Delay(TimeSpan.FromSeconds(15));
@@ -980,7 +980,7 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             metadata.SetStringValue("TestExecutionId", testExecutionId);
             
             // Schedule recurring job
-            var recurringContext = await scheduler.RecurringAsync<JobHandlerForTests>(
+            var recurringContext = await scheduler.RecurringAsync<JobMasterHandlerForTests>(
                 expressionTypeId, 
                 expression, 
                 metadata: metadata);
@@ -1021,13 +1021,13 @@ public abstract class JobMasterSchedulerTestsBase<TFixture> : IClassFixture<TFix
             // Poll until we have at least some jobs executed or timeout
             var minExpected = Math.Max(1, qtyOfJobsExpected - discrepancyAllow);
             var pollTimeout = DateTime.UtcNow.AddMinutes(2); // 2 minute timeout for jobs to execute
-            var executionCount = JobHandlerForTests.GetExecutionCount(testExecutionId);
+            var executionCount = JobMasterHandlerForTests.GetExecutionCount(testExecutionId);
             
             output.WriteLine($"Waiting for jobs to execute (minimum expected: {minExpected})...");
             while (DateTime.UtcNow < pollTimeout && (executionCount == null || executionCount.TotalExecuted < minExpected))
             {
                 await Task.Delay(1000);
-                executionCount = JobHandlerForTests.GetExecutionCount(testExecutionId);
+                executionCount = JobMasterHandlerForTests.GetExecutionCount(testExecutionId);
                 
                 if (executionCount != null && executionCount.TotalExecuted > 0)
                 {

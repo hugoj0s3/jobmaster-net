@@ -375,9 +375,9 @@ public class JobsExecutionEngineTests
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Processing).Should().HaveCount(5);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Succeeded).Should().HaveCount(5);
 
-        f.Handler.ExecutionCount.Should().Be(5);
-        f.Handler.ExecutedJobs.Select(j => j.JobDefinitionId)
-            .Should().AllBe(FakeJobHandler.DefinitionId);
+        f.MasterHandler.ExecutionCount.Should().Be(5);
+        f.MasterHandler.ExecutedJobs.Select(j => j.JobDefinitionId)
+            .Should().AllBe(FakeJobMasterHandler.DefinitionId);
 
         AssertControlsEmpty(f);
     }
@@ -406,7 +406,7 @@ public class JobsExecutionEngineTests
 
         await Task.Delay(TimeSpan.FromSeconds(1));
 
-        f.Handler.ExecutionCount.Should().Be(3); // only batch A ran
+        f.MasterHandler.ExecutionCount.Should().Be(3); // only batch A ran
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Queued).Should().HaveCount(3);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Processing).Should().HaveCount(3);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Succeeded).Should().HaveCount(3);
@@ -417,7 +417,7 @@ public class JobsExecutionEngineTests
 
         await Task.Delay(TimeSpan.FromSeconds(1));
 
-        f.Handler.ExecutionCount.Should().Be(5); // all done
+        f.MasterHandler.ExecutionCount.Should().Be(5); // all done
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Queued).Should().HaveCount(5);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Processing).Should().HaveCount(5);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Succeeded).Should().HaveCount(5);
@@ -452,7 +452,7 @@ public class JobsExecutionEngineTests
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Processing).Should().HaveCount(jobCount);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Succeeded).Should().HaveCount(jobCount);
 
-        f.Handler.ExecutionCount.Should().Be(jobCount);
+        f.MasterHandler.ExecutionCount.Should().Be(jobCount);
 
         AssertControlsEmpty(f);
     }
@@ -465,7 +465,7 @@ public class JobsExecutionEngineTests
         f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
             .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
 
-        f.Handler.ShouldFail = _ => true;
+        f.MasterHandler.ShouldFail = _ => true;
 
         var jobs = JobsExecutionEngineFixture.CreateInBucketJobMany(count: 5);
         foreach (var job in jobs)
@@ -484,7 +484,7 @@ public class JobsExecutionEngineTests
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Processing).Should().HaveCount(5);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Failed).Should().HaveCount(5);
 
-        f.Handler.ExecutionCount.Should().Be(0);
+        f.MasterHandler.ExecutionCount.Should().Be(0);
 
         AssertControlsEmpty(f);
     }
@@ -502,7 +502,7 @@ public class JobsExecutionEngineTests
         var succeedingJobs = JobsExecutionEngineFixture.CreateInBucketJobMany(count: 3);
         var failingIds = failingJobs.Select(j => j.Id).ToHashSet();
 
-        f.Handler.ShouldFail = ctx => failingIds.Contains(ctx.Id);
+        f.MasterHandler.ShouldFail = ctx => failingIds.Contains(ctx.Id);
 
         foreach (var job in failingJobs.Concat(succeedingJobs))
             await f.Engine.TryOnBoardingJobAsync(job);
@@ -519,7 +519,7 @@ public class JobsExecutionEngineTests
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Failed).Should().HaveCount(3);
         f.SingleUpdateWatcher.Where(j => j.Status == JobMasterJobStatus.Succeeded).Should().HaveCount(3);
 
-        f.Handler.ExecutionCount.Should().Be(3);
+        f.MasterHandler.ExecutionCount.Should().Be(3);
 
         AssertControlsEmpty(f);
     }

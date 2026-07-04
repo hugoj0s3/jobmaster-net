@@ -70,7 +70,7 @@ internal class RecurringSchedule : JobMasterBaseModel
         string? staticDefinitionId,
         DateTime? startAfter,
         DateTime? endBefore,
-        string? workerLane) where T : IJobHandler
+        string? workerLane) where T : IJobMasterHandler
     {
         var jobDefinitionId =
             typeof(T).GetCustomAttributes(false).OfType<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId ??

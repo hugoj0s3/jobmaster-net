@@ -1,7 +1,7 @@
 namespace JobMaster.Abstractions.Models;
 
 /// <summary>
-/// Read-only snapshot of a scheduled job, passed to <see cref="IJobHandler.HandleAsync"/>.
+/// Read-only snapshot of a scheduled job, passed to <see cref="IJobMasterHandler.HandleAsync"/>.
 /// Contains the job's payload, metadata, and scheduling information as set at the time of dispatch.
 /// </summary>
 public class JobContext

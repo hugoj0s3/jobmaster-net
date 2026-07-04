@@ -15,7 +15,7 @@ public class JobTests
         var clusterId = "cluster";
         var scheduledAt = new DateTime(2025, 01, 02, 03, 04, 05, DateTimeKind.Utc);
 
-        var job = Job.New(clusterId, typeof(JobHandlerForTestAllAttributes), scheduledAt: scheduledAt);
+        var job = Job.New(clusterId, typeof(JobMasterHandlerForTestAllAttributes), scheduledAt: scheduledAt);
 
         job.ClusterId.Should().Be(clusterId);
         job.JobDefinitionId.Should().Be("JobHandlerForTest");
@@ -52,7 +52,7 @@ public class JobTests
 
         var job = Job.New(
             clusterId,
-            typeof(JobHandlerForTestAllAttributes),
+            typeof(JobMasterHandlerForTestAllAttributes),
             scheduledAt: scheduledAt,
             priority: JobMasterPriority.High,
             timeout: TimeSpan.FromSeconds(42),
@@ -74,13 +74,13 @@ public class JobTests
     public void New_WhenHandlerHasNoAttributes_UsesDefaults()
     {
         var clusterId = "cluster";
-        var job = Job.New(clusterId, typeof(JobHandlerForTestNoAttributes));
+        var job = Job.New(clusterId, typeof(JobMasterHandlerForTestNoAttributes));
 
         job.Priority.Should().Be(JobMasterPriority.Medium);
         job.Timeout.Should().Be(TimeSpan.FromMinutes(5));
         job.MaxNumberOfRetries.Should().Be(3);
         job.WorkerLane.Should().BeNull();
-        job.JobDefinitionId.Should().Be(typeof(JobHandlerForTestNoAttributes).FullName);
+        job.JobDefinitionId.Should().Be(typeof(JobMasterHandlerForTestNoAttributes).FullName);
     }
 
     [Fact]
@@ -89,8 +89,8 @@ public class JobTests
         var clusterId = "cluster";
         var scheduledAt = new DateTime(2025, 01, 02, 03, 04, 05, DateTimeKind.Utc);
 
-        var nonGeneric = Job.New(clusterId, typeof(JobHandlerForTestAllAttributes), scheduledAt: scheduledAt);
-        var generic = Job.New<JobHandlerForTestAllAttributes>(clusterId, scheduledAt: scheduledAt);
+        var nonGeneric = Job.New(clusterId, typeof(JobMasterHandlerForTestAllAttributes), scheduledAt: scheduledAt);
+        var generic = Job.New<JobMasterHandlerForTestAllAttributes>(clusterId, scheduledAt: scheduledAt);
 
         generic.JobDefinitionId.Should().Be(nonGeneric.JobDefinitionId);
         generic.Priority.Should().Be(nonGeneric.Priority);
@@ -126,7 +126,7 @@ public class JobTests
             endBefore: null,
             workerLane: "LaneR");
 
-        var job = Job.FromRecurringSchedule(clusterId, typeof(JobHandlerForTestAllAttributes), recurring, scheduleAt);
+        var job = Job.FromRecurringSchedule(clusterId, typeof(JobMasterHandlerForTestAllAttributes), recurring, scheduleAt);
 
         job.TriggerSourceType.Should().Be(JobMasterTriggerSourceType.StaticRecurring);
         job.SourceId.Should().Be(recurring.Id);
@@ -152,7 +152,7 @@ public class JobTests
 
         var job = Job.New(
             clusterId,
-            typeof(JobHandlerForTestAllAttributes),
+            typeof(JobMasterHandlerForTestAllAttributes),
             data: msg,
             scheduledAt: scheduledAt,
             priority: JobMasterPriority.High,
@@ -186,7 +186,7 @@ public class JobTests
     {
         var clusterId = "cluster";
 
-        var act = () => Job.New(clusterId, typeof(JobHandlerForTestHighRetriesAttribute));
+        var act = () => Job.New(clusterId, typeof(JobMasterHandlerForTestHighRetriesAttribute));
         act.Should().Throw<ArgumentException>().WithMessage("*MaxNumberOfRetries*");
     }
 
@@ -215,7 +215,7 @@ public class JobTests
 
         var job = Job.New(
             clusterId,
-            typeof(JobHandlerForTestNoAttributes),
+            typeof(JobMasterHandlerForTestNoAttributes),
             writableMetadata: metadata);
 
         var r = job.Metadata!.ToReadable();
@@ -257,7 +257,7 @@ public class JobTests
 
         var job = Job.New(
             clusterId,
-            typeof(JobHandlerForTestNoAttributes),
+            typeof(JobMasterHandlerForTestNoAttributes),
             writableMetadata: metadata);
 
         var job2 = Job.FromModel(job.ToModel());
@@ -292,7 +292,7 @@ public class JobTests
     [JobMasterMetadata("TestDecimal", 12.34)]
     [JobMasterMetadata("TestBool", true)]
     [JobMasterMetadata("TestChar", 'Z')]
-    private class JobHandlerForTestAllAttributes : IJobHandler
+    private class JobMasterHandlerForTestAllAttributes : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job)
         {
@@ -300,7 +300,7 @@ public class JobTests
         }
     }
 
-    private class JobHandlerForTestNoAttributes : IJobHandler
+    private class JobMasterHandlerForTestNoAttributes : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job)
         {
@@ -309,7 +309,7 @@ public class JobTests
     }
 
     [JobMasterMaxNumberOfRetries(11)]
-    private class JobHandlerForTestHighRetriesAttribute : IJobHandler
+    private class JobMasterHandlerForTestHighRetriesAttribute : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job)
         {

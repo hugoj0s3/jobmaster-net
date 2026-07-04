@@ -25,7 +25,7 @@ public static class NaturalCronExprExtensions
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler
+        string? clusterId = null) where T : IJobMasterHandler
     {
         var compiledExpr = new NaturalCronCompiledExpr(naturalCronExpr.Expression, naturalCronExpr);
         
@@ -44,7 +44,7 @@ public static class NaturalCronExprExtensions
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobHandler
+        string? clusterId = null) where T : IJobMasterHandler
     {
         var compiledExpr = new NaturalCronCompiledExpr(naturalCronExpr.Expression, naturalCronExpr);
         
@@ -61,7 +61,7 @@ public static class NaturalCronExprExtensions
         int? maxNumberOfRetries = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        IWritableMetadata? metadata = null) where Th : class, IJobHandler
+        IWritableMetadata? metadata = null) where Th : class, IJobMasterHandler
     {
         collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
         return collection;
