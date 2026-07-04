@@ -38,7 +38,7 @@ internal static class WorkersEndpoints
         if (criteria.Mode.HasValue)
             workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
         if (criteria.IsAlive.HasValue)
-            workers = workers.Where(w => w.IsAlive == criteria.IsAlive.Value).ToList();
+            workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
         if (criteria.Status.HasValue)
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
@@ -80,7 +80,7 @@ internal static class WorkersEndpoints
         if (criteria.Mode.HasValue)
             workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
         if (criteria.IsAlive.HasValue)
-            workers = workers.Where(w => w.IsAlive == criteria.IsAlive.Value).ToList();
+            workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
         if (criteria.Status.HasValue)
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))

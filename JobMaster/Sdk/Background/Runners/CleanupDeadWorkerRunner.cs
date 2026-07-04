@@ -10,14 +10,14 @@ namespace JobMaster.Sdk.Background.Runners;
 
 /// <summary>
 /// Periodically scans all registered agent workers and removes records for those that are
-/// dead (<see cref="JobMaster.Sdk.Abstractions.Models.Agents.AgentWorkerModel.IsAlive"/> = false)
+/// dead (<see cref="JobMaster.Sdk.Abstractions.Models.Agents.AgentWorkerModel.IsAlive"/>() = false)
 /// once their grace window has closed and their last heartbeat is older than the combined
 /// heartbeat-threshold + cleanup-grace-period.
 /// The current worker is always skipped; workers still within their
 /// <see cref="JobMaster.Sdk.Abstractions.Models.Agents.AgentWorkerModel.StopGracePeriod"/> are left untouched.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
-internal class DeadWorkerCleanupRunner : JobMasterRunner
+internal class CleanupDeadWorkerRunner : JobMasterRunner
 {
     private readonly IMasterAgentWorkersService masterAgentWorkersService;
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
@@ -25,7 +25,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
     
     public override TimeSpan SucceedInterval => TimeSpan.FromMinutes(5);
     
-    public DeadWorkerCleanupRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) 
+    public CleanupDeadWorkerRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) 
         : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
         masterAgentWorkersService = backgroundAgentWorker.GetClusterAwareService<IMasterAgentWorkersService>();
@@ -41,7 +41,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
             var allWorkers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
             
             // Find dead workers that need cleanup
-            var deadWorkers = allWorkers.Where(w => !w.IsAlive).ToList();
+            var deadWorkers = allWorkers.Where(w => !w.IsAlive()).ToList();
             
             foreach (var deadWorker in deadWorkers)
             {
@@ -58,7 +58,7 @@ internal class DeadWorkerCleanupRunner : JobMasterRunner
                     continue;
                 }
                 
-                var maxTimeToLive = JobMasterConstants.AgentHeartbeatThreshold.Add(JobMasterConstants.DeadWorkerCleanupGracePeriod);
+                var maxTimeToLive = JobMasterConstants.ResourceAliveThreshold.Add(JobMasterConstants.DeadWorkerCleanupGracePeriod);
                 if (deadWorker.LastHeartbeat > DateTime.UtcNow.Subtract(maxTimeToLive)) 
                 {
                     continue;

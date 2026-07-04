@@ -108,7 +108,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             return;
         }
         
-        if (existingWorker.IsAlive) 
+        if (existingWorker.IsAlive())
         {
             throw new InvalidOperationException($"Worker with id {workerId} is in use and cannot be deleted.");
         }
@@ -125,7 +125,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             return;
         }
         
-        if (existingWorker.IsAlive) 
+        if (existingWorker.IsAlive())
         {
             throw new InvalidOperationException($"Worker with id {workerId} is in use and cannot be deleted.");
         }
@@ -218,23 +218,29 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
 
         var heartbeats = masterHeartbeatService.GetLastHeartbeats(
             ResourceHeartbeatType.AgentWorker, new List<string> { worker.Id });
-        var lastHeartbeat = heartbeats.GetOrDefault<DateTime?>(worker.Id) ?? worker.CreatedAt;
-        var isAlive = DateTime.UtcNow - lastHeartbeat < JobMasterConstants.AgentHeartbeatThreshold;
-        return worker.ToModel(lastHeartbeat, isAlive);
+        var lastHeartbeat = ResolveLastHeartbeat(heartbeats.GetOrDefault<DateTime?>(worker.Id), worker.CreatedAt);
+        return worker.ToModel(lastHeartbeat);
     }
 
     private IList<AgentWorkerModel> ToModel(IList<AgentWorkerRecord> workers)
     {
         var heartbeats = masterHeartbeatService.GetLastHeartbeats(ResourceHeartbeatType.AgentWorker, workers.Select(x => x.Id).ToList());
-        var heartbeatThreshold = JobMasterConstants.AgentHeartbeatThreshold;
 
         return workers.Select(x =>
         {
-            var lastHeartbeat = heartbeats.GetOrDefault<DateTime?>(x.Id) ?? x.CreatedAt;
-            var isAlive = DateTime.UtcNow - lastHeartbeat < heartbeatThreshold;
-            return x.ToModel(lastHeartbeat, isAlive);
+            var lastHeartbeat = ResolveLastHeartbeat(heartbeats.GetOrDefault<DateTime?>(x.Id), x.CreatedAt);
+            return x.ToModel(lastHeartbeat);
         }).ToList();
     }
+
+    /// <summary>
+    /// Resolves the effective last-heartbeat time as whichever of the raw heartbeat and
+    /// <paramref name="createdAt"/> is more recent — a worker deleted and later recreated (e.g.
+    /// with a new worker record) shouldn't have a stale heartbeat log entry make it look older
+    /// than it is.
+    /// </summary>
+    private static DateTime ResolveLastHeartbeat(DateTime? rawHeartbeat, DateTime createdAt)
+        => rawHeartbeat.HasValue && rawHeartbeat.Value > createdAt ? rawHeartbeat.Value : createdAt;
     
     private async Task<AgentWorkerRecord> CreateValidatedWorkerAsync(
         string? agentConnectionId,
@@ -279,7 +285,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             ParallelismFactor = parallelismFactor
         };
         
-        if (!worker.ToModel(DateTime.UtcNow, true).IsValid())
+        if (!worker.ToModel(DateTime.UtcNow).IsValid())
             throw new ArgumentException($"Worker configuration is invalid. WorkerName='{workerName}'", nameof(workerName));
         
         return worker;
@@ -317,7 +323,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         
         public string HostDisplayName { get; set; } = null!;
 
-        public AgentWorkerModel ToModel(DateTime lastHeartbeat, bool isAlive)
+        public AgentWorkerModel ToModel(DateTime lastHeartbeat)
         {
             return new AgentWorkerModel(this.ClusterId)
             {
@@ -325,7 +331,6 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
                 AgentConnectionId = string.IsNullOrEmpty(AgentConnectionId) ? null : new AgentConnectionId(AgentConnectionId),
                 Name = Name,
                 LastHeartbeat = lastHeartbeat,
-                IsAlive = isAlive,
                 CreatedAt = CreatedAt,
                 WorkerLane = WorkerLane,
                 Mode = Mode,

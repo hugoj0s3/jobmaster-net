@@ -1,4 +1,5 @@
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Utils;
 
@@ -19,12 +20,13 @@ internal class AgentWorkerModel : JobMasterBaseModel
     public HostId HostId { get; set; } = null!;
     public AgentConnectionId? AgentConnectionId { get; set; }
     public DateTime CreatedAt { get; set; }
-    public bool IsAlive { get; set; }
 
     public DateTime? StopRequestedAt { get; set; }
     public TimeSpan? StopGracePeriod { get; set; }
 
     public DateTime LastHeartbeat { get; set; }
+
+    public bool IsAlive() => LastHeartbeat > DateTime.UtcNow - JobMasterConstants.ResourceAliveThreshold;
 
     public AgentWorkerMode Mode { get; set; } = AgentWorkerMode.Full;
 
@@ -36,7 +38,7 @@ internal class AgentWorkerModel : JobMasterBaseModel
 
     public AgentWorkerStatus Status()
     {
-        if (!IsAlive)
+        if (!IsAlive())
         {
             return AgentWorkerStatus.Dead;
         }

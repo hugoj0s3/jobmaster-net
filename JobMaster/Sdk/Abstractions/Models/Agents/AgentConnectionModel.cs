@@ -1,4 +1,6 @@
-﻿namespace JobMaster.Sdk.Abstractions.Models.Agents;
+﻿using JobMaster.Sdk.Abstractions;
+
+namespace JobMaster.Sdk.Abstractions.Models.Agents;
 
 internal class AgentConnectionModel : JobMasterBaseModel
 {
@@ -15,11 +17,11 @@ internal class AgentConnectionModel : JobMasterBaseModel
 
     public DateTime CreatedAt { get; set; }
     public DateTime FingerprintCreatedAt { get; set; }
-    public DateTime? LastHeartbeatAt { get; set; }
-    
+    public DateTime LastHeartbeatAt { get; set; }
+
     public string RepositoryTypeId { get; set; } = string.Empty;
-    
+
     public bool ProtectConnectionChanges { get; set; }
-    
-    public bool IsAlive() => (LastHeartbeatAt ?? FingerprintCreatedAt) > DateTime.UtcNow.AddMinutes(-1).AddSeconds(-30);
+
+    public bool IsAlive() => LastHeartbeatAt > DateTime.UtcNow - JobMasterConstants.ResourceAliveThreshold;
 }

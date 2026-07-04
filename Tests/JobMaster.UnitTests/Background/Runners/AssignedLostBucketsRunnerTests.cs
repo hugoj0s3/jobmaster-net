@@ -19,7 +19,6 @@ public class AssignedLostBucketsRunnerTests
         => new(clusterId)
         {
             Id = workerId,
-            IsAlive = true,
             LastHeartbeat = DateTime.UtcNow,
             AgentConnectionId = connectionId,
             Mode = AgentWorkerMode.Full,
@@ -29,7 +28,6 @@ public class AssignedLostBucketsRunnerTests
         => new(clusterId)
         {
             Id = workerId,
-            IsAlive = true,
             LastHeartbeat = DateTime.UtcNow,
             AgentConnectionId = null, // Coordinators have no AgentConnectionId.
             Mode = AgentWorkerMode.Coordinator,

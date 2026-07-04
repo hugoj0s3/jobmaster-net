@@ -47,7 +47,7 @@ public class ApiAgentWorker : ApiClusterBaseModel
             AgentConnectionId = model.AgentConnectionId?.IdValue,
             AgentConnectionName = model.AgentConnectionId?.Name,
             CreatedAt = model.CreatedAt,
-            IsAlive = model.IsAlive,
+            IsAlive = model.IsAlive(),
             StopRequestedAt = model.StopRequestedAt,
             StopGracePeriod = model.StopGracePeriod,
             LastHeartbeat = model.LastHeartbeat,

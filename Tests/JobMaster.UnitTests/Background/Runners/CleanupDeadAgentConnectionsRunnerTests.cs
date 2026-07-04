@@ -9,8 +9,10 @@ namespace JobMaster.UnitTests.Background.Runners;
 /// <summary>
 /// Unit tests for <see cref="CleanupDeadAgentConnectionsRunner"/>.
 /// Covers: no-op when all connections are alive, deletion of connections past the 10-minute
-/// dead threshold, preservation of connections within the threshold, and the protected-connection
-/// path where deletion is skipped even when the connection is dead.
+/// dead threshold (protected and unprotected alike — protection is about detecting a silently
+/// changed connection at bootstrap, not deletion timing), preservation of connections within the
+/// threshold, and reserved connections (standalone/fallback) never being deleted regardless of
+/// staleness.
 /// </summary>
 public class CleanupDeadAgentConnectionsRunnerTests
 {
@@ -78,18 +80,41 @@ public class CleanupDeadAgentConnectionsRunnerTests
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenConnectionIsProtected_ShouldNotDeleteIt()
+    public async Task OnTickAsync_WhenProtectedConnectionIsPastDeadThreshold_ShouldDeleteItSameAsUnprotected()
     {
         var f = RunnerFixture.Create();
-        // Protected connection is stale but must not be removed.
+        // Protection is about change-detection at bootstrap, not deletion timing — a protected
+        // connection past the same 10-minute threshold is just as eligible as an unprotected one.
         f.AgentConnectionService.Connections.Add(StaleConnection(f.ClusterId, "protected-conn", protect: true));
 
         var runner = new CleanupDeadAgentConnectionsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
+        f.AgentConnectionService.DeletedConnectionIds.Should().ContainSingle();
+        f.AgentConnectionService.Connections.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenProtectedConnectionIsRecentlyStale_ShouldNotDeleteIt()
+    {
+        var f = RunnerFixture.Create();
+        // Same 10-minute threshold applies regardless of protection — within it, not yet eligible.
+        var recentProtected = new AgentConnectionModel(f.ClusterId)
+        {
+            Id = new AgentConnectionId(f.ClusterId, "recent-protected-conn"),
+            LastHeartbeatAt = DateTime.UtcNow.AddMinutes(-2),
+            FingerprintCreatedAt = DateTime.UtcNow.AddHours(-1),
+            ProtectConnectionChanges = true,
+        };
+        f.AgentConnectionService.Connections.Add(recentProtected);
+
+        var runner = new CleanupDeadAgentConnectionsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
         f.AgentConnectionService.DeletedConnectionIds.Should().BeEmpty();
-        f.AgentConnectionService.Connections.Should().ContainSingle(c => c.Id.Name == "protected-conn");
+        f.AgentConnectionService.Connections.Should().ContainSingle(c => c.Id.Name == "recent-protected-conn");
     }
 
     [Fact]

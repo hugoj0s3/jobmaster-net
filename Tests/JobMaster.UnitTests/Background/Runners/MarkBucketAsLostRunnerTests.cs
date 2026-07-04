@@ -22,7 +22,6 @@ public class MarkBucketAsLostRunnerTests
         => new(clusterId)
         {
             Id = workerId,
-            IsAlive = true,
             LastHeartbeat = DateTime.UtcNow,
             AgentConnectionId = connectionId,
         };
@@ -31,7 +30,6 @@ public class MarkBucketAsLostRunnerTests
         => new(clusterId)
         {
             Id = workerId,
-            IsAlive = false,
             LastHeartbeat = DateTime.UtcNow.AddHours(-2),
             AgentConnectionId = connectionId,
         };

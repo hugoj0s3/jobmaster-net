@@ -26,6 +26,12 @@
 
 - **Orphaned fallback buckets after a Coordinator crash** — If the worker that created a fallback bucket died, the bucket could get stuck forever instead of being cleaned up, leaking rows in the master database (the jobs themselves were never at risk — only the bucket's own bookkeeping). Fallback buckets are now destroyed automatically once their owning worker is confirmed dead.
 
+- **`ProtectConnectionChanges` now actually protects a connection** — Previously this setting was silently dropped and never persisted, so no agent connection could ever truly become protected regardless of configuration. It's now saved correctly. Dead connections with no buckets left are automatically cleaned up after 30 minutes regardless of this setting — `ProtectConnectionChanges` only affects whether a silently-changed connection is rejected at startup, not how long a dead connection lingers.
+
+- **A recreated agent connection, worker, or host could be marked dead immediately** — If a connection, worker, or host was deleted and later recreated, its previous heartbeat history wasn't cleared, and could incorrectly make the brand-new record look already stale enough to be considered dead. All three now correctly treat a freshly (re)created record as alive.
+
+- **Worker "alive" window standardized to 45 seconds** — Agent workers previously used a 30-second window with no allowance for clock drift between machines, while agent connections used 90 seconds and hosts used 45 seconds. All three now consistently use the same 45-second window (30s heartbeat threshold + 15s clock-skew allowance).
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha

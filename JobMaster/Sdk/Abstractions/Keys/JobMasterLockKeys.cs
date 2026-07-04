@@ -14,6 +14,8 @@ internal class JobMasterLockKeys : JobMasterKeyManager
     
     public string BucketRunnerLock() => CreateKey($"BucketRunnerLock");
     public string BucketLock(string bucketId) => CreateKey($"BucketLock:{bucketId}");
+
+    public string AgentConnectionLock(string agentConnectionId) => CreateKey($"AgentConnectionLock:{agentConnectionId}");
     
     public string ProcessDeadlineTimeoutLock(int lockId) => CreateKey($"ProcessDeadlineTimeout:{lockId}");
     

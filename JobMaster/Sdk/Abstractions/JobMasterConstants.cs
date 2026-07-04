@@ -7,12 +7,6 @@ namespace JobMaster.Sdk.Abstractions;
 internal static class JobMasterConstants
 {
     /// <summary>
-    /// The maximum time allowed between worker heartbeats before a worker is considered dead.
-    /// Workers must send heartbeats more frequently than this threshold to be considered alive.
-    /// </summary>
-    public static readonly TimeSpan AgentHeartbeatThreshold = TimeSpan.FromSeconds(30);
-    
-    /// <summary>
     /// The grace period added to HeartbeatThreshold before permanently cleaning up a dead worker.
     /// This prevents premature cleanup of workers that might be temporarily unresponsive.
     /// </summary>
@@ -58,6 +52,13 @@ internal static class JobMasterConstants
 
     public static readonly TimeSpan ClockSkewPadding = TimeSpan.FromSeconds(15);
     public static readonly TimeSpan SentinelNotifyPadding = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// Shared "is this resource still alive" window used by <c>AgentConnectionModel</c>,
+    /// <c>AgentWorkerModel</c>, and <c>HostModel</c> — a 30-second heartbeat threshold plus
+    /// <see cref="ClockSkewPadding"/> to tolerate clock drift between processes.
+    /// </summary>
+    public static readonly TimeSpan ResourceAliveThreshold = TimeSpan.FromSeconds(30).Add(ClockSkewPadding);
     
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(10);
 

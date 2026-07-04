@@ -298,7 +298,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var assignedLostBucketToDrainRunner = new AssignedLostBucketsRunner(this, succeedInterval: TimeSpan.FromMinutes(1));
         await assignedLostBucketToDrainRunner.StartAsync();
         
-        var deadWorkerCleanupRunner = new DeadWorkerCleanupRunner(this);
+        var deadWorkerCleanupRunner = new CleanupDeadWorkerRunner(this);
         await deadWorkerCleanupRunner.StartAsync();
         
         var scheduleRecurringJobsRunner = new ScheduleRecurringJobsRunner(this);
@@ -321,6 +321,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         
         var deleteOldLogsRunner = new DeleteOldLogsRunner(this);
         await deleteOldLogsRunner.StartAsync();
+
+        var cleanupDeadAgentConnectionsRunner = new CleanupDeadAgentConnectionsRunner(this);
+        await cleanupDeadAgentConnectionsRunner.StartAsync();
     }
 
     private async Task LoadExecutionRunners()

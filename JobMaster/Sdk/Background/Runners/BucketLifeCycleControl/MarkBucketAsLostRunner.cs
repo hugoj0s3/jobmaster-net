@@ -65,7 +65,7 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
                     continue;
                 }
 
-                if (!agentWorker.IsAlive)
+                if (!agentWorker.IsAlive())
                 {
                     bucketsToMarkAsLost.Add(bucket);
                 }

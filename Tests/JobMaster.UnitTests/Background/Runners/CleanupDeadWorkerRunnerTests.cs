@@ -6,12 +6,12 @@ using JobMaster.Sdk.Background.Runners;
 namespace JobMaster.UnitTests.Background.Runners;
 
 /// <summary>
-/// Unit tests for <see cref="DeadWorkerCleanupRunner"/>.
+/// Unit tests for <see cref="CleanupDeadWorkerRunner"/>.
 /// Covers: no-op when all workers are alive, skipping the current worker even if dead,
 /// preserving workers within their grace period or with a recent heartbeat, and deleting
 /// workers that are genuinely eligible for cleanup.
 /// </summary>
-public class DeadWorkerCleanupRunnerTests
+public class CleanupDeadWorkerRunnerTests
 {
     // ── helpers ────────────────────────────────────────────────────────────────
 
@@ -25,14 +25,13 @@ public class DeadWorkerCleanupRunnerTests
         => new(TestClusterId)
         {
             Id = id,
-            IsAlive = false,
             LastHeartbeat = lastHeartbeat ?? DateTime.UtcNow.AddHours(-2),
             StopRequestedAt = stopRequestedAt,
             StopGracePeriod = stopGracePeriod,
         };
 
     private static AgentWorkerModel AliveWorker(string id)
-        => new(TestClusterId) { Id = id, IsAlive = true, LastHeartbeat = DateTime.UtcNow };
+        => new(TestClusterId) { Id = id, LastHeartbeat = DateTime.UtcNow };
 
     // ── OnTickAsync ────────────────────────────────────────────────────────────
 
@@ -43,7 +42,7 @@ public class DeadWorkerCleanupRunnerTests
         f.AgentWorkers.Workers.Add(AliveWorker("alive-1"));
         f.AgentWorkers.Workers.Add(AliveWorker("alive-2"));
 
-        var runner = new DeadWorkerCleanupRunner(f.Worker.Object);
+        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
@@ -59,7 +58,7 @@ public class DeadWorkerCleanupRunnerTests
         var self = DeadWorker(f.WorkerId);
         f.AgentWorkers.Workers.Add(self);
 
-        var runner = new DeadWorkerCleanupRunner(f.Worker.Object);
+        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
@@ -79,7 +78,7 @@ public class DeadWorkerCleanupRunnerTests
 
         f.AgentWorkers.Workers.Add(worker);
 
-        var runner = new DeadWorkerCleanupRunner(f.Worker.Object);
+        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
         await runner.OnTickAsync(CancellationToken.None);
 
         f.AgentWorkers.Workers.Should().ContainSingle(w => w.Id == "dead-grace");
@@ -94,7 +93,7 @@ public class DeadWorkerCleanupRunnerTests
         var worker = DeadWorker("dead-recent", lastHeartbeat: DateTime.UtcNow.AddSeconds(-30));
         f.AgentWorkers.Workers.Add(worker);
 
-        var runner = new DeadWorkerCleanupRunner(f.Worker.Object);
+        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
         await runner.OnTickAsync(CancellationToken.None);
 
         f.AgentWorkers.Workers.Should().ContainSingle(w => w.Id == "dead-recent");
@@ -110,7 +109,7 @@ public class DeadWorkerCleanupRunnerTests
         f.AgentWorkers.Workers.Add(worker);
         f.AgentWorkers.Workers.Add(AliveWorker("alive-1"));
 
-        var runner = new DeadWorkerCleanupRunner(f.Worker.Object);
+        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);

@@ -10,7 +10,7 @@ namespace JobMaster.Sdk.Background.Runners;
 /// </summary>
 internal class CleanupDeadHostsRunner : JobMasterRunner
 {
-    private static readonly TimeSpan DeadHostThreshold = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan DeleteHostThreshold = TimeSpan.FromMinutes(5);
     
     private readonly IMasterHostService masterHostService;
 
@@ -25,7 +25,7 @@ internal class CleanupDeadHostsRunner : JobMasterRunner
         try
         {
             var allHosts = await masterHostService.QueryAllAsync();
-            var deadHosts = allHosts.Where(h => h.LastHeartbeat < DateTime.UtcNow - DeadHostThreshold).ToList();
+            var deadHosts = allHosts.Where(h => h.LastHeartbeat < DateTime.UtcNow - DeleteHostThreshold).ToList();
             
             if (deadHosts.Any())
             {

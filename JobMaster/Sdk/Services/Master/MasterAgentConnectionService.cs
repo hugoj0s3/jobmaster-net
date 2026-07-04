@@ -21,10 +21,12 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
     private readonly IMasterGenericRecordRepository masterGenericRecordRepository;
     private readonly JobMasterInMemoryKeys cacheKeys;
     private readonly JobMasterSentinelKeys sentinelKeys;
+    private readonly JobMasterLockKeys lockKeys;
     private readonly IJobMasterInMemoryCache jobMasterInMemoryCache;
     private readonly IMasterChangesSentinelService masterChangesSentinelService;
     private readonly IMasterHeartbeatService masterHeartbeatService;
     private readonly IMasterBucketsService masterBucketsService;
+    private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private readonly RetryDeadlockPolicy retryDeadlockPolicy;
     private readonly SentinelCachedReader sentinelCachedReader;
 
@@ -35,15 +37,18 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         IMasterChangesSentinelService masterChangesSentinelService,
         IKnownExceptionIdentifier knownExceptionIdentifier,
         IMasterHeartbeatService masterHeartbeatService,
-        IMasterBucketsService masterBucketsService) : base(clusterConnConfig)
+        IMasterBucketsService masterBucketsService,
+        IMasterDistributedLockerService masterDistributedLockerService) : base(clusterConnConfig)
     {
         this.masterGenericRecordRepository = masterGenericRecordRepository;
         this.cacheKeys = new JobMasterInMemoryKeys(clusterConnConfig.ClusterId);
         this.sentinelKeys = new JobMasterSentinelKeys(clusterConnConfig.ClusterId);
+        this.lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
         this.jobMasterInMemoryCache = jobMasterInMemoryCache;
         this.masterChangesSentinelService = masterChangesSentinelService;
         this.masterHeartbeatService = masterHeartbeatService;
         this.masterBucketsService = masterBucketsService;
+        this.masterDistributedLockerService = masterDistributedLockerService;
 
         this.retryDeadlockPolicy =
             new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
@@ -58,35 +63,74 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
         string fingerprint,
         bool protectChanges)
     {
-        var agentConnectionRecord = await GetRecordAsync(agentConnectionId);
-        if (agentConnectionRecord is null)
+        var lockKey = lockKeys.AgentConnectionLock(agentConnectionId.IdValue);
+        var lockToken = await AcquireConnectionLockAsync(lockKey);
+        try
         {
-            agentConnectionRecord = new AgentConnectionRecord(ClusterConnConfig.ClusterId)
+            var agentConnectionRecord = await GetRecordAsync(agentConnectionId);
+            if (agentConnectionRecord is null)
             {
-                Id = agentConnectionId.IdValue,
-                Fingerprint = fingerprint,
-                CreatedAt = DateTime.UtcNow,
-                FingerprintCreatedAt = DateTime.UtcNow,
-                RepositoryTypeId = repositoryTypeId
-            };
-        }
+                agentConnectionRecord = new AgentConnectionRecord(ClusterConnConfig.ClusterId)
+                {
+                    Id = agentConnectionId.IdValue,
+                    Fingerprint = fingerprint,
+                    CreatedAt = DateTime.UtcNow,
+                    FingerprintCreatedAt = DateTime.UtcNow,
+                    RepositoryTypeId = repositoryTypeId,
+                };
+            }
 
-        if (agentConnectionRecord.Fingerprint != fingerprint)
+            // Always sync to the caller's current setting so protection can be toggled by
+            // changing config and restarting, not just fixed at first creation.
+            agentConnectionRecord.ProtectConnectionChanges = protectChanges;
+
+            if (agentConnectionRecord.Fingerprint != fingerprint)
+            {
+                agentConnectionRecord.Fingerprint = fingerprint;
+                agentConnectionRecord.FingerprintCreatedAt = DateTime.UtcNow;
+            }
+
+            var record = GenericRecordEntry
+                .Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentConnection, agentConnectionRecord.Id,
+                    agentConnectionRecord);
+            await masterGenericRecordRepository.UpsertAsync(record);
+
+            masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+
+            var lastHeartbeat =
+                masterHeartbeatService.GetLastHeartbeat(ResourceHeartbeatType.AgentConnection, agentConnectionId.IdValue);
+            return ToModel(agentConnectionRecord, lastHeartbeat);
+        }
+        finally
         {
-            agentConnectionRecord.Fingerprint = fingerprint;
-            agentConnectionRecord.FingerprintCreatedAt = DateTime.UtcNow;
+            masterDistributedLockerService.ReleaseLock(lockKey, lockToken);
+        }
+    }
+
+    /// <summary>
+    /// Acquires the per-connection lock, retrying briefly to ride out concurrent bootstrap from
+    /// multiple processes registering the same shared connection at the same time.
+    /// </summary>
+    private async Task<string> AcquireConnectionLockAsync(string lockKey)
+    {
+        const int maxAttempts = 10;
+        var delay = TimeSpan.FromMilliseconds(200);
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var token = masterDistributedLockerService.TryLock(lockKey, TimeSpan.FromSeconds(30));
+            if (token != null)
+            {
+                return token;
+            }
+
+            if (attempt < maxAttempts)
+            {
+                await Task.Delay(delay);
+            }
         }
 
-        var record = GenericRecordEntry
-            .Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentConnection, agentConnectionRecord.Id,
-                agentConnectionRecord);
-        await masterGenericRecordRepository.UpsertAsync(record);
-
-        masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
-
-        var lastHeartbeat =
-            masterHeartbeatService.GetLastHeartbeat(ResourceHeartbeatType.AgentConnection, agentConnectionId.IdValue);
-        return ToModel(agentConnectionRecord, lastHeartbeat);
+        throw new InvalidOperationException($"Could not acquire lock '{lockKey}' to save the agent connection.");
     }
 
     public async Task<IList<AgentConnectionModel>> QueryAllAsync(bool useCache = true)
@@ -102,16 +146,33 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
 
     public async Task<bool> SafeDeleteConnectionAsync(AgentConnectionId agentConnectionId)
     {
-        if (await HasBucketsAsync(agentConnectionId))
+        // Shares the same lock key as SaveConnectionAsync so a delete can never race a concurrent
+        // fingerprint save/recreation for the same connection.
+        var lockKey = lockKeys.AgentConnectionLock(agentConnectionId.IdValue);
+        var lockToken = masterDistributedLockerService.TryLock(lockKey, TimeSpan.FromSeconds(30));
+        if (lockToken is null)
         {
+            // Someone else is touching this connection right now — skip, the cleanup runner will retry.
             return false;
         }
 
-        await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
+        try
+        {
+            if (await HasBucketsAsync(agentConnectionId))
+            {
+                return false;
+            }
 
-        masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+            await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
 
-        return true;
+            masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+
+            return true;
+        }
+        finally
+        {
+            masterDistributedLockerService.ReleaseLock(lockKey, lockToken);
+        }
     }
 
     public async Task<bool> HasBucketsAsync(AgentConnectionId agentConnectionId)
@@ -180,13 +241,17 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
     private AgentConnectionModel ToModel(AgentConnectionRecord agentConnectionRecord, DateTime? lastHeartbeatAt)
     {
         AgentConnectionId agentConnectionId = new AgentConnectionId(agentConnectionRecord.Id);
+        var resolvedLastHeartbeatAt = lastHeartbeatAt.HasValue && lastHeartbeatAt.Value > agentConnectionRecord.FingerprintCreatedAt
+            ? lastHeartbeatAt.Value
+            : agentConnectionRecord.FingerprintCreatedAt;
+
         return new AgentConnectionModel(ClusterConnConfig.ClusterId)
         {
             Id = agentConnectionId,
             Fingerprint = agentConnectionRecord.Fingerprint,
             CreatedAt = agentConnectionRecord.CreatedAt,
             FingerprintCreatedAt = agentConnectionRecord.FingerprintCreatedAt,
-            LastHeartbeatAt = lastHeartbeatAt,
+            LastHeartbeatAt = resolvedLastHeartbeatAt,
             RepositoryTypeId = agentConnectionRecord.RepositoryTypeId,
             ProtectConnectionChanges = agentConnectionRecord.ProtectConnectionChanges,
         };

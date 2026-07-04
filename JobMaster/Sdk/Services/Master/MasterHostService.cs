@@ -175,7 +175,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
             MemoryTotalBytes =  record.MemoryTotalBytes,
             MemoryUsedBytes =  record.MemoryUsedBytes,
             ProcessorCount = record.ProcessorCount,
-            LastHeartbeat = lastHeartbeatAt,
+            LastHeartbeat = lastHeartbeatAt.HasValue && lastHeartbeatAt.Value > record.CreatedAt ? lastHeartbeatAt.Value : record.CreatedAt,
         };
     }
     
