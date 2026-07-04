@@ -93,9 +93,9 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
             var record = GenericRecordEntry
                 .Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentConnection, agentConnectionRecord.Id,
                     agentConnectionRecord);
-            await masterGenericRecordRepository.UpsertAsync(record);
 
             masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+            await masterGenericRecordRepository.UpsertAsync(record);
 
             var lastHeartbeat =
                 masterHeartbeatService.GetLastHeartbeat(ResourceHeartbeatType.AgentConnection, agentConnectionId.IdValue);
@@ -163,9 +163,8 @@ internal class MasterAgentConnectionService : JobMasterClusterAwareComponent, IM
                 return false;
             }
 
-            await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
-
             masterChangesSentinelService.NotifyChanges(sentinelKeys.AgentConnections());
+            await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentConnection, agentConnectionId.IdValue);
 
             return true;
         }

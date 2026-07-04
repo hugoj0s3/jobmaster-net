@@ -92,12 +92,11 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
             ProcessorCount = hostStats.ProcessorCount,
         };
         
-        var genericRecord = 
-            GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, record.Id, record); 
-        
-        await masterGenericRecordRepository.InsertAsync(genericRecord);
-        
+        var genericRecord =
+            GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, record.Id, record);
+
         this.masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
+        await masterGenericRecordRepository.InsertAsync(genericRecord);
 
         return hostId;
     }
@@ -121,21 +120,20 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         var genericRecord =
             GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, host.Id, host);
 
-        await masterGenericRecordRepository.UpsertAsync(genericRecord);
-
         masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
+        await masterGenericRecordRepository.UpsertAsync(genericRecord);
 
         masterHeartbeatService.Heartbeat(ResourceHeartbeatType.Host, hostId);
     }
 
     public async Task DeleteHostsAsync(IList<string> hostIds)
     {
+        masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
+
         foreach (var hostId in hostIds)
         {
             await this.masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.Host, hostId);
         }
-
-        masterChangesSentinelService.NotifyChanges(sentinelKeys.Hosts());
     }
 
     private async Task<IList<HostRecord>> QueryAllRecordsAsync()

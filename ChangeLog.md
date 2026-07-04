@@ -34,6 +34,8 @@
 
 - **SQL agent connections: possible false-positive "fingerprint has changed" failure on startup** — If two processes bootstrapped the same brand-new agent connection at the same moment (e.g. starting several instances together for the first time), a rare race could cause one of them to register a fingerprint that didn't match what was actually saved. On the next restart this could look like the connection had changed, which is a hard failure for connections with `ProtectConnectionChanges` enabled. The fingerprint registration is now atomic, so this can no longer happen.
 
+- **Cached reads could serve stale data far longer than expected after a change** — Agent connection saves/deletes and host registration/stats/deletion notified other processes' caches to refresh *after* writing the change. If anything went wrong between the write and that notification (including the process simply stopping), other processes kept serving pre-change data until their cache entry's normal expiry, rather than picking up the change promptly. The notification now always happens first, so a change is never silently missed.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha
