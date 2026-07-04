@@ -55,10 +55,10 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
             return OnTickResult.Skipped(this);
         }
 
-        // 1. Dequeue batch
+        // 1. Dequeue batch — only reached for Full/Execution modes, which always have an AgentConnectionId.
         var recurringSchedules = await agentJobsDispatcherService.PullSavePendingRecurAsync(
-            BackgroundAgentWorker.AgentConnectionId, 
-            BucketId!, 
+            BackgroundAgentWorker.AgentConnectionId!,
+            BucketId!,
             BackgroundAgentWorker.BucketBufferSize);
 
         if (recurringSchedules.Count <= 0)

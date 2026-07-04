@@ -107,6 +107,108 @@ public class MasterAgentWorkersServiceTests
     }
 
     [Fact]
+    public async Task RegisterWorker_WithNullAgentConnectionId_ShouldPersistEmptyConnectionId()
+    {
+        var clusterId = NewClusterId();
+        var clusterConfig = CreateClusterConfig(clusterId);
+
+        var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Loose);
+        var clusterCfg = new Mock<IMasterClusterConfigurationService>(MockBehavior.Loose);
+        var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
+        var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
+        var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
+        var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
+
+        hostService
+            .Setup(x => x.RegisterNewHostAsync())
+            .ReturnsAsync(new HostId(clusterId, "test-host"));
+
+        GenericRecordEntry? inserted = null;
+        repo.Setup(x => x.InsertAsync(It.IsAny<GenericRecordEntry>()))
+            .Callback<GenericRecordEntry>(e => inserted = e)
+            .Returns(Task.CompletedTask);
+
+        var sut = new MasterAgentWorkersService(
+            clusterConfig,
+            cache.Object,
+            clusterCfg.Object,
+            sentinel.Object,
+            heartbeat.Object,
+            repo.Object,
+            knownEx.Object,
+            hostService.Object);
+
+        // Coordinators register without an AgentConnectionId.
+        var (workerId, _) = await sut.RegisterWorkerAsync(
+            null,
+            "coordinator",
+            workerLane: null,
+            mode: AgentWorkerMode.Coordinator,
+            parallelismFactor: 1);
+
+        workerId.Should().NotBeNullOrWhiteSpace();
+        inserted.Should().NotBeNull();
+        inserted!.ToObject<AgentWorkerRecordDto>()!.AgentConnectionId.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void GetWorker_WithEmptyPersistedAgentConnectionId_ShouldReturnModelWithNullAgentConnectionId()
+    {
+        var clusterId = NewClusterId();
+        var clusterConfig = CreateClusterConfig(clusterId);
+
+        var cache = new Mock<IJobMasterInMemoryCache>(MockBehavior.Loose);
+        var clusterCfg = new Mock<IMasterClusterConfigurationService>(MockBehavior.Loose);
+        var sentinel = new Mock<IMasterChangesSentinelService>(MockBehavior.Loose);
+        var heartbeat = new Mock<IMasterHeartbeatService>(MockBehavior.Loose);
+        var repo = new Mock<IMasterGenericRecordRepository>(MockBehavior.Loose);
+        var knownEx = new Mock<IKnownExceptionIdentifier>(MockBehavior.Loose);
+        var hostService = new Mock<IMasterHostService>(MockBehavior.Loose);
+
+        var workerId = "coordinator-1";
+        var entry = GenericRecordEntry.Create(
+            clusterId,
+            MasterGenericRecordGroupIds.AgentWorker,
+            workerId,
+            new AgentWorkerRecordDto
+            {
+                ClusterId = clusterId,
+                Id = workerId,
+                AgentConnectionId = string.Empty, // Coordinator workers have no connection.
+                Name = "coordinator",
+                CreatedAt = DateTime.UtcNow,
+                Mode = AgentWorkerMode.Coordinator,
+                WorkerLane = null,
+                HostId = $"{clusterId}:testhost:instance123",
+                HostDisplayName = "testhost"
+            });
+
+        repo.Setup(x => x.Query(MasterGenericRecordGroupIds.AgentWorker, null))
+            .Returns(new List<GenericRecordEntry> { entry });
+
+        heartbeat.Setup(x => x.GetLastHeartbeats(ResourceHeartbeatType.AgentWorker,
+                It.Is<IList<string>>(ids => ids.Count == 1 && ids[0] == workerId)))
+            .Returns(new Dictionary<string, DateTime?> { [workerId] = DateTime.UtcNow });
+
+        var sut = new MasterAgentWorkersService(
+            clusterConfig,
+            cache.Object,
+            clusterCfg.Object,
+            sentinel.Object,
+            heartbeat.Object,
+            repo.Object,
+            knownEx.Object,
+            hostService.Object);
+
+        var model = sut.GetWorker(workerId);
+
+        model.Should().NotBeNull();
+        model!.AgentConnectionId.Should().BeNull();
+        model.Mode.Should().Be(AgentWorkerMode.Coordinator);
+    }
+
+    [Fact]
     public void DeleteWorker_WhenWorkerDoesNotExist_ShouldDoNothing()
     {
         var clusterId = NewClusterId();

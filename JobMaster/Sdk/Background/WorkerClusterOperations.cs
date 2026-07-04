@@ -309,7 +309,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     public async Task<int> CountActiveCoordinatorWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && x.Mode.Is(AgentWorkerMode.Coordinator));
+        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && x.Mode.IsFullOr(AgentWorkerMode.Coordinator));
     }
     
     public async Task<int> CountWorkersAsync()

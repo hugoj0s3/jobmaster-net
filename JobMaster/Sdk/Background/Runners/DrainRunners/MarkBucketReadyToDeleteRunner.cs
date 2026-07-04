@@ -49,7 +49,8 @@ internal class MarkBucketReadyToDeleteRunner : BucketAwareRunner
             return OnTickResult.Skipped(this);
         }
 
-        var hasJobs = await agentJobsDispatcherService.HasJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!);
+        // Only reached for Full/Drain modes, which always have an AgentConnectionId.
+        var hasJobs = await agentJobsDispatcherService.HasJobsAsync(BackgroundAgentWorker.AgentConnectionId!, BucketId!);
         if (hasJobs)
         {
             noJobsSinceUtc = null;

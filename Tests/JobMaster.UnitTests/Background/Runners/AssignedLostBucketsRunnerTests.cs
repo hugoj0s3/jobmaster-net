@@ -25,6 +25,16 @@ public class AssignedLostBucketsRunnerTests
             Mode = AgentWorkerMode.Full,
         };
 
+    private static AgentWorkerModel AliveCoordinatorWorker(string clusterId, string workerId)
+        => new(clusterId)
+        {
+            Id = workerId,
+            IsAlive = true,
+            LastHeartbeat = DateTime.UtcNow,
+            AgentConnectionId = null, // Coordinators have no AgentConnectionId.
+            Mode = AgentWorkerMode.Coordinator,
+        };
+
     // ── OnTickAsync ────────────────────────────────────────────────────────────
 
     [Fact]
@@ -115,6 +125,36 @@ public class AssignedLostBucketsRunnerTests
         // The bucket was updated (status changed to ReadyToDrain).
         f.Buckets.UpdatedBuckets.Should().ContainSingle(b => b.Id == "lost-bucket");
         f.Buckets.UpdatedBuckets[0].Status.Should().Be(BucketStatus.ReadyToDrain);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenAliveWorkersIncludeCoordinatorWithNoConnection_ShouldSkipItAndStillReassignToFullWorker()
+    {
+        var f = RunnerFixture.Create();
+        var connectionId = new AgentConnectionId(f.ClusterId, "fake-agent");
+
+        var lostBucket = new BucketModel(f.ClusterId)
+        {
+            Id = "lost-bucket",
+            Status = BucketStatus.Lost,
+            AgentConnectionId = connectionId,
+            AgentWorkerId = "dead-worker",
+            LastStatusChangeAt = DateTime.UtcNow.AddSeconds(-30),
+        };
+        f.Buckets.Buckets.Add(lostBucket);
+
+        // A Coordinator (null AgentConnectionId) mixed in with a real candidate must not blow up
+        // the connection-id comparison and must never be selected as the assignee.
+        f.AgentWorkers.Workers.Add(AliveCoordinatorWorker(f.ClusterId, "coordinator-worker"));
+        f.AgentWorkers.Workers.Add(AliveFullWorker(f.ClusterId, "alive-worker", connectionId));
+
+        var runner = new AssignedLostBucketsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.Buckets.UpdatedBuckets.Should().ContainSingle(b => b.Id == "lost-bucket");
+        f.Buckets.UpdatedBuckets[0].Status.Should().Be(BucketStatus.ReadyToDrain);
+        f.Buckets.UpdatedBuckets[0].AgentWorkerId.Should().Be("alive-worker");
     }
 
     [Fact]

@@ -18,6 +18,8 @@
 
 - **`IClusterConfigSelector` method renames** — The `Cluster` prefix has been removed from cluster configuration methods (`DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `Mode`). Old names still compile but are marked obsolete and will be removed in a future release. `ClusterId` is unchanged.
 
+- **Coordinator workers no longer take an agent connection — and now must not have one** — A Coordinator only assigns jobs to buckets and manages their lifecycle; it never owns a bucket or claims one for draining, so it has no use for an agent connection of its own. Configuring an `AgentConnectionName` for a Coordinator worker now throws at startup instead of being silently accepted. Every other mode (`Full`, `Execution`, `Drain`) is unaffected and still requires one.
+
 ### Fixed
 
 - **Coordinator fallback bucket durability** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" now persists jobs to the master database (through a dedicated reserved connection) instead of an in-process queue, so they survive a Coordinator restart instead of being lost.

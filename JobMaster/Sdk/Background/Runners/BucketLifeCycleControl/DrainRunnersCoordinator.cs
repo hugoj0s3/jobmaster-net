@@ -131,7 +131,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
                 if (!savePendingRunners.Any(r => r.BucketId == bucket.Id))
                 {
                     var savePendingRunner = BackgroundAgentWorker.BucketRunnersFactory
-                        .NewDrainSavePendingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                        .NewDrainSavePendingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                     savePendingRunner.DefineBucketId(bucket.Id);
                     await savePendingRunner.StartAsync();
                 }
@@ -139,7 +139,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
                 if (!processingRunners.Any(r => r.BucketId == bucket.Id))
                 {
                     var processingRunner = BackgroundAgentWorker.BucketRunnersFactory
-                        .NewDrainProcessingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                        .NewDrainProcessingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                     processingRunner.DefineBucketId(bucket.Id);
                     await processingRunner.StartAsync();
                 }
@@ -147,7 +147,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
                 if (!recurringScheduleRunners.Any(r => r.BucketId == bucket.Id))
                 {
                     var saveRecurringScheduleRunner = BackgroundAgentWorker.BucketRunnersFactory
-                        .NewDrainSavePendingRecurringScheduleRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                        .NewDrainSavePendingRecurringScheduleRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                     saveRecurringScheduleRunner.DefineBucketId(bucket.Id);
                     await saveRecurringScheduleRunner.StartAsync();
                 }
@@ -216,7 +216,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
             if (!savePendingRunners.Any(r => r.BucketId == bucket.Id))
             {
                 var savePendingRunner = BackgroundAgentWorker.BucketRunnersFactory
-                    .NewDrainSavePendingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    .NewDrainSavePendingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                 savePendingRunner.DefineBucketId(bucket.Id);
                 await savePendingRunner.StartAsync();
             }
@@ -224,7 +224,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
             if (!processingRunners.Any(r => r.BucketId == bucket.Id))
             {
                 var processingRunner = BackgroundAgentWorker.BucketRunnersFactory
-                    .NewDrainProcessingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    .NewDrainProcessingJobsRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                 processingRunner.DefineBucketId(bucket.Id);
                 await processingRunner.StartAsync();
             }
@@ -232,7 +232,7 @@ internal class DrainRunnersCoordinator : JobMasterRunner
             if (!recurringScheduleRunners.Any(r => r.BucketId == bucket.Id))
             {
                 var saveRecurringScheduleRunner = BackgroundAgentWorker.BucketRunnersFactory
-                    .NewDrainSavePendingRecurringScheduleRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId);
+                    .NewDrainSavePendingRecurringScheduleRunner(BackgroundAgentWorker, BackgroundAgentWorker.AgentConnectionId!); // Only reached for Full/Drain modes, which always have an AgentConnectionId.
                 saveRecurringScheduleRunner.DefineBucketId(bucket.Id);
                 await saveRecurringScheduleRunner.StartAsync();
             }

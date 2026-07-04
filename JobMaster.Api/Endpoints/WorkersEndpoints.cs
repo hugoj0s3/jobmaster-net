@@ -42,7 +42,7 @@ internal static class WorkersEndpoints
         if (criteria.Status.HasValue)
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
-            workers = workers.Where(w => string.Equals(w.AgentConnectionId.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
+            workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
         if (!string.IsNullOrEmpty(criteria.HostId))
             workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
 
@@ -84,7 +84,7 @@ internal static class WorkersEndpoints
         if (criteria.Status.HasValue)
             workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
-            workers = workers.Where(w => string.Equals(w.AgentConnectionId.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
+            workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
         if (!string.IsNullOrEmpty(criteria.HostId))
             workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
 

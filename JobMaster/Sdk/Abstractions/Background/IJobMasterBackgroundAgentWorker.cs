@@ -9,11 +9,11 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IJobMasterBackgroundAgentWorker
 {
-    AgentConnectionId AgentConnectionId { get; }
+    AgentConnectionId? AgentConnectionId { get; }
     string AgentWorkerId { get; }
     HostId HostId { get; }
     string? WorkerLane { get; }
-    string AgentRepositoryTypeId { get; }
+    string? AgentRepositoryTypeId { get; }
     IReadOnlyDictionary<JobMasterPriority, int> BucketQty { get; }
     JobMasterAgentConnectionConfig JobMasterAgentConnectionConfig { get; }
     JobMasterClusterConnectionConfig ClusterConnConfig { get; }

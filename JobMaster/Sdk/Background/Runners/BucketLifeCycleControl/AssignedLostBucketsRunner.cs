@@ -96,8 +96,8 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
                     }
 
                     var workerToSelect = workersAlive
-                        .Where(x => x.AgentConnectionId.IdValue == bucket.AgentConnectionId.IdValue)
-                        .Where(x => x.Mode == AgentWorkerMode.Drain || x.Mode == AgentWorkerMode.Full) // Only drain and full workers can be assigned to lost buckets.
+                        .Where(x => x.Mode.IsFullOr(AgentWorkerMode.Drain)) // Only drain and full workers can be assigned to lost buckets.
+                        .Where(x => x.AgentConnectionId?.IdValue == bucket.AgentConnectionId.IdValue)
                         .ToList();
 
                     if (!workerToSelect.Any())

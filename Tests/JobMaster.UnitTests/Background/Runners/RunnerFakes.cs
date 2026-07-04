@@ -88,7 +88,7 @@ internal static class RunnerFakes
             => Task.FromResult(GetWorker(workerId));
 
         public Task<(string workerId, HostId hostId)> RegisterWorkerAsync(
-            string agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
+            string? agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor)
             => throw new NotImplementedException();
 
         public void DeleteWorker(string workerId)

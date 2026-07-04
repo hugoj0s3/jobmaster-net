@@ -10,10 +10,10 @@ public class ApiAgentWorker : ApiClusterBaseModel
     public string Id { get; set; } = string.Empty;
     /// <summary>Display name of the worker.</summary>
     public string Name { get; set; } = string.Empty;
-    /// <summary>Identifier of the agent connection this worker belongs to.</summary>
-    public string AgentConnectionId { get; set; } = null!;
-    /// <summary>Name of the agent connection this worker belongs to.</summary>
-    public string AgentConnectionName { get; set; } = null!;
+    /// <summary>Identifier of the agent connection this worker belongs to, or <c>null</c> for Coordinator workers.</summary>
+    public string? AgentConnectionId { get; set; }
+    /// <summary>Name of the agent connection this worker belongs to, or <c>null</c> for Coordinator workers.</summary>
+    public string? AgentConnectionName { get; set; }
     /// <summary>UTC timestamp when the worker was registered.</summary>
     public DateTime CreatedAt { get; set; }
     /// <summary>Whether the worker is currently alive (sending heartbeats).</summary>
@@ -44,8 +44,8 @@ public class ApiAgentWorker : ApiClusterBaseModel
             ClusterId = model.ClusterId,
             Id = model.Id,
             Name = model.Name,
-            AgentConnectionId = model.AgentConnectionId.IdValue,
-            AgentConnectionName = model.AgentConnectionId.Name,
+            AgentConnectionId = model.AgentConnectionId?.IdValue,
+            AgentConnectionName = model.AgentConnectionId?.Name,
             CreatedAt = model.CreatedAt,
             IsAlive = model.IsAlive,
             StopRequestedAt = model.StopRequestedAt,

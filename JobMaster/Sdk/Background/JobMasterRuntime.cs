@@ -124,7 +124,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
             }
 
-            if (clusterDefinition.Workers.Any(w => w.Mode.Is(AgentWorkerMode.Coordinator)))
+            if (clusterDefinition.Workers.Any(w => w.Mode.IsFullOr(AgentWorkerMode.Coordinator)))
             {
                 var fallbackConfig = clusterCnnCfg.GetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
                 var fallbackId = new AgentConnectionId(fallbackConfig.Id);
@@ -348,6 +348,29 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 throw new InvalidOperationException(
                     $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone clusters. Cannot be used as a worker's AgentConnectionName in a non-standalone cluster.");
+            }
+
+            if (workerDefinitions.Any(x => x.Mode == AgentWorkerMode.Coordinator && !string.IsNullOrEmpty(x.AgentConnectionName)))
+            {
+                throw new InvalidOperationException(
+                    "Coordinator workers must not have an AgentConnectionName configured.");
+            }
+
+            if (!clusterDefinition.IsStandalone)
+            {
+                // Standalone workers always get AgentConnectionName forced to StandaloneAgentConnName by the
+                // builder, so there's nothing to cross-reference there — only check explicit clusters.
+                var invalidWorkers = workerDefinitions
+                    .Where(x => x.Mode != AgentWorkerMode.Coordinator)
+                    .Where(x => !agentDefinitions.Any(a => string.Equals(a.AgentConnectionName, x.AgentConnectionName, StringComparison.OrdinalIgnoreCase)))
+                    .Select(x => string.IsNullOrEmpty(x.WorkerName) ? "(unnamed)" : x.WorkerName)
+                    .ToList();
+
+                if (invalidWorkers.Any())
+                {
+                    throw new InvalidOperationException(
+                        $"The following workers have an AgentConnectionName that does not match any registered agent connection: {string.Join(", ", invalidWorkers)}");
+                }
             }
 
             if (clusterDefinition.IsStandalone && agentDefinitions.Any())

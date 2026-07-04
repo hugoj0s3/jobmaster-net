@@ -89,7 +89,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         return ToModel(worker);
     }
 
-    public async Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string agentConnectionId, string? workerName, string? workerLane,
+    public async Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string? agentConnectionId, string? workerName, string? workerLane,
         AgentWorkerMode mode, double parallelismFactor)
     {
         var worker = await CreateValidatedWorkerAsync(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
@@ -146,7 +146,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         worker.StopGracePeriod = gracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
         var record = new AgentWorkerRecord(ClusterConnConfig.ClusterId)
         {
-            AgentConnectionId = worker.AgentConnectionId.IdValue,
+            AgentConnectionId = worker.AgentConnectionId?.IdValue ?? string.Empty,
             Name = worker.Name,
             Id = worker.Id,
             Mode = worker.Mode,
@@ -237,8 +237,8 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
     }
     
     private async Task<AgentWorkerRecord> CreateValidatedWorkerAsync(
-        string agentConnectionId, 
-        string? workerName, 
+        string? agentConnectionId,
+        string? workerName,
         string? workerLane, 
         AgentWorkerMode mode,
         double parallelismFactor)
@@ -268,7 +268,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         
         var worker = new AgentWorkerRecord(ClusterConnConfig.ClusterId)
         {
-            AgentConnectionId = agentConnectionId,
+            AgentConnectionId = agentConnectionId ?? string.Empty,
             Name = workerName,
             Id = workerId,
             Mode = mode,
@@ -322,7 +322,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
             return new AgentWorkerModel(this.ClusterId)
             {
                 Id = Id,
-                AgentConnectionId = new AgentConnectionId(AgentConnectionId),
+                AgentConnectionId = string.IsNullOrEmpty(AgentConnectionId) ? null : new AgentConnectionId(AgentConnectionId),
                 Name = Name,
                 LastHeartbeat = lastHeartbeat,
                 IsAlive = isAlive,

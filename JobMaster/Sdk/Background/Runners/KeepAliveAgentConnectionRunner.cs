@@ -22,9 +22,11 @@ internal class KeepAliveAgentConnectionRunner : JobMasterRunner
     {
         try
         {
+            // Only started for Full/Execution/Drain (see JobMasterBackgroundAgentWorker.StartAsync),
+            // which always have an AgentConnectionId — Coordinators are the only mode without one.
             masterHeartbeatService.Heartbeat(
-                ResourceHeartbeatType.AgentConnection, 
-                this.BackgroundAgentWorker.AgentConnectionId.IdValue);
+                ResourceHeartbeatType.AgentConnection,
+                this.BackgroundAgentWorker.AgentConnectionId!.IdValue);
             return Task.FromResult(OnTickResult.Success(this));
         }
         catch (Exception e)

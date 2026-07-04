@@ -64,8 +64,9 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
             return OnTickResult.Skipped(this);
         }
         
+        // Only reached for Full/Execution modes, which always have an AgentConnectionId.
         var jobs = await agentJobsDispatcherService
-            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
+            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId!, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (jobs.Count <= 0)
         {

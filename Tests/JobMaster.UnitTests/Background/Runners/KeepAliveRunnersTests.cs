@@ -47,7 +47,7 @@ public class KeepAliveRunnersTests
     public async Task KeepAliveAgentConnectionRunner_OnTickAsync_ShouldSendAgentConnectionHeartbeat()
     {
         var f = RunnerFixture.Create();
-        var expectedId = f.Worker.Object.AgentConnectionId.IdValue;
+        var expectedId = f.Worker.Object.AgentConnectionId!.IdValue;
 
         var runner = new KeepAliveAgentConnectionRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);

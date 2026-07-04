@@ -12,7 +12,7 @@ internal interface IMasterAgentWorkersService : IJobMasterClusterAwareService
     
     AgentWorkerModel? GetWorker(string workerId);
     Task<AgentWorkerModel?> GetWorkerAsync(string workerId);
-    Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor);
+    Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string? agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor);
     
     void DeleteWorker(string workerId);
     Task DeleteWorkerAsync(string workerId);

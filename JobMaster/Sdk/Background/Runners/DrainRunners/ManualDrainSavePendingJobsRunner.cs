@@ -49,8 +49,9 @@ internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJob
             return OnTickResult.Skipped(this);
         }
 
+        // Only reached for Full/Drain modes, which always have an AgentConnectionId.
         var savingPendingJobs = await agentJobsDispatcherService
-            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
+            .PullSavePendingJobsAsync(BackgroundAgentWorker.AgentConnectionId!, BucketId!, BackgroundAgentWorker.BucketBufferSize);
 
         if (!savingPendingJobs.Any())
         {

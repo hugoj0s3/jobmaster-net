@@ -35,8 +35,9 @@ internal class ManualDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProc
             return OnTickResult.Skipped(this);
         }
 
+        // Only reached for Full/Drain modes, which always have an AgentConnectionId.
         var processingJobs = await agentJobsDispatcherService
-            .PullForProcessingAsync(BackgroundAgentWorker.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize, null);
+            .PullForProcessingAsync(BackgroundAgentWorker.AgentConnectionId!, BucketId!, BackgroundAgentWorker.BucketBufferSize, null);
 
         if (!processingJobs.Any())
         {

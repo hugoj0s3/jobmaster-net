@@ -45,8 +45,9 @@ internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner
             return OnTickResult.Skipped(this);
         }
 
+        // Only reached for Full/Drain modes, which always have an AgentConnectionId.
         var recurringSchedules = await agentJobsDispatcherService.PullSavePendingRecurAsync(
-            BackgroundAgentWorker.AgentConnectionId,
+            BackgroundAgentWorker.AgentConnectionId!,
             BucketId!,
             BackgroundAgentWorker.BucketBufferSize);
 
