@@ -12,21 +12,8 @@ namespace JobMaster.Abstractions.Ioc.Selectors;
 /// messaging settings, workers, and agent connections.
 /// All methods return the same selector instance to allow method chaining.
 /// </summary>
-public interface IClusterConfigSelector
+public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterConfigSelector>
 {
-    /// <summary>
-    /// Marks this cluster as the default cluster.
-    /// When multiple clusters are registered, the default is used whenever no explicit cluster ID is specified.
-    /// </summary>
-    public IClusterConfigSelector SetAsDefault();
-
-    /// <summary>
-    /// Sets the unique identifier for this cluster.
-    /// This ID is used to route jobs and distinguish clusters in a multi-cluster setup.
-    /// </summary>
-    /// <param name="clusterId">A unique string that identifies this cluster.</param>
-    public IClusterConfigSelector ClusterId(string clusterId);
-
     /// <summary>
     /// Sets the default maximum execution time allowed for a single job.
     /// Jobs that run longer than this threshold are considered timed out and marked as failed.
@@ -94,9 +81,9 @@ public interface IClusterConfigSelector
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (5 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
-    /// Throws <see cref="ArgumentException"/> for positive values under 1 hour.
+    /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
     public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl);
 
@@ -201,20 +188,6 @@ public interface IClusterConfigSelector
     /// <param name="maxBufferItems">Maximum number of log items to buffer before flushing. Default: 500.</param>
     /// <param name="flushInterval">How often the buffer is flushed to disk. Defaults to a reasonable internal interval when null.</param>
     public IClusterConfigSelector DebugJsonlFileLogger(string filePath, int maxBufferItems = 500, TimeSpan? flushInterval = null);
-
-    internal IClusterConfigSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig);
-
-    internal IClusterConfigSelector ClusterAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig);
-
-    internal IClusterConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
-    internal IClusterConfigSelector AppendAdditionalConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
-
-    internal IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit);
-
-    internal IClusterConfigSelector ClusterRepoType(string repoType);
-    internal IClusterConfigSelector ClusterConnString(string connString);
-
+    
     internal IClusterConfigSelector EnableMirrorLog(Action<LogItem> mirrorLog);
-
-    internal void Finish();
 }

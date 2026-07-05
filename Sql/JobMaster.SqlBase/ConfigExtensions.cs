@@ -14,7 +14,8 @@ public static class ConfigExtensions
     /// Sets a custom table prefix for all JobMaster tables created in the master database.
     /// Defaults to <c>JM_</c> when not specified.
     /// </summary>
-    public static IClusterConfigSelector UseSqlTablePrefixForMaster(this IClusterConfigSelector clusterConfigSelector, string tablePrefix)
+    public static T UseSqlTablePrefixForMaster<T>(this T clusterConfigSelector, string tablePrefix)
+        where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.AppendAdditionalConnConfigValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey, tablePrefix);
         return clusterConfigSelector;
@@ -35,7 +36,8 @@ public static class ConfigExtensions
     /// Use this when you manage the database schema yourself (e.g. via migrations)
     /// and do not want JobMaster to create or alter tables.
     /// </summary>
-    public static IClusterConfigSelector DisableAutoProvisionSqlSchema(this IClusterConfigSelector clusterConfigSelector)
+    public static T DisableAutoProvisionSqlSchema<T>(this T clusterConfigSelector)
+        where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.AppendAdditionalConnConfigValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.DisableAutoProvisionSchemaKey, true);
         return clusterConfigSelector;

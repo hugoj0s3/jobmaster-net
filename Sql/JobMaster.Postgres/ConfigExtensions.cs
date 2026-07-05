@@ -11,11 +11,11 @@ public static class ConfigExtensions
     /// <summary>
     /// Configures the cluster master database to use PostgreSQL with the given connection string.
     /// </summary>
-    public static IClusterConfigSelector UsePostgresForMaster(this IClusterConfigSelector clusterConfigSelector, string connectionString)
+    public static T UsePostgresForMaster<T>(this T clusterConfigSelector, string connectionString)
+        where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.ClusterConnString(connectionString);
         clusterConfigSelector.ClusterRepoType(PostgresRepositoryConstants.RepositoryTypeId);
-
         return clusterConfigSelector;
     }
 

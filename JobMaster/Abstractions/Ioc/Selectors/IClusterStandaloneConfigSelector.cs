@@ -71,9 +71,9 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (5 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
-    /// Throws <see cref="ArgumentException"/> for positive values under 1 hour.
+    /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
     public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl);
 

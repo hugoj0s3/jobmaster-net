@@ -11,7 +11,8 @@ public static class ConfigExtensions
     /// <summary>
     /// Configures the cluster master database to use SQL Server with the given connection string.
     /// </summary>
-    public static IClusterConfigSelector UseSqlServerForMaster(this IClusterConfigSelector clusterConfigSelector, string connectionString)
+    public static T UseSqlServerForMaster<T>(this T clusterConfigSelector, string connectionString)
+        where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.ClusterConnString(connectionString);
         clusterConfigSelector.ClusterRepoType(SqlServerRepositoryConstants.RepositoryTypeId);

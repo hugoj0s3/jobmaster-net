@@ -11,7 +11,8 @@ public static class ConfigExtensions
     /// <summary>
     /// Configures the cluster master database to use MySQL with the given connection string.
     /// </summary>
-    public static IClusterConfigSelector UseMySqlForMaster(this IClusterConfigSelector clusterConfigSelector, string connectionString)
+    public static T UseMySqlForMaster<T>(this T clusterConfigSelector, string connectionString)
+        where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.ClusterConnString(connectionString);
         clusterConfigSelector.ClusterRepoType(MySqlRepositoryConstants.RepositoryTypeId);

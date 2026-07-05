@@ -10,11 +10,21 @@
 
 ### Added
 
+- **`DisablePriority` on cluster and standalone selectors** — A priority level can now be disabled for a cluster via `DisablePriority(JobMasterPriority)` (or `ClusterDisablePriority` for standalone clusters) and via JSON config. A disabled priority prevents bucket creation at that level. Any handler class decorated with a `[JobMasterPriority]` that resolves to a disabled priority throws at cluster startup. Static recurring schedules with an explicitly-set disabled priority also throw at startup. Scheduling a job at a disabled priority throws `InvalidOperationException` at the call site.
+
+- **`UseJobMasterClusterApi` — API-only cluster registration** (`JobMaster.Api`) — New `IServiceCollection` extension for registering a cluster in API-only mode (no workers or job handlers). Accepts `Action<IBaseClusterConfigSelector<IClusterConfigSelector>>`, which exposes only connection and identity methods. When all registered clusters go through `UseJobMasterClusterApi`, the first one is automatically promoted to default — since cluster routing in API calls is always explicit by cluster ID, the "default" has no functional meaning in pure API deployments and requiring the user to call `SetAsDefault()` manually would be unnecessary friction.
+
+- **`IBaseClusterConfigSelector<TSelector>` — base interface for connection-only cluster config** — New generic base interface that exposes only connection and identity configuration (`ClusterId`, `SetAsDefault`, and the internal provider-connection methods). `IClusterConfigSelector` now extends `IBaseClusterConfigSelector<IClusterConfigSelector>`, so all existing builder methods still return the full selector type — no changes required at the call site.
+
 - **`ConfigFromJson` — full cluster config from JSON** — The entire cluster setup (cluster settings, agent connections, workers) can now be driven from a JSON file or string via `ConfigFromJson`, removing the need for code-level wiring. Provider-specific connection settings (e.g. NATS auth and TLS) are supported through a `connectionOptions` dictionary — `JobMaster.NatsJetStream` accepts auth keys (`username`, `password`, `token`, `credentialsFile`, `nkey`, `jwt`) and TLS keys (`tlsCertBundleFile`, `tlsCaFile`, `tlsMode`, etc.).
 
 - **`DataRetentionTtl` / `RetainDataForever` in the cluster config selector** — The data retention window for executed jobs, inactive recurring schedules, and JobMaster logs can now be set at startup via `DataRetentionTtl(TimeSpan)` (or `ClusterDataRetentionTtl` for standalone clusters) and through `ConfigFromJson`, instead of only being adjustable by editing the saved cluster configuration directly. `RetainDataForever()` is also available as a named alternative to `DataRetentionTtl(TimeSpan.Zero)`. The minimum accepted positive TTL is 10 minutes (`JobMasterDefaults.MinDataRetentionTtl`) — passing a smaller positive value throws `ArgumentException`. Cleanup runners adapt their check interval automatically to `Clamp(TTL/2, 5 min, 1 hr)`. ⚠️ **Breaking change**: the default `DataRetentionTtl` is now `TimeSpan.Zero` (infinite — no automatic purge), changed from the previous 30 days. Existing deployments that relied on the 30-day automatic cleanup should set `DataRetentionTtl(TimeSpan.FromDays(30))` explicitly.
 
 ### Changed
+
+- **`BucketQtyConfig` is now sparse** — `BucketQtyConfig(priority, qty)` stores only the priorities you explicitly configure; unconfigured priorities default to 1 bucket at startup. An explicit `qty = 0` is valid and means no buckets for that priority. If `DisablePriority` is set for a priority and an explicit non-zero qty is also configured for it, startup throws. Previously all five priorities were always seeded to 1 regardless of what was configured, so `BucketQtyConfig(High, 4)` implicitly created 1 bucket for every other priority — now only `High` is affected.
+
+- **Provider extension methods now accept `IBaseClusterConfigSelector<IClusterConfigSelector>`** — `UsePostgresForMaster`, `UseMySqlForMaster`, `UseSqlServerForMaster`, `UseSqlTablePrefixForMaster`, and `DisableAutoProvisionSqlSchema` are now generic (`where T : IBaseClusterConfigSelector<IClusterConfigSelector>`). This is fully backward-compatible — all existing call sites continue to work — and enables calling these methods inside `UseJobMasterClusterApi` without requiring the full cluster selector.
 
 - **`ReadIsolationLevel` removed** — The internal `ReadIsolationLevel` enum and all `ReadIsolationLevel` properties on query criteria classes have been removed. All database reads now use `READ COMMITTED`. SQL Server users are recommended to enable `READ_COMMITTED_SNAPSHOT` (RCSI) on their database to achieve equivalent non-blocking read behaviour without dirty reads.
 
@@ -25,6 +35,8 @@
 - **`IJobHandler` renamed to `IJobMasterHandler`** — Brings the interface you implement to define a job in line with the rest of the library's naming (`IJobMasterScheduler`, `IJobMasterLogger`, etc.). Existing code implementing `IJobHandler` keeps compiling as-is — it's now marked obsolete and will be removed in a future release, so there's no rush to migrate, but new handlers should implement `IJobMasterHandler` directly.
 
 ### Fixed
+
+- **`IsStandalone` not applied when cluster is configured via `ConfigFromJson`** — `ClusterDefinition.IsStandalone` is now nullable. When it is null (not set in code), the runtime correctly falls back to the value already stored in the database (`modelToSave.IsStandalone`). Previously a null code-level value unconditionally overwrote the stored value with `false`, so a cluster configured as standalone purely through JSON would silently start in cluster mode.
 
 - **Coordinator fallback bucket durability** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" now persists jobs to the master database (through a dedicated reserved connection) instead of an in-process queue, so they survive a Coordinator restart instead of being lost.
 

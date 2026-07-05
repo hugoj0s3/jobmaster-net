@@ -80,7 +80,7 @@ public static class AddJobMasterClusterExtensions
         if (configure == null) throw new ArgumentNullException(nameof(configure));
 
         var builder = ClusterConfigSelectorAdvancedFactory.Create(null, services);
-         configure(builder);
+        configure(builder);
 
         if (BootstrapBlueprintDefinitions.JobMasterJsonSerializer == null)
         {
@@ -102,4 +102,5 @@ public static class AddJobMasterClusterExtensions
 
         return services;
     }
+
 }
