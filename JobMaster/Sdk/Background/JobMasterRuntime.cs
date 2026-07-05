@@ -80,6 +80,9 @@ internal class JobMasterRuntime : IJobMasterRuntime
             var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c =>
                 string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
 
+            var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
+            var isStandalone = clusterDefinition.IsStandalone ?? modelToSave.IsStandalone;
+
             var agentDefinitions = clusterDefinition.AgentConnections;
             foreach (var agentDefinition in agentDefinitions)
             {
@@ -114,7 +117,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     fingerprint, agentDefinition.ProtectConnectionChanges);
             }
 
-            if (clusterDefinition.IsStandalone)
+            if (isStandalone)
             {
                 var standaloneConfig = clusterCnnCfg.TryGetAgentConnectionConfig(JobMasterConstants.StandaloneAgentConnName);
                 if (standaloneConfig != null)
@@ -137,7 +140,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             var workerDefinitions = clusterDefinition.Workers;
 
-            var modelToSave = masterConfigService.GetFresh() ?? new ClusterConfigurationModel(clusterCnnCfg.ClusterId);
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount =
                 clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
@@ -147,7 +149,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.DataRetentionTtl = clusterDefinition.DataRetentionTtl ?? modelToSave.DataRetentionTtl;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
-            modelToSave.IsStandalone = clusterDefinition.IsStandalone;
+            modelToSave.IsStandalone = isStandalone;
 
             if (clusterCnnCfg.MirrorLog == JsonlFileLogger.LogMirror)
             {
@@ -157,7 +159,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             masterConfigService.Save(modelToSave);
 
-            if (!clusterDefinition.IsStandalone)
+            if (!isStandalone)
             {
                 var bucketService = componentFactory.GetComponent<IMasterBucketsService>();
                 var existingBuckets = await bucketService.QueryAllNoCacheAsync();
@@ -344,7 +346,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used as a worker's AgentConnectionName.");
             }
 
-            if (!clusterDefinition.IsStandalone && workerDefinitions.Any(x => string.Equals(
+            if (clusterDefinition.IsStandalone != true && workerDefinitions.Any(x => string.Equals(
                     x.AgentConnectionName,
                     JobMasterConstants.StandaloneAgentConnName,
                     StringComparison.OrdinalIgnoreCase)))
@@ -359,7 +361,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     "Coordinator workers must not have an AgentConnectionName configured.");
             }
 
-            if (!clusterDefinition.IsStandalone)
+            if (clusterDefinition.IsStandalone != true)
             {
                 // Standalone workers always get AgentConnectionName forced to StandaloneAgentConnName by the
                 // builder, so there's nothing to cross-reference there — only check explicit clusters.
@@ -376,7 +378,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
             }
 
-            if (clusterDefinition.IsStandalone && agentDefinitions.Any())
+            if (clusterDefinition.IsStandalone == true && agentDefinitions.Any())
             {
                 throw new InvalidOperationException(
                     "Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");

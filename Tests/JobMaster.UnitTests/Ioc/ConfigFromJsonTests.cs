@@ -50,7 +50,7 @@ public class ConfigFromJsonTests
         d.DefaultMaxRetryCount.Should().Be(5);
         d.MaxMessageByteSize.Should().Be(65536);
         d.IanaTimeZoneId.Should().Be("America/New_York");
-        d.IsStandalone.Should().BeFalse();
+        d.IsStandalone.Should().BeNull();
     }
 
     [Fact]

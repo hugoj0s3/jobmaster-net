@@ -148,7 +148,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
                 agentConnDefinition.RuntimeDbOperationLimit);
         }
         
-        if (clusterDefinition.IsStandalone)
+        if (clusterDefinition.IsStandalone == true)
         {
             clusterCnnConfig.AddStandaloneAgentConnectionString();
         }
