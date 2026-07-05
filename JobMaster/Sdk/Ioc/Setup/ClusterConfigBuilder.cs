@@ -97,11 +97,26 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
         if (clusterDefinition.DisabledPriorities.Any())
-        {
             clusterCnnConfig.SetDisabledPriorities(clusterDefinition.DisabledPriorities);
-            foreach (var worker in clusterDefinition.Workers)
-                foreach (var p in clusterDefinition.DisabledPriorities)
-                    worker.BucketQty[p] = 0;
+
+        foreach (var worker in clusterDefinition.Workers)
+        {
+            // Validate: explicit BucketQtyConfig for a disabled priority is a configuration error
+            foreach (var p in clusterDefinition.DisabledPriorities)
+            {
+                if (worker.BucketQty.TryGetValue(p, out int explicit_qty) && explicit_qty >= 1)
+                    throw new InvalidOperationException(
+                        $"Worker '{worker.WorkerName}' has BucketQtyConfig({p}, {explicit_qty}) but " +
+                        $"priority {p} is disabled on cluster '{finalClusterId}'. " +
+                        $"Remove the BucketQtyConfig call or set it to 0.");
+            }
+
+            // Fill defaults for every priority not explicitly configured
+            foreach (JobMasterPriority p in Enum.GetValues(typeof(JobMasterPriority)))
+            {
+                if (!worker.BucketQty.ContainsKey(p))
+                    worker.BucketQty[p] = clusterDefinition.DisabledPriorities.Contains(p) ? 0 : JobMasterDefaults.Worker.BucketQtyPerPriority;
+            }
         }
 
         // Apply cluster custom connection config (optional)

@@ -122,42 +122,60 @@ public class DisablePriorityTests
         result.Should().BeSameAs(s);
     }
 
-    // ── BucketQty zeroing: DisabledPriorities drive the Finish() logic ────────
+    // ── BucketQty: sparse dict, Finish() fills defaults and validates ─────────
 
     [Fact]
-    public void DisablePriority_WorkerBucketQtyDefaultIsOne_BeforeFinish()
+    public void WorkerBucketQty_StartsEmpty_BeforeFinish()
     {
         var b = Builder();
         b.AddWorker("w1", "agent1");
-        b.DisablePriority(JobMasterPriority.VeryLow);
 
-        // BucketQty is only zeroed inside Finish(); the definition still carries the default here
-        b.clusterDefinition.Workers[0].BucketQty[JobMasterPriority.VeryLow].Should().Be(1);
-        b.clusterDefinition.DisabledPriorities.Should().Contain(JobMasterPriority.VeryLow);
+        b.clusterDefinition.Workers[0].BucketQty.Should().BeEmpty();
     }
 
     [Fact]
-    public void DisablePriority_FinishLogic_ZeroesBucketQtyForDisabledPriorities()
+    public void BucketQtyConfig_SetsExplicitEntry_InDict()
     {
-        // Simulates the inner loop in Finish() that zeroes BucketQty for disabled priorities.
-        // Finish() itself cannot be called standalone (it registers DI singletons), so we
-        // verify the worker definition state that Finish() is supposed to produce.
         var b = Builder();
-        b.AddWorker("w1", "agent1");
+        b.AddWorker("w1", "agent1").BucketQtyConfig(JobMasterPriority.High, 3);
+
+        b.clusterDefinition.Workers[0].BucketQty[JobMasterPriority.High].Should().Be(3);
+        b.clusterDefinition.Workers[0].BucketQty.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public void DisablePriority_WithConflictingBucketQtyConfig_ThrowsOnFinishLogic()
+    {
+        var b = Builder();
+        b.AddWorker("w1", "agent1").BucketQtyConfig(JobMasterPriority.VeryLow, 2);
         b.DisablePriority(JobMasterPriority.VeryLow);
-        b.DisablePriority(JobMasterPriority.Critical);
 
         var worker = b.clusterDefinition.Workers[0];
+        var act = () =>
+        {
+            foreach (var p in b.clusterDefinition.DisabledPriorities)
+            {
+                if (worker.BucketQty.TryGetValue(p, out int qty) && qty >= 1)
+                    throw new InvalidOperationException($"BucketQtyConfig({p}, {qty}) conflicts with disabled priority.");
+            }
+        };
 
-        // Replicate what Finish() does
-        foreach (var p in b.clusterDefinition.DisabledPriorities)
-            worker.BucketQty[p] = 0;
+        act.Should().Throw<InvalidOperationException>().WithMessage("*VeryLow*");
+    }
 
-        worker.BucketQty[JobMasterPriority.VeryLow].Should().Be(0);
-        worker.BucketQty[JobMasterPriority.Critical].Should().Be(0);
-        worker.BucketQty[JobMasterPriority.Medium].Should().Be(1, "Medium is never disabled");
-        worker.BucketQty[JobMasterPriority.Low].Should().Be(1, "Low was not disabled");
-        worker.BucketQty[JobMasterPriority.High].Should().Be(1, "High was not disabled");
+    [Fact]
+    public void DisablePriority_WithExplicitZeroBucketQty_DoesNotConflict()
+    {
+        var b = Builder();
+        b.AddWorker("w1", "agent1").BucketQtyConfig(JobMasterPriority.VeryLow, 0);
+        b.DisablePriority(JobMasterPriority.VeryLow);
+
+        var worker = b.clusterDefinition.Workers[0];
+        var conflicts = b.clusterDefinition.DisabledPriorities
+            .Where(p => worker.BucketQty.TryGetValue(p, out int qty) && qty >= 1)
+            .ToList();
+
+        conflicts.Should().BeEmpty();
     }
 
     [Fact]

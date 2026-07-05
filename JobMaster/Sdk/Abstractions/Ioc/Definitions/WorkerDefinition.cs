@@ -13,14 +13,12 @@ internal sealed class WorkerDefinition
     public int BucketBufferSize { get; set; } = JobMasterDefaults.Worker.BucketBufferSize;
     public AgentWorkerMode Mode { get; set; } = JobMasterDefaults.Worker.DefaultMode;
     public double ParallelismFactor { get; set; } = JobMasterDefaults.Worker.ParallelismFactor;
-    public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>()
-    {
-        { JobMasterPriority.VeryLow,  JobMasterDefaults.Worker.BucketQtyPerPriority },
-        { JobMasterPriority.Low,      JobMasterDefaults.Worker.BucketQtyPerPriority },
-        { JobMasterPriority.Medium,   JobMasterDefaults.Worker.BucketQtyPerPriority },
-        { JobMasterPriority.High,     JobMasterDefaults.Worker.BucketQtyPerPriority },
-        { JobMasterPriority.Critical, JobMasterDefaults.Worker.BucketQtyPerPriority }
-    };
+    /// <summary>
+    /// Explicit per-priority bucket counts. Absent entries default to
+    /// <see cref="JobMasterDefaults.Worker.BucketQtyPerPriority"/> at startup.
+    /// Set a priority to 0 to suppress bucket creation for it.
+    /// </summary>
+    public IDictionary<JobMasterPriority, int> BucketQty { get; } = new Dictionary<JobMasterPriority, int>();
 
     public bool SkipWarmUpTime { get; set; }
     public TimeSpan BucketBufferLeadTime { get; set; } = JobMasterDefaults.Worker.BucketBufferLeadTime;
