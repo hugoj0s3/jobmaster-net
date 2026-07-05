@@ -292,6 +292,11 @@ internal class JobMasterRuntime : IJobMasterRuntime
             var existingClusterConfig = masterConfigService.GetFresh();
             var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
 
+            // clusterDefinition.IsStandalone is null when not set in code (e.g. a cluster configured as
+            // standalone purely through ConfigFromJson in a prior run) — mirrors the same resolution
+            // StartAsync uses later (clusterDefinition.IsStandalone ?? modelToSave.IsStandalone).
+            var isStandalone = clusterDefinition.IsStandalone ?? existingClusterConfig?.IsStandalone ?? false;
+
             if (clusterDefinition.IanaTimeZoneId != null &&
                 existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
             {
@@ -318,13 +323,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
             }
-
-            var reservedAgentDefinition = agentDefinitions.FirstOrDefault(x =>
-                JobMasterConstants.IsReservedAgentConnectionName(x.AgentConnectionName));
-            if (reservedAgentDefinition is not null)
+            
+            if (agentDefinitions.Any(x =>
+                    JobMasterConstants.IsReservedAgentConnectionName(x.AgentConnectionName)))
             {
                 throw new InvalidOperationException(
-                    $"'{reservedAgentDefinition.AgentConnectionName}' is a reserved agent connection name and cannot be used for other agents.");
+                    "One or more agent connections use a reserved agent connection name.");
             }
 
             if (workerDefinitions.Any(x => string.Equals(
@@ -336,7 +340,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used as a worker's AgentConnectionName.");
             }
 
-            if (clusterDefinition.IsStandalone != true && workerDefinitions.Any(x => string.Equals(
+            if (!isStandalone && workerDefinitions.Any(x => string.Equals(
                     x.AgentConnectionName,
                     JobMasterConstants.StandaloneAgentConnName,
                     StringComparison.OrdinalIgnoreCase)))
@@ -351,7 +355,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     "Coordinator workers must not have an AgentConnectionName configured.");
             }
 
-            if (clusterDefinition.IsStandalone != true)
+            if (!isStandalone)
             {
                 // Standalone workers always get AgentConnectionName forced to StandaloneAgentConnName by the
                 // builder, so there's nothing to cross-reference there — only check explicit clusters.
@@ -368,7 +372,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 }
             }
 
-            if (clusterDefinition.IsStandalone == true && agentDefinitions.Any())
+            if (isStandalone && agentDefinitions.Any())
             {
                 throw new InvalidOperationException(
                     "Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
