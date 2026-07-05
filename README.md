@@ -3,6 +3,7 @@
 **Distributed job orchestration engine for .NET. Built for horizontal scale, designed for resilience.**
 
 [![NuGet (pre)](https://img.shields.io/nuget/vpre/JobMaster?label=JobMaster)](https://www.nuget.org/packages/JobMaster)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-red?logo=github)](https://github.com/sponsors/hugoj0s3)
 
 📖 **[docs.jobmaster.hugoj0s3.dev](https://docs.jobmaster.hugoj0s3.dev)**
 
