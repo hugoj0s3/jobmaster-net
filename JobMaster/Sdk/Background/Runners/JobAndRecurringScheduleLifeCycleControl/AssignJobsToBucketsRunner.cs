@@ -350,11 +350,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
             var fallbackConnConfig = BackgroundAgentWorker.ClusterConnConfig.GetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
             var fallbackConnectionId = new AgentConnectionId(fallbackConnConfig.Id);
+            var fallbackPriority = ResolveFallbackPriority();
 
             var bucket = await this.masterBucketsService.CreateAsync(
                 fallbackConnectionId,
                 BackgroundAgentWorker.AgentWorkerId,
-                JobMasterPriority.Critical,
+                fallbackPriority,
                 BucketType.Fallback);
             this.fallbackBucket = bucket;
 
@@ -365,7 +366,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             fallBackRunner = ManualJobsExecutionRunner.Create(
                 this.BackgroundAgentWorker,
                 source);
-            fallBackRunner.DefineBucketId(bucket.Id, JobMasterPriority.Critical);
+            fallBackRunner.DefineBucketId(bucket.Id, fallbackPriority);
             await fallBackRunner.StartAsync();
 
             return fallbackBucket;
@@ -374,6 +375,29 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         {
             fallbackCreationLock.Release();
         }
+    }
+
+    // Preference order for the fallback bucket's priority: prefer Critical (fastest drain), falling back to
+    // the next-highest priority the cluster hasn't disabled. Medium can never be disabled (see
+    // ClusterConfigBuilder.DisablePriority), so this is always guaranteed to resolve.
+    private static readonly JobMasterPriority[] FallbackPriorityPreference =
+    {
+        JobMasterPriority.Critical,
+        JobMasterPriority.High,
+        JobMasterPriority.Medium,
+    };
+
+    private JobMasterPriority ResolveFallbackPriority()
+    {
+        foreach (var priority in FallbackPriorityPreference)
+        {
+            if (!BackgroundAgentWorker.ClusterConnConfig.IsPriorityDisabled(priority))
+            {
+                return priority;
+            }
+        }
+
+        return JobMasterPriority.Medium;
     }
 
     private string BucketFailureKey(JobRawModel job) =>

@@ -99,7 +99,18 @@ internal static class JobMasterConstants
         return DateTime.UtcNow.Add(-ClockSkewPadding);
     }
     
-    public const string StandaloneAgentConnName = "standalone-agent-conn";
+    /// <summary>
+    /// Prefix shared by every agent connection name reserved by the framework itself. Chosen to be
+    /// distinctive enough that a user is unlikely to pick it by accident — any name using this prefix
+    /// is treated as reserved (see <see cref="IsReservedAgentConnectionName"/>), so future reserved
+    /// names are automatically covered without updating that check.
+    /// </summary>
+    public const string ReservedAgentConnectionNamePrefix = "JMReserved-";
 
-    public const string MasterFallbackAgentConnName = "master-fallback-agent-conn";
+    public const string StandaloneAgentConnName = ReservedAgentConnectionNamePrefix + "standalone";
+
+    public const string MasterFallbackAgentConnName = ReservedAgentConnectionNamePrefix + "fallback";
+
+    public static bool IsReservedAgentConnectionName(string? name) =>
+        name is not null && name.StartsWith(ReservedAgentConnectionNamePrefix, StringComparison.OrdinalIgnoreCase);
 }

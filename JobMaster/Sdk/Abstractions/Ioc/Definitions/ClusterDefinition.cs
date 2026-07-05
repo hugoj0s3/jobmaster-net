@@ -1,3 +1,4 @@
+using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -36,4 +37,25 @@ internal sealed class ClusterDefinition
     public TimeSpan? MirrorLogFlushInterval { get; set; }
     
     public bool? IsStandalone { get; set; }
+
+    // Shared by IClusterConfigSelector.DataRetentionTtl and IClusterStandaloneConfigSelector.ClusterDataRetentionTtl —
+    // both selectors mutate the same ClusterDefinition, so the validation belongs here instead of being
+    // duplicated in both builder classes.
+    public void SetDataRetentionTtl(TimeSpan dataRetentionTtl)
+    {
+        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
+            throw new ArgumentException(
+                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
+                $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
+                nameof(dataRetentionTtl));
+        DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+    }
+
+    // Shared by IClusterConfigSelector.DisablePriority and IClusterStandaloneConfigSelector.DisablePriority.
+    public void DisablePriority(JobMasterPriority priority)
+    {
+        if (priority == JobMasterPriority.Medium)
+            throw new ArgumentException("Medium priority cannot be disabled.", nameof(priority));
+        DisabledPriorities.Add(priority);
+    }
 }

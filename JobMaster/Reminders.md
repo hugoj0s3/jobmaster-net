@@ -40,6 +40,9 @@ Approach:
 2. Allow handlers such as `JobHandlerA : IJobHandler<DefinitionJobA>` so consumers can bind to definitions directly.
 3. Keep the current “direct handler” option for simple scenarios, and consider releasing the definitional model as a v2 feature.
 
+## Tests
+- **Exact-text `WithMessage` assertions**: A handful of tests assert on exact or substring exception message text (e.g. `JobMasterSchedulerClusterAwareTests.cs` asserts the full string `"Cluster mode is archived"`; several others assert `"*keyword*"` substrings). Prefer asserting exception type (and, where the specific culprit matters, a targeted property) instead — message text is easy to reword incidentally and breaks these tests for no functional reason. Left as-is for now (out of scope for the 0.0.10-alpha PR); worth a pass to check every `WithMessage`/`.Message.Should()` usage across the suite and loosen or remove where the wording isn't the actual thing under test.
+
 ## Serialization
 - **Source Generator Context (`JsonSerializerContext`)**: Upgrade `InternalJobMasterSerializer` to use `System.Text.Json` Source Generators. By declaring the exact types being serialized (e.g., `JobRawModel`, `Dictionary<string, object?>`), we can completely eliminate runtime reflection for JSON parsing, achieving AOT-level speed with zero allocations.
 

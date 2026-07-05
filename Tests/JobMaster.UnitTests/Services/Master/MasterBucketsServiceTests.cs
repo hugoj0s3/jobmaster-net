@@ -333,7 +333,7 @@ public class MasterBucketsServiceTests
         var selector = NewSelectorMock();
         var logger = new Mock<IJobMasterLogger>();
 
-        var fallbackAgent = new AgentConnectionId(clusterId, "master-fallback-agent-conn");
+        var fallbackAgent = new AgentConnectionId(clusterId, JobMasterConstants.MasterFallbackAgentConnName);
         var bucket = new BucketModel(clusterId)
         {
             Id = "fallback-b1",

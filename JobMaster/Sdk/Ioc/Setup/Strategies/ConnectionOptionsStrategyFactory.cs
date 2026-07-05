@@ -15,7 +15,11 @@ internal static class ConnectionOptionsStrategyFactory
     {
         return AppDomain.CurrentDomain.GetAssemblies()
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .SelectMany(a => a.GetTypes())
+            .SelectMany(a =>
+            {
+                try { return a.GetTypes(); }
+                catch { return Array.Empty<Type>(); }
+            })
             .Where(t => typeof(IConnectionOptionsStrategy).IsAssignableFrom(t)
                         && !t.IsInterface
                         && !t.IsAbstract

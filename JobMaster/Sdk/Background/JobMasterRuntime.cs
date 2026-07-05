@@ -319,22 +319,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException("Passive and Archived clusters can not have buckets defined");
             }
 
-            if (agentDefinitions.Any(x => string.Equals(
-                    x.AgentConnectionName,
-                    JobMasterConstants.StandaloneAgentConnName,
-                    StringComparison.OrdinalIgnoreCase)))
+            var reservedAgentDefinition = agentDefinitions.FirstOrDefault(x =>
+                JobMasterConstants.IsReservedAgentConnectionName(x.AgentConnectionName));
+            if (reservedAgentDefinition is not null)
             {
                 throw new InvalidOperationException(
-                    $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone agents. Cannot be used for other agents.");
-            }
-
-            if (agentDefinitions.Any(x => string.Equals(
-                    x.AgentConnectionName,
-                    JobMasterConstants.MasterFallbackAgentConnName,
-                    StringComparison.OrdinalIgnoreCase)))
-            {
-                throw new InvalidOperationException(
-                    $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used for other agents.");
+                    $"'{reservedAgentDefinition.AgentConnectionName}' is a reserved agent connection name and cannot be used for other agents.");
             }
 
             if (workerDefinitions.Any(x => string.Equals(

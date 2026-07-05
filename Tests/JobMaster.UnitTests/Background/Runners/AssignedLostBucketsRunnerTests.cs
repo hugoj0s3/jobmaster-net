@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -185,7 +186,7 @@ public class AssignedLostBucketsRunnerTests
     public async Task OnTickAsync_WhenLostBucketIsFallback_ShouldMarkReadyToDeleteWithoutSearchingForWorker()
     {
         var f = RunnerFixture.Create();
-        var fallbackConnectionId = new AgentConnectionId(f.ClusterId, "master-fallback-agent-conn");
+        var fallbackConnectionId = new AgentConnectionId(f.ClusterId, JobMasterConstants.MasterFallbackAgentConnName);
 
         var lostFallbackBucket = new BucketModel(f.ClusterId)
         {

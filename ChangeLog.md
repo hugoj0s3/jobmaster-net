@@ -34,6 +34,8 @@
 
 - **`IJobHandler` renamed to `IJobMasterHandler`** — Brings the interface you implement to define a job in line with the rest of the library's naming (`IJobMasterScheduler`, `IJobMasterLogger`, etc.). Existing code implementing `IJobHandler` keeps compiling as-is — it's now marked obsolete and will be removed in a future release, so there's no rush to migrate, but new handlers should implement `IJobMasterHandler` directly.
 
+- **Reserved agent connection names now use a `JMReserved-` prefix** — The framework's internal standalone and fallback-bucket connections are now named `JMReserved-standalone` and `JMReserved-fallback` (previously `standalone-agent-conn` and `master-fallback-agent-conn`). Attempting to name your own agent connection with the `JMReserved-` prefix is rejected at startup, guarding against future collisions with any reserved name the framework introduces. ⚠️ **Breaking change**: this name is persisted as the connection identifier in the master database. If you run a standalone cluster, or any cluster that has used a fallback bucket, fully drain on the previous version before upgrading — the old reserved connection name won't be recognized after upgrading. New deployments are unaffected.
+
 ### Fixed
 
 - **`IsStandalone` not applied when cluster is configured via `ConfigFromJson`** — `ClusterDefinition.IsStandalone` is now nullable. When it is null (not set in code), the runtime correctly falls back to the value already stored in the database (`modelToSave.IsStandalone`). Previously a null code-level value unconditionally overwrote the stored value with `false`, so a cluster configured as standalone purely through JSON would silently start in cluster mode.
@@ -51,6 +53,8 @@
 - **SQL agent connections: possible false-positive "fingerprint has changed" failure on startup** — If two processes bootstrapped the same brand-new agent connection at the same moment (e.g. starting several instances together for the first time), a rare race could cause one of them to register a fingerprint that didn't match what was actually saved. On the next restart this could look like the connection had changed, which is a hard failure for connections with `ProtectConnectionChanges` enabled. The fingerprint registration is now atomic, so this can no longer happen.
 
 - **Cached reads could serve stale data far longer than expected after a change** — Agent connection saves/deletes and host registration/stats/deletion notified other processes' caches to refresh *after* writing the change. If anything went wrong between the write and that notification (including the process simply stopping), other processes kept serving pre-change data until their cache entry's normal expiry, rather than picking up the change promptly. The notification now always happens first, so a change is never silently missed.
+
+- **Fallback bucket ignored `DisablePriority`** — The temporary "fallback bucket" created when no real bucket is available for too long always used `Critical` priority, even if `Critical` had been explicitly disabled for the cluster. It now tries `Critical`, then `High`, then `Medium` (which can never be disabled), skipping any priority the cluster has disabled.
 
 ---
 

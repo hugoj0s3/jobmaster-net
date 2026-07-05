@@ -155,6 +155,7 @@ public class AssignJobsToBucketsRunnerTests
                 .Subject;
             fallbackBucket.AgentConnectionId.Name.Should().Be(JobMasterConstants.MasterFallbackAgentConnName);
             fallbackBucket.AgentConnectionId.ClusterId.Should().Be(f.ClusterId);
+            fallbackBucket.Priority.Should().Be(JobMasterPriority.Critical);
 
             f.WorkerClusterOps.Verify(
                 x => x.DispatchJobToBucketAsync(
@@ -166,6 +167,92 @@ public class AssignJobsToBucketsRunnerTests
         finally
         {
             // Stop the internally-spawned fallback runner so it doesn't keep polling in the background.
+            var fallBackRunnerField = typeof(AssignJobsToBucketsRunner)
+                .GetField("fallBackRunner", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (fallBackRunnerField.GetValue(runner) is IJobMasterRunner fallBackRunner)
+            {
+                await fallBackRunner.StopAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task HandleJobFallbackAssignmentAsync_WhenCriticalIsDisabled_FallsBackToHighPriority()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+        f.Worker.Object.ClusterConnConfig.SetDisabledPriorities(new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
+        engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
+        engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+        var job = OnMasterJob();
+
+        var firstFailureField = typeof(AssignJobsToBucketsRunner)
+            .GetField("bucketAssignFirstFailure", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var bucketAssignFirstFailure = (Dictionary<string, DateTime>)firstFailureField.GetValue(runner)!;
+        bucketAssignFirstFailure[$"{f.ClusterId}_{job.WorkerLane}_{job.Priority}"] = DateTime.UtcNow.AddMinutes(-10);
+
+        var handleFallbackMethod = typeof(AssignJobsToBucketsRunner)
+            .GetMethod("HandleJobFallbackAssignmentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        try
+        {
+            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+
+            f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
+                .Subject.Priority.Should().Be(JobMasterPriority.High);
+        }
+        finally
+        {
+            var fallBackRunnerField = typeof(AssignJobsToBucketsRunner)
+                .GetField("fallBackRunner", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (fallBackRunnerField.GetValue(runner) is IJobMasterRunner fallBackRunner)
+            {
+                await fallBackRunner.StopAsync();
+            }
+        }
+    }
+
+    [Fact]
+    public async Task HandleJobFallbackAssignmentAsync_WhenCriticalAndHighAreDisabled_FallsBackToMediumPriority()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+        f.Worker.Object.ClusterConnConfig.SetDisabledPriorities(new HashSet<JobMasterPriority>
+        {
+            JobMasterPriority.Critical,
+            JobMasterPriority.High,
+        });
+
+        var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
+        engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
+        engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+        var job = OnMasterJob();
+
+        var firstFailureField = typeof(AssignJobsToBucketsRunner)
+            .GetField("bucketAssignFirstFailure", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var bucketAssignFirstFailure = (Dictionary<string, DateTime>)firstFailureField.GetValue(runner)!;
+        bucketAssignFirstFailure[$"{f.ClusterId}_{job.WorkerLane}_{job.Priority}"] = DateTime.UtcNow.AddMinutes(-10);
+
+        var handleFallbackMethod = typeof(AssignJobsToBucketsRunner)
+            .GetMethod("HandleJobFallbackAssignmentAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+        try
+        {
+            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+
+            f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
+                .Subject.Priority.Should().Be(JobMasterPriority.Medium);
+        }
+        finally
+        {
             var fallBackRunnerField = typeof(AssignJobsToBucketsRunner)
                 .GetField("fallBackRunner", BindingFlags.NonPublic | BindingFlags.Instance)!;
             if (fallBackRunnerField.GetValue(runner) is IJobMasterRunner fallBackRunner)

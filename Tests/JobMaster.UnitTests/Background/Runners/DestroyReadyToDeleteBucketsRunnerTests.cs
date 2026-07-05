@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -144,7 +145,7 @@ public class DestroyReadyToDeleteBucketsRunnerTests
             Id = "fallback-has-jobs-bucket",
             Status = BucketStatus.ReadyToDelete,
             BucketType = BucketType.Fallback,
-            AgentConnectionId = new AgentConnectionId(f.ClusterId, "master-fallback-agent-conn"),
+            AgentConnectionId = new AgentConnectionId(f.ClusterId, JobMasterConstants.MasterFallbackAgentConnName),
             DeletesAt = DateTime.UtcNow.AddMinutes(-1),
         };
         f.Buckets.Buckets.Add(bucket);

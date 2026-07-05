@@ -303,12 +303,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl)
     {
-        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
-            throw new ArgumentException(
-                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
-                $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
-                nameof(dataRetentionTtl));
-        this.clusterDefinition.DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+        this.clusterDefinition.SetDataRetentionTtl(dataRetentionTtl);
         return this;
     }
 
@@ -320,9 +315,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector DisablePriority(JobMasterPriority priority)
     {
-        if (priority == JobMasterPriority.Medium)
-            throw new ArgumentException("Medium priority cannot be disabled.", nameof(priority));
-        clusterDefinition.DisabledPriorities.Add(priority);
+        clusterDefinition.DisablePriority(priority);
         return this;
     }
 
@@ -503,6 +496,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         if (config.Standalone)
         {
+            // IClusterStandaloneConfigSelector.AddWorker only accepts a name and a batch size — there is
+            // no standalone-side equivalent of WorkerLane, ParallelismFactor, SkipWarmUpTime, WorkerMode,
+            // BucketQtyConfig, BucketBufferSize, or the cluster-level ConnectionOptions dictionary, so those
+            // WorkerJsonConfig/ClusterJsonConfig fields are intentionally ignored here (not applicable to
+            // standalone mode), same as when configuring a standalone cluster through the fluent API.
             var standalone = UseStandaloneCluster();
             if (config.RepoType != null) standalone.ClusterRepoType(config.RepoType);
             if (config.ConnectionString != null) standalone.ClusterConnString(config.ConnectionString);
@@ -615,12 +613,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
 
     public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl)
     {
-        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
-            throw new ArgumentException(
-                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
-                $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
-                nameof(dataRetentionTtl));
-        clusterDefinition.DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+        clusterDefinition.SetDataRetentionTtl(dataRetentionTtl);
         return this;
     }
 
@@ -632,9 +625,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
 
     public IClusterStandaloneConfigSelector DisablePriority(JobMasterPriority priority)
     {
-        if (priority == JobMasterPriority.Medium)
-            throw new ArgumentException("Medium priority cannot be disabled.", nameof(priority));
-        clusterDefinition.DisabledPriorities.Add(priority);
+        clusterDefinition.DisablePriority(priority);
         return this;
     }
 

@@ -40,8 +40,7 @@ internal class CleanupDeadAgentConnectionsRunner : JobMasterRunner
                 // Reserved connections (standalone, fallback-bucket) are expected to sit dead for long
                 // stretches — the standalone one whenever no standalone worker is running, the fallback
                 // one whenever no fallback bucket is active. Never delete either.
-                .Where(c => c.Id.Name != JobMasterConstants.StandaloneAgentConnName &&
-                            c.Id.Name != JobMasterConstants.MasterFallbackAgentConnName)
+                .Where(c => !JobMasterConstants.IsReservedAgentConnectionName(c.Id.Name))
                 .Where(c => c.LastHeartbeatAt < nowUtc - DeleteAgentConnectionThreshold)
                 .ToList();
 

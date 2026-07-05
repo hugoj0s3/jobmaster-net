@@ -1,5 +1,12 @@
 namespace JobMaster.Sdk.Ioc.Setup.Json;
 
+/// <summary>
+/// When <see cref="ClusterJsonConfig.Standalone"/> is <c>true</c>, only <see cref="WorkerName"/> and
+/// <see cref="TransferBatchSize"/> are applied —
+/// <see cref="JobMaster.Abstractions.Ioc.Selectors.IClusterStandaloneConfigSelector.AddWorker"/> has no
+/// standalone equivalent of the other properties below, so they're silently ignored (same as configuring
+/// a standalone cluster through the fluent API).
+/// </summary>
 internal sealed class WorkerJsonConfig
 {
     public string? WorkerName { get; set; }
