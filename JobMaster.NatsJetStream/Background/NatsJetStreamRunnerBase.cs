@@ -6,6 +6,7 @@ using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -36,6 +37,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private DateTime lastHeartbeatPublishedAt = DateTime.MinValue;
 
     private AgentConnectionId agentConnectionId = null!;
+    private JobMasterAgentConnectionConfig agentConnectionConfig = null!;
     private INatsJSConsumer? consumer;
     
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> lockMessages = new();
@@ -84,10 +86,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // 2. Transport Initialization
         if (!hasInitialized)
         {
-            NatsJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
-            await NatsJetStreamConnector.EnsureStreamAsync(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            NatsJetStreamConnector.GetOrCreateConnection(agentConnectionConfig);
+            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionConfig);
             consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
-                this.BackgroundAgentWorker.JobMasterAgentConnectionConfig,
+                agentConnectionConfig,
                 fullBucketAddressId,
                 BackgroundAgentWorker.BucketBufferSize,
                 BackgroundAgentWorker.BucketBufferLeadTime,
@@ -271,6 +273,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         BucketId = bucketId;
         var bucketModel = this.masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         agentConnectionId = bucketModel!.AgentConnectionId;
+        agentConnectionConfig = BackgroundAgentWorker.ClusterConnConfig.GetAgentConnectionConfig(agentConnectionId.IdValue);
     }
 
     protected virtual Task DoOnTickAsync(CancellationToken ct) => Task.CompletedTask;
@@ -279,7 +282,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     {
         try
         {
-            var (_, jsContext, _) = NatsJetStreamConnector.GetOrCreateConnection(this.BackgroundAgentWorker.JobMasterAgentConnectionConfig);
+            var (_, jsContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionConfig);
             var subjectName = NatsJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
             var data = Encoding.UTF8.GetBytes(string.Empty);
             

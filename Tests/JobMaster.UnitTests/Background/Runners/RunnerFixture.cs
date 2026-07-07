@@ -36,7 +36,8 @@ internal sealed record RunnerFixture(
     RunnerFakes.FakeRecentlyInsertedRecurringScheduleQueue RecentlyInsertedQueue,
     Mock<IWorkerClusterOperations> WorkerClusterOps,
     string WorkerId,
-    string ClusterId)
+    string ClusterId,
+    AgentConnectionId AgentConnectionId)
 {
     public static RunnerFixture Create()
     {
@@ -93,7 +94,6 @@ internal sealed record RunnerFixture(
         var worker = new Mock<IJobMasterBackgroundAgentWorker>(MockBehavior.Loose);
         worker.SetupGet(x => x.ClusterConnConfig).Returns(clusterConnConfig);
         worker.SetupGet(x => x.AgentWorkerId).Returns(workerId);
-        worker.SetupGet(x => x.AgentConnectionId).Returns(agentConnectionId);
         worker.SetupGet(x => x.HostId).Returns(hostId);
         worker.SetupGet(x => x.TransferBatchSize).Returns(50);
         worker.SetupGet(x => x.BucketBufferSize).Returns(10);
@@ -150,7 +150,8 @@ internal sealed record RunnerFixture(
             recentlyInsertedQueue,
             workerClusterOps,
             workerId,
-            clusterId);
+            clusterId,
+            agentConnectionId);
     }
 
     // â”€â”€ bucket helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

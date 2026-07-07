@@ -1,4 +1,5 @@
 ﻿using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners;
@@ -8,12 +9,12 @@ namespace JobMaster.Sdk.Background.Runners;
 /// registration alive in the master store so other runners can detect it as active.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
-internal class KeepAliveAgentConnectionRunner : JobMasterRunner
+internal class KeepAliveAgentConnectionRunner : AgentConnectionAwareRunner
 {
     private readonly IMasterHeartbeatService masterHeartbeatService;
 
-    public KeepAliveAgentConnectionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
-        : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: false)
+    public KeepAliveAgentConnectionRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, AgentConnectionId agentConnectionId)
+        : base(backgroundAgentWorker, agentConnectionId, bucketAwareLifeCycle: false, useSemaphore: false)
     {
         masterHeartbeatService = backgroundAgentWorker.GetClusterAwareService<IMasterHeartbeatService>();
     }
@@ -22,11 +23,9 @@ internal class KeepAliveAgentConnectionRunner : JobMasterRunner
     {
         try
         {
-            // Only started for Full/Execution/Drain (see JobMasterBackgroundAgentWorker.StartAsync),
-            // which always have an AgentConnectionId — Coordinators are the only mode without one.
             masterHeartbeatService.Heartbeat(
                 ResourceHeartbeatType.AgentConnection,
-                this.BackgroundAgentWorker.AgentConnectionId!.IdValue);
+                this.AgentConnectionId.IdValue);
             return Task.FromResult(OnTickResult.Success(this));
         }
         catch (Exception e)

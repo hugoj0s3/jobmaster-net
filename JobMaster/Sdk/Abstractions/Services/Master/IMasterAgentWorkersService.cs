@@ -1,7 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Agents;
-using JobMaster.Sdk.Abstractions.Models.Hosts;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -12,7 +11,12 @@ internal interface IMasterAgentWorkersService : IJobMasterClusterAwareService
     
     AgentWorkerModel? GetWorker(string workerId);
     Task<AgentWorkerModel?> GetWorkerAsync(string workerId);
-    Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string? agentConnectionId, string? workerName, string? workerLane, AgentWorkerMode mode, double parallelismFactor);
+    Task<AgentWorkerSnapshot> RegisterWorkerAsync(
+        string? agentConnectionId, 
+        string? workerName, 
+        string? workerLane, 
+        AgentWorkerMode mode, 
+        double parallelismFactor);
     
     void DeleteWorker(string workerId);
     Task DeleteWorkerAsync(string workerId);

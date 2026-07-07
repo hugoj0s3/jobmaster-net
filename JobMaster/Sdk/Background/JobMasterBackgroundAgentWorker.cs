@@ -27,33 +27,30 @@ namespace JobMaster.Sdk.Background;
 
 internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroundAgentWorker
 {
-    public AgentConnectionId? AgentConnectionId { get; private set; }
-    public string AgentWorkerId { get; private set; } = string.Empty;
-    public HostId HostId { get; private set; } = null!;
+    private AgentWorkerSnapshot agentWorkerSnapshot = null!;
 
-    public string? WorkerLane { get; private set; }
+    public string AgentWorkerId => agentWorkerSnapshot.Id;
+    public HostId HostId => agentWorkerSnapshot.HostId;
 
-    public string? AgentRepositoryTypeId { get; private set; } = string.Empty;
-    
+    public string? WorkerLane => agentWorkerSnapshot.WorkerLane;
+
     public bool SkipWarmUpTime { get; private set; }
-    
+
     public IReadOnlyDictionary<JobMasterPriority, int> BucketQty { get; private set; } = null!;
 
-    public JobMasterAgentConnectionConfig JobMasterAgentConnectionConfig { get; private set; } = null!;
-    
     public JobMasterClusterConnectionConfig ClusterConnConfig { get; private set; } = null!;
-    
+
     public IJobMasterRuntime? Runtime => JobMasterRuntimeSingleton.Instance;
-    
+
     public bool StopRequested { get; internal set; }
 
     public int TransferBatchSize { get; private set; } = 0;
 
     public int BucketBufferSize { get; private set; }
     public TimeSpan BucketBufferLeadTime { get; private set; }
-    
-    public AgentWorkerMode Mode { get; private set; } = AgentWorkerMode.Full;
-    
+
+    public AgentWorkerMode Mode => agentWorkerSnapshot.Mode;
+
     public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
     
     public IBucketRunnersFactory BucketRunnersFactory { get; private set; } = null!;
@@ -78,7 +75,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     public DateTime? StopRequestedAt { get; private set; }
     public TimeSpan? StopGracePeriod { get; private set; }
     
-    public double ParallelismFactor { get; private set; } = 1;
+    public double ParallelismFactor => agentWorkerSnapshot.ParallelismFactor;
     
     private readonly object mutex = new object();
     private JobMasterLockKeys lockKeys = null!;
@@ -146,16 +143,11 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var masterAgentsService =
             clusterAwareFactory.GetComponent<IMasterAgentWorkersService>();
 
-        var (workerId, hostId) = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
+        var agentWorker = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
         {
-            AgentConnectionId = agentConnectionId != null ? new AgentConnectionId(agentConnectionId) : null,
-            AgentWorkerId = workerId,
-            HostId = hostId,
-            JobMasterAgentConnectionConfig = agentConfig!,
-            AgentRepositoryTypeId = agentConfig?.RepositoryTypeId ?? null,
             ClusterConnConfig = clusterConfig,
             ServiceProvider = serviceProvider,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
@@ -163,13 +155,11 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             BucketBufferSize = workerDefinition.BucketBufferSize,
             BucketBufferLeadTime = workerDefinition.BucketBufferLeadTime,
             BucketAwareSemaphoreSlim = new SemaphoreSlim(qtyOfBuckets),
-            Mode = workerDefinition.Mode,
-            WorkerLane = workerLane,
             SkipWarmUpTime = workerDefinition.SkipWarmUpTime,
-            ParallelismFactor = workerDefinition.ParallelismFactor,
         };
+        background.agentWorkerSnapshot = agentWorker;
         background.lockKeys = new JobMasterLockKeys(clusterConfig.ClusterId);
-        
+
         background.InitializeDependencies();
 
         return background;
@@ -189,53 +179,76 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StartAsync()
     {
+        if (Mode == AgentWorkerMode.Coordinator)
+        {
+            await StartCoordinatorAsync();
+        }
+        else
+        {
+            // PreValidation guarantees every non-Coordinator worker resolves to a registered
+            // agent connection, so agentWorkerSnapshot.AgentConnectionId is never null here —
+            // Coordinator is the only mode without one, and that branch is handled above.
+            await StartNonCoordinatorAsync(agentWorkerSnapshot.AgentConnectionId!);
+        }
+    }
+
+    private async Task StartCommonHeartbeatRunnersAsync()
+    {
         logger.Info("Starting JobMasterBackgroundAgentWorker", JobMasterLogCategory.AgentWorker, this.AgentWorkerId);
         var heartBeatRunner = new KeepAliveWorkerRunner(this);
         await heartBeatRunner.StartAsync();
 
         var hostHeartBeatRunner = new KeepAliveHostRunner(this);
         await hostHeartBeatRunner.StartAsync();
+    }
 
-        if (this.Mode != AgentWorkerMode.Coordinator)
-        {
-            // Started alongside the other heartbeat runners above, before any mode-specific
-            // work, so the agent connection heartbeat doesn't lag behind for workers with a
-            // lot of bucket/runner setup to do (e.g. Full/Execution with many buckets).
-            await LoadAgentConnectionRunnersAsync();
-        }
-
-        if (this.Mode == AgentWorkerMode.Full)
-        {
-            await LoadFullRunnersAsync();
-        }
-
-        if (this.Mode == AgentWorkerMode.Drain)
-        {
-            await LoadDrainJobsRunnerAsync(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
-            await LoadDrainMaintenanceRunnersAsync();
-        }
-
-        if (this.Mode == AgentWorkerMode.Coordinator)
-        {
-            await LoadCoordinatorRunnersAsync();
-        }
-
-        if (this.Mode == AgentWorkerMode.Execution)
-        {
-            await LoadExecutionRunners();
-        }
-
+    private void MarkInitialized()
+    {
         // Mark as initialized after all buckets and runners are created
         IsInitialized = true;
         logger.Info("Started JobMasterBackgroundAgentWorker - Initialization complete", JobMasterLogCategory.AgentWorker, this.AgentWorkerId);
     }
 
-    private async Task LoadAgentConnectionRunnersAsync()
+    private async Task StartCoordinatorAsync()
     {
-        // Coordinators don't have an AgentConnectionId to heartbeat — only Full, Execution, and Drain do.
-        var agentConnectionHeartBeatRunner = new KeepAliveAgentConnectionRunner(this);
+        await StartCommonHeartbeatRunnersAsync();
+        await LoadCoordinatorRunnersAsync();
+        MarkInitialized();
+    }
+
+    private async Task StartNonCoordinatorAsync(AgentConnectionId agentConnectionId)
+    {
+        await StartCommonHeartbeatRunnersAsync();
+
+        // Started alongside the other heartbeat runners above, before any mode-specific
+        // work, so the agent connection heartbeat doesn't lag behind for workers with a
+        // lot of bucket/runner setup to do (e.g. Full/Execution with many buckets).
+        await LoadAgentConnectionRunnersAsync(agentConnectionId);
+
+        if (this.Mode == AgentWorkerMode.Full)
+        {
+            await LoadFullRunnersAsync(agentConnectionId);
+        }
+
+        if (this.Mode == AgentWorkerMode.Drain)
+        {
+            await LoadDrainJobsRunnerAsync(agentConnectionId, TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(10));
+            await LoadDrainMaintenanceRunnersAsync();
+        }
+
+        if (this.Mode == AgentWorkerMode.Execution)
+        {
+            await LoadExecutionRunners(agentConnectionId);
+        }
+
+        MarkInitialized();
+    }
+
+    private async Task LoadAgentConnectionRunnersAsync(AgentConnectionId agentConnectionId)
+    {
+        var agentConnectionHeartBeatRunner = new KeepAliveAgentConnectionRunner(this, agentConnectionId);
         await agentConnectionHeartBeatRunner.StartAsync();
-            
+
         // Runs in Full, Execution, and Drain modes — excluded from Coordinator since it never
         // saves recurring schedules and therefore never populates the queue.
         // Consumes the in-memory queue fed by save runners (execution and drain paths) after
@@ -247,23 +260,23 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         await recentlyInsertedScheduleRunner.StartAsync();
     }
 
-    private async Task LoadFullRunnersAsync()
+    private async Task LoadFullRunnersAsync(AgentConnectionId agentConnectionId)
     {
         // Load buckets first to avoid deadlocks with maintenance runners
-        await LoadExecutionRunners();
-        
+        await LoadExecutionRunners(agentConnectionId);
+
         // Then load coordination and drain runners after buckets are created
         await LoadCoordinatorRunnersAsync();
-        await LoadDrainJobsRunnerAsync(TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
+        await LoadDrainJobsRunnerAsync(agentConnectionId, TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(1));
     }
 
 
-    private async Task LoadDrainJobsRunnerAsync(TimeSpan drainCoordinatorInterval, TimeSpan assignedLostInterval)
+    private async Task LoadDrainJobsRunnerAsync(AgentConnectionId agentConnectionId, TimeSpan drainCoordinatorInterval, TimeSpan assignedLostInterval)
     {
         // Drain-specific pipeline coordination (no heartbeat here)
-        var drainJobsRunnerCreatorRunner = new DrainRunnersCoordinator(this, drainCoordinatorInterval);
+        var drainJobsRunnerCreatorRunner = new DrainRunnersCoordinator(this, agentConnectionId, drainCoordinatorInterval);
         await drainJobsRunnerCreatorRunner.StartAsync();
-        
+
         var assignedLostBucketToDrainRunner = new AssignedLostBucketsRunner(this, succeedInterval: assignedLostInterval);
         await assignedLostBucketToDrainRunner.StartAsync();
     }
@@ -326,16 +339,16 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         await cleanupDeadAgentConnectionsRunner.StartAsync();
     }
 
-    private async Task LoadExecutionRunners()
+    private async Task LoadExecutionRunners(AgentConnectionId agentConnectionId)
     {
         var buckets = new List<BucketModel>();
         foreach (var item in this.BucketQty)
         {
             var bucketQty = item.Value;
             var bucketPriority = item.Key;
-            var createdBuckets = await CreateBucketsAsync(bucketPriority, bucketQty);
+            var createdBuckets = await CreateBucketsAsync(bucketPriority, bucketQty, agentConnectionId);
             buckets.AddRange(createdBuckets);
-            
+
             // Add to BucketsCreatedOnRuntime immediately so GetOrCreateEngine can validate
             foreach (var bucket in createdBuckets)
             {
@@ -343,19 +356,18 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
         }
 
-        // Only reached for Full/Execution modes, which always have an AgentConnectionId.
         foreach (var bucketModel in buckets)
         {
-            var saveJobsRunner = this.BucketRunnersFactory.NewSavePendingJobsRunner(this, AgentConnectionId!);
+            var saveJobsRunner = this.BucketRunnersFactory.NewSavePendingJobsRunner(this, agentConnectionId);
             saveJobsRunner.DefineBucketId(bucketModel.Id);
             await saveJobsRunner.StartAsync();
 
             var jobsExecutionRunner =
                 this.BucketRunnersFactory.NewJobsExecutionRunner(
-                    this, AgentConnectionId!, bucketModel.Id, bucketModel.Priority);
+                    this, agentConnectionId, bucketModel.Id, bucketModel.Priority);
             await jobsExecutionRunner.StartAsync();
 
-            var saveRecurringScheduleRunner = this.BucketRunnersFactory.NewSaveRecurringSchedulerRunner(this, AgentConnectionId!);
+            var saveRecurringScheduleRunner = this.BucketRunnersFactory.NewSaveRecurringSchedulerRunner(this, agentConnectionId);
             saveRecurringScheduleRunner.DefineBucketId(bucketModel.Id);
             await saveRecurringScheduleRunner.StartAsync();
         }
@@ -465,13 +477,12 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         this.CancellationTokenSource.Dispose();
     }
     
-    private async Task<IList<BucketModel>> CreateBucketsAsync(JobMasterPriority priority, int qty)
+    private async Task<IList<BucketModel>> CreateBucketsAsync(JobMasterPriority priority, int qty, AgentConnectionId agentConnectionId)
     {
-        // Only reached for Full/Execution modes, which always have an AgentConnectionId.
         var buckets = new List<BucketModel>();
         for (int i = 0; i < qty; i++)
         {
-            var bucket = await this.masterBucketsService.CreateAsync(AgentConnectionId!, AgentWorkerId, priority);
+            var bucket = await this.masterBucketsService.CreateAsync(agentConnectionId, AgentWorkerId, priority);
             buckets.Add(bucket);
 
             await Task.Delay(JobMasterRandomUtil.GetInt(50, 100));

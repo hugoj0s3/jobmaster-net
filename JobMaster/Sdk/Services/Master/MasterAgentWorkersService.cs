@@ -89,15 +89,15 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         return ToModel(worker);
     }
 
-    public async Task<(string workerId, HostId hostId)> RegisterWorkerAsync(string? agentConnectionId, string? workerName, string? workerLane,
+    public async Task<AgentWorkerSnapshot> RegisterWorkerAsync(string? agentConnectionId, string? workerName, string? workerLane,
         AgentWorkerMode mode, double parallelismFactor)
     {
         var worker = await CreateValidatedWorkerAsync(agentConnectionId, workerName, workerLane, mode, parallelismFactor);
         var workerRecord = GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, worker.Id, worker);
         NotifyChanges();
         await masterGenericRecordRepository.InsertAsync(workerRecord);
-        
-        return (worker.Id, HostId.Recover(worker.HostDisplayName, worker.HostId));
+
+        return new AgentWorkerSnapshot(ToModel(worker)!);
     }
 
     public void DeleteWorker(string workerId)

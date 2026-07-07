@@ -72,6 +72,12 @@ public class MasterAgentWorkersServiceTests
             .Setup(x => x.RegisterNewHostAsync())
             .ReturnsAsync(new HostId(clusterId, "test-host"));
 
+        // RegisterWorkerAsync now returns the materialized AgentWorkerModel, which resolves the
+        // worker's last heartbeat as part of the conversion.
+        heartbeat
+            .Setup(x => x.GetLastHeartbeats(It.IsAny<ResourceHeartbeatType>(), It.IsAny<IList<string>>()))
+            .Returns(new Dictionary<string, DateTime?>());
+
         GenericRecordEntry? inserted = null;
         repo.Setup(x => x.InsertAsync(It.IsAny<GenericRecordEntry>()))
             .Callback<GenericRecordEntry>(e => inserted = e)
@@ -87,18 +93,18 @@ public class MasterAgentWorkersServiceTests
             knownEx.Object,
             hostService.Object);
 
-        var (workerId, hostId) = await sut.RegisterWorkerAsync(
+        var agentWorker = await sut.RegisterWorkerAsync(
             $"{clusterId}:agent",
             "worker",
             workerLane: "lane",
             mode: AgentWorkerMode.Full,
             parallelismFactor: 1);
 
-        workerId.Should().NotBeNullOrWhiteSpace();
+        agentWorker.Id.Should().NotBeNullOrWhiteSpace();
 
         inserted.Should().NotBeNull();
         inserted!.GroupId.Should().Be(MasterGenericRecordGroupIds.AgentWorker);
-        inserted.EntryId.Should().Be(workerId);
+        inserted.EntryId.Should().Be(agentWorker.Id);
 
         cache.VerifyAll();
         sentinel.VerifyAll();
@@ -124,6 +130,10 @@ public class MasterAgentWorkersServiceTests
             .Setup(x => x.RegisterNewHostAsync())
             .ReturnsAsync(new HostId(clusterId, "test-host"));
 
+        heartbeat
+            .Setup(x => x.GetLastHeartbeats(It.IsAny<ResourceHeartbeatType>(), It.IsAny<IList<string>>()))
+            .Returns(new Dictionary<string, DateTime?>());
+
         GenericRecordEntry? inserted = null;
         repo.Setup(x => x.InsertAsync(It.IsAny<GenericRecordEntry>()))
             .Callback<GenericRecordEntry>(e => inserted = e)
@@ -140,14 +150,14 @@ public class MasterAgentWorkersServiceTests
             hostService.Object);
 
         // Coordinators register without an AgentConnectionId.
-        var (workerId, _) = await sut.RegisterWorkerAsync(
+        var agentWorker = await sut.RegisterWorkerAsync(
             null,
             "coordinator",
             workerLane: null,
             mode: AgentWorkerMode.Coordinator,
             parallelismFactor: 1);
 
-        workerId.Should().NotBeNullOrWhiteSpace();
+        agentWorker.Id.Should().NotBeNullOrWhiteSpace();
         inserted.Should().NotBeNull();
         inserted!.ToObject<AgentWorkerRecordDto>()!.AgentConnectionId.Should().BeEmpty();
     }

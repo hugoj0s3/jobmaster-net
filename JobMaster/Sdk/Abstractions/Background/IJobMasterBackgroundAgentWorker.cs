@@ -1,7 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
-using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 
@@ -9,13 +8,10 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IJobMasterBackgroundAgentWorker
 {
-    AgentConnectionId? AgentConnectionId { get; }
     string AgentWorkerId { get; }
     HostId HostId { get; }
     string? WorkerLane { get; }
-    string? AgentRepositoryTypeId { get; }
     IReadOnlyDictionary<JobMasterPriority, int> BucketQty { get; }
-    JobMasterAgentConnectionConfig JobMasterAgentConnectionConfig { get; }
     JobMasterClusterConnectionConfig ClusterConnConfig { get; }
     IJobMasterRuntime? Runtime { get; }
     int TransferBatchSize { get; }

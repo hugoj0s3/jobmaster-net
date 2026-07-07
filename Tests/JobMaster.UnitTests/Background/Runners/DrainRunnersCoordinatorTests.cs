@@ -22,7 +22,7 @@ public class DrainRunnersCoordinatorTests
         var f = RunnerFixture.Create();
         f.Locker.BlockAllLocks = true;
 
-        var runner = new DrainRunnersCoordinator(f.Worker.Object);
+        var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Skipped);
@@ -35,7 +35,7 @@ public class DrainRunnersCoordinatorTests
         // No ReadyToDrain buckets — CleanupDrainRunnersAsync and CreateDrainRunners are no-ops.
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, "active-bucket"));
 
-        var runner = new DrainRunnersCoordinator(f.Worker.Object);
+        var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
@@ -48,7 +48,7 @@ public class DrainRunnersCoordinatorTests
         var f = RunnerFixture.Create();
         // Completely empty state.
 
-        var runner = new DrainRunnersCoordinator(f.Worker.Object);
+        var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
@@ -59,7 +59,7 @@ public class DrainRunnersCoordinatorTests
     {
         var f = RunnerFixture.Create();
 
-        var runner = new DrainRunnersCoordinator(f.Worker.Object);
+        var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
         await runner.OnTickAsync(CancellationToken.None);
 
         // Lock should be released — a second tick should succeed too.
