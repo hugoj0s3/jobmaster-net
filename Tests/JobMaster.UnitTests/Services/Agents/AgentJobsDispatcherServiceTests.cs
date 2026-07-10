@@ -60,8 +60,8 @@ public class AgentJobsDispatcherServiceTests
 
         var repo = new Mock<IAgentJobsDispatcherRepository>(MockBehavior.Strict);
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
-        repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
-        repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
+        repo.SetupGet(x => x.IsPollingBasedForSaving).Returns(true);
+        repo.SetupGet(x => x.IsPollingBasedForProcessing).Returns(true);
         repo.Setup(x => x.PushSavePendingJob(It.IsAny<JobRawModel>()))
             .Returns("job-id-1");
 
@@ -107,8 +107,8 @@ public class AgentJobsDispatcherServiceTests
 
         var repo = new Mock<IAgentJobsDispatcherRepository>(MockBehavior.Strict);
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
-        repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
-        repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
+        repo.SetupGet(x => x.IsPollingBasedForSaving).Returns(true);
+        repo.SetupGet(x => x.IsPollingBasedForProcessing).Returns(true);
         repo.Setup(x => x.PushForProcessingAsync(It.IsAny<JobRawModel>()))
             .ReturnsAsync("job-id-2");
 
@@ -156,8 +156,8 @@ public class AgentJobsDispatcherServiceTests
 
         var repo = new Mock<IAgentJobsDispatcherRepository>(MockBehavior.Strict);
         repo.SetupGet(x => x.AgentRepoTypeId).Returns("repo");
-        repo.SetupGet(x => x.IsAutoDequeueForSaving).Returns(false);
-        repo.SetupGet(x => x.IsAutoDequeueForProcessing).Returns(false);
+        repo.SetupGet(x => x.IsPollingBasedForSaving).Returns(true);
+        repo.SetupGet(x => x.IsPollingBasedForProcessing).Returns(true);
 
         repo.Setup(x => x.BulkPushSavePendingJobAsync(bucketId, It.IsAny<IList<JobRawModel>>()))
             .ReturnsAsync(() => new List<string>(new[] { "job-id-1", "job-id-2" }));

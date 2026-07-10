@@ -118,7 +118,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
     
     public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(string bucketId, int numberOfJobs)
     {
-        if (IsAutoDequeueForSaving)
+        if (!IsPollingBasedForSaving)
         {
             return new List<RecurringScheduleRawModel>();
         }
@@ -151,7 +151,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
     /// <returns>List of dequeued job records</returns>
     public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs)
     {
-        if (IsAutoDequeueForSaving)
+        if (!IsPollingBasedForSaving)
         {
             return new List<JobRawModel>();
         }
@@ -179,11 +179,11 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         return results;
     }
 
-    public bool IsAutoDequeueForSaving => savePendingRepository.IsAutoDequeue;
+    public bool IsPollingBasedForSaving => savePendingRepository.IsPollingBased;
     
     public async Task<IList<JobRawModel>> PullForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo)
     {
-        if (IsAutoDequeueForProcessing)
+        if (!IsPollingBasedForProcessing)
         {
             return new List<JobRawModel>();
         }
@@ -208,7 +208,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         return results;
     }
 
-    public bool IsAutoDequeueForProcessing => processingRepository.IsAutoDequeue;
+    public bool IsPollingBasedForProcessing => processingRepository.IsPollingBased;
     
     public async Task<bool> HasJobsAsync(string bucketId)
     {

@@ -6,16 +6,16 @@ using Xunit.Sdk;
 
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
-public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests<TFixture>
+public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTests<TFixture>
     where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
 
-    protected RepositoryAgentRawMessagesDispatcherManualDequeueConformanceTests(TFixture fixture)
+    protected RepositoryAgentRawMessagesDispatcherPollingConformanceTests(TFixture fixture)
     {
         Fixture = fixture;
 
-        if (Fixture.AgentMessages.IsAutoDequeue)
+        if (!Fixture.AgentMessages.IsPollingBased)
         {
             throw new SkipException($"{nameof(IAgentRawMessagesDispatcherRepository)} is configured for auto-dequeue.");
         }
@@ -24,7 +24,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task CreateBucket_Push_Dequeue_ShouldRoundTrip_And_Remove()
     {
-        var bucket = "manual-dequeue-" + JobMasterRandomUtil.NewGuid4();
+        var bucket = "polling-dequeue-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -56,7 +56,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task Dequeue_ShouldRespect_OrderByReferenceTimeThenMessageId()
     {
-        var bucket = "manual-dequeue-order-" + JobMasterRandomUtil.NewGuid4();
+        var bucket = "polling-dequeue-order-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -85,7 +85,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task Dequeue_ShouldSupport_ReferenceTimeTo_Filter()
     {
-        var bucket = "manual-dequeue-refto-" + JobMasterRandomUtil.NewGuid4();
+        var bucket = "polling-dequeue-refto-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try
@@ -116,7 +116,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherManualDequeueConforman
     [Fact]
     public async Task BulkPush_Then_Dequeue_ShouldReturn_AllMessages()
     {
-        var bucket = "manual-dequeue-bulk-" + JobMasterRandomUtil.NewGuid4();
+        var bucket = "polling-dequeue-bulk-" + JobMasterRandomUtil.NewGuid4();
         await Fixture.AgentMessages.CreateBucketAsync(bucket);
 
         try

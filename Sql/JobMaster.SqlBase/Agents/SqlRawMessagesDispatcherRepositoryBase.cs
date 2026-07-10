@@ -58,7 +58,7 @@ internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterCluste
         return $"{prefix}bucket_dispatcher";
     }
 
-    public virtual bool IsAutoDequeue => false;
+    public virtual bool IsPollingBased => true;
     public abstract string AgentRepoTypeId { get; }
     
     public virtual string PushMessage(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)

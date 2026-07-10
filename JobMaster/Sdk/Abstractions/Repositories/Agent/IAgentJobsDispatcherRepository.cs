@@ -32,8 +32,8 @@ internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareCompon
     
     string AgentRepoTypeId { get; }
     
-    bool IsAutoDequeueForSaving { get; }
-    bool IsAutoDequeueForProcessing { get; }
+    bool IsPollingBasedForSaving { get; }
+    bool IsPollingBasedForProcessing { get; }
 }
 
 internal interface IAgentJobsDispatcherRepository<TSavePending, TProcessing> : IAgentJobsDispatcherRepository

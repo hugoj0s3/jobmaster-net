@@ -128,7 +128,7 @@ public class AssignJobsToBucketsRunnerTests
         var f = RunnerFixture.Create();
         f.ClusterConfig.Config = ActiveClusterConfig();
 
-        // Keep the fallback ManualJobsExecutionRunner's background loop inert.
+        // Keep the fallback PollingJobsExecutionRunner's background loop inert.
         var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
         engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
         engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);

@@ -12,7 +12,7 @@ using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
-internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
+internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunner
 {
     private DateTime lastOnBoardingRunAtUtc = DateTime.MinValue;
     private IJobsExecutionEngine? jobExecutionEngine;
@@ -23,7 +23,7 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
 
     public override TimeSpan SucceedInterval => TimeSpan.FromMilliseconds(250);
     
-    private ManualJobsExecutionRunner(
+    private PollingJobsExecutionRunner(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         IJobsOnboardingSource jobsOnboardingSource,
         IJobsExecutionEngine? jobExecutionEngine) : base(backgroundAgentWorker)
@@ -34,12 +34,12 @@ internal class ManualJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRunn
         this.masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
     }
 
-    internal static ManualJobsExecutionRunner Create(
+    internal static PollingJobsExecutionRunner Create(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
         IJobsOnboardingSource jobsOnboardingSource,
         IJobsExecutionEngine? jobExecutionEngine = null)
     {
-        return new ManualJobsExecutionRunner(
+        return new PollingJobsExecutionRunner(
             backgroundAgentWorker,
             jobsOnboardingSource,
             jobExecutionEngine);

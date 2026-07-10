@@ -42,9 +42,9 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
+        if (agentJobsDispatcherRepository.IsPollingBasedForSaving)
         {
-            return new ManualDrainJobsRunner(backgroundAgentWorker);
+            return new PollingDrainSavePendingJobsRunner(backgroundAgentWorker);
         }
 
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)
@@ -63,9 +63,9 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
+        if (agentJobsDispatcherRepository.IsPollingBasedForProcessing)
         {
-            return new ManualDrainProcessingJobsRunner(backgroundAgentWorker);
+            return new PollingDrainProcessingJobsRunner(backgroundAgentWorker);
         }
 
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)
@@ -84,9 +84,9 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
 
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
+        if (agentJobsDispatcherRepository.IsPollingBasedForSaving)
         {
-            return new ManualDrainSavePendingRecurringScheduleRunner(backgroundAgentWorker);
+            return new PollingDrainSavePendingRecurringScheduleRunner(backgroundAgentWorker);
         }
 
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)
@@ -107,11 +107,11 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
         IJobsExecutionRunner jobsExecutionRunner;
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForProcessing)
+        if (agentJobsDispatcherRepository.IsPollingBasedForProcessing)
         {
             var dispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
             var standardSource = new StandardBucketJobsOnboardingSource(dispatcherService, agentConnectionId, bucketId);
-            jobsExecutionRunner = ManualJobsExecutionRunner.Create(backgroundAgentWorker, standardSource);
+            jobsExecutionRunner = PollingJobsExecutionRunner.Create(backgroundAgentWorker, standardSource);
         }
         else
         { 
@@ -134,10 +134,10 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
         AgentConnectionId agentConnectionId)
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
-        
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
+
+        if (agentJobsDispatcherRepository.IsPollingBasedForSaving)
         {
-            return new ManualSavePendingJobsRunner(backgroundAgentWorker);
+            return new PollingSavePendingJobsRunner(backgroundAgentWorker);
         }
         
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)?.TryGetAgentConnectionConfig(agentConnectionId.IdValue);
@@ -153,10 +153,10 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
     public ISaveRecurringSchedulerRunner NewSaveRecurringSchedulerRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, AgentConnectionId agentConnectionId)
     {
         var agentJobsDispatcherRepository = agentComponentFactory.GetRepository(agentConnectionId);
-        
-        if (!agentJobsDispatcherRepository.IsAutoDequeueForSaving)
+
+        if (agentJobsDispatcherRepository.IsPollingBasedForSaving)
         {
-            return new ManualSaveRecurringScheduleRunner(backgroundAgentWorker);
+            return new PollingSaveRecurringScheduleRunner(backgroundAgentWorker);
         }
         
         var agentCnnConfig = JobMasterClusterConnectionConfig.TryGet(this.ClusterConnConfig.ClusterId)?.TryGetAgentConnectionConfig(agentConnectionId.IdValue);

@@ -17,7 +17,7 @@ internal interface IAgentRawMessagesDispatcherRepository : IJobMasterClusterAwar
     
     void Initialize(JobMasterAgentConnectionConfig config);
     
-    bool IsAutoDequeue { get; }
+    bool IsPollingBased { get; }
     
     string AgentRepoTypeId { get; }
 }

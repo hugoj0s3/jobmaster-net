@@ -117,7 +117,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
         ensuredConsumers.TryRemove(fullBucketAddressId, out _);
     }
 
-    public bool IsAutoDequeue => true;
+    public bool IsPollingBased => false;
     public string AgentRepoTypeId => NatsJetStreamConstants.RepositoryTypeId;
     
     protected async Task EnsureStreamAsync()

@@ -16,17 +16,17 @@ namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 /// (60–180 s) when individual jobs fail to save.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
-internal class ManualDrainJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJobsRunner
+internal class PollingDrainSavePendingJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJobsRunner
 {
-    
+
     private int failedSavedCountConsecutive = 0;
 
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
-    
+
     protected JobSavePendingOperation? savePendingOperation;
 
-    public ManualDrainJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public PollingDrainSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
     }
     

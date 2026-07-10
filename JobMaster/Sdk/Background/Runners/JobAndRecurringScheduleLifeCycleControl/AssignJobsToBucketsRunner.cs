@@ -48,7 +48,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
     private readonly JobMasterLockKeys lockKeys;
 
-    private ManualJobsExecutionRunner? fallBackRunner;
+    private PollingJobsExecutionRunner? fallBackRunner;
     private BucketModel? fallbackBucket;
 
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
@@ -363,7 +363,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             BackgroundAgentWorker.RegisterRuntimeBucket(bucket);
 
             var source = new StandardBucketJobsOnboardingSource(agentJobsDispatcherService, fallbackConnectionId, bucket.Id);
-            fallBackRunner = ManualJobsExecutionRunner.Create(
+            fallBackRunner = PollingJobsExecutionRunner.Create(
                 this.BackgroundAgentWorker,
                 source);
             fallBackRunner.DefineBucketId(bucket.Id, fallbackPriority);

@@ -10,7 +10,7 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
-internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner, IDrainSavePendingRecurringScheduleRunner
+internal class PollingDrainSavePendingRecurringScheduleRunner : BucketAwareRunner, IDrainSavePendingRecurringScheduleRunner
 {
     private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
     private readonly IMasterBucketsService masterBucketsService;
@@ -20,7 +20,7 @@ internal class ManualDrainSavePendingRecurringScheduleRunner : BucketAwareRunner
 
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
 
-    public ManualDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public PollingDrainSavePendingRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();

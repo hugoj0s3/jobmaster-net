@@ -23,7 +23,7 @@ namespace JobMaster.Sdk.Background.Runners.SavePendingRecurringSchedule;
 /// consecutive-failure backoff (10–60 s) is applied.
 /// Runs every <see cref="SucceedInterval"/> while the bucket is healthy.
 /// </summary>
-internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecurringSchedulerRunner
+internal class PollingSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecurringSchedulerRunner
 {
     private readonly TimeSpan interval = TimeSpan.FromSeconds(2.5);
     private int failedSavedCountConsecutive = 0;
@@ -33,7 +33,7 @@ internal class ManualSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecur
     private readonly IMasterBucketsService masterBucketsService;
     private readonly RecurringScheduleSavePendingOperation savePendingOperation;
     
-    public ManualSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public PollingSaveRecurringScheduleRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();

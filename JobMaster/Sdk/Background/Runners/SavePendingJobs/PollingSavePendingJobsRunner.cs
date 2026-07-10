@@ -23,7 +23,7 @@ namespace JobMaster.Sdk.Background.Runners.SavePendingJobs;
 /// On per-job failure the job is re-queued and a consecutive-failure backoff (10–60 s) is applied.
 /// Runs every <see cref="SucceedInterval"/> while the bucket is healthy.
 /// </summary>
-internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobsRunner
+internal class PollingSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobsRunner
 {
     protected readonly IAgentJobsDispatcherService agentJobsDispatcherService;
     protected readonly IMasterBucketsService masterBucketsService;
@@ -37,7 +37,7 @@ internal class ManualSavePendingJobsRunner : BucketAwareRunner, ISavePendingJobs
     
     private JobSavePendingOperation? savePendingOperation;
 
-    public ManualSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
+    public PollingSavePendingJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker) : base(backgroundAgentWorker)
     {
         agentJobsDispatcherService = backgroundAgentWorker.GetClusterAwareService<IAgentJobsDispatcherService>();
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
