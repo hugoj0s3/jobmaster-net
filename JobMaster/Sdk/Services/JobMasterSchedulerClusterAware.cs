@@ -60,11 +60,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             throw new InvalidOperationException("Cluster mode is archived");
         }
 
+        EnforceSizeLimit(rawModel);
+
         var bucket = await GetBucketAvailableForJobAsync(rawModel);
 
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
-            EnforceMasterStoreSizeLimit(rawModel);
             rawModel.MarkAsHeldOnMaster();
             await masterJobsService.AddAsync(rawModel);
             return;
@@ -73,7 +74,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         rawModel.AssignSavePendingJobToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, notifyAgent);
     }
-    
+
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
     {
         var config = masterClusterConfigurationService.Get();
@@ -81,7 +82,14 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
+
+        // Validate the whole batch up front — no side effects yet — so one oversized job
+        // fails the entire call before anything is written or dispatched.
+        foreach (var jobRawModel in rawModels)
+        {
+            EnforceSizeLimit(jobRawModel);
+        }
+
         var jobsToSave = new List<JobRawModel>();
         // Assign to bucket first.
         foreach (var jobRawModel in rawModels)
@@ -89,7 +97,6 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             var bucket = await GetBucketAvailableForJobAsync(jobRawModel);
             if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
             {
-                EnforceMasterStoreSizeLimit(jobRawModel);
                 jobRawModel.MarkAsHeldOnMaster();
                 await masterJobsService.AddAsync(jobRawModel);
                 continue;
@@ -114,17 +121,18 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             throw new InvalidOperationException("Cluster mode is archived");
         }
 
+        EnforceSizeLimit(rawModel);
+
         var bucket = GetBucketAvailableForJob(rawModel);
-        
+
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
-            EnforceMasterStoreSizeLimit(rawModel);
-            rawModel.Active(); 
+            rawModel.Active();
             masterRecurringSchedulesService.Add(rawModel);
             return;
         }
 
-        rawModel.AssignPendingRecurringScheduleToBucket(bucket); 
+        rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingRecur(rawModel);
     }
 
@@ -136,11 +144,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             throw new InvalidOperationException("Cluster mode is archived");
         }
 
+        EnforceSizeLimit(job);
+
         var bucket = GetBucketAvailableForJob(job);
 
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
-            EnforceMasterStoreSizeLimit(job);
             job.MarkAsHeldOnMaster();
             masterJobsService.Add(job);
             return;
@@ -157,11 +166,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
+
+        EnforceSizeLimit(rawModel);
+
         var bucket = await GetBucketAvailableForJobAsync(rawModel);
         if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
-            EnforceMasterStoreSizeLimit(rawModel);
             rawModel.Active();
             await masterRecurringSchedulesService.AddAsync(rawModel);
             return;
@@ -289,22 +299,31 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         return true;
     }
 
-    private void EnforceMasterStoreSizeLimit(JobRawModel job)
+    private void EnforceSizeLimit(JobRawModel job)
     {
-        int correlationLen = 32;
-        var estimated = JobMasterRawMessage.CalcEstimateByteSize(job, clusterIdLength: ClusterConnConfig.ClusterId.Length, correlationIdLength: correlationLen);
-        var max = masterClusterConfigurationService.Get()?.MaxMessageByteSize ?? new ClusterConfigurationModel(ClusterConnConfig.ClusterId).MaxMessageByteSize;
+        var estimated = JobMasterRawMessage.CalcEstimateByteSize(
+            job.MsgData, 
+            clusterIdLength: ClusterConnConfig.ClusterId.Length, 
+            metadata: job.Metadata);
+        
+        var max = masterClusterConfigurationService.Get()?.MaxMessageByteSize ?? 
+                  new ClusterConfigurationModel(ClusterConnConfig.ClusterId).MaxMessageByteSize;
         if (estimated > max)
         {
             throw new ArgumentException($"Message size {estimated} exceeds maximum allowed size {max}.");
         }
     }
 
-    private void EnforceMasterStoreSizeLimit(RecurringScheduleRawModel recur)
+    private void EnforceSizeLimit(RecurringScheduleRawModel recur)
     {
-        int correlationLen = 32;
-        var estimated = JobMasterRawMessage.CalcEstimateByteSize(recur, clusterIdLength: ClusterConnConfig.ClusterId.Length, correlationIdLength: correlationLen);
-        var max = masterClusterConfigurationService.Get()?.MaxMessageByteSize ?? new ClusterConfigurationModel(ClusterConnConfig.ClusterId).MaxMessageByteSize;
+        var estimated = JobMasterRawMessage
+            .CalcEstimateByteSize(
+                recur.MsgData, 
+                clusterIdLength: ClusterConnConfig.ClusterId.Length, 
+                metadata: recur.Metadata);
+        
+        var max = masterClusterConfigurationService.Get()?.MaxMessageByteSize ?? 
+                  new ClusterConfigurationModel(ClusterConnConfig.ClusterId).MaxMessageByteSize;
         if (estimated > max)
         {
             throw new ArgumentException($"Message size {estimated} exceeds maximum allowed size {max}.");

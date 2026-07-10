@@ -56,6 +56,8 @@
 
 - **Fallback bucket ignored `DisablePriority`** — The temporary "fallback bucket" created when no real bucket is available for too long always used `Critical` priority, even if `Critical` had been explicitly disabled for the cluster. It now tries `Critical`, then `High`, then `Medium` (which can never be disabled), skipping any priority the cluster has disabled.
 
+- **Message size validation consolidated and made consistent** — The maximum message size limit is now checked once, consistently, every time you schedule a job or recurring schedule, regardless of whether it's saved immediately or held for later dispatch. Scheduling a batch of jobs now validates the entire batch up front, so a single oversized job can no longer cause part of the batch to be saved before the call fails.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha

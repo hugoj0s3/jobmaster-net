@@ -214,11 +214,6 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
 
         IsJobCancellationPending = false;
     }
-
-    public int CalcEstimateByteSize()
-    {
-        return JobMasterRawMessage.CalcEstimateByteSize(this);
-    }
     
     public void HasCancelJobsFinish()
     {

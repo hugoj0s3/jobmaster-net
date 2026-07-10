@@ -8,11 +8,10 @@ internal class NatsJetStreamJobsDispatcherRepository : AgentJobsDispatcherReposi
 {
     public NatsJetStreamJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,
-        IMasterClusterConfigurationService masterClusterConfigurationService,
         IJobMasterLogger jobMasterLogger,
         NatsJetStreamRawMessagesDispatcherRepository savePendingRepository,
         NatsJetStreamRawMessagesDispatcherRepository processingRepository)
-        : base(connectionConfig, masterClusterConfigurationService, savePendingRepository, processingRepository, jobMasterLogger)
+        : base(connectionConfig, savePendingRepository, processingRepository, jobMasterLogger)
     {
     }
 

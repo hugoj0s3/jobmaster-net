@@ -8,10 +8,9 @@ internal class PostgresJobsDispatcherRepository : AgentJobsDispatcherRepository<
 {
     public PostgresJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,
-        IMasterClusterConfigurationService masterClusterConfigurationService,
         IJobMasterLogger jobMasterLogger,
-        PostgresRawMessagesDispatcherRepository savePendingRepository, 
-        PostgresRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, masterClusterConfigurationService, savePendingRepository, processingRepository, jobMasterLogger)
+        PostgresRawMessagesDispatcherRepository savePendingRepository,
+        PostgresRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, savePendingRepository, processingRepository, jobMasterLogger)
     {
     }
 

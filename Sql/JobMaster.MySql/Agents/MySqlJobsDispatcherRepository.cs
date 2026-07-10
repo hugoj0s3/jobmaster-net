@@ -8,10 +8,9 @@ internal class MySqlJobsDispatcherRepository : AgentJobsDispatcherRepository<MyS
 {
     public MySqlJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,
-        IMasterClusterConfigurationService masterClusterConfigurationService,
         IJobMasterLogger logger,
         MySqlRawMessagesDispatcherRepository savePendingRepository,
-        MySqlRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, masterClusterConfigurationService, savePendingRepository, processingRepository, logger)
+        MySqlRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, savePendingRepository, processingRepository, logger)
     {
     }
 

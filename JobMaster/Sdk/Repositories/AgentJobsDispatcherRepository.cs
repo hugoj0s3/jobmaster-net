@@ -1,8 +1,6 @@
 ﻿using System.Text.Json;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
-using JobMaster.Sdk.Abstractions.Models;
-using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
@@ -17,22 +15,19 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
     where TSavePending : class, IAgentRawMessagesDispatcherRepository
     where TProcessing : class, IAgentRawMessagesDispatcherRepository
 {
-    private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
     private readonly TSavePending savePendingRepository;
     private readonly TProcessing processingRepository;
     private readonly IJobMasterLogger logger;
 
     protected JobMasterAgentConnectionConfig AgentConnConfig = null!;
- 
+
 
     protected AgentJobsDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
-        IMasterClusterConfigurationService masterClusterConfigurationService,
         TSavePending savePendingRepository,
         TProcessing processingRepository,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
-        this.masterClusterConfigurationService = masterClusterConfigurationService;
         this.savePendingRepository = savePendingRepository ?? throw new ArgumentNullException(nameof(savePendingRepository));
         this.processingRepository = processingRepository ?? throw new ArgumentNullException(nameof(processingRepository));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -53,62 +48,50 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);
         var correlationId = GetCorrelationId(recurringScheduleRaw);
 
-        EnforceDispatchSizeLimit(json, correlationId);
-
         return savePendingRepository.PushMessage(fullBucketAddressId, json, recurringScheduleRaw.CreatedAt, correlationId);
     }
-    
+
     public async Task<string> PushForSavingAsync(RecurringScheduleRawModel recurringScheduleRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(recurringScheduleRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);
         var correlationId = GetCorrelationId(recurringScheduleRaw);
 
-        EnforceDispatchSizeLimit(json, correlationId);
-
         return await savePendingRepository.PushMessageAsync(fullBucketAddressId, json, recurringScheduleRaw.CreatedAt, correlationId);
     }
-    
+
     public string PushSavePendingJob(JobRawModel jobRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(jobRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(jobRaw);
         var correlationId = GetCorrelationId(jobRaw);
 
-        EnforceDispatchSizeLimit(json, correlationId);
-
         return savePendingRepository.PushMessage(fullBucketAddressId, json, jobRaw.CreatedAt, correlationId);
     }
-    
+
     public async Task<string> PushSavePendingJobAsync(JobRawModel jobRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(jobRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(jobRaw);
         var correlationId = GetCorrelationId(jobRaw);
 
-        EnforceDispatchSizeLimit(json, correlationId);
-
         return await savePendingRepository.PushMessageAsync(fullBucketAddressId, json, jobRaw.CreatedAt, correlationId);
     }
-    
+
     public string PushForProcessing(JobRawModel jobRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobProcessingBucketAddress(jobRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(jobRaw);
         var correlationId = GetCorrelationId(jobRaw);
 
-        EnforceDispatchSizeLimit(json, correlationId);
-
         return processingRepository.PushMessage(fullBucketAddressId, json, jobRaw.GetSafeNextPlanExecutionAt(), correlationId);
     }
-    
+
     public async Task<string> PushForProcessingAsync(JobRawModel jobRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobProcessingBucketAddress(jobRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(jobRaw);
         var correlationId = GetCorrelationId(jobRaw);
-
-        EnforceDispatchSizeLimit(json, correlationId);
 
         return await processingRepository.PushMessageAsync(fullBucketAddressId, json, jobRaw.GetSafeNextPlanExecutionAt(), correlationId);
     }
@@ -126,8 +109,6 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
 
             var json = InternalJobMasterSerializer.Serialize(job);
             var correlationId = GetCorrelationId(job);
-
-            EnforceDispatchSizeLimit(json, correlationId);
 
             messages.Add((json, job.CreatedAt, correlationId));
         }
@@ -274,17 +255,5 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
     {
         // CorrelationId: RecurringSchedule Id in 'N' format (32 digits, no hyphens)
         return recur.Id.ToString("N");
-    }
-
-    private void EnforceDispatchSizeLimit(string payload, string correlationId)
-    {
-        var estimatedByteSize = JobMasterRawMessage.CalcEstimateByteSize(payload, correlationIdLength: correlationId.Length, clusterIdLength: ClusterConnConfig.ClusterId.Length);
-        var maxMessageSize = masterClusterConfigurationService.Get()?.MaxMessageByteSize ??
-                             new ClusterConfigurationModel(ClusterConnConfig.ClusterId).MaxMessageByteSize;
-
-        if (estimatedByteSize > maxMessageSize)
-        { 
-            throw new ArgumentException($"Message size {estimatedByteSize} exceeds maximum allowed size {maxMessageSize}. Consider storing large data externally and passing a reference.");
-        }
     }
 }

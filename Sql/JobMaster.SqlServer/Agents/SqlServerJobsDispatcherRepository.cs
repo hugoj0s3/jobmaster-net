@@ -8,10 +8,9 @@ internal class SqlServerJobsDispatcherRepository : AgentJobsDispatcherRepository
 {
     public SqlServerJobsDispatcherRepository(
         JobMasterClusterConnectionConfig connectionConfig,
-        IMasterClusterConfigurationService masterClusterConfigurationService,
         IJobMasterLogger logger,
         SqlServerRawMessagesDispatcherRepository savePendingRepository,
-        SqlServerRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, masterClusterConfigurationService, savePendingRepository, processingRepository, logger)
+        SqlServerRawMessagesDispatcherRepository processingRepository) : base(connectionConfig, savePendingRepository, processingRepository, logger)
     {
     }
 

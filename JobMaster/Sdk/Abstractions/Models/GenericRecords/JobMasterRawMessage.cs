@@ -68,37 +68,27 @@ internal class JobMasterRawMessage
     private const int IsoUtcLength = 28; 
     
     public static int CalcEstimateByteSize(
-        string payload,
+        string msgData,
         int clusterIdLength = 256,
         int messageIdLength = 256,
         int correlationIdLength = 256,
-        double safetyMultiplier = 1.1, 
-        int extraBytes = 256)
+        double safetyMultiplier = 1.1,
+        int extraBytes = 256,
+        string? metadata = null)
     {
         var utf8 = System.Text.Encoding.UTF8;
         int size = 0;
         size += clusterIdLength;
         size += messageIdLength;
-        size += utf8.GetByteCount(payload);
+        size += utf8.GetByteCount(msgData);
+        if (!string.IsNullOrEmpty(metadata))
+            size += utf8.GetByteCount(metadata);
         size += correlationIdLength;
-        
         size += IsoUtcLength; // ReferenceTime
         size += IsoUtcLength; // EnqueuedAt
-        
+
         var padded = (int)Math.Ceiling(size * safetyMultiplier) + extraBytes;
         return padded;
-    }
-
-    public static int CalcEstimateByteSize<T>(
-        T payload,
-        int clusterIdLength = 256,
-        int messageIdLength = 256,
-        int correlationIdLength = 256,
-        double safetyMultiplier = 1.1, 
-        int extraBytes = 256)
-    {
-        string payloadJson = InternalJobMasterSerializer.Serialize<T>(payload);
-        return CalcEstimateByteSize(payloadJson, clusterIdLength, messageIdLength, correlationIdLength, safetyMultiplier, extraBytes);
     }
 }
 
