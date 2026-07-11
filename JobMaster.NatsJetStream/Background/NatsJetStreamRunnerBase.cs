@@ -24,6 +24,7 @@ namespace JobMaster.NatsJetStream.Background;
 internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 {
     protected readonly IMasterBucketsService masterBucketsService;
+    private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
 
     private bool hasInitialized;
     private Task? consumptionTask;
@@ -46,6 +47,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     protected NatsJetStreamRunnerBase(IJobMasterBackgroundAgentWorker backgroundAgentWorker)  : base(backgroundAgentWorker)
     {
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
+        masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -88,11 +90,13 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             NatsJetStreamConnector.GetOrCreateConnection(agentConnectionConfig);
             await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionConfig);
+            var transientThreshold = masterClusterConfigurationService.Get()?.TransientThreshold ?? NatsJetStreamConstants.MaxThreshold;
             consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
                 agentConnectionConfig,
                 fullBucketAddressId,
                 BackgroundAgentWorker.BucketBufferSize,
                 BackgroundAgentWorker.BucketBufferLeadTime,
+                transientThreshold,
                 ct);
             hasInitialized = true;
         }
@@ -194,8 +198,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             var opts = new NatsJSConsumeOpts
             {
-                MaxMsgs =
-                    (int)(NatsJetStreamConstants.CalcMaxAckPending(BackgroundAgentWorker.BucketBufferSize) * 0.75),
+                MaxMsgs = NatsJetStreamConstants.CalcMaxMsgs(BackgroundAgentWorker.BucketBufferSize),
                 IdleHeartbeat = NatsJetStreamConstants.ConsumerIdleHeartbeat,
             };
 

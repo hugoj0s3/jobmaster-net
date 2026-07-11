@@ -44,8 +44,8 @@ internal sealed class NatsJetStreamConnector
     public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId)
         => Instance.GetOrCreateConsumerInternalAsync(config, fullBucketAddressId);
     
-    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, CancellationToken ct)
-        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, ct);
+    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, TimeSpan transientThreshold, CancellationToken ct)
+        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, transientThreshold, ct);
 
 #if NET6_0_OR_GREATER
     public static ValueTask DisposeAllAsync() => Instance.DisposeAsync();
@@ -146,10 +146,11 @@ internal sealed class NatsJetStreamConnector
     }
     
     private async ValueTask<INatsJSConsumer> CreateOrUpdateConsumerInternalAsync(
-        JobMasterAgentConnectionConfig config, 
+        JobMasterAgentConnectionConfig config,
         string fullBucketAddressId,
         int? bufferSize = null,
         TimeSpan? bucketBufferLeadTime = null,
+        TimeSpan? transientThreshold = null,
         CancellationToken ct = default)
     {
         // Ensure connection and stream are available
@@ -188,7 +189,8 @@ internal sealed class NatsJetStreamConnector
                 var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
 
                 bufferSize ??= new WorkerDefinition().BucketBufferSize; // Get default buffer size if not specified.
-                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value);
+                transientThreshold ??= NatsJetStreamConstants.MaxThreshold;
+                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value, transientThreshold.Value);
                 
                 bucketBufferLeadTime ??= new WorkerDefinition().BucketBufferLeadTime;
                 var ackWait = NatsJetStreamConstants.CalcAckWait(bucketBufferLeadTime.Value);

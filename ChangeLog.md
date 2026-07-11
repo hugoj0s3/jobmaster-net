@@ -36,6 +36,8 @@
 
 - **Reserved agent connection names now use a `JMReserved-` prefix** — The framework's internal standalone and fallback-bucket connections are now named `JMReserved-standalone` and `JMReserved-fallback` (previously `standalone-agent-conn` and `master-fallback-agent-conn`). Attempting to name your own agent connection with the `JMReserved-` prefix is rejected at startup, guarding against future collisions with any reserved name the framework introduces. ⚠️ **Breaking change**: this name is persisted as the connection identifier in the master database. If you run a standalone cluster, or any cluster that has used a fallback bucket, fully drain on the previous version before upgrading — the old reserved connection name won't be recognized after upgrading. New deployments are unaffected.
 
+- **NATS JetStream: `TransientThreshold` cap raised from 2 to 5 minutes** — Jobs dispatched into NATS ahead of their execution time sit in the stream as unacknowledged messages until they're due, so this transport has always needed a cap on `TransientThreshold`; it's now more generous. JobMaster automatically scales the NATS consumer's pending-message capacity to match whatever `TransientThreshold` you configure, up to the cap, so no manual NATS tuning is required. If you're unsure what to set, 2 minutes is a good starting recommendation. See the [NATS JetStream provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/nats#transientthreshold-and-nats-capacity) for sizing guidance.
+
 ### Fixed
 
 - **`IsStandalone` not applied when cluster is configured via `ConfigFromJson`** — `ClusterDefinition.IsStandalone` is now nullable. When it is null (not set in code), the runtime correctly falls back to the value already stored in the database (`modelToSave.IsStandalone`). Previously a null code-level value unconditionally overwrote the stored value with `false`, so a cluster configured as standalone purely through JSON would silently start in cluster mode.
@@ -57,6 +59,8 @@
 - **Fallback bucket ignored `DisablePriority`** — The temporary "fallback bucket" created when no real bucket is available for too long always used `Critical` priority, even if `Critical` had been explicitly disabled for the cluster. It now tries `Critical`, then `High`, then `Medium` (which can never be disabled), skipping any priority the cluster has disabled.
 
 - **Message size validation consolidated and made consistent** — The maximum message size limit is now checked once, consistently, every time you schedule a job or recurring schedule, regardless of whether it's saved immediately or held for later dispatch. Scheduling a batch of jobs now validates the entire batch up front, so a single oversized job can no longer cause part of the batch to be saved before the call fails.
+
+- **Clearer NATS `TransientThreshold` validation error** — The startup error thrown when a NATS cluster's `TransientThreshold` exceeds the allowed cap now reports your actual configured value alongside the limit, and links to the relevant documentation.
 
 ---
 

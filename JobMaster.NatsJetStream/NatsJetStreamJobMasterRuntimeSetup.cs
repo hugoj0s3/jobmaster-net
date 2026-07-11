@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.NatsJetStream;
 
@@ -32,9 +33,9 @@ internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var clusterTransientThreshold = clusterDefinition.TransientThreshold ?? new ClusterConfigurationModel(string.Empty).TransientThreshold;
             if (clusterTransientThreshold > NatsJetStreamConstants.MaxThreshold)
             {
-                errors.Add($@"
-The transient threshold has to be defined and be less than {NatsJetStreamConstants.MaxThreshold} for cluster {agentConfig.ClusterId}. 
-NatsJetStream requires a transient threshold of less than {NatsJetStreamConstants.MaxThreshold}");
+                var docUrl = JobMasterDocUrls.Page(JobMasterDocUrls.Pages.NatsProvider, "transientthreshold-and-nats-capacity");
+                errors.Add(
+                    $"Cluster {agentConfig.ClusterId}: TransientThreshold ({clusterTransientThreshold}) must be less than or equal to {NatsJetStreamConstants.MaxThreshold} when using NatsJetStream. See {docUrl}");
             }
         }
         
