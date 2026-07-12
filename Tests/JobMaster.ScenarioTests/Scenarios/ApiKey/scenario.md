@@ -1,6 +1,6 @@
 # ApiKey
 
-Same multi-cluster mechanism as [NoAuth](../NoAuth/README.md), but proves the API-key auth path
+Same multi-cluster mechanism as [NoAuth](../NoAuth/scenario.md), but proves the API-key auth path
 instead.
 
 ## Topology

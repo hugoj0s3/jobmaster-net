@@ -1,6 +1,6 @@
 # Jwt
 
-Same multi-cluster mechanism as [NoAuth](../NoAuth/README.md), but proves the JWT bearer auth path
+Same multi-cluster mechanism as [NoAuth](../NoAuth/scenario.md), but proves the JWT bearer auth path
 instead — including the "get a token, then use it" mechanism itself, not just enforcement.
 
 ## Topology

@@ -1,6 +1,6 @@
 # UserPass
 
-Same multi-cluster mechanism as [NoAuth](../NoAuth/README.md), but proves the username/password
+Same multi-cluster mechanism as [NoAuth](../NoAuth/scenario.md), but proves the username/password
 auth path instead.
 
 ## Topology
