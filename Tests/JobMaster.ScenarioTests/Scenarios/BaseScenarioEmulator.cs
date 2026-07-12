@@ -18,15 +18,18 @@ public abstract class BaseScenarioEmulator<TClusterEnum, TPhaseEnum>
         this.global = global;
     }
 
+    /// <summary>Everything in TClusterEnum's namespace after "...Scenarios." is a folder — e.g.
+    /// JobMaster.ScenarioTests.Scenarios.ApiAuths.NoAuth -> Scenarios/ApiAuths/NoAuth.</summary>
+    private const string ScenariosNamespacePrefix = "JobMaster.ScenarioTests.Scenarios.";
+
     public async Task InitializeAsync()
     {
-        var scenarioName = typeof(TClusterEnum).Name
-            .Replace("Enum", string.Empty)
-            .Replace("Clusters", string.Empty)
-            .Replace("Cluster", string.Empty)
-            .ToKebabCase();
+        var ns = typeof(TClusterEnum).Namespace ?? "";
+        var scenarioPath = ns.StartsWith(ScenariosNamespacePrefix, StringComparison.Ordinal)
+            ? ns[ScenariosNamespacePrefix.Length..].Replace('.', '/')
+            : ns;
 
-        runner = await ScenarioRunner.StartAsync(global, scenarioName);
+        runner = await ScenarioRunner.StartAsync(global, scenarioPath);
 
         PhaseEmulators = CreatePhaseEmulators();
     }
