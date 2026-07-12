@@ -1,0 +1,8 @@
+{
+  "scenarioName": "basic-execution",
+  "phases": [
+    { "name": "phase-1", "containers": ["standalone"] }
+  ],
+  "infrastructure": [],
+  "api": { "container": "api" }
+}

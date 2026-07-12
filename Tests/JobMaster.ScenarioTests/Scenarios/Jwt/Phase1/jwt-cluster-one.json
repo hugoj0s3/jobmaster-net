@@ -1,0 +1,17 @@
+{
+  "containerName": "jwt-cluster-one",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "jwt-cluster-one",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "jwt-cluster-one",
+      "Standalone": true,
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

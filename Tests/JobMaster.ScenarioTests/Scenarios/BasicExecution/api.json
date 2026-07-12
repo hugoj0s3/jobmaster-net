@@ -1,0 +1,20 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": true,
+    "apiKey": "{{ApiKey}}",
+    "enableJwt": true
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "basic-execution-cluster",
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    }
+  ]
+}

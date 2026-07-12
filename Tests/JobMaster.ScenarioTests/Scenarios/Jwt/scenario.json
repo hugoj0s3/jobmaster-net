@@ -1,0 +1,8 @@
+{
+  "scenarioName": "jwt",
+  "phases": [
+    { "name": "phase-1", "containers": ["jwt-cluster-one", "jwt-cluster-two"] }
+  ],
+  "infrastructure": [],
+  "api": { "container": "api" }
+}

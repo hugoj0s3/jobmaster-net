@@ -1,0 +1,25 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": true,
+    "enableJwt": true
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "jwt-cluster-one",
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    },
+    {
+      "ClusterId": "jwt-cluster-two",
+      "SetAsDefault": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    }
+  ]
+}

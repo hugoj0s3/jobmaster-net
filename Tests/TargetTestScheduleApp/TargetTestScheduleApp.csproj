@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+    <PropertyGroup>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <IsPackable>false</IsPackable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="StackExchange.Redis" Version="2.8.31" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
+        <ProjectReference Include="..\..\Sql\JobMaster.SqlBase\JobMaster.SqlBase.csproj" />
+        <ProjectReference Include="..\..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />
+    </ItemGroup>
+
+</Project>

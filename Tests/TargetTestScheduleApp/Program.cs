@@ -1,0 +1,93 @@
+using System.Reflection;
+using System.Text.Json;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Ioc.Extensions;
+using StackExchange.Redis;
+using TargetTestScheduleApp;
+using TargetTestScheduleApp.Handlers;
+using TargetTestScheduleApp.Redis;
+
+// ConfigFromJson only sets RepoType as a string — it never calls a JobMaster.Postgres method
+// directly, so the CLR would never actually load that assembly into the AppDomain, and its
+// [JobMasterIocRegistration] provider (which registers IMasterGenericRecordRepository etc.) would
+// be invisible to the AppDomain-based reflection scan in
+// JobMasterIocRegistrationAttribute.GetRegistrationTypes(). A `typeof(...)` reference alone is not
+// enough to guarantee this (the JIT can elide an unused ldtoken), so load it explicitly by path.
+Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
+
+var builder = WebApplication.CreateBuilder(args);
+
+var clusterConfigsJson = Environment.GetEnvironmentVariable("JOBMASTER_CLUSTER_CONFIGS_JSON");
+if (string.IsNullOrWhiteSpace(clusterConfigsJson))
+{
+    throw new InvalidOperationException("JOBMASTER_CLUSTER_CONFIGS_JSON environment variable must be set to a JSON array of cluster configs.");
+}
+
+var clusterConfigs = JsonSerializer.Deserialize<JsonElement[]>(clusterConfigsJson)
+    ?? throw new InvalidOperationException("JOBMASTER_CLUSTER_CONFIGS_JSON did not deserialize to a JSON array.");
+
+foreach (var clusterConfig in clusterConfigs)
+{
+    var json = clusterConfig.GetRawText();
+    builder.Services.AddJobMasterCluster(c => c.ConfigFromJson(json));
+}
+
+var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
+    ?? throw new InvalidOperationException("REDIS_CONNECTION_STRING environment variable must be set.");
+
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+builder.Services.AddSingleton<IExecutionRecorder, RedisExecutionRecorder>();
+
+var app = builder.Build();
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleRequest req, IJobMasterScheduler scheduler) =>
+{
+    if (req.QtyJobs < 1)
+    {
+        return Results.BadRequest("QtyJobs must be at least 1.");
+    }
+
+    var tasks = new List<Task<JobContext>>();
+    for (var i = 0; i < req.QtyJobs; i++)
+    {
+        var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
+        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds));
+    }
+
+    var jobs = await Task.WhenAll(tasks);
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+});
+
+await app.Services.StartJobMasterRuntimeAsync();
+
+app.Run();
+
+return;
+
+static Task<JobContext> ScheduleHandler(
+    string handlerType,
+    IJobMasterScheduler scheduler,
+    IWritableMetadata metadata,
+    string? clusterId,
+    int? afterSeconds)
+{
+    return handlerType.ToLowerInvariant() switch
+    {
+        "fast" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
+            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId),
+        "normal" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
+            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId),
+        "slow" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
+            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId),
+        "verylong" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
+            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId),
+        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong.")
+    };
+}

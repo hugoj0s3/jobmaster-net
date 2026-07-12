@@ -1,0 +1,17 @@
+{
+  "containerName": "api-key-cluster-one",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "api-key-cluster-one",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "api-key-cluster-one",
+      "Standalone": true,
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}
