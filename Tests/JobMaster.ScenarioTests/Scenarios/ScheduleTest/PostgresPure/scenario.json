@@ -1,0 +1,8 @@
+{
+  "scenarioName": "postgres-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["postgres-standalone", "postgres-dist-one", "postgres-dist-two"] }
+  ],
+  "infrastructure": [],
+  "api": { "container": "api" }
+}

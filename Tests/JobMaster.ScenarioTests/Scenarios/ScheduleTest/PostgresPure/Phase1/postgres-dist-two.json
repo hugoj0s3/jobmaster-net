@@ -1,0 +1,38 @@
+{
+  "containerName": "postgres-dist-two",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-dist-two",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-dist-two",
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDistCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-1",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgreAgent1;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        },
+        {
+          "Name": "pg-agent-2",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgreAgent2;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        },
+        {
+          "Name": "pg-agent-3",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgreAgent3;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "pg-agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "pg-agent-2" },
+        { "WorkerName": "w3", "AgentConnectionName": "pg-agent-3" }
+      ]
+    }
+  ]
+}

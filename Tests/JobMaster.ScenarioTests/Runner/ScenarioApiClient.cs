@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Web;
 
 namespace JobMaster.ScenarioTests.Runner;
 
@@ -39,6 +40,27 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? new List<string>();
     }
 
+    public async Task<int> GetJobCountAsync(string clusterId, string? jobDefinitionId = null, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = BuildJobQuery(jobDefinitionId, countLimit: null);
+        using var request = CreateRequest(HttpMethod.Get, $"{basePath}/{clusterId}/jobs/count{query}", bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        return await response.Content.ReadFromJsonAsync<int>(ScenarioJsonOptions.Default, ct);
+    }
+
+    public async Task<List<ApiJob>> GetJobsAsync(string clusterId, string? jobDefinitionId = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = BuildJobQuery(jobDefinitionId, countLimit);
+        using var request = CreateRequest(HttpMethod.Get, $"{basePath}/{clusterId}/jobs{query}", bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        response.EnsureSuccessStatusCode();
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiJob>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
     public async Task<string> GetJwtTokenAsync(string subject, CancellationToken ct = default)
     {
         var response = await httpClient.PostAsJsonAsync("/auth/token", new { subject }, ct);
@@ -46,6 +68,23 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
 
         var result = await response.Content.ReadFromJsonAsync<JwtTokenResponse>(ScenarioJsonOptions.Default, ct);
         return result?.Token ?? throw new InvalidOperationException("JWT token response deserialized to null.");
+    }
+
+    private static string BuildJobQuery(string? jobDefinitionId, int? countLimit)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (!string.IsNullOrEmpty(jobDefinitionId))
+        {
+            query["JobDefinitionId"] = jobDefinitionId;
+        }
+
+        if (countLimit.HasValue)
+        {
+            query["CountLimit"] = countLimit.Value.ToString();
+        }
+
+        var queryString = query.ToString();
+        return string.IsNullOrEmpty(queryString) ? string.Empty : $"?{queryString}";
     }
 
     private static HttpRequestMessage CreateRequest(HttpMethod method, string requestUri, string? bearerToken)

@@ -54,6 +54,14 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
                 .WithDatabase("postgres")
                 .WithUsername(PostgresUsername)
                 .WithPassword(PostgresPassword)
+                // Default max_connections (100) is too low once several scenario containers -- each
+                // with its own connection pool, plus JobMaster's own background master/agent
+                // connections -- share this one instance, and a single Task.WhenAll schedule burst
+                // (e.g. 150 concurrent job inserts) can approach that limit on its own.
+                // No leading "postgres" here: docker-entrypoint.sh already prepends it when the
+                // first arg starts with '-' -- passing it ourselves double-supplies it and postgres
+                // rejects the resulting stray positional argument.
+                .WithCommand("-c", "max_connections=400")
                 .Build();
 
             await container.StartAsync(ct);

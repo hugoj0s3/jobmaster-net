@@ -21,7 +21,12 @@ public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
         };
 
         var response = await httpClient.PostAsJsonAsync($"/schedule/{handlerType}", body, ct);
-        response.EnsureSuccessStatusCode();
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(ct);
+            throw new HttpRequestException(
+                $"POST /schedule/{handlerType} failed with {(int)response.StatusCode} {response.StatusCode}: {errorBody}");
+        }
 
         var result = await response.Content.ReadFromJsonAsync<ScheduleClientResult>(ScenarioJsonOptions.Default, ct);
         return result ?? throw new InvalidOperationException("Schedule response deserialized to null.");

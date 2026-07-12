@@ -134,6 +134,15 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 await conn.ExecuteAsync(logTableScript, transaction: transaction);
             }
 
+            // JobMasterRuntime.StartAsync lazily registers a "master fallback" agent connection
+            // for any cluster with a Full/Coordinator worker (AddMasterFallbackAgentConnectionString),
+            // reusing this exact connection string and AdditionalConnConfig — but only *after* this
+            // provisioning step has already run, so that connection's own agent-shaped tables would
+            // never get created otherwise. Since it's guaranteed to point at this same database with
+            // this same table prefix, provision them here too, so they already exist by the time the
+            // fallback connection is used.
+            await ProvisionAgentTablesAsync(conn, transaction, sql, tablePrefix);
+
             transaction.Commit();
         }
     }
@@ -178,33 +187,43 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                 
             var agentSql = SqlGeneratorFactory.Get(agentConfig.RepositoryTypeId);
             var agentTablePrefix = agentSql.GetTablePrefix(agentConfig.AdditionalConnConfig);
-                
-            var bucketSelectorTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "bucket_dispatcher");
-            var bucketSelectorTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(bucketSelectorTableExistsSql, transaction: agentTransaction);
-            if (!bucketSelectorTableExists)
-            {
-                var bucketSelectorTableScript = AgentTableCreatorScripts.CreateBucketDispatcherTableScript(agentSql, agentTablePrefix);
-                await agentDbConnection.ExecuteAsync(bucketSelectorTableScript, transaction: agentTransaction);
-            }
-                
-            var messageTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "message_dispatcher");
-            var messageTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(messageTableExistsSql, transaction: agentTransaction);
-            if (!messageTableExists)
-            {
-                var messageTableScript = AgentTableCreatorScripts.CreateMessageDispatcherTableScript(agentSql, agentTablePrefix);
-                await agentDbConnection.ExecuteAsync(messageTableScript, transaction: agentTransaction);
-            }
 
-            // agent_conn_fingerprint
-            var fingerprintTableExistsSql = agentSql.TableExistsSql(agentTablePrefix, "agent_conn_fingerprint");
-            var fingerprintTableExists = await agentDbConnection.QueryFirstOrDefaultAsync<bool>(fingerprintTableExistsSql, transaction: agentTransaction);
-            if (!fingerprintTableExists)
-            {
-                var fingerprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFingerprint(agentSql, agentTablePrefix);
-                await agentDbConnection.ExecuteAsync(fingerprintTableScript, transaction: agentTransaction);
-            }
-                
+            await ProvisionAgentTablesAsync(agentDbConnection, agentTransaction, agentSql, agentTablePrefix);
+
             agentTransaction.Commit();
+        }
+    }
+
+    /// <summary>
+    /// Creates the three agent-shaped tables (bucket_dispatcher, message_dispatcher,
+    /// agent_conn_fingerprint) on <paramref name="conn"/>/<paramref name="tablePrefix"/> if they
+    /// don't already exist. Shared by ConfigAgentsAsync (real agent connections) and
+    /// ConfigClustersAsync (the master DB, which also needs these — see the call site there for why).
+    /// </summary>
+    private static async Task ProvisionAgentTablesAsync(IDbConnection conn, IDbTransaction transaction, ISqlGenerator sql, string tablePrefix)
+    {
+        var bucketDispatcherTableExistsSql = sql.TableExistsSql(tablePrefix, "bucket_dispatcher");
+        var bucketDispatcherTableExists = await conn.QueryFirstOrDefaultAsync<bool>(bucketDispatcherTableExistsSql, transaction: transaction);
+        if (!bucketDispatcherTableExists)
+        {
+            var bucketDispatcherTableScript = AgentTableCreatorScripts.CreateBucketDispatcherTableScript(sql, tablePrefix);
+            await conn.ExecuteAsync(bucketDispatcherTableScript, transaction: transaction);
+        }
+
+        var messageDispatcherTableExistsSql = sql.TableExistsSql(tablePrefix, "message_dispatcher");
+        var messageDispatcherTableExists = await conn.QueryFirstOrDefaultAsync<bool>(messageDispatcherTableExistsSql, transaction: transaction);
+        if (!messageDispatcherTableExists)
+        {
+            var messageDispatcherTableScript = AgentTableCreatorScripts.CreateMessageDispatcherTableScript(sql, tablePrefix);
+            await conn.ExecuteAsync(messageDispatcherTableScript, transaction: transaction);
+        }
+
+        var fingerprintTableExistsSql = sql.TableExistsSql(tablePrefix, "agent_conn_fingerprint");
+        var fingerprintTableExists = await conn.QueryFirstOrDefaultAsync<bool>(fingerprintTableExistsSql, transaction: transaction);
+        if (!fingerprintTableExists)
+        {
+            var fingerprintTableScript = AgentTableCreatorScripts.CreateAgentConnectionFingerprint(sql, tablePrefix);
+            await conn.ExecuteAsync(fingerprintTableScript, transaction: transaction);
         }
     }
 

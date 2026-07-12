@@ -9,6 +9,10 @@ internal static class PostgresDatabaseProvisioner
     public static readonly IReadOnlyCollection<string> DatabaseNames = new List<string>()
     {
         "PostgresStandalone",
+        "PostgresDistCluster",
+        "PostgreAgent1",
+        "PostgreAgent2",
+        "PostgreAgent3",
     }.AsReadOnly();
     
     public static async Task CreateDatabasesIfNotExistsAsync(string adminConnectionString, CancellationToken ct = default)
