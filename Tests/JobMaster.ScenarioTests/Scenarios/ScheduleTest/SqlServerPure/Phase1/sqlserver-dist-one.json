@@ -1,0 +1,38 @@
+{
+  "containerName": "sqlserver-dist-one",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "sqlserver-dist-one",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "sqlserver-dist-one",
+      "SetAsDefault": true,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "ms-agent-1",
+          "RepositoryType": "SqlServer",
+          "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerAgent1;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+        },
+        {
+          "Name": "ms-agent-2",
+          "RepositoryType": "SqlServer",
+          "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerAgent2;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+        },
+        {
+          "Name": "ms-agent-3",
+          "RepositoryType": "SqlServer",
+          "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerAgent3;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "ms-agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "ms-agent-2" },
+        { "WorkerName": "w3", "AgentConnectionName": "ms-agent-3" }
+      ]
+    }
+  ]
+}

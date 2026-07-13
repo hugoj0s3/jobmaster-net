@@ -1,4 +1,4 @@
-namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest.PostgresPure;
+namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 
 /// <summary>
 /// One batch of jobs to schedule: a quantity of a given handler type, against a given cluster,

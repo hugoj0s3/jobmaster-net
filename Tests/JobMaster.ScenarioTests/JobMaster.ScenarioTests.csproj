@@ -24,9 +24,13 @@
 
         <PackageReference Include="Testcontainers" Version="3.10.0" />
         <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.MySql" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
         <PackageReference Include="Testcontainers.Redis" Version="3.10.0" />
         <PackageReference Include="StackExchange.Redis" Version="2.8.31" />
         <PackageReference Include="Npgsql" Version="8.0.3" />
+        <PackageReference Include="MySqlConnector" Version="2.5.0" />
+        <PackageReference Include="Microsoft.Data.SqlClient" Version="6.1.4" />
         <PackageReference Include="Yarp.ReverseProxy" Version="2.2.0" />
         <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
     </ItemGroup>

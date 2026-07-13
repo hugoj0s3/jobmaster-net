@@ -1,0 +1,38 @@
+{
+  "containerName": "mysql-dist-one",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mysql-dist-one",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mysql-dist-one",
+      "SetAsDefault": true,
+      "RepoType": "MySql",
+      "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDistCluster;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "my-agent-1",
+          "RepositoryType": "MySql",
+          "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlAgent1;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
+        },
+        {
+          "Name": "my-agent-2",
+          "RepositoryType": "MySql",
+          "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlAgent2;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
+        },
+        {
+          "Name": "my-agent-3",
+          "RepositoryType": "MySql",
+          "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlAgent3;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "my-agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "my-agent-2" },
+        { "WorkerName": "w3", "AgentConnectionName": "my-agent-3" }
+      ]
+    }
+  ]
+}

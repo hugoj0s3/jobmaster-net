@@ -1,0 +1,30 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "sqlserver-standalone",
+      "SetAsDefault": true,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerStandalone;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+    },
+    {
+      "ClusterId": "sqlserver-dist-one",
+      "SetAsDefault": false,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+    },
+    {
+      "ClusterId": "sqlserver-dist-two",
+      "SetAsDefault": false,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+    }
+  ]
+}

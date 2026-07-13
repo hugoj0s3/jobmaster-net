@@ -8,13 +8,15 @@ using TargetTestScheduleApp;
 using TargetTestScheduleApp.Handlers;
 using TargetTestScheduleApp.Redis;
 
-// ConfigFromJson only sets RepoType as a string — it never calls a JobMaster.Postgres method
-// directly, so the CLR would never actually load that assembly into the AppDomain, and its
-// [JobMasterIocRegistration] provider (which registers IMasterGenericRecordRepository etc.) would
+// ConfigFromJson only sets RepoType as a string — it never calls a provider-specific method
+// directly, so the CLR would never actually load these assemblies into the AppDomain, and their
+// [JobMasterIocRegistration] providers (which register IMasterGenericRecordRepository etc.) would
 // be invisible to the AppDomain-based reflection scan in
 // JobMasterIocRegistrationAttribute.GetRegistrationTypes(). A `typeof(...)` reference alone is not
-// enough to guarantee this (the JIT can elide an unused ldtoken), so load it explicitly by path.
+// enough to guarantee this (the JIT can elide an unused ldtoken), so load them explicitly by path.
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
+Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
+Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 

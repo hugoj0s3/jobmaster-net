@@ -129,13 +129,14 @@ public sealed class ScenarioRunner : IAsyncDisposable
 
     private async Task StartContainerAsync(string containerJsonPath, bool isApiContainer, CancellationToken ct)
     {
-        await EnsurePostgresDatabasesAsync(ct);
         var tokens = BuildTokens();
         var rawJson = await File.ReadAllTextAsync(containerJsonPath, ct);
         var renderedJson = ConfigTemplateRenderer.Render(rawJson, tokens);
 
         var containerDef = JsonSerializer.Deserialize<ContainerDefinition>(renderedJson, ScenarioJsonOptions.Default)
             ?? throw new InvalidOperationException($"Could not parse {containerJsonPath}");
+
+        await EnsureDatabasesForContainerAsync(containerDef, ct);
 
         var imageName = isApiContainer
             ? await global.GetOrBuildApiAppImageAsync(ct)
@@ -228,18 +229,66 @@ public sealed class ScenarioRunner : IAsyncDisposable
             ["PostgresPort"] = "5432",
             ["PostgresUsername"] = ScenarioGlobalEnvironment.PostgresUsername,
             ["PostgresPassword"] = global.PostgresPassword,
+            ["MySqlHost"] = "mysql",
+            ["MySqlPort"] = "3306",
+            ["MySqlUsername"] = ScenarioGlobalEnvironment.MySqlUsername,
+            ["MySqlPassword"] = global.MySqlPassword,
+            ["SqlServerHost"] = "sqlserver",
+            ["SqlServerPort"] = "1433",
+            ["SqlServerUsername"] = ScenarioGlobalEnvironment.SqlServerUsername,
+            ["SqlServerPassword"] = global.SqlServerPassword,
             ["ApiKey"] = apiKey,
             ["ApiUsername"] = apiUsername,
             ["ApiPassword"] = apiPassword
         };
     }
 
-    private async Task EnsurePostgresDatabasesAsync(CancellationToken ct)
+    /// <summary>
+    /// Lazily starts and provisions only the shared database engine(s) this container's rendered
+    /// cluster configs actually reference (master RepoType + every agent connection's
+    /// RepositoryType) — so a Postgres-only scenario never pays for spinning up MySql/SqlServer,
+    /// and vice versa.
+    /// </summary>
+    private async Task EnsureDatabasesForContainerAsync(ContainerDefinition containerDef, CancellationToken ct)
     {
-        
-        var postgres = await global.GetOrStartPostgresAsync(ct);
-        
-        await PostgresDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(postgres.GetConnectionString(), ct);
+        var repoTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var clusterConfig in containerDef.ClusterConfigTemplates)
+        {
+            if (clusterConfig.TryGetProperty("RepoType", out var repoType) && repoType.ValueKind == JsonValueKind.String)
+            {
+                repoTypes.Add(repoType.GetString()!);
+            }
+
+            if (clusterConfig.TryGetProperty("AgentConnections", out var agentConnections) && agentConnections.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var agentConnection in agentConnections.EnumerateArray())
+                {
+                    if (agentConnection.TryGetProperty("RepositoryType", out var agentRepoType) && agentRepoType.ValueKind == JsonValueKind.String)
+                    {
+                        repoTypes.Add(agentRepoType.GetString()!);
+                    }
+                }
+            }
+        }
+
+        foreach (var repoType in repoTypes)
+        {
+            if (string.Equals(repoType, "Postgres", StringComparison.OrdinalIgnoreCase))
+            {
+                var postgres = await global.GetOrStartPostgresAsync(ct);
+                await PostgresDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(postgres.GetConnectionString(), ct);
+            }
+            else if (string.Equals(repoType, "MySql", StringComparison.OrdinalIgnoreCase))
+            {
+                var mySql = await global.GetOrStartMySqlAsync(ct);
+                await MySqlDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(mySql.GetConnectionString(), ct);
+            }
+            else if (string.Equals(repoType, "SqlServer", StringComparison.OrdinalIgnoreCase))
+            {
+                var sqlServer = await global.GetOrStartSqlServerAsync(ct);
+                await SqlServerDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(sqlServer.GetConnectionString(), ct);
+            }
+        }
     }
 
     public async ValueTask DisposeAsync()

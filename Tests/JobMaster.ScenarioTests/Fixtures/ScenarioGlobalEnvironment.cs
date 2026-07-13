@@ -2,6 +2,8 @@ using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
 using JobMaster.ScenarioTests.Runner;
+using Testcontainers.MsSql;
+using Testcontainers.MySql;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 using Xunit;
@@ -9,23 +11,36 @@ using Xunit;
 namespace JobMaster.ScenarioTests.Fixtures;
 
 /// <summary>
-/// Shared, run-scoped infrastructure: one Postgres and one Redis container for the entire test
-/// run (lazily started on first use), plus the TargetTestScheduleApp/TargetTestApi images built
-/// once and reused by every scenario. Disposed only when the whole test run ends.
+/// Shared, run-scoped infrastructure: one Postgres/MySql/SqlServer and one Redis container for
+/// the entire test run (each lazily started on first use), plus the TargetTestScheduleApp/
+/// TargetTestApi images built once and reused by every scenario. Disposed only when the whole
+/// test run ends.
 /// </summary>
 public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
 {
     public const string PostgresUsername = "postgres";
+    public const string MySqlUsername = "root";
+    public const string SqlServerUsername = "sa";
 
     /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
     public string PostgresPassword { get; } = SecretGenerator.Generate();
 
+    /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
+    public string MySqlPassword { get; } = SecretGenerator.Generate();
+
+    /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
+    public string SqlServerPassword { get; } = SecretGenerator.Generate();
+
     private readonly SemaphoreSlim postgresLock = new(1, 1);
+    private readonly SemaphoreSlim mySqlLock = new(1, 1);
+    private readonly SemaphoreSlim sqlServerLock = new(1, 1);
     private readonly SemaphoreSlim redisLock = new(1, 1);
     private readonly SemaphoreSlim scheduleImageLock = new(1, 1);
     private readonly SemaphoreSlim apiImageLock = new(1, 1);
 
     private PostgreSqlContainer? postgres;
+    private MySqlContainer? mySql;
+    private MsSqlContainer? sqlServer;
     private RedisContainer? redis;
     private IFutureDockerImage? scheduleAppImage;
     private IFutureDockerImage? apiAppImage;
@@ -71,6 +86,64 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         finally
         {
             postgresLock.Release();
+        }
+    }
+
+    public async Task<MySqlContainer> GetOrStartMySqlAsync(CancellationToken ct = default)
+    {
+        if (mySql != null) return mySql;
+
+        await mySqlLock.WaitAsync(ct);
+        try
+        {
+            if (mySql != null) return mySql;
+
+            var container = new MySqlBuilder()
+                .WithImage("mysql:8.0")
+                .WithNetwork(Network)
+                .WithNetworkAliases("mysql")
+                .WithDatabase("mysql")
+                .WithUsername(MySqlUsername)
+                .WithPassword(MySqlPassword)
+                // Same headroom reasoning as the Postgres container above: default max_connections
+                // (151) is shared across every cluster's master + agent pools, across every
+                // container. No leading "mysqld" -- docker-entrypoint.sh prepends it itself when the
+                // first arg starts with '-', same as postgres's docker-entrypoint.sh.
+                .WithCommand("--max-connections=400")
+                .Build();
+
+            await container.StartAsync(ct);
+            mySql = container;
+            return container;
+        }
+        finally
+        {
+            mySqlLock.Release();
+        }
+    }
+
+    public async Task<MsSqlContainer> GetOrStartSqlServerAsync(CancellationToken ct = default)
+    {
+        if (sqlServer != null) return sqlServer;
+
+        await sqlServerLock.WaitAsync(ct);
+        try
+        {
+            if (sqlServer != null) return sqlServer;
+
+            var container = new MsSqlBuilder()
+                .WithNetwork(Network)
+                .WithNetworkAliases("sqlserver")
+                .WithPassword(SqlServerPassword)
+                .Build();
+
+            await container.StartAsync(ct);
+            sqlServer = container;
+            return container;
+        }
+        finally
+        {
+            sqlServerLock.Release();
         }
     }
 
@@ -156,6 +229,8 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     public async Task DisposeAsync()
     {
         if (postgres != null) await postgres.DisposeAsync();
+        if (mySql != null) await mySql.DisposeAsync();
+        if (sqlServer != null) await sqlServer.DisposeAsync();
         if (redis != null) await redis.DisposeAsync();
 
         // Network may never have been assigned if InitializeAsync itself failed (e.g. Docker
