@@ -1,9 +1,8 @@
 # MySqlPure
 
-MySQL counterpart of ScheduleTest/PostgresPure: proves ~1000 jobs scheduled against a mix of
-standalone and distributed clusters all execute exactly once — no losses, no duplicate delivery —
-and that a job scheduled well beyond `TransientThreshold` is not dispatched early. Pure MySQL (no
-other repo type involved).
+Proves ~1000 jobs scheduled against a mix of standalone and distributed clusters all execute
+exactly once — no losses, no duplicate delivery — and that a job scheduled well beyond
+`TransientThreshold` is not dispatched early. Pure MySQL (no other repo type involved).
 
 ## Topology
 
@@ -23,8 +22,7 @@ other repo type involved).
 
 ## What the test does
 
-Identical plan/assertion logic to PostgresPure's `PostgresPurePhase1Emulator` (see
-`../PostgresPure/scenario.md` for the full walkthrough), run against MySQL instead:
+`MySqlPureTests.RunAllPhases` (via `MySqlPurePhase1Emulator`):
 
 1. Builds a `List<JobsQty>` plan up front — 150 `fast` + 50 `normal` + 3 `slow` jobs scheduled
    immediately, plus 100 `fast` + 30 `normal` jobs scheduled 5 minutes out, per cluster (999 jobs

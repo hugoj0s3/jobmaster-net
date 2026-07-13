@@ -1,9 +1,8 @@
 # SqlServerPure
 
-SQL Server counterpart of ScheduleTest/PostgresPure: proves ~1000 jobs scheduled against a mix of
-standalone and distributed clusters all execute exactly once — no losses, no duplicate delivery —
-and that a job scheduled well beyond `TransientThreshold` is not dispatched early. Pure SQL Server
-(no other repo type involved).
+Proves ~1000 jobs scheduled against a mix of standalone and distributed clusters all execute
+exactly once — no losses, no duplicate delivery — and that a job scheduled well beyond
+`TransientThreshold` is not dispatched early. Pure SQL Server (no other repo type involved).
 
 ## Topology
 
@@ -21,11 +20,14 @@ and that a job scheduled well beyond `TransientThreshold` is not dispatched earl
   same pattern as PostgresPure and every other scenario in this suite.
 - The shared SQL Server container runs as `sa` with a per-run generated password
   (`ScenarioGlobalEnvironment.SqlServerPassword`) — never hardcoded, never logged.
+- Every database gets `READ_COMMITTED_SNAPSHOT` enabled at creation time
+  (`SqlServerDatabaseProvisioner`) — JobMaster's SQL Server README recommends RCSI so READ
+  COMMITTED readers (counts, queries, heartbeats) use row-versioned snapshots instead of shared
+  locks, avoiding reader/writer blocking under this scenario's concurrent load.
 
 ## What the test does
 
-Identical plan/assertion logic to PostgresPure's `PostgresPurePhase1Emulator` (see
-`../PostgresPure/scenario.md` for the full walkthrough), run against SQL Server instead:
+`SqlServerPureTests.RunAllPhases` (via `SqlServerPurePhase1Emulator`):
 
 1. Builds a `List<JobsQty>` plan up front — 150 `fast` + 50 `normal` + 3 `slow` jobs scheduled
    immediately, plus 100 `fast` + 30 `normal` jobs scheduled 5 minutes out, per cluster (999 jobs

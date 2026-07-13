@@ -1,9 +1,8 @@
 # PostgresPure
 
-Replaces the old `JobMaster.IntegrationTests` `RunExecutionTest`: proves ~1000 jobs scheduled
-against a mix of standalone and distributed clusters all execute exactly once — no losses, no
-duplicate delivery — and that a job scheduled well beyond `TransientThreshold` is not dispatched
-early. Pure Postgres (no other repo type involved).
+Proves ~1000 jobs scheduled against a mix of standalone and distributed clusters all execute
+exactly once — no losses, no duplicate delivery — and that a job scheduled well beyond
+`TransientThreshold` is not dispatched early. Pure Postgres (no other repo type involved).
 
 ## Topology
 
