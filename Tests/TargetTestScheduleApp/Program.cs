@@ -17,6 +17,7 @@ using TargetTestScheduleApp.Redis;
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
+Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,11 +53,13 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         return Results.BadRequest("QtyJobs must be at least 1.");
     }
 
+    var priority = (JobMasterPriority?)req.Priority;
+
     var tasks = new List<Task<JobContext>>();
     for (var i = 0; i < req.QtyJobs; i++)
     {
         var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
-        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds));
+        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority));
     }
 
     var jobs = await Task.WhenAll(tasks);
@@ -74,22 +77,23 @@ static Task<JobContext> ScheduleHandler(
     IJobMasterScheduler scheduler,
     IWritableMetadata metadata,
     string? clusterId,
-    int? afterSeconds)
+    int? afterSeconds,
+    JobMasterPriority? priority)
 {
     return handlerType.ToLowerInvariant() switch
     {
         "fast" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
-            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId),
+            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
+            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
         "normal" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
-            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId),
+            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
+            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
         "slow" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
-            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId),
+            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
+            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
         "verylong" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId)
-            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId),
+            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
+            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
         _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong.")
     };
 }

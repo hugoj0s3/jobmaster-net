@@ -3,8 +3,8 @@ using JobMaster.ScenarioTests.Runner;
 
 namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest.PostgresPure;
 
-public sealed class PostgresPurePhase1Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
-    : PureScheduleTestPhase1EmulatorBase<PostgresPurePhases>(global, runner)
+public sealed class PostgresPhase1Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
+    : ScheduleTestPhase1EmulatorBase<PostgresPurePhases>(global, runner)
 {
     protected override IReadOnlyList<string> ClusterIds { get; } = Enum.GetValues<PostgresPureClusters>()
         .Select(c => c.ToString()!.ToKebabCase())

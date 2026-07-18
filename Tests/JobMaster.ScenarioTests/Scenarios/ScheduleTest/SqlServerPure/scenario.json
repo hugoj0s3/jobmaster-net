@@ -1,8 +1,9 @@
 {
   "scenarioName": "sqlserver-pure",
   "phases": [
-    { "name": "phase-1", "containers": ["sqlserver-standalone", "sqlserver-dist-one", "sqlserver-dist-two"] }
+    { "name": "phase-1", "containers": ["sqlserver-standalone", "sqlserver-dist-one", "sqlserver-dist-two"] },
+    { "name": "phase-2", "containers": ["sqlserver-standalone", "sqlserver-dist-one", "sqlserver-dist-two"] },
+    { "name": "phase-3", "containers": ["sqlserver-dist-one"] }
   ],
-  "infrastructure": [],
   "api": { "container": "api" }
 }

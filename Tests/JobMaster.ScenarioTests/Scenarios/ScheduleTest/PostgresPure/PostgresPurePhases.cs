@@ -2,5 +2,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest.PostgresPure;
 
 public enum PostgresPurePhases
 {
-    Phase1 = 1
+    Phase1 = 1,
+    Phase2 = 2,
+    Phase3 = 3
 }

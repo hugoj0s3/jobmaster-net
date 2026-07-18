@@ -6,20 +6,11 @@ internal static class PostgresDatabaseProvisioner
 {
     private const string DuplicateDatabaseSqlState = "42P04";
 
-    public static readonly IReadOnlyCollection<string> DatabaseNames = new List<string>()
-    {
-        "PostgresStandalone",
-        "PostgresDistCluster",
-        "PostgreAgent1",
-        "PostgreAgent2",
-        "PostgreAgent3",
-    }.AsReadOnly();
-    
-    public static async Task CreateDatabasesIfNotExistsAsync(string adminConnectionString, CancellationToken ct = default)
+    public static async Task CreateDatabasesIfNotExistsAsync(string adminConnectionString, IEnumerable<string> databaseNames, CancellationToken ct = default)
     {
         await using var connection = new NpgsqlConnection(adminConnectionString);
         await connection.OpenAsync(ct);
-        foreach (var databaseName in DatabaseNames)
+        foreach (var databaseName in databaseNames)
         {
             await using var command = connection.CreateCommand();
             command.CommandText = $"CREATE DATABASE \"{databaseName}\"";

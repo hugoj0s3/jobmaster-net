@@ -1,0 +1,7 @@
+{
+  "scenarioName": "recurring-postgres-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["postgres-recurring"] }
+  ],
+  "api": { "container": "api" }
+}

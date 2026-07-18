@@ -1,7 +1,6 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
-using JobMaster.RecurrenceExpressions.TimeSpanInterval;
 using NaturalCron;
 
 namespace JobMaster.RecurrenceExpressions.NaturalCron;
@@ -63,7 +62,7 @@ public static class NaturalCronExprExtensions
         DateTime? endBefore = null,
         IWritableMetadata? metadata = null) where Th : class, IJobMasterHandler
     {
-        collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        collection.Add<Th>(NaturalCronExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
         return collection;
     }
 }

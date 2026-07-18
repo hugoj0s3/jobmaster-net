@@ -44,7 +44,8 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
             var buckets = await masterBucketsService.QueryAllNoCacheAsync();
             var bucketsToEvaluate = buckets.Where(
                 b => b.AgentWorkerId != BackgroundAgentWorker.AgentWorkerId
-                && b.Status != BucketStatus.Lost);
+                && b.Status != BucketStatus.Lost
+                && b.Status != BucketStatus.ReadyToDelete);
 
             var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
             var bucketsToMarkAsLost = new List<BucketModel>();

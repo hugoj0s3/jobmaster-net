@@ -1,0 +1,7 @@
+{
+  "scenarioName": "recurring-postgres-nats",
+  "phases": [
+    { "name": "phase-1", "containers": ["postgres-nats-recurring"] }
+  ],
+  "api": { "container": "api" }
+}

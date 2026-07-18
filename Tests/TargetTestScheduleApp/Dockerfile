@@ -11,6 +11,7 @@ COPY ["Sql/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Sql/JobMaster.SqlBase/"
 COPY ["Sql/JobMaster.Postgres/JobMaster.Postgres.csproj", "Sql/JobMaster.Postgres/"]
 COPY ["Sql/JobMaster.MySql/JobMaster.MySql.csproj", "Sql/JobMaster.MySql/"]
 COPY ["Sql/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Sql/JobMaster.SqlServer/"]
+COPY ["JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj", "JobMaster.NatsJetStream/"]
 COPY ["Directory.Build.props", "Directory.Packages.props", "./"]
 RUN dotnet restore "Tests/TargetTestScheduleApp/TargetTestScheduleApp.csproj"
 COPY . .

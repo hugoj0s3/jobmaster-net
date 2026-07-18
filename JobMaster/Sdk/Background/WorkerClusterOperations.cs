@@ -245,18 +245,40 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     public async Task MarkBucketAsLostIfNotDrainingAsync(string bucketId)
     {
        var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
-       if (bucket is null)
+       if (bucket is null || IsExemptFromLostMarking(bucket.Status))
        {
            return;
        }
 
-       if (bucket.Status == BucketStatus.Draining || bucket.Status == BucketStatus.ReadyToDrain || bucket.Status == BucketStatus.Lost)
+       var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucketId), TimeSpan.FromSeconds(10));
+       if (lockToken == null)
        {
            return;
        }
-       
-       await MarkBucketAsLostAsync(bucket);
+
+       try
+       {
+           // Re-check under the lock with an uncached read: the bucket may have moved into an
+           // exempt status (e.g. picked up for draining, or already finished draining) since the
+           // check above, and the cache could still be serving that now-stale snapshot.
+           var freshBuckets = await masterBucketsService.QueryAsync(new MasterBucketQueryCriteria { BucketIds = new List<string> { bucketId } });
+           bucket = freshBuckets.FirstOrDefault();
+           if (bucket is null || IsExemptFromLostMarking(bucket.Status))
+           {
+               return;
+           }
+
+           bucket.MarkAsLost();
+           await masterBucketsService.UpdateAsync(bucket);
+       }
+       finally
+       {
+           masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucketId), lockToken);
+       }
     }
+
+    private static bool IsExemptFromLostMarking(BucketStatus status) =>
+        status is BucketStatus.Draining or BucketStatus.ReadyToDrain or BucketStatus.Lost or BucketStatus.ReadyToDelete;
 
     public async Task MarkBucketAsReadyToDeleteAsync(string bucketId)
     {

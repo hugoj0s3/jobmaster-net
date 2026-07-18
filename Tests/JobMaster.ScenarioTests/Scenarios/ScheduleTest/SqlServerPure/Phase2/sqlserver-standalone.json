@@ -1,0 +1,18 @@
+{
+  "containerName": "sqlserver-standalone",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "sqlserver-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "sqlserver-standalone",
+      "Standalone": true,
+      "SetAsDefault": true,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerStandalone;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
+      "DataRetentionTtl": "00:10:00",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

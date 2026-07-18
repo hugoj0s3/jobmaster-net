@@ -53,6 +53,17 @@ public sealed class ScenarioRunner : IAsyncDisposable
         return new ScheduleClient(new HttpClient { BaseAddress = new Uri(baseUrl) });
     }
 
+    /// <summary>Same rationale as <see cref="ScheduleFor"/>, for containers exposing the recurring-schedule endpoints.</summary>
+    public IRecurringScheduleClient RecurringScheduleFor(string containerName)
+    {
+        if (!containerBaseUrls.TryGetValue(containerName, out var baseUrl))
+        {
+            throw new InvalidOperationException($"Container '{containerName}' is not running.");
+        }
+
+        return new RecurringScheduleClient(new HttpClient { BaseAddress = new Uri(baseUrl) });
+    }
+
     private ScenarioRunner(ScenarioGlobalEnvironment global, string scenarioFolder)
     {
         this.global = global;
@@ -75,13 +86,6 @@ public sealed class ScenarioRunner : IAsyncDisposable
         var scenarioJsonText = await File.ReadAllTextAsync(scenarioJsonPath, ct);
         definition = JsonSerializer.Deserialize<ScenarioDefinition>(scenarioJsonText, ScenarioJsonOptions.Default)
             ?? throw new InvalidOperationException($"Could not parse {scenarioJsonPath}");
-
-        if (definition.Infrastructure.Count > 0)
-        {
-            throw new NotSupportedException(
-                "Scenario-scoped infrastructure (e.g. NATS) is not implemented yet. " +
-                $"Scenario '{definition.ScenarioName}' declares: {string.Join(", ", definition.Infrastructure.Select(i => i.Type))}.");
-        }
 
         var redis = await global.GetOrStartRedisAsync(ct);
         redisMux = await ConnectionMultiplexer.ConnectAsync($"{redis.Hostname}:{redis.GetMappedPublicPort(6379)}");
@@ -136,11 +140,17 @@ public sealed class ScenarioRunner : IAsyncDisposable
         var containerDef = JsonSerializer.Deserialize<ContainerDefinition>(renderedJson, ScenarioJsonOptions.Default)
             ?? throw new InvalidOperationException($"Could not parse {containerJsonPath}");
 
+        // A later phase reusing the same container name (e.g. reconfiguring a cluster's worker mode
+        // between phases) replaces whatever that name was running before, rather than colliding with
+        // it — stop the old one first so the new config takes over cleanly.
+        if (runningContainers.ContainsKey(containerDef.ContainerName))
+        {
+            await StopAsync(containerDef.ContainerName, ct);
+        }
+
         await EnsureDatabasesForContainerAsync(containerDef, ct);
 
-        var imageName = isApiContainer
-            ? await global.GetOrBuildApiAppImageAsync(ct)
-            : await global.GetOrBuildScheduleAppImageAsync(ct);
+        var imageName = await global.GetOrBuildAppImageAsync(containerDef.DockerfilePath, ct);
 
         var clusterConfigsJson = "[" + string.Join(",", containerDef.ClusterConfigTemplates.Select(e => e.GetRawText())) + "]";
 
@@ -237,6 +247,10 @@ public sealed class ScenarioRunner : IAsyncDisposable
             ["SqlServerPort"] = "1433",
             ["SqlServerUsername"] = ScenarioGlobalEnvironment.SqlServerUsername,
             ["SqlServerPassword"] = global.SqlServerPassword,
+            ["NatsHost"] = "nats",
+            ["NatsPort"] = "4222",
+            ["NatsUsername"] = ScenarioGlobalEnvironment.NatsUsername,
+            ["NatsPassword"] = global.NatsPassword,
             ["ApiKey"] = apiKey,
             ["ApiUsername"] = apiUsername,
             ["ApiPassword"] = apiPassword
@@ -252,11 +266,40 @@ public sealed class ScenarioRunner : IAsyncDisposable
     private async Task EnsureDatabasesForContainerAsync(ContainerDefinition containerDef, CancellationToken ct)
     {
         var repoTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Database names to provision are read from each connection string's own "Database=" segment
+        // -- not a fixed list -- so any scenario can name its databases whatever it wants (e.g.
+        // PostgresNats's "PostgresNatsDistCluster") without the provisioner needing to know about it
+        // up front.
+        var databaseNamesByRepoType = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        void Track(string repoType, string? connectionString)
+        {
+            repoTypes.Add(repoType);
+
+            var databaseName = ExtractDatabaseName(connectionString);
+            if (databaseName is null)
+            {
+                return;
+            }
+
+            if (!databaseNamesByRepoType.TryGetValue(repoType, out var names))
+            {
+                names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                databaseNamesByRepoType[repoType] = names;
+            }
+
+            names.Add(databaseName);
+        }
+
         foreach (var clusterConfig in containerDef.ClusterConfigTemplates)
         {
             if (clusterConfig.TryGetProperty("RepoType", out var repoType) && repoType.ValueKind == JsonValueKind.String)
             {
-                repoTypes.Add(repoType.GetString()!);
+                var connectionString = clusterConfig.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
+                    ? cs.GetString()
+                    : null;
+                Track(repoType.GetString()!, connectionString);
             }
 
             if (clusterConfig.TryGetProperty("AgentConnections", out var agentConnections) && agentConnections.ValueKind == JsonValueKind.Array)
@@ -265,7 +308,10 @@ public sealed class ScenarioRunner : IAsyncDisposable
                 {
                     if (agentConnection.TryGetProperty("RepositoryType", out var agentRepoType) && agentRepoType.ValueKind == JsonValueKind.String)
                     {
-                        repoTypes.Add(agentRepoType.GetString()!);
+                        var connectionString = agentConnection.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
+                            ? cs.GetString()
+                            : null;
+                        Track(agentRepoType.GetString()!, connectionString);
                     }
                 }
             }
@@ -273,22 +319,56 @@ public sealed class ScenarioRunner : IAsyncDisposable
 
         foreach (var repoType in repoTypes)
         {
+            var databaseNames = databaseNamesByRepoType.TryGetValue(repoType, out var names) ? names : Enumerable.Empty<string>();
+
             if (string.Equals(repoType, "Postgres", StringComparison.OrdinalIgnoreCase))
             {
                 var postgres = await global.GetOrStartPostgresAsync(ct);
-                await PostgresDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(postgres.GetConnectionString(), ct);
+                await PostgresDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(postgres.GetConnectionString(), databaseNames, ct);
             }
             else if (string.Equals(repoType, "MySql", StringComparison.OrdinalIgnoreCase))
             {
                 var mySql = await global.GetOrStartMySqlAsync(ct);
-                await MySqlDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(mySql.GetConnectionString(), ct);
+                await MySqlDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(mySql.GetConnectionString(), databaseNames, ct);
             }
             else if (string.Equals(repoType, "SqlServer", StringComparison.OrdinalIgnoreCase))
             {
                 var sqlServer = await global.GetOrStartSqlServerAsync(ct);
-                await SqlServerDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(sqlServer.GetConnectionString(), ct);
+                await SqlServerDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(sqlServer.GetConnectionString(), databaseNames, ct);
+            }
+            else if (string.Equals(repoType, "NatsJetStream", StringComparison.OrdinalIgnoreCase))
+            {
+                // No provisioning step needed here, unlike the SQL providers above: JetStream has no
+                // CREATE DATABASE-equivalent -- NatsJetStreamJobMasterRuntimeSetup provisions streams
+                // itself inside the app container at startup.
+                await global.GetOrStartNatsAsync(ct);
             }
         }
+    }
+
+    private static string? ExtractDatabaseName(string? connectionString)
+    {
+        if (string.IsNullOrEmpty(connectionString))
+        {
+            return null;
+        }
+
+        foreach (var part in connectionString.Split(';'))
+        {
+            var eqIndex = part.IndexOf('=');
+            if (eqIndex < 0)
+            {
+                continue;
+            }
+
+            var key = part[..eqIndex].Trim();
+            if (string.Equals(key, "Database", StringComparison.OrdinalIgnoreCase))
+            {
+                return part[(eqIndex + 1)..].Trim();
+            }
+        }
+
+        return null;
     }
 
     public async ValueTask DisposeAsync()

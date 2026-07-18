@@ -4,20 +4,11 @@ namespace JobMaster.ScenarioTests.Runner;
 
 internal static class SqlServerDatabaseProvisioner
 {
-    public static readonly IReadOnlyCollection<string> DatabaseNames = new List<string>()
-    {
-        "SqlServerStandalone",
-        "SqlServerDistCluster",
-        "SqlServerAgent1",
-        "SqlServerAgent2",
-        "SqlServerAgent3",
-    }.AsReadOnly();
-
-    public static async Task CreateDatabasesIfNotExistsAsync(string adminConnectionString, CancellationToken ct = default)
+    public static async Task CreateDatabasesIfNotExistsAsync(string adminConnectionString, IEnumerable<string> databaseNames, CancellationToken ct = default)
     {
         await using var connection = new SqlConnection(adminConnectionString);
         await connection.OpenAsync(ct);
-        foreach (var databaseName in DatabaseNames)
+        foreach (var databaseName in databaseNames)
         {
             await using var command = connection.CreateCommand();
             command.CommandText = @"

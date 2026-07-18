@@ -3,6 +3,5 @@
   "phases": [
     { "name": "phase-1", "containers": ["user-pass-cluster-one", "user-pass-cluster-two"] }
   ],
-  "infrastructure": [],
   "api": { "container": "api" }
 }

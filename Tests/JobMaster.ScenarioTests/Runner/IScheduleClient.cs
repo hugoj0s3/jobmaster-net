@@ -8,6 +8,7 @@ public interface IScheduleClient
         int qtyJobs = 1,
         string? clusterId = null,
         int? afterSeconds = null,
+        int? priority = null,
         CancellationToken ct = default);
 }
 

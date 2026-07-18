@@ -1,9 +1,11 @@
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
+using JobMaster.ScenarioTests;
 using JobMaster.ScenarioTests.Runner;
 using Testcontainers.MsSql;
 using Testcontainers.MySql;
+using Testcontainers.Nats;
 using Testcontainers.PostgreSql;
 using Testcontainers.Redis;
 using Xunit;
@@ -11,16 +13,17 @@ using Xunit;
 namespace JobMaster.ScenarioTests.Fixtures;
 
 /// <summary>
-/// Shared, run-scoped infrastructure: one Postgres/MySql/SqlServer and one Redis container for
-/// the entire test run (each lazily started on first use), plus the TargetTestScheduleApp/
-/// TargetTestApi images built once and reused by every scenario. Disposed only when the whole
-/// test run ends.
+/// Shared, run-scoped infrastructure: one Postgres/MySql/SqlServer/Nats and one Redis container
+/// for the entire test run (each lazily started on first use), plus every distinct scenario app
+/// image (keyed by Dockerfile path -- see <see cref="GetOrBuildAppImageAsync"/>) built once and
+/// reused by every scenario. Disposed only when the whole test run ends.
 /// </summary>
 public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
 {
     public const string PostgresUsername = "postgres";
     public const string MySqlUsername = "root";
     public const string SqlServerUsername = "sa";
+    public const string NatsUsername = "natsuser";
 
     /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
     public string PostgresPassword { get; } = SecretGenerator.Generate();
@@ -31,19 +34,27 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
     public string SqlServerPassword { get; } = SecretGenerator.Generate();
 
+    /// <summary>Generated once per test run — never hardcoded, never logged.</summary>
+    public string NatsPassword { get; } = SecretGenerator.Generate();
+
     private readonly SemaphoreSlim postgresLock = new(1, 1);
     private readonly SemaphoreSlim mySqlLock = new(1, 1);
     private readonly SemaphoreSlim sqlServerLock = new(1, 1);
     private readonly SemaphoreSlim redisLock = new(1, 1);
-    private readonly SemaphoreSlim scheduleImageLock = new(1, 1);
-    private readonly SemaphoreSlim apiImageLock = new(1, 1);
+    private readonly SemaphoreSlim natsLock = new(1, 1);
+    private readonly SemaphoreSlim imageBuildLock = new(1, 1);
 
     private PostgreSqlContainer? postgres;
     private MySqlContainer? mySql;
     private MsSqlContainer? sqlServer;
     private RedisContainer? redis;
-    private IFutureDockerImage? scheduleAppImage;
-    private IFutureDockerImage? apiAppImage;
+    private NatsContainer? nats;
+
+    // Keyed by (normalized) DockerfilePath, so any number of distinct scenario app images can be
+    // built and cached independently within one run -- not just the original schedule-app/api-app
+    // pair. See ScenarioRunner.StartContainerAsync, which now drives image selection entirely off
+    // ContainerDefinition.DockerfilePath instead of a hardcoded schedule-app-vs-api-app branch.
+    private readonly Dictionary<string, IFutureDockerImage> images = new(StringComparer.OrdinalIgnoreCase);
 
     public INetwork Network { get; private set; } = null!;
 
@@ -172,57 +183,74 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         }
     }
 
-    public async Task<string> GetOrBuildScheduleAppImageAsync(CancellationToken ct = default)
+    public async Task<NatsContainer> GetOrStartNatsAsync(CancellationToken ct = default)
     {
-        if (scheduleAppImage != null) return scheduleAppImage.FullName!;
+        if (nats != null) return nats;
 
-        await scheduleImageLock.WaitAsync(ct);
+        await natsLock.WaitAsync(ct);
         try
         {
-            if (scheduleAppImage != null) return scheduleAppImage.FullName!;
+            if (nats != null) return nats;
 
-            var repoRoot = RepoRootLocator.Find();
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(new CommonDirectoryPath(repoRoot), "")
-                .WithDockerfile("Tests/TargetTestScheduleApp/Dockerfile")
-                .WithName("target-test-schedule-app:scenario-tests")
-                .WithCleanUp(true)
+            // JetStream is enabled by default (NatsBuilder always passes --jetstream); no extra
+            // command flags needed here, unlike Postgres/MySql's max_connections bump above -- a
+            // single scenario only ever runs one NATS-backed cluster's worth of agent connections
+            // against this container, nowhere near JetStream's default limits.
+            var container = new NatsBuilder()
+                .WithImage("nats:2.10-alpine")
+                .WithNetwork(Network)
+                .WithNetworkAliases("nats")
+                .WithUsername(NatsUsername)
+                .WithPassword(NatsPassword)
                 .Build();
 
-            await image.CreateAsync(ct);
-            scheduleAppImage = image;
-            return image.FullName!;
+            await container.StartAsync(ct);
+            nats = container;
+            return container;
         }
         finally
         {
-            scheduleImageLock.Release();
+            natsLock.Release();
         }
     }
 
-    public async Task<string> GetOrBuildApiAppImageAsync(CancellationToken ct = default)
+    /// <summary>
+    /// Builds (once per run, cached) and returns the image name for the app at <paramref name="dockerfilePath"/>.
+    /// The image name is derived from the Dockerfile's parent folder (e.g.
+    /// <c>Tests/TargetTestScheduleApp/Dockerfile</c> → <c>target-test-schedule-app:scenario-tests</c>),
+    /// matching exactly what the two dedicated methods this replaced used to hardcode -- so every
+    /// existing scenario's <c>dockerfilePath</c> JSON continues to resolve to the same image tag with
+    /// zero changes required.
+    /// </summary>
+    public async Task<string> GetOrBuildAppImageAsync(string dockerfilePath, CancellationToken ct = default)
     {
-        if (apiAppImage != null) return apiAppImage.FullName!;
+        var key = dockerfilePath.Replace('\\', '/');
 
-        await apiImageLock.WaitAsync(ct);
+        if (images.TryGetValue(key, out var cached)) return cached.FullName!;
+
+        await imageBuildLock.WaitAsync(ct);
         try
         {
-            if (apiAppImage != null) return apiAppImage.FullName!;
+            if (images.TryGetValue(key, out cached)) return cached.FullName!;
+
+            var appFolder = Path.GetFileName(Path.GetDirectoryName(key)!.TrimEnd('/'));
+            var imageName = $"{appFolder.ToKebabCase()}:scenario-tests";
 
             var repoRoot = RepoRootLocator.Find();
             var image = new ImageFromDockerfileBuilder()
                 .WithDockerfileDirectory(new CommonDirectoryPath(repoRoot), "")
-                .WithDockerfile("Tests/TargetTestApi/Dockerfile")
-                .WithName("target-test-api:scenario-tests")
+                .WithDockerfile(key)
+                .WithName(imageName)
                 .WithCleanUp(true)
                 .Build();
 
             await image.CreateAsync(ct);
-            apiAppImage = image;
+            images[key] = image;
             return image.FullName!;
         }
         finally
         {
-            apiImageLock.Release();
+            imageBuildLock.Release();
         }
     }
 
@@ -232,6 +260,7 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         if (mySql != null) await mySql.DisposeAsync();
         if (sqlServer != null) await sqlServer.DisposeAsync();
         if (redis != null) await redis.DisposeAsync();
+        if (nats != null) await nats.DisposeAsync();
 
         // Network may never have been assigned if InitializeAsync itself failed (e.g. Docker
         // unreachable) — don't let a NullReferenceException here mask that real error.

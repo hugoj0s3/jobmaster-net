@@ -7,22 +7,28 @@ namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 /// <summary>
 /// Shared phase-1 logic for every "Pure" single-repo-type schedule test (PostgresPure, MySqlPure,
 /// SqlServerPure, ...): schedules ~1000 jobs across all of the scenario's clusters, mixing
-/// immediate and 5-minute-delayed jobs across several handler types. Every cluster's
+/// immediate and 5-minute-delayed jobs across several handler types and priorities. Every cluster's
 /// TransientThreshold is 2 minutes (see each scenario's Phase1/*.json) -- well under the 5-minute
 /// delay -- so this also proves a delayed job is not dispatched the moment it's threshold-eligible
 /// early, and only executes once its actual due time arrives. The plan is built up front as a
 /// List&lt;JobsQty&gt; and that same plan drives every assertion afterward, against both the Redis
-/// tracker and the JobMaster API.
+/// tracker and the JobMaster API -- filtered by cluster alone, by cluster+handler, by
+/// cluster+priority, and by cluster+TestIdentifier (per individual scheduled batch), proving each
+/// filter dimension works both alone and combined with ClusterId.
 ///
 /// A concrete scenario only needs to supply its (already kebab-cased) <see cref="ClusterIds"/> and
 /// implement <see cref="BasePhaseEmulator{TPhaseEnum}.Phase"/> -- everything else is identical
 /// regardless of which repo type is under test.
 /// </summary>
-public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalEnvironment global, ScenarioRunner runner)
+public abstract class ScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalEnvironment global, ScenarioRunner runner)
     : BasePhaseEmulator<TPhaseEnum>(global, runner)
     where TPhaseEnum : struct, Enum
 {
     private static readonly TimeSpan DelayAfter = TimeSpan.FromMinutes(5);
+
+    // Mirrors JobMaster.Abstractions.Models.JobMasterJobStatus.Succeeded -- this project takes no
+    // JobMaster reference (see ApiJob's Status being a raw JsonElement), so the value is inlined.
+    private const int SucceededStatus = 5;
 
     // "verylong" (3min/job) is deliberately excluded from the plan: the standalone cluster only has
     // one worker, and even a couple of those jobs would eat into the budget this test relies on to
@@ -32,6 +38,15 @@ public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         ["fast"] = "TestApp.Fast",
         ["normal"] = "TestApp.Normal",
         ["slow"] = "TestApp.Slow"
+    };
+
+    // Raw JobMasterPriority underlying int values (VeryLow=1 .. Critical=5) -- gives the plan 3
+    // distinct priorities to filter by, one per handler type.
+    private static readonly Dictionary<string, int> HandlerTypeToPriority = new()
+    {
+        ["fast"] = 3,   // Medium
+        ["normal"] = 4, // High
+        ["slow"] = 2    // Low
     };
 
     protected abstract IReadOnlyList<string> ClusterIds { get; }
@@ -50,7 +65,7 @@ public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
             var batchScheduledAtUtc = DateTime.UtcNow;
 
             var scheduled = await Runner.ScheduleFor(qty.ClusterId)
-                .ScheduleAsync(qty.HandlerType, testIdentifier, qtyJobs: qty.QtyJobs, clusterId: qty.ClusterId, afterSeconds: qty.AfterSecs);
+                .ScheduleAsync(qty.HandlerType, testIdentifier, qtyJobs: qty.QtyJobs, clusterId: qty.ClusterId, afterSeconds: qty.AfterSecs, priority: qty.Priority);
             scheduled.JobIds.Should().HaveCount(qty.QtyJobs);
 
             batches.Add(new ScheduledBatch(qty, testIdentifier, scheduled.JobIds, batchScheduledAtUtc));
@@ -119,21 +134,38 @@ public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         var delaySeconds = (int)DelayAfter.TotalSeconds;
         var plan = new List<JobsQty>();
 
+        // Base quantities (150/50/3/100/30 = 333/cluster) are calibrated for the original 3-cluster
+        // *Pure scenarios (999 total). Scaling by 3/clusterCount keeps every scenario's total near
+        // ~1000 jobs regardless of how many clusters it has -- e.g. a 2-cluster scenario (no
+        // standalone leg) scales up to 500/cluster (1000 total) instead of silently totaling 666.
+        var scale = 3.0 / clusterIds.Count;
+
         foreach (var clusterId in clusterIds)
         {
-            // Immediate: 150 + 50 + 3 = 203/cluster.
-            plan.Add(new JobsQty { ClusterId = clusterId, HandlerType = "fast", QtyJobs = 150 });
-            plan.Add(new JobsQty { ClusterId = clusterId, HandlerType = "normal", QtyJobs = 50 });
-            plan.Add(new JobsQty { ClusterId = clusterId, HandlerType = "slow", QtyJobs = 3 });
+            // Immediate.
+            plan.Add(CreateQty(clusterId, "fast", Scale(150, scale)));
+            plan.Add(CreateQty(clusterId, "normal", Scale(50, scale)));
+            plan.Add(CreateQty(clusterId, "slow", Scale(3, scale)));
 
-            // Delayed by 5 minutes: 100 + 30 = 130/cluster.
-            plan.Add(new JobsQty { ClusterId = clusterId, HandlerType = "fast", QtyJobs = 100, AfterSecs = delaySeconds });
-            plan.Add(new JobsQty { ClusterId = clusterId, HandlerType = "normal", QtyJobs = 30, AfterSecs = delaySeconds });
+            // Delayed by 5 minutes.
+            plan.Add(CreateQty(clusterId, "fast", Scale(100, scale), delaySeconds));
+            plan.Add(CreateQty(clusterId, "normal", Scale(30, scale), delaySeconds));
         }
 
-        // 333/cluster x N clusters -- effectively the ~1000 jobs asked for (999 at N=3).
         return plan;
     }
+
+    private static int Scale(int baseQty, double scale) =>
+        (int)Math.Round(baseQty * scale, MidpointRounding.AwayFromZero);
+
+    private static JobsQty CreateQty(string clusterId, string handlerType, int qtyJobs, int? afterSecs = null) => new()
+    {
+        ClusterId = clusterId,
+        HandlerType = handlerType,
+        QtyJobs = qtyJobs,
+        AfterSecs = afterSecs,
+        Priority = HandlerTypeToPriority[handlerType]
+    };
 
     private async Task AssertApiAsync(IReadOnlyList<string> clusterIds, IReadOnlyList<ScheduledBatch> batches)
     {
@@ -142,15 +174,12 @@ public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         foreach (var clusterId in clusterIds)
         {
             var clusterBatches = batches.Where(b => b.Plan.ClusterId == clusterId).ToList();
+
+            // Filter: ClusterId only.
             var expectedClusterJobIds = clusterBatches.SelectMany(b => b.JobIds).ToHashSet();
+            await AssertJobsAsync(api, clusterId, expectedClusterJobIds);
 
-            var clusterCount = await api.GetJobCountAsync(clusterId);
-            clusterCount.Should().Be(expectedClusterJobIds.Count);
-
-            var clusterJobs = await api.GetJobsAsync(clusterId, countLimit: int.MaxValue);
-            clusterJobs.Should().HaveCount(expectedClusterJobIds.Count);
-            clusterJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(expectedClusterJobIds);
-
+            // Filter: ClusterId + JobDefinitionId (one handler type at a time).
             foreach (var handlerType in clusterBatches.Select(b => b.Plan.HandlerType).Distinct())
             {
                 var jobDefinitionId = HandlerTypeToJobDefinitionId[handlerType];
@@ -159,15 +188,49 @@ public abstract class PureScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
                     .SelectMany(b => b.JobIds)
                     .ToHashSet();
 
-                var handlerCount = await api.GetJobCountAsync(clusterId, jobDefinitionId);
-                handlerCount.Should().Be(expectedHandlerJobIds.Count);
-
-                var handlerJobs = await api.GetJobsAsync(clusterId, jobDefinitionId, countLimit: int.MaxValue);
-                handlerJobs.Should().HaveCount(expectedHandlerJobIds.Count);
+                var handlerJobs = await AssertJobsAsync(api, clusterId, expectedHandlerJobIds, jobDefinitionId: jobDefinitionId);
                 handlerJobs.Should().OnlyContain(j => j.JobDefinitionId == jobDefinitionId);
-                handlerJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(expectedHandlerJobIds);
+            }
+
+            // Filter: ClusterId + Priority (one priority at a time).
+            foreach (var priority in clusterBatches.Select(b => b.Plan.Priority).Distinct())
+            {
+                var expectedPriorityJobIds = clusterBatches
+                    .Where(b => b.Plan.Priority == priority)
+                    .SelectMany(b => b.JobIds)
+                    .ToHashSet();
+
+                var priorityJobs = await AssertJobsAsync(api, clusterId, expectedPriorityJobIds, priority: priority);
+                priorityJobs.Should().OnlyContain(j => j.Priority.GetInt32() == priority);
+            }
+
+            // Filter: ClusterId + TestIdentifier only, no JobDefinitionId/Priority -- one scheduled
+            // batch at a time. Proves metadata-based filtering works and each batch's exact job set
+            // is independently visible via the API, not just aggregated per-cluster/per-handler.
+            foreach (var batch in clusterBatches)
+            {
+                await AssertJobsAsync(api, clusterId, batch.JobIds.ToHashSet(), testIdentifier: batch.TestIdentifier);
             }
         }
+    }
+
+    private static async Task<List<ApiJob>> AssertJobsAsync(
+        IScenarioApiClient api,
+        string clusterId,
+        IReadOnlySet<Guid> expectedJobIds,
+        string? jobDefinitionId = null,
+        int? priority = null,
+        string? testIdentifier = null)
+    {
+        var count = await api.GetJobCountAsync(clusterId, jobDefinitionId, priority, testIdentifier);
+        count.Should().Be(expectedJobIds.Count);
+
+        var jobs = await api.GetJobsAsync(clusterId, jobDefinitionId, priority, testIdentifier, countLimit: int.MaxValue);
+        jobs.Should().HaveCount(expectedJobIds.Count);
+        jobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(expectedJobIds);
+        jobs.Should().OnlyContain(j => j.Status.GetInt32() == SucceededStatus, "every job in this scenario must finish successfully");
+
+        return jobs;
     }
 
     private sealed record ScheduledBatch(JobsQty Plan, string TestIdentifier, List<Guid> JobIds, DateTime ScheduledAtUtc);

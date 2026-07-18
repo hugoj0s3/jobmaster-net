@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Web;
 
 namespace JobMaster.ScenarioTests.Runner;
@@ -40,24 +41,70 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? new List<string>();
     }
 
-    public async Task<int> GetJobCountAsync(string clusterId, string? jobDefinitionId = null, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<int> GetJobCountAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, string? bearerToken = null, CancellationToken ct = default)
     {
-        var query = BuildJobQuery(jobDefinitionId, countLimit: null);
-        using var request = CreateRequest(HttpMethod.Get, $"{basePath}/{clusterId}/jobs/count{query}", bearerToken);
+        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, countLimit: null);
+        var requestUri = $"{basePath}/{clusterId}/jobs/count{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
         var response = await httpClient.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, requestUri, ct);
 
         return await response.Content.ReadFromJsonAsync<int>(ScenarioJsonOptions.Default, ct);
     }
 
-    public async Task<List<ApiJob>> GetJobsAsync(string clusterId, string? jobDefinitionId = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<List<ApiJob>> GetJobsAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
     {
-        var query = BuildJobQuery(jobDefinitionId, countLimit);
-        using var request = CreateRequest(HttpMethod.Get, $"{basePath}/{clusterId}/jobs{query}", bearerToken);
+        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, countLimit);
+        var requestUri = $"{basePath}/{clusterId}/jobs{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
         var response = await httpClient.SendAsync(request, ct);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessAsync(response, requestUri, ct);
 
         var result = await response.Content.ReadFromJsonAsync<List<ApiJob>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
+    public async Task<List<ApiAgentConnection>> GetAgentConnectionsAsync(string clusterId, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/agent-connections?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiAgentConnection>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
+    public async Task<int> GetBucketCountAsync(string clusterId, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var requestUri = $"{basePath}/{clusterId}/buckets/count";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        return await response.Content.ReadFromJsonAsync<int>(ScenarioJsonOptions.Default, ct);
+    }
+
+    public async Task<List<ApiRecurringSchedule>> GetRecurringSchedulesAsync(string clusterId, string? testIdentifier = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (!string.IsNullOrEmpty(testIdentifier))
+        {
+            // TestIdentifier lives in schedule Metadata, not a first-class queryable column, same
+            // rationale as BuildJobQuery's testIdentifier handling above.
+            var metadataFilters = new[] { new { Key = "TestIdentifier", Operation = "Eq", Value = testIdentifier } };
+            query["MetadataFiltersJson"] = JsonSerializer.Serialize(metadataFilters);
+        }
+
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/recurring-schedules?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiRecurringSchedule>>(ScenarioJsonOptions.Default, ct);
         return result ?? [];
     }
 
@@ -70,12 +117,25 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result?.Token ?? throw new InvalidOperationException("JWT token response deserialized to null.");
     }
 
-    private static string BuildJobQuery(string? jobDefinitionId, int? countLimit)
+    private static string BuildJobQuery(string? jobDefinitionId, int? priority, string? testIdentifier, int? countLimit)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
         if (!string.IsNullOrEmpty(jobDefinitionId))
         {
             query["JobDefinitionId"] = jobDefinitionId;
+        }
+
+        if (priority.HasValue)
+        {
+            query["Priority"] = priority.Value.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(testIdentifier))
+        {
+            // TestIdentifier lives in job Metadata, not a first-class queryable column, so it's
+            // matched via the API's generic metadata filter mechanism instead of a dedicated param.
+            var metadataFilters = new[] { new { Key = "TestIdentifier", Operation = "Eq", Value = testIdentifier } };
+            query["MetadataFiltersJson"] = JsonSerializer.Serialize(metadataFilters);
         }
 
         if (countLimit.HasValue)
@@ -85,6 +145,18 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
 
         var queryString = query.ToString();
         return string.IsNullOrEmpty(queryString) ? string.Empty : $"?{queryString}";
+    }
+
+    private static async Task EnsureSuccessAsync(HttpResponseMessage response, string requestUri, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var errorBody = await response.Content.ReadAsStringAsync(ct);
+        throw new HttpRequestException(
+            $"GET {requestUri} failed with {(int)response.StatusCode} {response.StatusCode}: {errorBody}");
     }
 
     private static HttpRequestMessage CreateRequest(HttpMethod method, string requestUri, string? bearerToken)

@@ -1,0 +1,101 @@
+name: Schedule Scenario Tests
+
+on:
+  workflow_dispatch:
+
+jobs:
+  smoke-tests:
+    name: Smoke Tests (ApiAuths + BasicExecution)
+    runs-on: ubuntu-latest
+    # These are small (BasicExecution schedules a single job with a 90s wait; the four ApiAuths
+    # variants are comparably light) -- a fast fail-fast gate before committing to the expensive
+    # matrix below.
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run ApiAuths + BasicExecution
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~ApiAuths|FullyQualifiedName~BasicExecution" --logger "console;verbosity=normal"
+
+  scenario-test:
+    name: ${{ matrix.scenario }}
+    needs: smoke-tests
+    runs-on: ubuntu-latest
+    # Each of these runs the real Testcontainers-based drain-then-retire lifecycle end to end
+    # (~60-70 min observed locally) -- generous headroom over that without eating the whole
+    # 6-hour default job timeout if one hangs.
+    timeout-minutes: 100
+
+    strategy:
+      # One matrix job per scenario -- GitHub Actions gives each its own runner/VM, so they run
+      # truly in parallel with no shared build output between them (running these concurrently on
+      # one machine via a shared bin/obj directory causes file-lock failures -- confirmed locally).
+      fail-fast: false
+      matrix:
+        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run ${{ matrix.scenario }}
+        # Scoped to the ScheduleTest namespace specifically -- RecurringScheduleTest has classes
+        # with the same simple names (e.g. "PostgresPure"), so an unscoped "~PostgresPure" filter
+        # would match both and run them together in this job.
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  recurring-scenario-test:
+    name: Recurring ${{ matrix.scenario }}
+    # Runs after the one-off ScheduleTest matrix, not in parallel with it -- keeps total concurrent
+    # Docker/Testcontainers load bounded and gives a clear "one-off scheduling works" signal before
+    # spending time on recurring-schedule correctness.
+    needs: scenario-test
+    runs-on: ubuntu-latest
+    # Recurring scenarios are shorter than the drain-lifecycle ScheduleTest ones (~15-25 min
+    # observed, up to ~30 min for the NATS variant's widened tolerances) -- generous headroom
+    # without eating the whole 6-hour default job timeout if one hangs.
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Recurring ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.RecurringScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"

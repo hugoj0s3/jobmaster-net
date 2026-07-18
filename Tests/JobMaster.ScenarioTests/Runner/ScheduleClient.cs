@@ -10,6 +10,7 @@ public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
         int qtyJobs = 1,
         string? clusterId = null,
         int? afterSeconds = null,
+        int? priority = null,
         CancellationToken ct = default)
     {
         var body = new
@@ -17,7 +18,8 @@ public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
             ClusterId = clusterId,
             QtyJobs = qtyJobs,
             AfterSeconds = afterSeconds,
-            TestIdentifier = testIdentifier
+            TestIdentifier = testIdentifier,
+            Priority = priority
         };
 
         var response = await httpClient.PostAsJsonAsync($"/schedule/{handlerType}", body, ct);

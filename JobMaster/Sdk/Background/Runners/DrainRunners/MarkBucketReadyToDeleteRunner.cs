@@ -68,7 +68,7 @@ internal class MarkBucketReadyToDeleteRunner : BucketAwareRunner
             await masterBucketsService.UpdateAsync(bucket);
         }
 
-        await StopAsync();
+        // CleanupDrainRunnersAsync will stop this runner once the bucket update above lands.
         return OnTickResult.Success(this);
     }
 }

@@ -1,0 +1,26 @@
+{
+  "containerName": "postgres-nats-recurring",
+  "dockerfilePath": "Tests/TargetTestRecurringApp/Dockerfile",
+  "networkAlias": "postgres-nats-recurring",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-nats-recurring",
+      "SetAsDefault": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresNatsRecurring;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:05:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-1",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "nats-agent-1" }
+      ]
+    }
+  ]
+}

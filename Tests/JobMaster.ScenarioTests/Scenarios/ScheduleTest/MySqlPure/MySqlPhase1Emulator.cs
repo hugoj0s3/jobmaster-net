@@ -3,8 +3,8 @@ using JobMaster.ScenarioTests.Runner;
 
 namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest.MySqlPure;
 
-public sealed class MySqlPurePhase1Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
-    : PureScheduleTestPhase1EmulatorBase<MySqlPurePhases>(global, runner)
+public sealed class MySqlPhase1Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
+    : ScheduleTestPhase1EmulatorBase<MySqlPurePhases>(global, runner)
 {
     protected override IReadOnlyList<string> ClusterIds { get; } = Enum.GetValues<MySqlPureClusters>()
         .Select(c => c.ToString()!.ToKebabCase())

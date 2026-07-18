@@ -27,6 +27,7 @@
         <PackageReference Include="Testcontainers.MySql" Version="3.10.0" />
         <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
         <PackageReference Include="Testcontainers.Redis" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.Nats" Version="3.10.0" />
         <PackageReference Include="StackExchange.Redis" Version="2.8.31" />
         <PackageReference Include="Npgsql" Version="8.0.3" />
         <PackageReference Include="MySqlConnector" Version="2.5.0" />

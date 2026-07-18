@@ -1,0 +1,7 @@
+{
+  "scenarioName": "recurring-sqlserver-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["sqlserver-recurring"] }
+  ],
+  "api": { "container": "api" }
+}
