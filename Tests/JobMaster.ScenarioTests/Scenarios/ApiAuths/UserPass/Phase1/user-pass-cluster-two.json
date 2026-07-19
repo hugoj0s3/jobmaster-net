@@ -8,7 +8,7 @@
     {
       "ClusterId": "user-pass-cluster-two",
       "Standalone": true,
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}",
       "Workers": [ { "WorkerName": "w1" } ]

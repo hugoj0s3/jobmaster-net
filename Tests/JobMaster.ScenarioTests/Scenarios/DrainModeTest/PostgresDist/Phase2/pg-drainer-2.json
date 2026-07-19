@@ -1,0 +1,25 @@
+{
+  "containerName": "pg-drainer-2",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-drainer-2",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-drain-load",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDrainLoadCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-2",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDrainLoadAgent2;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "drainer-2", "AgentConnectionName": "pg-agent-2", "WorkerMode": "Drain" }
+      ]
+    }
+  ]
+}

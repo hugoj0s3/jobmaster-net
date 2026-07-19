@@ -250,6 +250,9 @@ internal static class RunnerFakes
         public BucketModel? Get(string bucketId, TimeSpan? allowedDiscrepancy)
             => Buckets.FirstOrDefault(b => b.Id == bucketId);
 
+        public Task<BucketModel?> GetNoCacheAsync(string bucketId)
+            => Task.FromResult(Buckets.FirstOrDefault(b => b.Id == bucketId));
+
         public IList<BucketModel> Query(MasterBucketQueryCriteria criteria, TimeSpan? allowedDiscrepancy = null)
         {
             IEnumerable<BucketModel> result = Buckets;
@@ -360,6 +363,33 @@ internal static class RunnerFakes
 
             foreach (var j in toRemove) Jobs.Remove(j);
             return Task.FromResult(toRemove.Count);
+        }
+
+        public Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit)
+        {
+            var candidates = Jobs
+                .Where(j => j.Status.IsFinalStatus()
+                         && j.FinalizedAt.HasValue
+                         && j.FinalizedAt.Value <= cutoffUtc)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult<IList<JobRawModel>>(candidates);
+        }
+
+        public Task<int> DeleteByIdsAsync(IList<Guid> ids)
+        {
+            var toRemove = Jobs.Where(j => ids.Contains(j.Id)).ToList();
+            foreach (var j in toRemove) Jobs.Remove(j);
+            return Task.FromResult(toRemove.Count);
+        }
+
+        public Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+        {
+            foreach (var job in jobs)
+            {
+                if (!Jobs.Any(j => j.Id == job.Id)) Jobs.Add(job);
+            }
+            return Task.CompletedTask;
         }
 
         public List<JobExecution> JobExecutions { get; } = new();
@@ -497,6 +527,31 @@ internal static class RunnerFakes
 
             foreach (var s in toRemove) Schedules.Remove(s);
             return Task.FromResult(toRemove.Count);
+        }
+
+        public Task<IList<RecurringScheduleRawModel>> QueryTerminatedToPurgeAsync(DateTime cutoffUtc, int limit)
+        {
+            var candidates = Schedules
+                .Where(s => s.TerminatedAt.HasValue && s.TerminatedAt.Value <= cutoffUtc)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult<IList<RecurringScheduleRawModel>>(candidates);
+        }
+
+        public Task<int> DeleteByIdsAsync(IList<Guid> ids)
+        {
+            var toRemove = Schedules.Where(s => ids.Contains(s.Id)).ToList();
+            foreach (var s in toRemove) Schedules.Remove(s);
+            return Task.FromResult(toRemove.Count);
+        }
+
+        public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+        {
+            foreach (var schedule in schedules)
+            {
+                if (!Schedules.Any(s => s.Id == schedule.Id)) Schedules.Add(schedule);
+            }
+            return Task.CompletedTask;
         }
 
         public void Add(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();

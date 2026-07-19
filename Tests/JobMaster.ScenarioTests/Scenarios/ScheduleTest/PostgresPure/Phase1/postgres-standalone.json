@@ -8,7 +8,7 @@
     {
       "ClusterId": "postgres-standalone",
       "Standalone": true,
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}",
       "TransientThreshold": "00:02:00",

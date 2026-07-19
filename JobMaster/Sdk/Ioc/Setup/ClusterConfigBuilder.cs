@@ -111,11 +111,21 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
                         $"Remove the BucketQtyConfig call or set it to 0.");
             }
 
-            // Fill defaults for every priority not explicitly configured
+            // Fill defaults for every priority not explicitly configured. Only Full/Execution workers on
+            // an Active cluster ever actually consume bucket capacity — Coordinator/Drain workers (and
+            // any worker at all on an Archived/Migrating cluster, where buckets are forbidden outright)
+            // get 0 across the board regardless of mode, so they never trip the "can not have buckets
+            // defined" check just from this default fill.
+            var effectiveClusterMode = clusterDefinition.ClusterMode ?? JobMasterDefaults.DefaultClusterMode;
+            var workerCanOwnBuckets = effectiveClusterMode == JobMaster.Abstractions.Models.ClusterMode.Active &&
+                (worker.Mode == AgentWorkerMode.Full || worker.Mode == AgentWorkerMode.Execution);
+
             foreach (JobMasterPriority p in Enum.GetValues(typeof(JobMasterPriority)))
             {
                 if (!worker.BucketQty.ContainsKey(p))
-                    worker.BucketQty[p] = clusterDefinition.DisabledPriorities.Contains(p) ? 0 : JobMasterDefaults.Worker.BucketQtyPerPriority;
+                    worker.BucketQty[p] = (!workerCanOwnBuckets || clusterDefinition.DisabledPriorities.Contains(p))
+                        ? 0
+                        : JobMasterDefaults.Worker.BucketQtyPerPriority;
             }
         }
 
@@ -164,6 +174,8 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         
         clusterServiceRegistration.AddJobMasterComponent<IMasterAgentWorkersService, MasterAgentWorkersService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterJobsService, MasterJobsService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterJobIntakeService, MasterJobIntakeService>();
+        clusterServiceRegistration.AddJobMasterComponent<IMasterRecurringScheduleIntakeService, MasterRecurringScheduleIntakeService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterChangesSentinelService, MasterChangesSentinelService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterDistributedLockerService, MasterDistributedLockerService>();
         clusterServiceRegistration.AddJobMasterComponent<IMasterBucketsService, MasterBucketsService>();
@@ -301,9 +313,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId) => IanaTimeZoneId(ianaTimeZoneId);
 
-    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl)
+    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
-        this.clusterDefinition.SetDataRetentionTtl(dataRetentionTtl);
+        this.clusterDefinition.SetDataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
         return this;
     }
 
@@ -383,6 +395,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     }
 
     public IClusterConfigSelector ClusterMode(ClusterMode mode) => Mode(mode);
+
+    public IClusterConfigSelector MigrateTo(string targetActiveClusterId)
+    {
+        clusterDefinition.MigrateTo(targetActiveClusterId);
+        return this;
+    }
 
     public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
@@ -465,7 +483,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     private IClusterConfigSelector ApplyJsonConfig(ClusterJsonConfig config)
     {
         if (config.ClusterId != null) ClusterId(config.ClusterId);
-        if (config.SetAsDefault) SetAsDefault();
+        if (config.Default) SetAsDefault();
 
         if (config.Mode != null)
         {
@@ -485,7 +503,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         if (config.IanaTimeZoneId != null)
             IanaTimeZoneId(config.IanaTimeZoneId);
         if (config.DataRetentionTtl != null)
-            DataRetentionTtl(TimeSpan.Parse(config.DataRetentionTtl, CultureInfo.InvariantCulture));
+            DataRetentionTtl(TimeSpan.Parse(config.DataRetentionTtl, CultureInfo.InvariantCulture), config.TargetArchivedClusterId);
+        else if (config.TargetArchivedClusterId != null)
+            clusterDefinition.TargetArchivedClusterId = config.TargetArchivedClusterId;
+
+        if (config.TargetActiveClusterId != null)
+            clusterDefinition.TargetActiveClusterId = config.TargetActiveClusterId;
 
         foreach (var raw in config.DisabledPriorities ?? [])
         {
@@ -611,9 +634,9 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl)
+    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
-        clusterDefinition.SetDataRetentionTtl(dataRetentionTtl);
+        clusterDefinition.SetDataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
         return this;
     }
 
@@ -646,6 +669,12 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode)
     {
         clusterDefinition.ClusterMode = mode;
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId)
+    {
+        clusterDefinition.MigrateTo(targetActiveClusterId);
         return this;
     }
 

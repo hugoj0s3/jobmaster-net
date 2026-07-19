@@ -10,7 +10,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "mysql-recurring",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlRecurring;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
     }

@@ -15,10 +15,10 @@ internal class PostgresJobMasterRuntimeSetup : SqlJobMasterRuntimeSetup
     
     public override string RepositoryTypeId => PostgresRepositoryConstants.RepositoryTypeId;
 
-    public override async Task OnStartingAsync(IServiceProvider mainServiceProvider)
+    public override async Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
         await CreateCaseInsensitiveCollationAsync();
-        await base.OnStartingAsync(mainServiceProvider);
+        await base.OnBeforeStartAsync(mainServiceProvider);
     }
 
     private async Task CreateCaseInsensitiveCollationAsync()

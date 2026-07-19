@@ -10,13 +10,13 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "no-auth-cluster-one",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     },
     {
       "ClusterId": "no-auth-cluster-two",
-      "SetAsDefault": false,
+      "Default": false,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     }

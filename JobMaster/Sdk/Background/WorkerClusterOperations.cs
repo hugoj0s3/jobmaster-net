@@ -233,12 +233,17 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
     public async Task MarkBucketAsLostAsync(string bucketId)
     {
-        var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+        // Fresh, uncached read -- not masterBucketsService.Get(bucketId, allowedDiscrepancy), which
+        // can silently return a stale cached snapshot never invalidated for this specific bucket,
+        // causing MarkAsLost() to be applied to (and re-written from) stale data or skipped
+        // entirely if the cache is out of sync. Same rationale as MarkBucketAsLostIfNotDrainingAsync
+        // below.
+        var bucket = await masterBucketsService.GetNoCacheAsync(bucketId);
         if (bucket is null)
         {
             return;
         }
-        
+
         await MarkBucketAsLostAsync(bucket);
     }
 
@@ -261,8 +266,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
            // Re-check under the lock with an uncached read: the bucket may have moved into an
            // exempt status (e.g. picked up for draining, or already finished draining) since the
            // check above, and the cache could still be serving that now-stale snapshot.
-           var freshBuckets = await masterBucketsService.QueryAsync(new MasterBucketQueryCriteria { BucketIds = new List<string> { bucketId } });
-           bucket = freshBuckets.FirstOrDefault();
+           bucket = await masterBucketsService.GetNoCacheAsync(bucketId);
            if (bucket is null || IsExemptFromLostMarking(bucket.Status))
            {
                return;

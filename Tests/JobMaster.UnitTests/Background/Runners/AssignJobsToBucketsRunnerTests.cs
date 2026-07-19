@@ -52,7 +52,7 @@ public class AssignJobsToBucketsRunnerTests
     public async Task OnTickAsync_WhenClusterModeIsNotActive_ShouldReturnSkipped()
     {
         var f = RunnerFixture.Create();
-        f.ClusterConfig.Config = new ClusterConfigurationModel("test") { ClusterMode = ClusterMode.Passive };
+        f.ClusterConfig.Config = new ClusterConfigurationModel("test") { ClusterMode = ClusterMode.Migrating };
 
         var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);

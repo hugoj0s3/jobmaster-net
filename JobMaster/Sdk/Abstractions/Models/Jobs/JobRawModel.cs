@@ -92,6 +92,11 @@ internal class JobRawModel : JobMasterBaseModel
         Version = version;
     }
 
+    public void ReassignToCluster(string clusterId)
+    {
+        ClusterId = clusterId;
+    }
+
     public DateTime GetSafeNextPlanExecutionAt()
     {
         return this.NextPlanExecutionAt ?? this.ScheduledAt;

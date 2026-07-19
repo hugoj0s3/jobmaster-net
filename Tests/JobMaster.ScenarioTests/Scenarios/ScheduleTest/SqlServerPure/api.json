@@ -10,19 +10,19 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "sqlserver-standalone",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerStandalone;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
     },
     {
       "ClusterId": "sqlserver-dist-one",
-      "SetAsDefault": false,
+      "Default": false,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
     },
     {
       "ClusterId": "sqlserver-dist-two",
-      "SetAsDefault": false,
+      "Default": false,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
     }

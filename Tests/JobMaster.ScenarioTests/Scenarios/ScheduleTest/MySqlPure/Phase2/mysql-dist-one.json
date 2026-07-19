@@ -7,7 +7,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "mysql-dist-one",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDistCluster;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
       "AgentConnections": [

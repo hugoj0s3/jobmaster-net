@@ -159,7 +159,7 @@ public class JobMasterSchedulerClusterAwareTests
     }
 
     [Fact]
-    public async Task ScheduleAsync_WhenClusterModePassive_ShouldHoldOnMaster_AndAddAsync()
+    public async Task ScheduleAsync_WhenClusterModeMigrating_ShouldHoldOnMaster_AndAddAsync()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
@@ -173,7 +173,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         masterConfig.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId)
         {
-            ClusterMode = ClusterMode.Passive,
+            ClusterMode = ClusterMode.Migrating,
             MaxMessageByteSize = 1024 * 1024
         });
 
@@ -330,7 +330,7 @@ public class JobMasterSchedulerClusterAwareTests
     }
 
     [Fact]
-    public void Schedule_WhenClusterModePassive_ShouldHoldOnMaster_AndAdd()
+    public void Schedule_WhenClusterModeMigrating_ShouldHoldOnMaster_AndAdd()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
@@ -344,7 +344,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         masterConfig.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId)
         {
-            ClusterMode = ClusterMode.Passive,
+            ClusterMode = ClusterMode.Migrating,
             MaxMessageByteSize = 1024 * 1024
         });
 

@@ -1,0 +1,25 @@
+{
+  "containerName": "pg-executor-1",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-executor-1",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-drain-load",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDrainLoadCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-1",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDrainLoadAgent1;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor-1", "AgentConnectionName": "pg-agent-1", "WorkerMode": "Execution", "ParallelismFactor": 4.0 }
+      ]
+    }
+  ]
+}

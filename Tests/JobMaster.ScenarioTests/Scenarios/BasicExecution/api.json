@@ -12,7 +12,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "basic-execution-cluster",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresStandalone;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     }

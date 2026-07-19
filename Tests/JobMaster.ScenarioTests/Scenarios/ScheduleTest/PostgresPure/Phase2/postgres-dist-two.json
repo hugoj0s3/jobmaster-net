@@ -7,7 +7,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "postgres-dist-two",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresDistCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
       "AgentConnections": [

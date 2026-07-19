@@ -10,7 +10,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "postgres-nats-recurring",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresNatsRecurring;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     }

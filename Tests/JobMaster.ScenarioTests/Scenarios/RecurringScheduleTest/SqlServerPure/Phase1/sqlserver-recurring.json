@@ -8,7 +8,7 @@
     {
       "ClusterId": "sqlserver-recurring",
       "Standalone": true,
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerRecurring;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
       "TransientThreshold": "00:10:00",

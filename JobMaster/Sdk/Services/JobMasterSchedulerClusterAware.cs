@@ -64,7 +64,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
 
         var bucket = await GetBucketAvailableForJobAsync(rawModel);
 
-        if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
+        if (config?.ClusterMode == ClusterMode.Migrating || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             rawModel.MarkAsHeldOnMaster();
             await masterJobsService.AddAsync(rawModel);
@@ -95,7 +95,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         foreach (var jobRawModel in rawModels)
         {
             var bucket = await GetBucketAvailableForJobAsync(jobRawModel);
-            if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
+            if (config?.ClusterMode == ClusterMode.Migrating || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
             {
                 jobRawModel.MarkAsHeldOnMaster();
                 await masterJobsService.AddAsync(jobRawModel);
@@ -125,7 +125,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
 
         var bucket = GetBucketAvailableForJob(rawModel);
 
-        if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
+        if (config?.ClusterMode == ClusterMode.Migrating || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             rawModel.Active();
             masterRecurringSchedulesService.Add(rawModel);
@@ -148,7 +148,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
 
         var bucket = GetBucketAvailableForJob(job);
 
-        if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
+        if (config?.ClusterMode == ClusterMode.Migrating || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             job.MarkAsHeldOnMaster();
             masterJobsService.Add(job);
@@ -170,7 +170,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         EnforceSizeLimit(rawModel);
 
         var bucket = await GetBucketAvailableForJobAsync(rawModel);
-        if (config?.ClusterMode == ClusterMode.Passive || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
+        if (config?.ClusterMode == ClusterMode.Migrating || bucket == null || string.IsNullOrEmpty(bucket.AgentWorkerId))
         {
             rawModel.Active();
             await masterRecurringSchedulesService.AddAsync(rawModel);

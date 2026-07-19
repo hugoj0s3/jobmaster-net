@@ -439,43 +439,97 @@ FROM {t} j
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
 
-        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
-        try
-        {
-            // 1) Select candidate IDs limited for portability
-            var t = TableName();
-            var cId = Col(x => x.Id);
-            var cClusterId = Col(x => x.ClusterId);
-            var cStatus = Col(x => x.Status);
-            var cFinalizedAt = Col(x => x.FinalizedAt);
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cStatus = Col(x => x.Status);
+        var cFinalizedAt = Col(x => x.FinalizedAt);
 
-            var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
-WHERE {cClusterId} = @ClusterId
+        var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
+WHERE {Col(x => x.ClusterId)} = @ClusterId
   AND {cStatus} IN (@Succeeded, @Failed, @Cancelled, @Aborted)
   AND {cFinalizedAt} IS NOT NULL
   AND {cFinalizedAt} <= @CutoffUtc
 ORDER BY {cFinalizedAt} ASC, {cId} ASC");
-            selectSql.Append('\n');
-            selectSql.Append(sql.OffsetQueryFor(limit, 0));
+        selectSql.Append('\n');
+        selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
-            var ids = (await conn.QueryAsync<Guid>(selectSql.ToString(), new
-            {
-                ClusterId = ClusterConnConfig.ClusterId,
-                CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
-                Succeeded = (int)JobMasterJobStatus.Succeeded,
-                Failed = (int)JobMasterJobStatus.Failed,
-                Cancelled = (int)JobMasterJobStatus.Cancelled,
-                Aborted = (int)JobMasterJobStatus.Aborted,
-            }, tx)).ToList();
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var ids = (await conn.QueryAsync<Guid>(selectSql.ToString(), new
+        {
+            ClusterId = ClusterConnConfig.ClusterId,
+            CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
+            Succeeded = (int)JobMasterJobStatus.Succeeded,
+            Failed = (int)JobMasterJobStatus.Failed,
+            Cancelled = (int)JobMasterJobStatus.Cancelled,
+            Aborted = (int)JobMasterJobStatus.Aborted,
+        })).ToList();
 
-            if (ids.Count == 0)
-            {
-                tx.Commit();
-                return 0;
-            }
+        if (ids.Count == 0) return 0;
 
-            // 2) Delete by IDs
+        return await DeleteByIdsAsync(ids);
+    }
+
+    public async Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit)
+    {
+        if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
+
+        var t = TableName();
+        var selectCols = SelectProjection();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+        var cStatus = Col(x => x.Status);
+        var cFinalizedAt = Col(x => x.FinalizedAt);
+
+        var whereSql = $@"WHERE j.{cClusterId} = @ClusterId
+  AND j.{cStatus} IN (@Succeeded, @Failed, @Cancelled, @Aborted)
+  AND j.{cFinalizedAt} IS NOT NULL
+  AND j.{cFinalizedAt} <= @CutoffUtc";
+        var order = $"ORDER BY j.{cFinalizedAt} ASC, j.{cId} ASC";
+        var offsetClause = sql.OffsetQueryFor(limit, 0);
+
+        var queryText = $@"
+WITH jobs_page AS (
+    SELECT j.*
+    FROM {t} j
+    {whereSql}
+    {order}
+    {offsetClause}
+)
+SELECT {selectCols}
+FROM jobs_page j
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} and e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+{order}";
+
+        var args = new
+        {
+            ClusterId = ClusterConnConfig.ClusterId,
+            CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
+            Succeeded = (int)JobMasterJobStatus.Succeeded,
+            Failed = (int)JobMasterJobStatus.Failed,
+            Cancelled = (int)JobMasterJobStatus.Cancelled,
+            Aborted = (int)JobMasterJobStatus.Aborted,
+            GroupId = MasterGenericRecordGroupIds.JobMetadata
+        };
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(queryText, args)).ToList();
+        var rows = LinearListRecord(linearRows);
+        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+    }
+
+    public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
+    {
+        if (ids.Count == 0) return 0;
+
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
             var affected = 0;
             foreach (var idsPartition in ids.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation).ToList())
             {
@@ -508,6 +562,88 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
             tx.SafeRollback();
             throw;
         }
+    }
+
+    public virtual async Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return;
+
+        var t = TableName();
+        const int maxBatch = JobMasterConstants.MaxBatchSizeForBulkOperation;
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            for (var offset = 0; offset < jobs.Count; offset += maxBatch)
+            {
+                var count = Math.Min(maxBatch, jobs.Count - offset);
+                var (sqlText, dynParams) = BuildBulkInsertIfNotExistsSql(t, jobs, offset, count);
+                await conn.ExecuteAsync(sqlText, dynParams, tx);
+            }
+            tx.Commit();
+        }
+        catch
+        {
+            tx.SafeRollback();
+            throw;
+        }
+    }
+
+    // ANSI-portable "insert if not exists": each row is its own guarded SELECT, unioned together.
+    // Marked virtual so providers can later override with a dialect-specific upsert
+    // (ON CONFLICT DO NOTHING / INSERT IGNORE / MERGE) for better performance.
+    protected virtual (string sqlText, DynamicParameters dynParams) BuildBulkInsertIfNotExistsSql(
+        string t, IList<JobRawModel> jobs, int offset, int count)
+    {
+        var (cols, _) = InsertColumnsAndParams();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+
+        var dynParams = new DynamicParameters();
+        var selects = new List<string>();
+
+        for (var i = 0; i < count; i++)
+        {
+            var job = jobs[offset + i];
+            var rec = JobRawModel.ToPersistence(job);
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
+WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");
+
+            dynParams.Add($"ClusterId_{i}", rec.ClusterId);
+            dynParams.Add($"Id_{i}", rec.Id);
+            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId);
+            dynParams.Add($"TriggerSourceType_{i}", rec.TriggerSourceType);
+            dynParams.Add($"BucketId_{i}", rec.BucketId);
+            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId);
+            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId);
+            dynParams.Add($"Priority_{i}", rec.Priority);
+            dynParams.Add($"ScheduledAt_{i}", rec.ScheduledAt);
+            dynParams.Add($"NextPlanExecutionAt_{i}", rec.NextPlanExecutionAt);
+            dynParams.Add($"MsgData_{i}", rec.MsgData);
+            dynParams.Add($"Status_{i}", rec.Status);
+            dynParams.Add($"NumberOfFailures_{i}", rec.NumberOfFailures);
+            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks);
+            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries);
+            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt);
+            dynParams.Add($"SourceId_{i}", rec.SourceId);
+            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId);
+            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt);
+            dynParams.Add($"ProcessDeadline_{i}", rec.ProcessDeadline);
+            dynParams.Add($"ProcessStartedAt_{i}", rec.ProcessStartedAt);
+            dynParams.Add($"FinalizedAt_{i}", rec.FinalizedAt);
+            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane);
+            dynParams.Add($"Version_{i}", rec.Version);
+            dynParams.Add($"HostId_{i}", rec.HostId);
+            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName);
+            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId);
+            dynParams.Add($"ExistsId_{i}", rec.Id);
+        }
+
+        var sqlText = $"INSERT INTO {t} ({cols})\n{string.Join("\nUNION ALL\n", selects)};";
+        return (sqlText, dynParams);
     }
 
     public virtual async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId,

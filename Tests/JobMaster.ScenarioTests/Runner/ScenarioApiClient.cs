@@ -41,9 +41,9 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? new List<string>();
     }
 
-    public async Task<int> GetJobCountAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<int> GetJobCountAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, int? status = null, string? bearerToken = null, CancellationToken ct = default)
     {
-        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, countLimit: null);
+        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, status, countLimit: null);
         var requestUri = $"{basePath}/{clusterId}/jobs/count{query}";
         using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
         var response = await httpClient.SendAsync(request, ct);
@@ -52,9 +52,9 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return await response.Content.ReadFromJsonAsync<int>(ScenarioJsonOptions.Default, ct);
     }
 
-    public async Task<List<ApiJob>> GetJobsAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<List<ApiJob>> GetJobsAsync(string clusterId, string? jobDefinitionId = null, int? priority = null, string? testIdentifier = null, int? status = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
     {
-        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, countLimit);
+        var query = BuildJobQuery(jobDefinitionId, priority, testIdentifier, status, countLimit);
         var requestUri = $"{basePath}/{clusterId}/jobs{query}";
         using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
         var response = await httpClient.SendAsync(request, ct);
@@ -77,14 +77,65 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? [];
     }
 
-    public async Task<int> GetBucketCountAsync(string clusterId, string? bearerToken = null, CancellationToken ct = default)
+    public async Task<List<ApiAgentWorker>> GetAgentWorkersAsync(string clusterId, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
     {
-        var requestUri = $"{basePath}/{clusterId}/buckets/count";
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/workers?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiAgentWorker>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
+    public async Task<int> GetBucketCountAsync(string clusterId, string? agentConnectionId = null, int? status = null, IEnumerable<string>? bucketIds = null, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (!string.IsNullOrEmpty(agentConnectionId))
+        {
+            query["AgentConnectionId"] = agentConnectionId;
+        }
+
+        if (status.HasValue)
+        {
+            query["Status"] = status.Value.ToString();
+        }
+
+        if (bucketIds != null)
+        {
+            foreach (var bucketId in bucketIds)
+            {
+                query.Add("BucketIds", bucketId);
+            }
+        }
+
+        var queryString = query.ToString();
+        var requestUri = $"{basePath}/{clusterId}/buckets/count" + (string.IsNullOrEmpty(queryString) ? "" : $"?{queryString}");
         using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
         var response = await httpClient.SendAsync(request, ct);
         await EnsureSuccessAsync(response, requestUri, ct);
 
         return await response.Content.ReadFromJsonAsync<int>(ScenarioJsonOptions.Default, ct);
+    }
+
+    public async Task<List<ApiBucket>> GetBucketsAsync(string clusterId, string? agentConnectionId = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        if (!string.IsNullOrEmpty(agentConnectionId))
+        {
+            query["AgentConnectionId"] = agentConnectionId;
+        }
+
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/buckets?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiBucket>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
     }
 
     public async Task<List<ApiRecurringSchedule>> GetRecurringSchedulesAsync(string clusterId, string? testIdentifier = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
@@ -117,7 +168,7 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result?.Token ?? throw new InvalidOperationException("JWT token response deserialized to null.");
     }
 
-    private static string BuildJobQuery(string? jobDefinitionId, int? priority, string? testIdentifier, int? countLimit)
+    private static string BuildJobQuery(string? jobDefinitionId, int? priority, string? testIdentifier, int? status, int? countLimit)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
         if (!string.IsNullOrEmpty(jobDefinitionId))
@@ -128,6 +179,11 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         if (priority.HasValue)
         {
             query["Priority"] = priority.Value.ToString();
+        }
+
+        if (status.HasValue)
+        {
+            query["Status"] = status.Value.ToString();
         }
 
         if (!string.IsNullOrEmpty(testIdentifier))

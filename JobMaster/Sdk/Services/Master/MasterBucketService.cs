@@ -188,6 +188,12 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             durationToExpire: JobMasterConstants.DefaultCacheEntryExpiry));
     }
 
+    public async Task<BucketModel?> GetNoCacheAsync(string bucketId)
+    {
+        var record = await masterGenericRecordRepository.GetAsync(MasterGenericRecordGroupIds.Bucket, bucketId);
+        return record?.ToObject<BucketModel>();
+    }
+
     public async Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null)
     {
         return await QueryAsync(new MasterBucketQueryCriteria()

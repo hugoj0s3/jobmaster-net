@@ -85,7 +85,14 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
-    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl);
+    
+    /// <param name="targetArchivedClusterId">
+    /// Optional id of another configured cluster to archive finalized jobs and terminated recurring
+    /// schedules to before they're purged here. When null, purged data is deleted outright as before.
+    /// The target cluster must be a <see cref="ClusterMode.Archived"/> cluster configured elsewhere in
+    /// this app; if it isn't currently reachable, purging falls back to a plain delete.
+    /// </param>
+    public IClusterConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null);
 
     /// <summary>
     /// Disables automatic data purging for this cluster. Executed jobs, inactive recurring schedules,
@@ -144,6 +151,20 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     /// <inheritdoc cref="Mode"/>
     [Obsolete("Use Mode instead.")]
     public IClusterConfigSelector ClusterMode(ClusterMode mode);
+
+    /// <summary>
+    /// Puts this cluster into <see cref="ClusterMode.Migrating"/> mode and sets the mandatory target
+    /// cluster to continuously forward held jobs and recurring schedules to. Use this instead of
+    /// <see cref="Mode"/> whenever the target is <see cref="ClusterMode.Migrating"/> — there's no way to
+    /// end up in this mode without a target, since both are set together here.
+    /// Validated at startup only (target must resolve to a configured <see cref="ClusterMode.Active"/>
+    /// cluster) — this method itself does not throw for an empty/invalid id.
+    /// </summary>
+    /// <param name="targetActiveClusterId">
+    /// Id of another configured cluster to forward held jobs/recurring schedules to. Must be a
+    /// <see cref="ClusterMode.Active"/> cluster configured elsewhere in this app.
+    /// </param>
+    public IClusterConfigSelector MigrateTo(string targetActiveClusterId);
 
     /// <summary>
     /// Switches this cluster to standalone mode, where the master and worker run in the same process.

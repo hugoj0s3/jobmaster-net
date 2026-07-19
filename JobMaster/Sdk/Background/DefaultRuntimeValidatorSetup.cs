@@ -56,7 +56,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         return Task.FromResult<IList<string>>(result);
     }
 
-    public Task OnStartingAsync(IServiceProvider mainServiceProvider)
+    public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
        return Task.CompletedTask;
     }

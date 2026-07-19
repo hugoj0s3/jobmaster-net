@@ -24,8 +24,8 @@ public class ConfigFromJsonTests
         const string json = """
         {
             "ClusterId": "Cluster-1",
-            "SetAsDefault": true,
-            "Mode": "Passive",
+            "Default": true,
+            "Mode": "Migrating",
             "RepoType": "Postgres",
             "ConnectionString": "Host=localhost;",
             "TransientThreshold": "00:01:00",
@@ -42,7 +42,7 @@ public class ConfigFromJsonTests
 
         d.ClusterId.Should().Be("Cluster-1");
         d.IsDefault.Should().BeTrue();
-        d.ClusterMode.Should().Be(ClusterMode.Passive);
+        d.ClusterMode.Should().Be(ClusterMode.Migrating);
         d.RepoType.Should().Be("Postgres");
         d.ConnString.Should().Be("Host=localhost;");
         d.TransientThreshold.Should().Be(TimeSpan.FromMinutes(1));
@@ -152,14 +152,14 @@ public class ConfigFromJsonTests
     }
 
     [Fact]
-    public void ConfigFromJson_String_WhenSetAsDefaultFalse_DoesNotSetDefault()
+    public void ConfigFromJson_String_WhenDefaultFalse_DoesNotSetDefault()
     {
         const string json = """
         {
             "ClusterId": "Cluster-1",
             "RepoType": "Postgres",
             "ConnectionString": "Host=localhost;",
-            "SetAsDefault": false
+            "Default": false
         }
         """;
 
@@ -339,7 +339,7 @@ public class ConfigFromJsonTests
         {
             "Standalone": true,
             "ClusterId": "Cluster-Standalone-1",
-            "SetAsDefault": true,
+            "Default": true,
             "RepoType": "Postgres",
             "ConnectionString": "Host=localhost;",
             "IanaTimeZoneId": "UTC",
@@ -369,7 +369,7 @@ public class ConfigFromJsonTests
 
     [Theory]
     [InlineData("active",   ClusterMode.Active)]
-    [InlineData("PASSIVE",  ClusterMode.Passive)]
+    [InlineData("MIGRATING",  ClusterMode.Migrating)]
     [InlineData("Archived", ClusterMode.Archived)]
     public void ConfigFromJson_String_ClusterModeCaseInsensitive(string mode, ClusterMode expected)
     {
@@ -466,7 +466,7 @@ public class ConfigFromJsonTests
             ["ClusterId"]                      = "Cluster-Config",
             ["RepoType"]                       = "Postgres",
             ["ConnectionString"]               = "Host=localhost;",
-            ["SetAsDefault"]                   = "true",
+            ["Default"]                        = "true",
             ["DefaultMaxRetryCount"]           = "7",
             ["IanaTimeZoneId"]                 = "Europe/London",
             ["Workers:0:TransferBatchSize"]      = "400",

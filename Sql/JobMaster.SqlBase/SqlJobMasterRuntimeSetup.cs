@@ -36,7 +36,7 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
     /// Applies provider defaults (table prefix, throttle limits) and provisions the schema on first startup
     /// if auto-provisioning is enabled.
     /// </summary>
-    public virtual async Task OnStartingAsync(IServiceProvider mainServiceProvider)
+    public virtual async Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         await ConfigClustersAsync();

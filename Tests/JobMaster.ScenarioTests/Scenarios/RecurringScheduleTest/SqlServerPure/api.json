@@ -10,7 +10,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "sqlserver-recurring",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerRecurring;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
     }

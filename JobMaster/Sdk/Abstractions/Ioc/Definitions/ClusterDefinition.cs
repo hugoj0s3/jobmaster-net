@@ -22,6 +22,8 @@ internal sealed class ClusterDefinition
     public string? IanaTimeZoneId { get; set; }
     public TimeSpan? TransientThreshold { get; set; }
     public TimeSpan? DataRetentionTtl { get; set; }
+    public string? TargetArchivedClusterId { get; set; }
+    public string? TargetActiveClusterId { get; set; }
 
     public int? RuntimeDbOperationLimit { get; set; }
     
@@ -41,7 +43,7 @@ internal sealed class ClusterDefinition
     // Shared by IClusterConfigSelector.DataRetentionTtl and IClusterStandaloneConfigSelector.ClusterDataRetentionTtl —
     // both selectors mutate the same ClusterDefinition, so the validation belongs here instead of being
     // duplicated in both builder classes.
-    public void SetDataRetentionTtl(TimeSpan dataRetentionTtl)
+    public void SetDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
         if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
             throw new ArgumentException(
@@ -49,6 +51,16 @@ internal sealed class ClusterDefinition
                 $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
                 nameof(dataRetentionTtl));
         DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;
+        TargetArchivedClusterId = targetArchivedClusterId;
+    }
+
+    // Shared by IClusterConfigSelector.MigrateTo and IClusterStandaloneConfigSelector.ClusterMigrateTo.
+    // No validation here on purpose — everything (target required, must resolve, must be Active,
+    // self-reference) is checked once, at startup, in JobMasterRuntime.PreValidation.
+    public void MigrateTo(string targetActiveClusterId)
+    {
+        this.ClusterMode = JobMaster.Abstractions.Models.ClusterMode.Migrating;
+        TargetActiveClusterId = targetActiveClusterId;
     }
 
     // Shared by IClusterConfigSelector.DisablePriority and IClusterStandaloneConfigSelector.DisablePriority.

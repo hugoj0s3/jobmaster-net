@@ -10,7 +10,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "postgres-recurring",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresRecurring;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     }

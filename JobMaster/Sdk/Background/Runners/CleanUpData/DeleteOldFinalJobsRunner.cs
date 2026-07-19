@@ -1,5 +1,8 @@
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -54,7 +57,36 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            var deleted = 0;
+            var hasArchiveTarget = !string.IsNullOrEmpty(cfg.TargetArchivedClusterId);
+            var archiveFactory = hasArchiveTarget
+                ? JobMasterClusterAwareComponentFactories.TryGetFactory(cfg.TargetArchivedClusterId!)
+                : null;
+
+            if (hasArchiveTarget && archiveFactory == null)
+            {
+                logger.Critical(
+                    $"Archive cluster '{cfg.TargetArchivedClusterId}' is not reachable from this process. " +
+                    "Finalized jobs are being purged WITHOUT archiving until this is resolved — jobs are being lost.",
+                    JobMasterLogCategory.Cluster,
+                    BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            }
+
+            if (archiveFactory != null)
+            {
+                var archiveService = archiveFactory.GetComponent<IMasterJobIntakeService>();
+                var candidates = await jobsRepo.QueryFinalizedToPurgeAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+                if (candidates.Count > 0)
+                {
+                    await archiveService.BulkInsertIfNotExistsAsync(candidates);
+                    deleted = await jobsRepo.DeleteByIdsAsync(candidates.Select(j => j.Id).ToList());
+                }
+            }
+            else
+            {
+                deleted = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            }
+
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

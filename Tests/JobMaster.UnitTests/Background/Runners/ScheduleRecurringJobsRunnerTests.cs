@@ -17,8 +17,8 @@ public class ScheduleRecurringJobsRunnerTests
     private static ClusterConfigurationModel ActiveClusterConfig()
         => new("test") { ClusterMode = ClusterMode.Active };
 
-    private static ClusterConfigurationModel PassiveClusterConfig()
-        => new("test") { ClusterMode = ClusterMode.Passive };
+    private static ClusterConfigurationModel MigratingClusterConfig()
+        => new("test") { ClusterMode = ClusterMode.Migrating };
 
     // ── OnTickAsync ────────────────────────────────────────────────────────────
 
@@ -26,7 +26,7 @@ public class ScheduleRecurringJobsRunnerTests
     public async Task OnTickAsync_WhenClusterModeIsNotActive_ShouldReturnSkipped()
     {
         var f = RunnerFixture.Create();
-        f.ClusterConfig.Config = PassiveClusterConfig();
+        f.ClusterConfig.Config = MigratingClusterConfig();
 
         var runner = new ScheduleRecurringJobsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);

@@ -3,7 +3,7 @@ namespace JobMaster.Sdk.Ioc.Setup.Json;
 internal sealed class ClusterJsonConfig
 {
     public string? ClusterId { get; set; }
-    public bool SetAsDefault { get; set; }
+    public bool Default { get; set; }
     public bool Standalone { get; set; }
     public string? Mode { get; set; }
     public string? RepoType { get; set; }
@@ -15,6 +15,9 @@ internal sealed class ClusterJsonConfig
     public int? MaxMessageByteSize { get; set; }
     public string? IanaTimeZoneId { get; set; }
     public string? DataRetentionTtl { get; set; }
+    public string? TargetArchivedClusterId { get; set; }
+    public string? TargetActiveClusterId { get; set; }
+
     /// <summary>
     /// Priority levels to disable for this cluster.
     /// Accepted values: "VeryLow", "Low", "High", "Critical" (case-insensitive).

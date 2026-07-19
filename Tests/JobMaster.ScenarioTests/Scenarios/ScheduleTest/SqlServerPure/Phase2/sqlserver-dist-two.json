@@ -7,7 +7,7 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "sqlserver-dist-two",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "SqlServer",
       "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDistCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
       "AgentConnections": [

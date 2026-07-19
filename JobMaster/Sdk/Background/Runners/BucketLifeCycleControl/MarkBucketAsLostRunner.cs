@@ -18,19 +18,19 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
     private readonly IMasterAgentWorkersService masterAgentWorkersService;
     private JobMasterLockKeys lockKeys;
-    
+
     public override TimeSpan SucceedInterval {get;}
-        
+
     public MarkBucketAsLostRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker, TimeSpan? succeedInterval = null) : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
     {
         lockKeys = new JobMasterLockKeys(this.BackgroundAgentWorker.ClusterConnConfig.ClusterId);
         masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
         masterDistributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         masterAgentWorkersService = backgroundAgentWorker.GetClusterAwareService<IMasterAgentWorkersService>();
-        
+
         SucceedInterval = succeedInterval ?? TimeSpan.FromMinutes(2.5);
     }
-    
+
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
         var lockToken = masterDistributedLockerService.TryLock(lockKeys.BucketRunnerLock(), TimeSpan.FromMinutes(2.5));
@@ -38,7 +38,7 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
         {
             return OnTickResult.Locked(TimeSpan.FromSeconds(10));
         }
-        
+
         try
         {
             var buckets = await masterBucketsService.QueryAllNoCacheAsync();
@@ -74,7 +74,9 @@ internal class MarkBucketAsLostRunner : JobMasterRunner
 
             foreach (var bucket in bucketsToMarkAsLost)
             {
-                await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(bucket.Id);
+                // Pass the already-fresh bucket (from QueryAllNoCacheAsync above) directly, avoiding a
+                // redundant re-fetch.
+                await BackgroundAgentWorker.WorkerClusterOperations.MarkBucketAsLostAsync(bucket);
             }
         }
         finally

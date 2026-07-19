@@ -1,5 +1,8 @@
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -55,7 +58,36 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
 
         try
         {
-            var deleted = await schedulesRepo.PurgeTerminatedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            var deleted = 0;
+            var hasArchiveTarget = !string.IsNullOrEmpty(cfg.TargetArchivedClusterId);
+            var archiveFactory = hasArchiveTarget
+                ? JobMasterClusterAwareComponentFactories.TryGetFactory(cfg.TargetArchivedClusterId!)
+                : null;
+
+            if (hasArchiveTarget && archiveFactory == null)
+            {
+                logger.Critical(
+                    $"Archive cluster '{cfg.TargetArchivedClusterId}' is not reachable from this process. " +
+                    "Terminated recurring schedules are being purged WITHOUT archiving until this is resolved — data is being lost.",
+                    JobMasterLogCategory.Cluster,
+                    BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            }
+
+            if (archiveFactory != null)
+            {
+                var archiveService = archiveFactory.GetComponent<IMasterRecurringScheduleIntakeService>();
+                var candidates = await schedulesRepo.QueryTerminatedToPurgeAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+                if (candidates.Count > 0)
+                {
+                    await archiveService.BulkInsertIfNotExistsAsync(candidates);
+                    deleted = await schedulesRepo.DeleteByIdsAsync(candidates.Select(s => s.Id).ToList());
+                }
+            }
+            else
+            {
+                deleted = await schedulesRepo.PurgeTerminatedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            }
+
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

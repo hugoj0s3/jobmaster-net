@@ -117,6 +117,11 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         Version = version;
     }
 
+    public void ReassignToCluster(string clusterId)
+    {
+        ClusterId = clusterId;
+    }
+
     public string ToLogSummary()
     {
         var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Type:{RecurringScheduleType} " +

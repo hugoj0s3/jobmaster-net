@@ -35,4 +35,23 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
     void BulkUpdateStaticDefinitionLastEnsuredByStaticIds(IList<string> staticDefinitionIds, DateTime ensuredAt);
 
     Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff);
+
+    /// <summary>
+    /// Selects terminated recurring schedules eligible for purging (same candidate criteria as
+    /// <see cref="PurgeTerminatedAsync"/>) as full rows, without deleting them. Used by the
+    /// archive-then-delete flow.
+    /// </summary>
+    Task<IList<RecurringScheduleRawModel>> QueryTerminatedToPurgeAsync(DateTime cutoffUtc, int limit);
+
+    /// <summary>
+    /// Deletes the given recurring schedules (plus their metadata). Shared by
+    /// <see cref="PurgeTerminatedAsync"/> and the archive-then-delete flow.
+    /// </summary>
+    Task<int> DeleteByIdsAsync(IList<Guid> ids);
+
+    /// <summary>
+    /// Inserts each recurring schedule that doesn't already exist (by cluster id + id) in this
+    /// repository's cluster. Existing rows are left untouched. Every schedule must be in a final status.
+    /// </summary>
+    Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
 }

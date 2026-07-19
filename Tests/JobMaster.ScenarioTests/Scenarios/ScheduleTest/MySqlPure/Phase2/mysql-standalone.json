@@ -8,7 +8,7 @@
     {
       "ClusterId": "mysql-standalone",
       "Standalone": true,
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlStandalone;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
       "DataRetentionTtl": "00:10:00",

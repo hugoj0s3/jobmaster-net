@@ -6,27 +6,18 @@ namespace JobMaster.UnitTests.Background.Runners;
 
 /// <summary>
 /// Unit tests for <see cref="DrainRunnersCoordinator"/>.
-/// Covers: lock contention path (returns Skipped), no-op when no ReadyToDrain buckets
-/// exist, and cleanup of stale drain runners for buckets that are no longer in a
-/// Draining or ReadyToDrain state.
+/// Covers: no-op when no ReadyToDrain buckets exist, and cleanup of stale drain runners for
+/// buckets that are no longer in a Draining or ReadyToDrain state. No longer covers a distributed
+/// lock -- DrainRunnersCoordinator doesn't take one: its own bucket queries are already scoped to
+/// this worker's own AgentWorkerId (no cross-worker race to protect against), and useSemaphore
+/// already serializes it against this worker's other runners; actual mutations go through a
+/// per-bucket lock in CreateDrainRunners regardless.
 /// </summary>
 public class DrainRunnersCoordinatorTests
 {
     // ── fixture helpers ────────────────────────────────────────────────────────
 
     // ── OnTickAsync ────────────────────────────────────────────────────────────
-
-    [Fact]
-    public async Task OnTickAsync_WhenLockAlreadyHeld_ShouldReturnSkipped()
-    {
-        var f = RunnerFixture.Create();
-        f.Locker.BlockAllLocks = true;
-
-        var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
-        var result = await runner.OnTickAsync(CancellationToken.None);
-
-        result.Status.Should().Be(TicketResultStatus.Skipped);
-    }
 
     [Fact]
     public async Task OnTickAsync_WhenNoReadyToDrainBuckets_ShouldReturnSuccess()
@@ -55,14 +46,13 @@ public class DrainRunnersCoordinatorTests
     }
 
     [Fact]
-    public async Task OnTickAsync_ReleasesLockAfterSuccessfulTick()
+    public async Task OnTickAsync_CanRunConsecutively_ShouldSucceedEachTime()
     {
         var f = RunnerFixture.Create();
 
         var runner = new DrainRunnersCoordinator(f.Worker.Object, f.AgentConnectionId);
         await runner.OnTickAsync(CancellationToken.None);
 
-        // Lock should be released — a second tick should succeed too.
         var result2 = await runner.OnTickAsync(CancellationToken.None);
         result2.Status.Should().Be(TicketResultStatus.Success);
     }

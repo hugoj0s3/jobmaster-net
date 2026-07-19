@@ -408,39 +408,93 @@ WHERE {this.sql.InClauseFor(colStaticId, "@StaticDefinitionIds")}
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
 
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cStatus = Col(x => x.Status);
+        var cTerminatedAt = Col(x => x.TerminatedAt);
+
+        var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
+WHERE {Col(x => x.ClusterId)} = @ClusterId
+  AND {cStatus} IN (@Inactive, @Canceled, @Completed)
+  AND {cTerminatedAt} <= @CutoffUtc
+ORDER BY {cTerminatedAt} ASC, {cId} ASC");
+        selectSql.Append('\n');
+        selectSql.Append(sql.OffsetQueryFor(limit, 0));
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var ids = (await conn.QueryAsync<Guid>(selectSql.ToString(), new
+        {
+            ClusterId = ClusterConnConfig.ClusterId,
+            CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
+            Inactive = (int)RecurringScheduleStatus.Inactive,
+            Canceled = (int)RecurringScheduleStatus.Canceled,
+            Completed = (int)RecurringScheduleStatus.Completed
+        })).ToList();
+
+        if (ids.Count == 0) return 0;
+
+        return await DeleteByIdsAsync(ids);
+    }
+
+    public async Task<IList<RecurringScheduleRawModel>> QueryTerminatedToPurgeAsync(DateTime cutoffUtc, int limit)
+    {
+        if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
+
+        var t = TableName();
+        var selectCols = SelectProjection("s", "e", "v");
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+        var cStatus = Col(x => x.Status);
+        var cTerminatedAt = Col(x => x.TerminatedAt);
+
+        var whereSql = $@"WHERE s.{cClusterId} = @ClusterId
+  AND s.{cStatus} IN (@Inactive, @Canceled, @Completed)
+  AND s.{cTerminatedAt} <= @CutoffUtc";
+        var order = $"ORDER BY s.{cTerminatedAt} ASC, s.{cId} ASC";
+        var offsetClause = sql.OffsetQueryFor(limit, 0);
+
+        var queryText = $@"
+WITH schedules_page AS (
+    SELECT s.*
+    FROM {t} s
+    {whereSql}
+    {order}
+    {offsetClause}
+)
+SELECT {selectCols}
+FROM schedules_page s
+LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = s.{cId} AND e.{Col(x => x.GroupId)} = @GroupId
+LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
+{order}";
+
+        var args = new
+        {
+            ClusterId = ClusterConnConfig.ClusterId,
+            CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
+            Inactive = (int)RecurringScheduleStatus.Inactive,
+            Canceled = (int)RecurringScheduleStatus.Canceled,
+            Completed = (int)RecurringScheduleStatus.Completed,
+            GroupId = MasterGenericRecordGroupIds.RecurringScheduleMetadata
+        };
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(queryText, args)).ToList();
+        var rows = LinearListToDomain(linearRows);
+        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+    }
+
+    public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
+    {
+        if (ids.Count == 0) return 0;
+
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var t = TableName();
-            var cId = Col(x => x.Id);
-            var cClusterId = Col(x => x.ClusterId);
-            var cStatus = Col(x => x.Status);
-            var cTerminatedAt = Col(x => x.TerminatedAt);
-
-            var selectSql = new StringBuilder($@"SELECT {cId} FROM {t}
-WHERE {cClusterId} = @ClusterId
-  AND {cStatus} IN (@Inactive, @Canceled, @Completed)
-  AND {cTerminatedAt} <= @CutoffUtc
-ORDER BY {cTerminatedAt} ASC, {cId} ASC");
-            selectSql.Append('\n');
-            selectSql.Append(sql.OffsetQueryFor(limit, 0));
-
-            var ids = (await conn.QueryAsync<Guid>(selectSql.ToString(), new
-            {
-                ClusterId = ClusterConnConfig.ClusterId,
-                CutoffUtc = DateTime.SpecifyKind(cutoffUtc, DateTimeKind.Utc),
-                Inactive = (int)RecurringScheduleStatus.Inactive,
-                Canceled = (int)RecurringScheduleStatus.Canceled,
-                Completed = (int)RecurringScheduleStatus.Completed
-            }, tx)).ToList();
-
-            if (ids.Count == 0)
-            {
-                tx.Commit();
-                return 0;
-            }
-            
             var affected = 0;
             foreach (var idsPartition in ids.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation).ToList())
             {
@@ -465,6 +519,93 @@ ORDER BY {cTerminatedAt} ASC, {cId} ASC");
             tx.SafeRollback();
             throw;
         }
+    }
+
+    public virtual async Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        if (schedules.Count == 0) return;
+
+        var t = TableName();
+        const int maxBatch = JobMasterConstants.MaxBatchSizeForBulkOperation;
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            for (var offset = 0; offset < schedules.Count; offset += maxBatch)
+            {
+                var count = Math.Min(maxBatch, schedules.Count - offset);
+                var (sqlText, dynParams) = BuildBulkInsertIfNotExistsSql(t, schedules, offset, count);
+                await conn.ExecuteAsync(sqlText, dynParams, tx);
+            }
+            tx.Commit();
+        }
+        catch
+        {
+            tx.SafeRollback();
+            throw;
+        }
+    }
+
+    // ANSI-portable "insert if not exists": each row is its own guarded SELECT, unioned together.
+    // Marked virtual so providers can later override with a dialect-specific upsert
+    // (ON CONFLICT DO NOTHING / INSERT IGNORE / MERGE) for better performance.
+    protected virtual (string sqlText, DynamicParameters dynParams) BuildBulkInsertIfNotExistsSql(
+        string t, IList<RecurringScheduleRawModel> schedules, int offset, int count)
+    {
+        var (cols, _) = InsertColumnsAndParams();
+        var cId = Col(x => x.Id);
+        var cClusterId = Col(x => x.ClusterId);
+
+        var dynParams = new DynamicParameters();
+        var selects = new List<string>();
+
+        for (var i = 0; i < count; i++)
+        {
+            var schedule = schedules[offset + i];
+            var rec = RecurringScheduleRawModel.ToPersistence(schedule);
+            rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+
+            selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @Expression_{i}, @ExpressionTypeId_{i}, @JobDefinitionId_{i}, @StaticDefinitionId_{i}, @ProfileId_{i}, @Status_{i}, @RecurringScheduleType_{i}, @StaticDefinitionLastEnsured_{i}, @TerminatedAt_{i}, @MsgData_{i}, @Priority_{i}, @MaxNumberOfRetries_{i}, @TimeoutTicks_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @PartitionLockId_{i}, @HostId_{i}, @HostDisplayName_{i}, @PartitionLockExpiresAt_{i}, @CreatedAt_{i}, @StartAfter_{i}, @EndBefore_{i}, @LastPlanCoverageUntil_{i}, @LastExecutedPlan_{i}, @HasFailedOnLastPlanExecution_{i}, @IsJobCancellationPending_{i}, @WorkerLane_{i}, @Version_{i}
+WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");
+
+            dynParams.Add($"ClusterId_{i}", rec.ClusterId);
+            dynParams.Add($"Id_{i}", rec.Id);
+            dynParams.Add($"Expression_{i}", rec.Expression);
+            dynParams.Add($"ExpressionTypeId_{i}", rec.ExpressionTypeId);
+            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId);
+            dynParams.Add($"StaticDefinitionId_{i}", rec.StaticDefinitionId);
+            dynParams.Add($"ProfileId_{i}", rec.ProfileId);
+            dynParams.Add($"Status_{i}", rec.Status);
+            dynParams.Add($"RecurringScheduleType_{i}", rec.RecurringScheduleType);
+            dynParams.Add($"StaticDefinitionLastEnsured_{i}", rec.StaticDefinitionLastEnsured);
+            dynParams.Add($"TerminatedAt_{i}", rec.TerminatedAt);
+            dynParams.Add($"MsgData_{i}", rec.MsgData);
+            dynParams.Add($"Priority_{i}", rec.Priority);
+            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries);
+            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks);
+            dynParams.Add($"BucketId_{i}", rec.BucketId);
+            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId);
+            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId);
+            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId);
+            dynParams.Add($"HostId_{i}", rec.HostId);
+            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName);
+            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt);
+            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt);
+            dynParams.Add($"StartAfter_{i}", rec.StartAfter);
+            dynParams.Add($"EndBefore_{i}", rec.EndBefore);
+            dynParams.Add($"LastPlanCoverageUntil_{i}", rec.LastPlanCoverageUntil);
+            dynParams.Add($"LastExecutedPlan_{i}", rec.LastExecutedPlan);
+            dynParams.Add($"HasFailedOnLastPlanExecution_{i}", rec.HasFailedOnLastPlanExecution);
+            dynParams.Add($"IsJobCancellationPending_{i}", rec.IsJobCancellationPending);
+            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane);
+            dynParams.Add($"Version_{i}", rec.Version);
+            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId);
+            dynParams.Add($"ExistsId_{i}", rec.Id);
+        }
+
+        var sqlText = $"INSERT INTO {t} ({cols})\n{string.Join("\nUNION ALL\n", selects)};";
+        return (sqlText, dynParams);
     }
 
     protected virtual string UpdateToLockTableHint => string.Empty;

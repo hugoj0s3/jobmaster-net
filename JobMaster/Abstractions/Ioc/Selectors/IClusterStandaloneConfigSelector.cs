@@ -75,7 +75,11 @@ public interface IClusterStandaloneConfigSelector
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
-    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl);
+    /// <param name="targetArchivedClusterId">
+    /// Optional id of another configured cluster to archive finalized jobs and terminated recurring
+    /// schedules to before they're purged here. When null, purged data is deleted outright as before.
+    /// </param>
+    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null);
 
     /// <summary>
     /// Disables automatic data purging for this cluster. Executed jobs, inactive recurring schedules,
@@ -108,6 +112,9 @@ public interface IClusterStandaloneConfigSelector
     /// </summary>
     /// <param name="mode">The desired cluster mode.</param>
     public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode);
+
+    /// <inheritdoc cref="IClusterConfigSelector.MigrateTo"/>
+    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId);
 
     internal IClusterStandaloneConfigSelector ClusterConnString(string connString);
     internal IClusterStandaloneConfigSelector ClusterRepoType(string repoType);

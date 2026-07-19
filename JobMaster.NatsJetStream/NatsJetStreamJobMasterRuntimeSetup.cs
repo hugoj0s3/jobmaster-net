@@ -42,7 +42,7 @@ internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         return Task.FromResult<IList<string>>(errors);
     }
 
-    public Task OnStartingAsync(IServiceProvider mainServiceProvider)
+    public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
         // Set default runtime throttle limit for agents using NatsJetStream repository
         var natAgentConfigs = JobMasterClusterConnectionConfig

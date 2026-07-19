@@ -47,7 +47,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Locked);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(It.IsAny<string>()),
+            x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()),
             Times.Never);
     }
 
@@ -70,7 +70,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(It.IsAny<string>()),
+            x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()),
             Times.Never);
     }
 
@@ -85,7 +85,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(It.IsAny<string>()),
+            x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()),
             Times.Never);
     }
 
@@ -111,7 +111,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(It.IsAny<string>()),
+            x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()),
             Times.Never);
     }
 
@@ -133,7 +133,7 @@ public class MarkBucketAsLostRunnerTests
         f.Buckets.Buckets.Add(bucket);
 
         f.WorkerClusterOps
-            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<string>()))
+            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()))
             .Returns(Task.CompletedTask);
 
         var runner = new MarkBucketAsLostRunner(f.Worker.Object);
@@ -141,7 +141,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(TestBucketId),
+            x => x.MarkBucketAsLostAsync(It.Is<BucketModel>(b => b.Id == TestBucketId)),
             Times.Once);
     }
 
@@ -160,7 +160,7 @@ public class MarkBucketAsLostRunnerTests
         f.Buckets.Buckets.Add(bucket);
 
         f.WorkerClusterOps
-            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<string>()))
+            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()))
             .Returns(Task.CompletedTask);
 
         var runner = new MarkBucketAsLostRunner(f.Worker.Object);
@@ -168,7 +168,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(TestBucketId),
+            x => x.MarkBucketAsLostAsync(It.Is<BucketModel>(b => b.Id == TestBucketId)),
             Times.Once);
     }
 
@@ -186,7 +186,7 @@ public class MarkBucketAsLostRunnerTests
         f.Buckets.Buckets.Add(bucket);
 
         f.WorkerClusterOps
-            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<string>()))
+            .Setup(x => x.MarkBucketAsLostAsync(It.IsAny<BucketModel>()))
             .Returns(Task.CompletedTask);
 
         var runner = new MarkBucketAsLostRunner(f.Worker.Object);
@@ -194,7 +194,7 @@ public class MarkBucketAsLostRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.WorkerClusterOps.Verify(
-            x => x.MarkBucketAsLostAsync(TestBucketId),
+            x => x.MarkBucketAsLostAsync(It.Is<BucketModel>(b => b.Id == TestBucketId)),
             Times.Once);
     }
 }

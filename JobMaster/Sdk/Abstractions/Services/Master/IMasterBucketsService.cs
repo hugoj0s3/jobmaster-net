@@ -20,6 +20,7 @@ internal interface IMasterBucketsService : IJobMasterClusterAwareService
     BucketModel? SelectBucket(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null);
     Task<BucketModel?> SelectBucketAsync(TimeSpan? allowedDiscrepancy, JobMasterPriority? jobPriority = null, string? workerLane = null);
     BucketModel? Get(string bucketId, TimeSpan? allowedDiscrepancy);
+    Task<BucketModel?> GetNoCacheAsync(string bucketId);
     Task<IList<BucketModel>> QueryAllNoCacheAsync(BucketStatus? bucketStatus = null);
     IList<BucketModel> QueryAllNoCache(BucketStatus? bucketStatus = null);
     

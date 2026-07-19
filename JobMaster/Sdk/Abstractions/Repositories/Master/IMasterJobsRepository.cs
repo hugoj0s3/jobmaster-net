@@ -38,4 +38,22 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
 
     Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
+
+    /// <summary>
+    /// Selects finalized jobs eligible for purging (same candidate criteria as <see cref="PurgeFinalizedAsync"/>)
+    /// as full rows, without deleting them. Used by the archive-then-delete flow.
+    /// </summary>
+    Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit);
+
+    /// <summary>
+    /// Deletes the given jobs (plus their metadata and job executions). Shared by
+    /// <see cref="PurgeFinalizedAsync"/> and the archive-then-delete flow.
+    /// </summary>
+    Task<int> DeleteByIdsAsync(IList<Guid> ids);
+
+    /// <summary>
+    /// Inserts each job that doesn't already exist (by cluster id + id) in this repository's cluster.
+    /// Existing rows are left untouched. Every job must be in a final status.
+    /// </summary>
+    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
 }

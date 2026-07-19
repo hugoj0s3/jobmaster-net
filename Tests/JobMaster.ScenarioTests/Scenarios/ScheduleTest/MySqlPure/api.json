@@ -10,19 +10,19 @@
   "clusterConfigTemplates": [
     {
       "ClusterId": "mysql-standalone",
-      "SetAsDefault": true,
+      "Default": true,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlStandalone;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
     },
     {
       "ClusterId": "mysql-dist-one",
-      "SetAsDefault": false,
+      "Default": false,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDistCluster;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
     },
     {
       "ClusterId": "mysql-dist-two",
-      "SetAsDefault": false,
+      "Default": false,
       "RepoType": "MySql",
       "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDistCluster;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
     }

@@ -52,6 +52,21 @@ internal class ClusterConfigurationModel : JobMasterBaseModel
     /// </summary>
     public TimeSpan DataRetentionTtl { get; set; } = JobMasterDefaults.DataRetentionTtl;
 
+    /// <summary>
+    /// Id of another configured cluster to archive finalized jobs and terminated recurring schedules
+    /// to before they're purged by <see cref="DataRetentionTtl"/>. Null means purged data is deleted
+    /// outright with no archiving.
+    /// </summary>
+    public string? TargetArchivedClusterId { get; set; }
+
+    /// <summary>
+    /// Id of another configured cluster to forward held ("on master") jobs and recurring schedules to,
+    /// continuously, while this cluster is in <see cref="ClusterMode.Migrating"/> mode. Required
+    /// whenever <see cref="ClusterMode"/> is <see cref="ClusterMode.Migrating"/> — set via
+    /// <c>MigrateTo(...)</c>.
+    /// </summary>
+    public string? TargetActiveClusterId { get; set; }
+
     public bool IsStandalone { get; set; } = false;
 
     public JobMasterConfigDictionary AdditionalConfig { get; set; } = new();

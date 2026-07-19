@@ -15,6 +15,11 @@ internal static class JobMasterClusterAwareComponentFactories
         }
         return factory;
     }
+
+    public static IJobMasterClusterAwareComponentFactory? TryGetFactory(string clusterId)
+    {
+        return factories.TryGetValue(clusterId, out var factory) ? factory : null;
+    }
     
     public static void AddFactory(string clusterId, IJobMasterClusterAwareComponentFactory factory)
     {
