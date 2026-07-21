@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
-[Collection("SqlServerRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "SqlServer")]
 public sealed class SqlServerAgentRawMessagesDispatcherPollingConformanceTests
     : RepositoryAgentRawMessagesDispatcherPollingConformanceTests<SqlServerRepositoryFixture>

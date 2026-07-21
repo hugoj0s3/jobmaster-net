@@ -83,7 +83,7 @@ public sealed record ApiJobExecution(string Id, string JobId, DateTime StartedAt
 
 public sealed record ApiAgentConnection(string Id, string Name, bool IsAlive);
 
-public sealed record ApiBucket(string Id, string AgentConnectionId, string AgentConnectionName, JsonElement Status);
+public sealed record ApiBucket(string Id, string AgentConnectionId, string AgentConnectionName, JsonElement Status, JsonElement BucketType);
 
 public sealed record ApiAgentWorker(
     string Id,

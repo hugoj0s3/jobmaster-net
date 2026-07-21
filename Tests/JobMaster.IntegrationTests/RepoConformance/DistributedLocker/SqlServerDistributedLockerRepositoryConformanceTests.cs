@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.DistributedLocker;
 
-[Collection("SqlServerRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "SqlServer")]
 public sealed class SqlServerDistributedLockerRepositoryConformanceTests
     : RepositoryDistributedLockerConformanceTests<SqlServerRepositoryFixture>

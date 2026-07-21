@@ -329,15 +329,15 @@ WHERE {string.Join(" AND ", where)}
         }
         else if (filter.Operation == GenericFilterOperation.Contains && filter.Value is string)
         {
-            finalClause = $" {initialClause} and {fieldRelated} like concat('%', @Value{index}, '%') )";
+            finalClause = $" {initialClause} and {this.sql.LikeClauseFor(fieldRelated, $"concat('%', @Value{index}, '%')")} )";
         }
         else if (filter.Operation == GenericFilterOperation.EndsWith && filter.Value is string)
         {
-            finalClause = $" {initialClause} and {fieldRelated} like concat('%', @Value{index}) )";
+            finalClause = $" {initialClause} and {this.sql.LikeClauseFor(fieldRelated, $"concat('%', @Value{index})")} )";
         }
-        else if (filter.Operation == GenericFilterOperation.StartsWith && filter.Value is string) 
+        else if (filter.Operation == GenericFilterOperation.StartsWith && filter.Value is string)
         {
-            finalClause = $" {initialClause} and {fieldRelated} like concat(@Value{index}, '%') )";
+            finalClause = $" {initialClause} and {this.sql.LikeClauseFor(fieldRelated, $"concat(@Value{index}, '%')")} )";
         }
         else if (filter.Operation == GenericFilterOperation.Lt && filter.Value is not string)
         {
@@ -618,8 +618,85 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
 
         await conn.ExecuteAsync(insertSql, rows, tx);
     }
-    
-    
+
+    // Bulk counterparts to BuildInsertEntrySql/InsertEntryValues -- used by BulkInsertIfNotExistsAsync
+    // (Jobs and RecurringSchedules) so a job/schedule's Metadata survives the migrate/archive intake
+    // path, not just its own row. Deliberately plain, unconditional multi-row INSERTs -- Metadata
+    // never changes after a job/schedule is created, so the caller only needs to know which specific
+    // jobs/schedules in this batch are genuinely new (checked once, against the job/schedule table
+    // itself) and pass entries/values for exactly those; no separate per-row existence guard needed
+    // here at all.
+    public (string sqlText, DynamicParameters dynParams)? BuildBulkInsertEntriesSql(IList<SqlGenericRecordEntry> entries)
+    {
+        if (entries.Count == 0) return null;
+
+        var t = EntryTable(entries[0].GroupId);
+        var dynParams = new DynamicParameters();
+        var rows = new List<string>();
+
+        for (var i = 0; i < entries.Count; i++)
+        {
+            var entry = entries[i];
+            rows.Add($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
+
+            dynParams.Add($"RecordUniqueId_{i}", entry.RecordUniqueId, DbType.String);
+            dynParams.Add($"ClusterId_{i}", entry.ClusterId, DbType.String);
+            dynParams.Add($"GroupId_{i}", entry.GroupId, DbType.String);
+            dynParams.Add($"EntryId_{i}", entry.EntryId, DbType.String);
+            dynParams.Add($"EntryIdGuid_{i}", entry.EntryIdGuid, DbType.Guid);
+            dynParams.Add($"CreatedAt_{i}", entry.CreatedAt, DbType.DateTime);
+            dynParams.Add($"ExpiresAt_{i}", entry.ExpiresAt, DbType.DateTime);
+            dynParams.Add($"IsReady_{i}", entry.IsReady, DbType.Boolean);
+        }
+
+        var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
+        var sqlText = $"INSERT INTO {t} ({cols}) VALUES\n{string.Join(",\n", rows)};";
+        return (sqlText, dynParams);
+    }
+
+    public (string sqlText, DynamicParameters dynParams)? BuildBulkInsertEntryValuesSql(IList<SqlGenericRecordEntry> entries)
+    {
+        var flatValues = entries.SelectMany(e => e.Values.Select(v => v)).ToList();
+        if (flatValues.Count == 0) return null;
+
+        var valueTable = EntryValueTable(entries[0].GroupId);
+        var dynParams = new DynamicParameters();
+        var rows = new List<string>();
+
+        for (var i = 0; i < flatValues.Count; i++)
+        {
+            var v = flatValues[i];
+            rows.Add($"(@RecordUniqueId_{i}, @KeyName_{i}, @ValueText_{i}, @ValueBinary_{i}, @ValueInt64_{i}, @ValueBool_{i}, @ValueDecimal_{i}, @ValueDateTime_{i}, @ValueGuid_{i})");
+
+            dynParams.Add($"RecordUniqueId_{i}", v.RecordUniqueId, DbType.String);
+            dynParams.Add($"KeyName_{i}", v.KeyName, DbType.String);
+            dynParams.Add($"ValueText_{i}", v.ValueText, DbType.String);
+            dynParams.Add($"ValueBinary_{i}", v.ValueBinary, DbType.Binary);
+            dynParams.Add($"ValueInt64_{i}", v.ValueInt64, DbType.Int64);
+            dynParams.Add($"ValueBool_{i}", v.ValueBool, DbType.Boolean);
+            dynParams.Add($"ValueDecimal_{i}", v.ValueDecimal, DbType.Decimal);
+            dynParams.Add($"ValueDateTime_{i}", v.ValueDateTime, DbType.DateTime);
+            dynParams.Add($"ValueGuid_{i}", v.ValueGuid, DbType.Guid);
+        }
+
+        var cols = $@"{ColVal(x => x.RecordUniqueId)}, {ColVal(x => x.KeyName)}, {ColVal(x => x.ValueText)}, {ColVal(x => x.ValueBinary)}, {ColVal(x => x.ValueInt64)}, {ColVal(x => x.ValueBool)}, {ColVal(x => x.ValueDecimal)}, {ColVal(x => x.ValueDateTime)}, {ColVal(x => x.ValueGuid)}";
+        var sqlText = $"INSERT INTO {valueTable} ({cols}) VALUES\n{string.Join(",\n", rows)};";
+        return (sqlText, dynParams);
+    }
+
+    /// <summary>
+    /// Which of <paramref name="ids"/> already exist in <paramref name="tableName"/>'s
+    /// <paramref name="idColumn"/> -- the pre-check BulkInsertIfNotExistsAsync needs so it only
+    /// inserts Metadata for the jobs/schedules it's about to actually insert, not ones the row-level
+    /// insert will skip as already-existing.
+    /// </summary>
+    public (string sqlText, DynamicParameters dynParams) BuildQueryExistingIdsSql(string tableName, string idColumn, IEnumerable<Guid> ids)
+    {
+        var dynParams = new DynamicParameters();
+        dynParams.Add("Ids", ids.ToList());
+        var sqlText = $"SELECT {idColumn} FROM {tableName} WHERE {sql.InClauseFor(idColumn, "@Ids")};";
+        return (sqlText, dynParams);
+    }
 
     public string BuildDeleteValuesSql(string groupId, string idParamName = "@RecordUniqueId")
     {

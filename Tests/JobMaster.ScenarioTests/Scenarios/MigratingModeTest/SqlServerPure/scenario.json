@@ -1,0 +1,7 @@
+{
+  "scenarioName": "sqlserver-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["sqlserver-migration"] }
+  ],
+  "api": { "container": "api" }
+}

@@ -1,0 +1,7 @@
+{
+  "scenarioName": "postgres-nats",
+  "phases": [
+    { "name": "phase-1", "containers": ["postgres-nats-archive"] }
+  ],
+  "api": { "container": "api" }
+}

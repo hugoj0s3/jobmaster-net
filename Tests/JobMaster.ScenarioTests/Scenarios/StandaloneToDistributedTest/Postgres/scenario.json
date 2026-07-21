@@ -1,0 +1,8 @@
+{
+  "scenarioName": "standalone-to-dist-postgres",
+  "phases": [
+    { "name": "phase-1", "containers": ["pg-standalone"] },
+    { "name": "phase-2", "containers": ["pg-coordinator", "pg-executor"] }
+  ],
+  "api": { "container": "api" }
+}

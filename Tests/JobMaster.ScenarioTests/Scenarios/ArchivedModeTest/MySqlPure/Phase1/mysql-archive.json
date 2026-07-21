@@ -1,0 +1,38 @@
+{
+  "containerName": "mysql-archive",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mysql-archive",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "archive-source",
+      "Default": true,
+      "RepoType": "MySql",
+      "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=ArchiveSource;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
+      "DataRetentionTtl": "00:10:00",
+      "TargetArchivedClusterId": "archive-target",
+      "AgentConnections": [
+        {
+          "Name": "mysql-agent-source",
+          "RepositoryType": "MySql",
+          "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=ArchiveSourceAgent;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "mysql-agent-source", "WorkerMode": "Execution" }
+      ]
+    },
+    {
+      "ClusterId": "archive-target",
+      "Default": false,
+      "RepoType": "MySql",
+      "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=ArchiveTarget;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
+      "Mode": "Archived",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

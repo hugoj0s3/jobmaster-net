@@ -1,0 +1,38 @@
+{
+  "containerName": "pg-archive",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-archive",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "archive-source",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveSource;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "DataRetentionTtl": "00:10:00",
+      "TargetArchivedClusterId": "archive-target",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-source",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveSourceAgent;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "pg-agent-source", "WorkerMode": "Execution" }
+      ]
+    },
+    {
+      "ClusterId": "archive-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Mode": "Archived",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

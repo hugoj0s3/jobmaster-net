@@ -1,0 +1,19 @@
+{
+  "containerName": "pg-standalone",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDist;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [
+        { "WorkerName": "w1" }
+      ]
+    }
+  ]
+}

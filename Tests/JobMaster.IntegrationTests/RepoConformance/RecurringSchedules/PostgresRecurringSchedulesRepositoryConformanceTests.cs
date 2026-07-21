@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
 
-[Collection("PostgresRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "Postgres")]
 public sealed class PostgresRecurringSchedulesRepositoryConformanceTests
     : RepositoryRecurringSchedulesConformanceTests<PostgresRepositoryFixture>

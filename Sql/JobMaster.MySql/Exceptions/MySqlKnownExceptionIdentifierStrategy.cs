@@ -20,6 +20,11 @@ internal class MySqlKnownExceptionIdentifierStrategy : IKnownExceptionIdentifier
             {
                 return JobMasterKnownExceptionId.DuplicateKey;
             }
+
+            if (mysqlEx.Number == 1146 || mysqlEx.ErrorCode == MySqlErrorCode.NoSuchTable)
+            {
+                return JobMasterKnownExceptionId.SchemaNotProvisioned;
+            }
         }
 
         return null;

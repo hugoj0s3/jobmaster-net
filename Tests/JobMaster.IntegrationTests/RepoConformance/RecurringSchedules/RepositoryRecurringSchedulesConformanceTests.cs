@@ -516,6 +516,88 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expectedIds.OrderBy(x => x).ToList(), ids.OrderBy(x => x).ToList());
     }
 
+    // -----------------------------------------------------------------------
+    // BulkInsertIfNotExistsAsync conformance tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldInsert_NewTerminatedSchedules()
+    {
+        var def = "defBulkInsertNew-" + JobMasterRandomUtil.NewGuid4();
+
+        var s1 = NewSchedule(def);
+        s1.Status = RecurringScheduleStatus.Canceled;
+        s1.TerminatedAt = DateTime.UtcNow;
+        s1.Metadata = "{\"testIdentifier\":\"bulk-insert-s1\"}";
+
+        var s2 = NewSchedule(def);
+        s2.Status = RecurringScheduleStatus.Completed;
+        s2.TerminatedAt = DateTime.UtcNow;
+        s2.Metadata = "{\"testIdentifier\":\"bulk-insert-s2\"}";
+
+        await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(new[] { s1, s2 });
+
+        var fromDb1 = await Fixture.MasterRecurringSchedules.GetAsync(s1.Id);
+        var fromDb2 = await Fixture.MasterRecurringSchedules.GetAsync(s2.Id);
+
+        Assert.NotNull(fromDb1);
+        Assert.NotNull(fromDb2);
+        Assert.Equal(RecurringScheduleStatus.Canceled, fromDb1!.Status);
+        Assert.Equal(RecurringScheduleStatus.Completed, fromDb2!.Status);
+        Assert.False(string.IsNullOrEmpty(fromDb1.Version));
+        Assert.False(string.IsNullOrEmpty(fromDb2.Version));
+
+        AssertJsonEquivalent(s1.Metadata, fromDb1.Metadata);
+        AssertJsonEquivalent(s2.Metadata, fromDb2.Metadata);
+
+        var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100,
+            MetadataFilters = new List<GenericRecordValueFilter>
+            {
+                new() { Key = "testIdentifier", Operation = GenericFilterOperation.Eq, Value = "bulk-insert-s1" }
+            }
+        });
+        Assert.Equal(s1.Id, Assert.Single(queried).Id);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldLeaveExistingSchedules_Untouched()
+    {
+        var def = "defBulkInsertExisting-" + JobMasterRandomUtil.NewGuid4();
+
+        var existing = NewSchedule(def);
+        await Fixture.MasterRecurringSchedules.AddAsync(existing);
+        var originalVersion = (await Fixture.MasterRecurringSchedules.GetAsync(existing.Id))!.Version;
+
+        var conflicting = Clone(existing);
+        conflicting.WorkerLane = "SHOULD_NOT_PERSIST";
+        conflicting.Metadata = "{\"should\":\"not-persist\"}";
+
+        var brandNew = NewSchedule(def);
+        brandNew.Status = RecurringScheduleStatus.Canceled;
+        brandNew.TerminatedAt = DateTime.UtcNow;
+
+        await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(new[] { conflicting, brandNew });
+
+        var fromDbExisting = await Fixture.MasterRecurringSchedules.GetAsync(existing.Id);
+        Assert.NotNull(fromDbExisting);
+        Assert.Equal(originalVersion, fromDbExisting!.Version);
+        Assert.NotEqual("SHOULD_NOT_PERSIST", fromDbExisting.WorkerLane);
+        Assert.DoesNotContain("not-persist", fromDbExisting.Metadata ?? string.Empty);
+
+        var fromDbNew = await Fixture.MasterRecurringSchedules.GetAsync(brandNew.Id);
+        Assert.NotNull(fromDbNew);
+        Assert.Equal(RecurringScheduleStatus.Canceled, fromDbNew!.Status);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_EmptyList_ShouldNoOp()
+    {
+        await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(Array.Empty<RecurringScheduleRawModel>());
+    }
+
     internal virtual RecurringScheduleRawModel NewSchedule(string? jobDefinitionId = null)
     {
         var now = DateTime.UtcNow;

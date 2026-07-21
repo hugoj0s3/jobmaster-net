@@ -578,8 +578,33 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             for (var offset = 0; offset < jobs.Count; offset += maxBatch)
             {
                 var count = Math.Min(maxBatch, jobs.Count - offset);
+                var batch = jobs.Skip(offset).Take(count).ToList();
+
+                var (existsSql, existsParams) = genericUtil.BuildQueryExistingIdsSql(t, Col(x => x.Id), batch.Select(j => j.Id));
+                var existingIds = new HashSet<Guid>(await conn.QueryAsync<Guid>(existsSql, existsParams, tx));
+                var newJobs = batch.Where(j => !existingIds.Contains(j.Id)).ToList();
+
                 var (sqlText, dynParams) = BuildBulkInsertIfNotExistsSql(t, jobs, offset, count);
                 await conn.ExecuteAsync(sqlText, dynParams, tx);
+
+                if (newJobs.Count > 0)
+                {
+                    var newEntries = newJobs
+                        .Select(j => genericUtil.MapToSqlEntry(JobRawModel.ToPersistence(j).Metadata!))
+                        .ToList();
+
+                    var entriesSql = genericUtil.BuildBulkInsertEntriesSql(newEntries);
+                    if (entriesSql is not null)
+                    {
+                        await conn.ExecuteAsync(entriesSql.Value.sqlText, entriesSql.Value.dynParams, tx);
+                    }
+
+                    var valuesSql = genericUtil.BuildBulkInsertEntryValuesSql(newEntries);
+                    if (valuesSql is not null)
+                    {
+                        await conn.ExecuteAsync(valuesSql.Value.sqlText, valuesSql.Value.dynParams, tx);
+                    }
+                }
             }
             tx.Commit();
         }
@@ -612,34 +637,34 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
 WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");
 
-            dynParams.Add($"ClusterId_{i}", rec.ClusterId);
-            dynParams.Add($"Id_{i}", rec.Id);
-            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId);
-            dynParams.Add($"TriggerSourceType_{i}", rec.TriggerSourceType);
-            dynParams.Add($"BucketId_{i}", rec.BucketId);
-            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId);
-            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId);
-            dynParams.Add($"Priority_{i}", rec.Priority);
-            dynParams.Add($"ScheduledAt_{i}", rec.ScheduledAt);
-            dynParams.Add($"NextPlanExecutionAt_{i}", rec.NextPlanExecutionAt);
-            dynParams.Add($"MsgData_{i}", rec.MsgData);
-            dynParams.Add($"Status_{i}", rec.Status);
-            dynParams.Add($"NumberOfFailures_{i}", rec.NumberOfFailures);
-            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks);
-            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries);
-            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt);
-            dynParams.Add($"SourceId_{i}", rec.SourceId);
-            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId);
-            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt);
-            dynParams.Add($"ProcessDeadline_{i}", rec.ProcessDeadline);
-            dynParams.Add($"ProcessStartedAt_{i}", rec.ProcessStartedAt);
-            dynParams.Add($"FinalizedAt_{i}", rec.FinalizedAt);
-            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane);
-            dynParams.Add($"Version_{i}", rec.Version);
-            dynParams.Add($"HostId_{i}", rec.HostId);
-            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName);
-            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId);
-            dynParams.Add($"ExistsId_{i}", rec.Id);
+            dynParams.Add($"ClusterId_{i}", rec.ClusterId, DbType.String);
+            dynParams.Add($"Id_{i}", rec.Id, DbType.Guid);
+            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId, DbType.String);
+            dynParams.Add($"TriggerSourceType_{i}", rec.TriggerSourceType, DbType.Int32);
+            dynParams.Add($"BucketId_{i}", rec.BucketId, DbType.String);
+            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId, DbType.String);
+            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId, DbType.String);
+            dynParams.Add($"Priority_{i}", rec.Priority, DbType.Int32);
+            dynParams.Add($"ScheduledAt_{i}", rec.ScheduledAt, DbType.DateTime);
+            dynParams.Add($"NextPlanExecutionAt_{i}", rec.NextPlanExecutionAt, DbType.DateTime);
+            dynParams.Add($"MsgData_{i}", rec.MsgData, DbType.String);
+            dynParams.Add($"Status_{i}", rec.Status, DbType.Int32);
+            dynParams.Add($"NumberOfFailures_{i}", rec.NumberOfFailures, DbType.Int32);
+            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks, DbType.Int64);
+            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries, DbType.Int32);
+            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt, DbType.DateTime);
+            dynParams.Add($"SourceId_{i}", rec.SourceId, DbType.Guid);
+            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId, DbType.Guid);
+            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt, DbType.DateTime);
+            dynParams.Add($"ProcessDeadline_{i}", rec.ProcessDeadline, DbType.DateTime);
+            dynParams.Add($"ProcessStartedAt_{i}", rec.ProcessStartedAt, DbType.DateTime);
+            dynParams.Add($"FinalizedAt_{i}", rec.FinalizedAt, DbType.DateTime);
+            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane, DbType.String);
+            dynParams.Add($"Version_{i}", rec.Version, DbType.String);
+            dynParams.Add($"HostId_{i}", rec.HostId, DbType.String);
+            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName, DbType.String);
+            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId, DbType.String);
+            dynParams.Add($"ExistsId_{i}", rec.Id, DbType.Guid);
         }
 
         var sqlText = $"INSERT INTO {t} ({cols})\n{string.Join("\nUNION ALL\n", selects)};";

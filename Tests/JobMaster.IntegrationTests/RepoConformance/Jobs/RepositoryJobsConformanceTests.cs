@@ -1372,6 +1372,90 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.NotNull(probe.MinNextPlanExecutionAt);
     }
 
+    // -----------------------------------------------------------------------
+    // BulkInsertIfNotExistsAsync conformance tests
+    // -----------------------------------------------------------------------
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldInsert_NewFinalizedJobs()
+    {
+        var def = "defBulkInsertNew-" + JobMasterRandomUtil.NewGuid4();
+
+        var j1 = NewJob(def, JobMasterJobStatus.Succeeded);
+        j1.Metadata = "{\"testIdentifier\":\"bulk-insert-j1\"}";
+        var j2 = NewJob(def, JobMasterJobStatus.Failed);
+        j2.Metadata = "{\"testIdentifier\":\"bulk-insert-j2\"}";
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 });
+
+        var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
+        var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+
+        Assert.NotNull(fromDb1);
+        Assert.NotNull(fromDb2);
+        Assert.Equal(JobMasterJobStatus.Succeeded, fromDb1!.Status);
+        Assert.Equal(JobMasterJobStatus.Failed, fromDb2!.Status);
+        Assert.False(string.IsNullOrEmpty(fromDb1.Version));
+        Assert.False(string.IsNullOrEmpty(fromDb2.Version));
+
+        // Metadata lives in a separate generic-record table, not a column on the job row itself --
+        // must be copied by BulkInsertIfNotExistsAsync too, not just the row (the migrate/archive
+        // flows that call this rely on it to preserve TestIdentifier and any user-set metadata).
+        AssertJsonEquivalent(j1.Metadata, fromDb1.Metadata);
+        AssertJsonEquivalent(j2.Metadata, fromDb2.Metadata);
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            CountLimit = 100,
+            MetadataFilters = new List<GenericRecordValueFilter>
+            {
+                new() { Key = "testIdentifier", Operation = GenericFilterOperation.Eq, Value = "bulk-insert-j1" }
+            }
+        });
+        Assert.Equal(j1.Id, Assert.Single(queried).Id);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldLeaveExistingJobs_Untouched()
+    {
+        var def = "defBulkInsertExisting-" + JobMasterRandomUtil.NewGuid4();
+
+        var existing = NewJob(def, JobMasterJobStatus.Succeeded);
+        await Fixture.MasterJobs.AddAsync(existing);
+        var originalVersion = (await Fixture.MasterJobs.GetAsync(existing.Id))!.Version;
+
+        // Same Id as the already-persisted job but a different payload -- if
+        // BulkInsertIfNotExistsAsync overwrote existing rows instead of skipping them, this would
+        // show up as a changed WorkerLane/Version below.
+        var conflicting = Clone(existing);
+        conflicting.WorkerLane = "SHOULD_NOT_PERSIST";
+        conflicting.Metadata = "{\"should\":\"not-persist\"}";
+
+        var brandNew = NewJob(def, JobMasterJobStatus.Cancelled);
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { conflicting, brandNew });
+
+        var fromDbExisting = await Fixture.MasterJobs.GetAsync(existing.Id);
+        Assert.NotNull(fromDbExisting);
+        Assert.Equal(originalVersion, fromDbExisting!.Version);
+        Assert.NotEqual("SHOULD_NOT_PERSIST", fromDbExisting.WorkerLane);
+        // Metadata is guarded the same way as the row itself (WHERE NOT EXISTS keyed on the parent
+        // entry) -- the conflicting copy's metadata must not have overwritten the original's.
+        Assert.DoesNotContain("not-persist", fromDbExisting.Metadata ?? string.Empty);
+
+        var fromDbNew = await Fixture.MasterJobs.GetAsync(brandNew.Id);
+        Assert.NotNull(fromDbNew);
+        Assert.Equal(JobMasterJobStatus.Cancelled, fromDbNew!.Status);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_EmptyList_ShouldNoOp()
+    {
+        // Should not throw and should not touch anything else in the same cluster.
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(Array.Empty<JobRawModel>());
+    }
+
     private static JobRawModel Clone(JobRawModel job)
     {
         return new JobRawModel(job.ClusterId)

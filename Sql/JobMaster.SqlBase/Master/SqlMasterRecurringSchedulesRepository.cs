@@ -535,8 +535,33 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             for (var offset = 0; offset < schedules.Count; offset += maxBatch)
             {
                 var count = Math.Min(maxBatch, schedules.Count - offset);
+                var batch = schedules.Skip(offset).Take(count).ToList();
+
+                var (existsSql, existsParams) = genericUtil.BuildQueryExistingIdsSql(t, Col(x => x.Id), batch.Select(s => s.Id));
+                var existingIds = new HashSet<Guid>(await conn.QueryAsync<Guid>(existsSql, existsParams, tx));
+                var newSchedules = batch.Where(s => !existingIds.Contains(s.Id)).ToList();
+
                 var (sqlText, dynParams) = BuildBulkInsertIfNotExistsSql(t, schedules, offset, count);
                 await conn.ExecuteAsync(sqlText, dynParams, tx);
+
+                if (newSchedules.Count > 0)
+                {
+                    var newEntries = newSchedules
+                        .Select(s => genericUtil.MapToSqlEntry(RecurringScheduleRawModel.ToPersistence(s).Metadata!))
+                        .ToList();
+
+                    var entriesSql = genericUtil.BuildBulkInsertEntriesSql(newEntries);
+                    if (entriesSql is not null)
+                    {
+                        await conn.ExecuteAsync(entriesSql.Value.sqlText, entriesSql.Value.dynParams, tx);
+                    }
+
+                    var valuesSql = genericUtil.BuildBulkInsertEntryValuesSql(newEntries);
+                    if (valuesSql is not null)
+                    {
+                        await conn.ExecuteAsync(valuesSql.Value.sqlText, valuesSql.Value.dynParams, tx);
+                    }
+                }
             }
             tx.Commit();
         }
@@ -569,39 +594,39 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringSche
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @Expression_{i}, @ExpressionTypeId_{i}, @JobDefinitionId_{i}, @StaticDefinitionId_{i}, @ProfileId_{i}, @Status_{i}, @RecurringScheduleType_{i}, @StaticDefinitionLastEnsured_{i}, @TerminatedAt_{i}, @MsgData_{i}, @Priority_{i}, @MaxNumberOfRetries_{i}, @TimeoutTicks_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @PartitionLockId_{i}, @HostId_{i}, @HostDisplayName_{i}, @PartitionLockExpiresAt_{i}, @CreatedAt_{i}, @StartAfter_{i}, @EndBefore_{i}, @LastPlanCoverageUntil_{i}, @LastExecutedPlan_{i}, @HasFailedOnLastPlanExecution_{i}, @IsJobCancellationPending_{i}, @WorkerLane_{i}, @Version_{i}
 WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");
 
-            dynParams.Add($"ClusterId_{i}", rec.ClusterId);
-            dynParams.Add($"Id_{i}", rec.Id);
-            dynParams.Add($"Expression_{i}", rec.Expression);
-            dynParams.Add($"ExpressionTypeId_{i}", rec.ExpressionTypeId);
-            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId);
-            dynParams.Add($"StaticDefinitionId_{i}", rec.StaticDefinitionId);
-            dynParams.Add($"ProfileId_{i}", rec.ProfileId);
-            dynParams.Add($"Status_{i}", rec.Status);
-            dynParams.Add($"RecurringScheduleType_{i}", rec.RecurringScheduleType);
-            dynParams.Add($"StaticDefinitionLastEnsured_{i}", rec.StaticDefinitionLastEnsured);
-            dynParams.Add($"TerminatedAt_{i}", rec.TerminatedAt);
-            dynParams.Add($"MsgData_{i}", rec.MsgData);
-            dynParams.Add($"Priority_{i}", rec.Priority);
-            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries);
-            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks);
-            dynParams.Add($"BucketId_{i}", rec.BucketId);
-            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId);
-            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId);
-            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId);
-            dynParams.Add($"HostId_{i}", rec.HostId);
-            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName);
-            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt);
-            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt);
-            dynParams.Add($"StartAfter_{i}", rec.StartAfter);
-            dynParams.Add($"EndBefore_{i}", rec.EndBefore);
-            dynParams.Add($"LastPlanCoverageUntil_{i}", rec.LastPlanCoverageUntil);
-            dynParams.Add($"LastExecutedPlan_{i}", rec.LastExecutedPlan);
-            dynParams.Add($"HasFailedOnLastPlanExecution_{i}", rec.HasFailedOnLastPlanExecution);
-            dynParams.Add($"IsJobCancellationPending_{i}", rec.IsJobCancellationPending);
-            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane);
-            dynParams.Add($"Version_{i}", rec.Version);
-            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId);
-            dynParams.Add($"ExistsId_{i}", rec.Id);
+            dynParams.Add($"ClusterId_{i}", rec.ClusterId, DbType.String);
+            dynParams.Add($"Id_{i}", rec.Id, DbType.Guid);
+            dynParams.Add($"Expression_{i}", rec.Expression, DbType.String);
+            dynParams.Add($"ExpressionTypeId_{i}", rec.ExpressionTypeId, DbType.String);
+            dynParams.Add($"JobDefinitionId_{i}", rec.JobDefinitionId, DbType.String);
+            dynParams.Add($"StaticDefinitionId_{i}", rec.StaticDefinitionId, DbType.String);
+            dynParams.Add($"ProfileId_{i}", rec.ProfileId, DbType.String);
+            dynParams.Add($"Status_{i}", rec.Status, DbType.Int32);
+            dynParams.Add($"RecurringScheduleType_{i}", rec.RecurringScheduleType, DbType.Int32);
+            dynParams.Add($"StaticDefinitionLastEnsured_{i}", rec.StaticDefinitionLastEnsured, DbType.DateTime);
+            dynParams.Add($"TerminatedAt_{i}", rec.TerminatedAt, DbType.DateTime);
+            dynParams.Add($"MsgData_{i}", rec.MsgData, DbType.String);
+            dynParams.Add($"Priority_{i}", rec.Priority, DbType.Int32);
+            dynParams.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries, DbType.Int32);
+            dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks, DbType.Int64);
+            dynParams.Add($"BucketId_{i}", rec.BucketId, DbType.String);
+            dynParams.Add($"AgentConnectionId_{i}", rec.AgentConnectionId, DbType.String);
+            dynParams.Add($"AgentWorkerId_{i}", rec.AgentWorkerId, DbType.String);
+            dynParams.Add($"PartitionLockId_{i}", rec.PartitionLockId, DbType.Guid);
+            dynParams.Add($"HostId_{i}", rec.HostId, DbType.String);
+            dynParams.Add($"HostDisplayName_{i}", rec.HostDisplayName, DbType.String);
+            dynParams.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt, DbType.DateTime);
+            dynParams.Add($"CreatedAt_{i}", rec.CreatedAt, DbType.DateTime);
+            dynParams.Add($"StartAfter_{i}", rec.StartAfter, DbType.DateTime);
+            dynParams.Add($"EndBefore_{i}", rec.EndBefore, DbType.DateTime);
+            dynParams.Add($"LastPlanCoverageUntil_{i}", rec.LastPlanCoverageUntil, DbType.DateTime);
+            dynParams.Add($"LastExecutedPlan_{i}", rec.LastExecutedPlan, DbType.DateTime);
+            dynParams.Add($"HasFailedOnLastPlanExecution_{i}", rec.HasFailedOnLastPlanExecution, DbType.Boolean);
+            dynParams.Add($"IsJobCancellationPending_{i}", rec.IsJobCancellationPending, DbType.Boolean);
+            dynParams.Add($"WorkerLane_{i}", rec.WorkerLane, DbType.String);
+            dynParams.Add($"Version_{i}", rec.Version, DbType.String);
+            dynParams.Add($"ExistsClusterId_{i}", rec.ClusterId, DbType.String);
+            dynParams.Add($"ExistsId_{i}", rec.Id, DbType.Guid);
         }
 
         var sqlText = $"INSERT INTO {t} ({cols})\n{string.Join("\nUNION ALL\n", selects)};";

@@ -1,0 +1,24 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingSource;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    }
+  ]
+}

@@ -130,7 +130,7 @@ internal static class RecurringScheduleConvertUtil
             ProfileId = d.ProfileId,
             Status = (RecurringScheduleStatus)d.Status,
             RecurringScheduleType = (RecurringScheduleType)d.RecurringScheduleType,
-            StaticDefinitionLastEnsured = d.StaticDefinitionLastEnsured,
+            StaticDefinitionLastEnsured = UtcN(d.StaticDefinitionLastEnsured),
             TerminatedAt = UtcN(d.TerminatedAt),
             MsgData = string.IsNullOrEmpty(d.MsgData) ? "{}" : d.MsgData,
             Metadata =d.Metadata is null ? null : InternalJobMasterSerializer.Serialize(metadataDictionary),

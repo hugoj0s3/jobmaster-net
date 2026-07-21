@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
-[Collection("PostgresRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "Postgres")]
 public sealed class PostgresAgentRawMessagesDispatcherPollingConformanceTests
     : RepositoryAgentRawMessagesDispatcherPollingConformanceTests<PostgresRepositoryFixture>

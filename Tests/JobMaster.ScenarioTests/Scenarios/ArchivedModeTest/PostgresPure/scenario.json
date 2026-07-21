@@ -1,0 +1,7 @@
+{
+  "scenarioName": "postgres-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["pg-archive"] }
+  ],
+  "api": { "container": "api" }
+}

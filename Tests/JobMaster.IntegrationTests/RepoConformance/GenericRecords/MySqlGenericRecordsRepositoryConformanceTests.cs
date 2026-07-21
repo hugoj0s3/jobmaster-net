@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.GenericRecords;
 
-[Collection("MySqlRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "MySql")]
 public sealed class MySqlGenericRecordsRepositoryConformanceTests
     : RepositoryGenericRecordsConformanceTests<MySqlRepositoryFixture>

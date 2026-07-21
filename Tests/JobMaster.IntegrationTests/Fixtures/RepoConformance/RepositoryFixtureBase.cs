@@ -9,8 +9,6 @@ public abstract class RepositoryFixtureBase : IAsyncLifetime
     internal abstract string ClusterId { get; set; }
     internal abstract AgentConnectionId AgentConnectionId { get; set; }
 
-    internal abstract IServiceProvider Services { get; set; }
-
     internal abstract IMasterJobsRepository MasterJobs { get; set; }
     internal abstract IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; }
     internal abstract IMasterGenericRecordRepository MasterGenericRecords { get; set; }
@@ -18,11 +16,8 @@ public abstract class RepositoryFixtureBase : IAsyncLifetime
 
     internal abstract IAgentRawMessagesDispatcherRepository AgentMessages { get;set;  }
     public abstract Task InitializeAsync();
-    public async Task DisposeAsync()
-    {
-        if (Services is IAsyncDisposable asyncDisposable)
-            await asyncDisposable.DisposeAsync();
-        else if (Services is IDisposable disposable)
-            disposable.Dispose();
-    }
+
+    // Disposal of the shared runtime and all 3 databases is centralized in RepoConformanceBootstrap,
+    // since JobMasterRuntime is a process-wide singleton all 3 provider fixtures share.
+    public virtual Task DisposeAsync() => Task.CompletedTask;
 }

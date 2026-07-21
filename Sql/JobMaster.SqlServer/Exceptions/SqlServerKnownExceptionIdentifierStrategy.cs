@@ -17,6 +17,8 @@ internal class SqlServerKnownExceptionIdentifierStrategy : IKnownExceptionIdenti
                     return JobMasterKnownExceptionId.Deadlock;
                 case 2627:
                     return JobMasterKnownExceptionId.DuplicateKey;
+                case 208:
+                    return JobMasterKnownExceptionId.SchemaNotProvisioned;
             }
         }
 

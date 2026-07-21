@@ -203,7 +203,7 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
         return ($"WHERE {string.Join(" AND ", where)}", args);
     }
 
-    private static string BuildKeywordFilter() => "message LIKE @Keyword";
+    private string BuildKeywordFilter() => sql.LikeClauseFor("message", "@Keyword");
 
     private static LogItem ToLogItem(LogPersistenceRecord r)
     {

@@ -1,0 +1,39 @@
+{
+  "containerName": "postgres-nats-archive",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-archive",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "archive-source",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveSourceNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "DataRetentionTtl": "00:10:00",
+      "TargetArchivedClusterId": "archive-target",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-source",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "nats-agent-source", "WorkerMode": "Execution" }
+      ]
+    },
+    {
+      "ClusterId": "archive-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveTargetNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Mode": "Archived",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

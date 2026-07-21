@@ -7,18 +7,11 @@
 
         <IsPackable>false</IsPackable>
         <IsTestProject>true</IsTestProject>
-
-        <UserSecretsId>JobMaster.IntegrationTests</UserSecretsId>
     </PropertyGroup>
 
     <ItemGroup>
         <PackageReference Include="FluentAssertions" Version="8.8.0" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.6.0"/>
-        <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="9.0.2" />
-        <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="9.0.2" />
         <PackageReference Include="xunit" Version="2.4.2"/>
         <PackageReference Include="xunit.runner.visualstudio" Version="2.4.5">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
@@ -28,6 +21,11 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
+
+        <PackageReference Include="Testcontainers" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.PostgreSql" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.MySql" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.MsSql" Version="3.10.0" />
     </ItemGroup>
 
     <ItemGroup>
@@ -35,11 +33,5 @@
       <ProjectReference Include="..\..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />
       <ProjectReference Include="..\..\Sql\JobMaster.MySql\JobMaster.MySql.csproj" />
       <ProjectReference Include="..\..\Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <None Update="appsettings.json">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
     </ItemGroup>
 </Project>

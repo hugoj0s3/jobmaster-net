@@ -1,0 +1,38 @@
+{
+  "containerName": "postgres-nats-migration",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-migration",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingSourceNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "migrating-target",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingTargetNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-target",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "nats-agent-target", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

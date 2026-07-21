@@ -7,6 +7,7 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
@@ -335,7 +336,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
 
-            var existingClusterConfig = masterConfigService.GetFresh();
+            var existingClusterConfig = GetFreshClusterConfig(componentFactory, masterConfigService);
             var existingTimezoneId = existingClusterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
 
             // clusterDefinition.IsStandalone is null when not set in code (e.g. a cluster configured as
@@ -576,6 +577,30 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     }
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads the cluster's previously-saved configuration, if any -- used by <see cref="PreValidation"/>
+    /// to check cross-run consistency (timezone, IsStandalone, etc.) before schema auto-provisioning
+    /// (<c>OnBeforeStartAsync</c>, which runs strictly after all validation) has had a chance to run.
+    /// On a cluster's very first startup against a brand-new database, the underlying table doesn't
+    /// exist yet -- that's equivalent to "no config saved yet", not a real failure, so it's treated the
+    /// same as a genuinely empty table instead of letting the provider-specific SQL exception abort
+    /// startup before provisioning ever gets a chance to run.
+    /// </summary>
+    private static ClusterConfigurationModel? GetFreshClusterConfig(
+        IJobMasterClusterAwareComponentFactory componentFactory,
+        IMasterClusterConfigurationService masterConfigService)
+    {
+        var knownExceptionIdentifier = componentFactory.GetComponent<IKnownExceptionIdentifier>();
+        try
+        {
+            return masterConfigService.GetFresh();
+        }
+        catch (Exception ex) when (knownExceptionIdentifier.Identify(ex) == JobMasterKnownExceptionId.SchemaNotProvisioned)
+        {
+            return null;
         }
     }
 

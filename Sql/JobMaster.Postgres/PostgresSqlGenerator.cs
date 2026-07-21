@@ -49,6 +49,14 @@ internal class PostgresSqlGenerator : SqlGenerator
         return $"{columnName} =ANY({parameterName})";
     }
 
+    public override string LikeClauseFor(string columnName, string patternExpression)
+    {
+        // Postgres rejects LIKE/ILIKE outright against a nondeterministic collation (confirmed:
+        // ILIKE alone still throws) -- COLLATE "C" makes this one comparison deterministic, ILIKE
+        // keeps it case-insensitive.
+        return $"{columnName} COLLATE \"C\" ILIKE {patternExpression}";
+    }
+
     public override string IdentityColumn()
     {
         return "GENERATED ALWAYS AS IDENTITY";

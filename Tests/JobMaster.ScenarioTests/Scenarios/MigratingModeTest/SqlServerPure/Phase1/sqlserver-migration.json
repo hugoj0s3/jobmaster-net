@@ -1,0 +1,37 @@
+{
+  "containerName": "sqlserver-migration",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "sqlserver-migration",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=MigratingSource;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "migrating-target",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=MigratingTarget;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
+      "AgentConnections": [
+        {
+          "Name": "sqlserver-agent-target",
+          "RepositoryType": "SqlServer",
+          "ConnectionString": "Server={{SqlServerHost}};Database=MigratingTargetAgent;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "sqlserver-agent-target", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

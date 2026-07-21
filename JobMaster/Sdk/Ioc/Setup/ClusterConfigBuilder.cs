@@ -537,6 +537,13 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         else
         {
+            // Explicit false, not left unset: ClusterDefinition.IsStandalone is nullable specifically so
+            // JobMasterRuntime can tell "this config didn't mention it" (falls back to whatever was
+            // persisted) apart from "this config says non-standalone" -- without this, a cluster
+            // previously persisted as standalone could never be reconfigured back, since null would
+            // keep deferring to the stale persisted true forever.
+            clusterDefinition.IsStandalone = false;
+
             if (config.RepoType != null) ClusterRepoType(config.RepoType);
             if (config.ConnectionString != null) ClusterConnString(config.ConnectionString);
             if (config.ConnectionOptions != null && config.RepoType != null)

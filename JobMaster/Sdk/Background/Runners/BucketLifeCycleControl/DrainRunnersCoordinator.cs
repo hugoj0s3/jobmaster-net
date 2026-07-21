@@ -36,8 +36,9 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
         lockKeys = new JobMasterLockKeys(this.BackgroundAgentWorker.ClusterConnConfig.ClusterId);
     }
     
-    // OnTick level this process race-condition safer, since it deal only with self runners so no locker needed.
-    // To allocate a specific bucket, we need to lock the bucket to avoid race condition.
+    // No BucketRunnerLock needed at this level: cleanup/recovery only touch runners this worker
+    // already owns, so there's nothing for another worker to race against. Locking only kicks in
+    // inside CreateDrainRunners, where a bucket is claimed and transitioned to Draining.
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
         if (BackgroundAgentWorker.StopRequested)

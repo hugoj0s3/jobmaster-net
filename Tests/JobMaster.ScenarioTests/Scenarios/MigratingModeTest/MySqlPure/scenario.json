@@ -1,0 +1,7 @@
+{
+  "scenarioName": "mysql-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["mysql-migration"] }
+  ],
+  "api": { "container": "api" }
+}

@@ -1,0 +1,25 @@
+{
+  "containerName": "pg-executor",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-executor",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDist;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-dist",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDistAgent;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor", "AgentConnectionName": "pg-agent-dist", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

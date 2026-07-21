@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
-[Collection("PostgresRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "Postgres")]
 public sealed class PostgresJobsRepositoryConformanceTests
     : RepositoryJobsConformanceTests<PostgresRepositoryFixture>

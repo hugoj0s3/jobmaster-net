@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
-[Collection("SqlServerRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "SqlServer")]
 public sealed class SqlServerJobsRepositoryConformanceTests
     : RepositoryJobsConformanceTests<SqlServerRepositoryFixture>

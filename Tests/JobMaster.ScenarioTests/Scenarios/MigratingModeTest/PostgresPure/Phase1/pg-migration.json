@@ -1,0 +1,37 @@
+{
+  "containerName": "pg-migration",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-migration",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingSource;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "migrating-target",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "AgentConnections": [
+        {
+          "Name": "pg-agent-target",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=MigratingTargetAgent;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "pg-agent-target", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

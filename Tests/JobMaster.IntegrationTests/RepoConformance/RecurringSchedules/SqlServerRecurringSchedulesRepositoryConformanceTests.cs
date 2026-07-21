@@ -3,7 +3,7 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
 
-[Collection("SqlServerRepositoryConformance")]
+[Collection("RepoConformance")]
 [Trait("DB", "SqlServer")]
 public sealed class SqlServerRecurringSchedulesRepositoryConformanceTests
     : RepositoryRecurringSchedulesConformanceTests<SqlServerRepositoryFixture>

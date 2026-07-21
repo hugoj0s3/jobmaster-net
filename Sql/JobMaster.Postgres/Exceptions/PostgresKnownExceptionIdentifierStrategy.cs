@@ -17,6 +17,8 @@ internal class PostgresKnownExceptionIdentifierStrategy : IKnownExceptionIdentif
                     return JobMasterKnownExceptionId.Deadlock;
                 case "23505":
                     return JobMasterKnownExceptionId.DuplicateKey;
+                case "42P01":
+                    return JobMasterKnownExceptionId.SchemaNotProvisioned;
             }
         }
 

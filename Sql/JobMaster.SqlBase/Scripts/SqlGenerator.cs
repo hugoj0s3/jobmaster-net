@@ -33,6 +33,8 @@ internal interface ISqlGenerator
     
     public string InClauseFor(string columnName, string parameterName);
 
+    public string LikeClauseFor(string columnName, string patternExpression);
+
     public string NormalizeIdentifierForDb(string identifier);
 
     public string CreateIndex(string tableName, string indexName, params (string ColumnName, bool IsMaxLength, int? Length)[] columns);
@@ -144,6 +146,7 @@ internal abstract class SqlGenerator : ISqlGenerator
     
     public abstract string TableExistsSql(string tablePrefix, string table);
     public abstract string InClauseFor(string columnName, string parameterName);
+    public virtual string LikeClauseFor(string columnName, string patternExpression) => $"{columnName} LIKE {patternExpression}";
     public abstract string IdentityColumn();
     
     public abstract string GenerateVersionSql();

@@ -66,6 +66,19 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
     return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
 });
 
+app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
+{
+    var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
+    var context = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
+    return Results.Ok(new RecurringScheduleResponse(context.Id));
+});
+
+app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
+{
+    var cancelled = await scheduler.TryCancelRecurringAsync(id, clusterId);
+    return cancelled ? Results.Ok() : Results.NotFound();
+});
+
 await app.Services.StartJobMasterRuntimeAsync();
 
 app.Run();
@@ -94,6 +107,24 @@ static Task<JobContext> ScheduleHandler(
         "verylong" => afterSeconds.HasValue
             ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
             : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
+        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong.")
+    };
+}
+
+static Task<RecurringScheduleContext> RecurringScheduleHandler(
+    string handlerType,
+    IJobMasterScheduler scheduler,
+    string expressionTypeId,
+    string expression,
+    IWritableMetadata metadata,
+    string? clusterId)
+{
+    return handlerType.ToLowerInvariant() switch
+    {
+        "fast" => scheduler.RecurringAsync<TestAppFastHandler>(expressionTypeId, expression, metadata: metadata, clusterId: clusterId),
+        "normal" => scheduler.RecurringAsync<TestAppNormalHandler>(expressionTypeId, expression, metadata: metadata, clusterId: clusterId),
+        "slow" => scheduler.RecurringAsync<TestAppSlowHandler>(expressionTypeId, expression, metadata: metadata, clusterId: clusterId),
+        "verylong" => scheduler.RecurringAsync<TestAppVeryLongHandler>(expressionTypeId, expression, metadata: metadata, clusterId: clusterId),
         _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong.")
     };
 }
