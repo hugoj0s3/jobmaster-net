@@ -245,3 +245,18 @@ jobs:
 
       - name: Run Drain Mode ${{ matrix.scenario }}
         run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.DrainModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  all-scenarios-passed:
+    name: All Scenario Tests Passed
+    # Single aggregate check to require in branch protection, instead of every individual matrix
+    # job -- fails if any upstream job failed, was cancelled, or was skipped.
+    needs: [smoke-tests, scenario-test, recurring-scenario-test, archived-mode-test, migrating-mode-test, standalone-to-distributed-test, fallback-bucket-test, drain-mode-test]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all jobs succeeded
+        run: |
+          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" || "${{ contains(needs.*.result, 'skipped') }}" == "true" ]]; then
+            echo "One or more scenario test jobs did not succeed."
+            exit 1
+          fi
