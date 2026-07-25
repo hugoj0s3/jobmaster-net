@@ -99,3 +99,149 @@ jobs:
 
       - name: Run Recurring ${{ matrix.scenario }}
         run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.RecurringScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  archived-mode-test:
+    name: Archived ${{ matrix.scenario }}
+    # Chained after recurring-scenario-test, not in parallel -- keeps total concurrent
+    # Docker/Testcontainers load bounded, same reasoning as recurring-scenario-test above.
+    needs: recurring-scenario-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Archived ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ArchivedModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  migrating-mode-test:
+    name: Migrating ${{ matrix.scenario }}
+    needs: archived-mode-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Migrating ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.MigratingModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  standalone-to-distributed-test:
+    name: Standalone-to-Distributed ${{ matrix.scenario }}
+    needs: migrating-mode-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Standalone-to-Distributed ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.StandaloneToDistributedTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  fallback-bucket-test:
+    name: Fallback Bucket ${{ matrix.scenario }}
+    needs: standalone-to-distributed-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # No PostgresNats variant exists for this scenario -- Postgres+Nats fallback-bucket
+        # behavior isn't covered yet.
+        scenario: [PostgresPure, MySqlPure, SqlServerPure]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Fallback Bucket ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.FallbackBucketTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+
+  drain-mode-test:
+    name: Drain Mode ${{ matrix.scenario }}
+    needs: fallback-bucket-test
+    runs-on: ubuntu-latest
+    # Observed ~24min locally.
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Only a PostgresDist variant exists for this scenario today.
+        scenario: [PostgresDist]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+
+      - name: Build
+        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+
+      - name: Run Drain Mode ${{ matrix.scenario }}
+        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.DrainModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
