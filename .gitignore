@@ -7,6 +7,9 @@
 # Dashboard local dev config (contains environment-specific URLs)
 dashboard/static/jobmaster-config.json
 
+# Benchmark run output (throughput/latency/resource reports, per-run, not source)
+Benchmarks/Results/
+
 # User-specific files
 *.suo
 *.user

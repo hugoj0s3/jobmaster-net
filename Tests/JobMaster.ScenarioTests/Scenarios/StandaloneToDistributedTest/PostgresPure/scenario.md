@@ -1,9 +1,8 @@
-# StandaloneToDistributedTest.Postgres
+# StandaloneToDistributedTest.PostgresPure
 
 Tests migrating a cluster off `Standalone` mode onto a genuinely distributed topology (separate
 Coordinator + Execution containers) end to end: jobs stuck on the dead standalone worker's buckets
-must drain and finish on the new topology, none lost, none duplicated. First pass, Postgres only,
-two phases.
+must drain and finish on the new topology, none lost, none duplicated.
 
 ## Topology
 
@@ -28,6 +27,18 @@ in Phase1 is stopped explicitly (never re-listed in Phase2's `scenario.json` ent
 3. Wait for all 300 jobs to reach `Succeeded`, then assert the exact job ID set matches what
    `ScheduleAsync` originally returned — no loss, no duplicate execution across the topology change.
 4. Assert `pg-agent-dist` is alive.
+
+## Multi-variant note
+
+`TestIdentifier` is generated fresh (`Guid.NewGuid()`) in Phase1 rather than a literal constant —
+every repo-type variant shares one Redis instance (`ScenarioGlobalEnvironment`), and
+`[Collection(ScenarioCollection.Name)]` runs them sequentially without clearing Redis in between, so
+a literal identifier would let a later variant's `Tracker.WaitForAsync` (in Phase2) match an earlier
+variant's already-recorded executions. Since Phase1 and Phase2 are separate
+`Activator.CreateInstance` instances with no direct reference to each other, the generated
+identifier (and the scheduled job IDs) are handed off via `PostgresPureState`, a small static holder
+scoped to this variant's own namespace — safe specifically because scenarios run within one
+serialized collection, never concurrently with another scenario run in the same process.
 
 ## The recovery mechanism (why this works)
 
@@ -72,14 +83,12 @@ full scenario cycle — cut iteration time from ~20 minutes to under a minute. R
 `Sdk/Abstractions/Models/Buckets/BucketModelTests.cs`,
 `Sdk/Abstractions/Models/Buckets/StandaloneDrainerSynthesisConditionTests.cs`.
 
-## What this doesn't cover (deliberately, first pass)
+## What this doesn't cover (deliberately)
 
 - **Target cluster's own bucket lifecycle** — doesn't assert the old standalone buckets ever reach
   `ReadyToDelete`/get destroyed (that's already covered in isolation elsewhere, e.g.
   `DestroyReadyToDeleteBucketsRunnerTests`); this scenario's job is to prove no job was lost or
   duplicated across the transition, not to re-prove bucket destruction timing.
-- **MySql/SqlServer/PostgresNats** — Postgres only, matching this suite's other scenarios' first-pass
-  approach.
 
 ## Timing
 

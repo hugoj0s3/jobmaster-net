@@ -169,10 +169,19 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5)
                     ? timeRemaining
                     : TimeSpan.FromSeconds(5));
+
+            // Dispatch parallelism scales with how many distinct buckets this batch actually targets,
+            // floored at the old fixed value and capped at MaxBatchSizeForBulkOperation (the same
+            // batch-sizing constant used for the bulk update above) -- a fixed floor-less cap here
+            // throttled the whole cluster's dispatch rate regardless of how many buckets/workers
+            // existed downstream, but growing it unbounded with bucket count isn't safe either.
+            var maxParallelism = bucketAssignments.Values.Select(b => b.Id).Distinct().Count();
+            maxParallelism = Math.Max(maxParallelism, 5);
+            maxParallelism = Math.Min(maxParallelism, JobMasterConstants.MaxBatchSizeForBulkOperation);
             var parallelOptions = new ParallelOptions()
             {
                 CancellationToken = batchTimeoutCts.Token,
-                MaxDegreeOfParallelism = 5,
+                MaxDegreeOfParallelism = maxParallelism,
             };
 
             await JobMasterParallelUtil.ForEachAsync(

@@ -3,13 +3,14 @@ using JobMaster.ScenarioTests.Fixtures;
 using JobMaster.ScenarioTests.Runner;
 using JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 
-namespace JobMaster.ScenarioTests.Scenarios.StandaloneToDistributedTest.Postgres;
+namespace JobMaster.ScenarioTests.Scenarios.StandaloneToDistributedTest;
 
 /// <summary>
-/// A genuinely distributed topology (separate Coordinator + Execution containers, on a brand new
-/// named agent connection -- never the reserved standalone one) takes over the same ClusterId and
-/// database Phase1's now-dead standalone worker owned. Proves every job Phase1 scheduled actually
-/// finishes here, none lost, none duplicated.
+/// Shared phase-2 logic for every repo-type variant of this scenario: a genuinely distributed
+/// topology (separate Coordinator + Execution containers, on a brand new named agent connection --
+/// never the reserved standalone one) takes over the same ClusterId and database Phase1's now-dead
+/// standalone worker owned. Proves every job Phase1 scheduled actually finishes here, none lost,
+/// none duplicated.
 ///
 /// Recovery goes through two layers, both real unmodified JobMaster runners:
 /// - Fast path: JobMasterRuntime detects buckets still tagged as standalone-owned when this
@@ -23,13 +24,17 @@ namespace JobMaster.ScenarioTests.Scenarios.StandaloneToDistributedTest.Postgres
 ///   by HeldOnMasterDeadlineTimeoutJobsRunner once its ProcessDeadline (10 min from assignment)
 ///   elapses while its bucket isn't Active/Completing -- a Lost bucket qualifies.
 /// Either way, once a job is back to OnMaster, AssignJobsToBucketsRunner (10s probe) picks it up
-/// and assigns it to the new cluster's real bucket on pg-agent-dist.
+/// and assigns it to the new cluster's real bucket on the new agent connection.
+///
+/// A concrete scenario only needs to supply its (already kebab-cased) <see cref="ClusterId"/> and
+/// its Phase2 agent connection's <see cref="AgentConnectionName"/>, implement <see cref="LoadState"/>
+/// to read back the test identifier + scheduled job IDs Phase1 stored, and implement
+/// <see cref="BasePhaseEmulator{TPhaseEnum}.Phase"/>.
 /// </summary>
-public sealed class PostgresPhase2Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
-    : BasePhaseEmulator<PostgresPhases>(global, runner)
+public abstract class StandaloneToDistributedTestPhase2EmulatorBase<TPhaseEnum>(ScenarioGlobalEnvironment global, ScenarioRunner runner)
+    : BasePhaseEmulator<TPhaseEnum>(global, runner)
+    where TPhaseEnum : struct, Enum
 {
-    private const string ClusterId = "standalone-to-dist";
-    private const string TestIdentifier = "standalonedist-fast";
     private const int QtyJobs = 300;
     private const int SucceededStatus = 5;
 
@@ -37,27 +42,30 @@ public sealed class PostgresPhase2Emulator(ScenarioGlobalEnvironment global, Sce
     // latency, even though the fast auto-drain path should dominate in practice.
     private static readonly TimeSpan FinalizeTimeout = TimeSpan.FromMinutes(20);
 
-    public override PostgresPhases Phase() => PostgresPhases.Phase2;
+    protected abstract string ClusterId { get; }
+    protected abstract string AgentConnectionName { get; }
+
+    protected abstract (string TestIdentifier, List<Guid> JobIds) LoadState();
 
     public override async Task RunAsync()
     {
         var api = Runner.Api ?? throw new InvalidOperationException("This scenario has no api container configured.");
 
-        var scheduledJobIds = StandaloneToDistributedTestState.ScheduledJobIds;
+        var (testIdentifier, scheduledJobIds) = LoadState();
         scheduledJobIds.Should().HaveCount(QtyJobs, "Phase1 must have captured its scheduled job IDs");
 
-        var executions = await Runner.Tracker.WaitForAsync(TestIdentifier, QtyJobs, FinalizeTimeout);
+        var executions = await Runner.Tracker.WaitForAsync(testIdentifier, QtyJobs, FinalizeTimeout);
         executions.Select(e => e.JobId).Should().OnlyHaveUniqueItems();
 
-        var apiJobs = await api.GetJobsAsync(ClusterId, testIdentifier: TestIdentifier, status: SucceededStatus, countLimit: int.MaxValue);
+        var apiJobs = await api.GetJobsAsync(ClusterId, testIdentifier: testIdentifier, status: SucceededStatus, countLimit: int.MaxValue);
         apiJobs.Should().HaveCount(QtyJobs);
         apiJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(scheduledJobIds,
             "recovery must preserve the exact same job IDs -- no job lost, none executed twice, across the standalone-to-distributed transition");
 
-        (await api.GetJobCountAsync(ClusterId, status: SucceededStatus)).Should().Be(QtyJobs);
-        (await api.GetJobCountAsync(ClusterId)).Should().Be(QtyJobs);
+        (await api.GetJobCountAsync(ClusterId, testIdentifier: testIdentifier, status: SucceededStatus)).Should().Be(QtyJobs);
+        (await api.GetJobCountAsync(ClusterId, testIdentifier: testIdentifier)).Should().Be(QtyJobs);
 
         var connections = (await api.GetAgentConnectionsAsync(ClusterId)).ExcludingReserved().ToList();
-        connections.Should().ContainSingle(c => c.Name == "pg-agent-dist" && c.IsAlive);
+        connections.Should().ContainSingle(c => c.Name == AgentConnectionName && c.IsAlive);
     }
 }

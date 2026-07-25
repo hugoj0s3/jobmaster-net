@@ -89,7 +89,7 @@ internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRun
         
         
         var countAvailability = jobExecutionEngine!.CountOnBoardingAvailability();
-        if (countAvailability == 0)
+        if (countAvailability <= 0)
         {
             return;
         }

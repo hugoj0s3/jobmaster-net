@@ -1,0 +1,19 @@
+{
+  "containerName": "postgres-nats-coordinator",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-coordinator",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDistNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:02:00",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "containerName": "postgres-nats-executor",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-executor",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDistNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-dist",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor", "AgentConnectionName": "nats-agent-dist", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "containerName": "postgres-nats-standalone",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StandaloneToDistNats;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [
+        { "WorkerName": "w1" }
+      ]
+    }
+  ]
+}

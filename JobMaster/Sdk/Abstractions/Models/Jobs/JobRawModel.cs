@@ -156,7 +156,7 @@ internal class JobRawModel : JobMasterBaseModel
         AgentWorkerId = agentWorkerId;
         BucketId = bucketId;
         HostId = hostId;
-        Status = JobMasterJobStatus.InBucket;
+        Status = JobMasterJobStatus.PendingSave;
     }
     
     public bool Onboard()

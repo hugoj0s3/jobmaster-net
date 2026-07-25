@@ -85,14 +85,11 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogCategory.Job, jobRaw.Id);
                 jobRaw.MarkAsHeldOnMaster();
                 await masterJobsService.UpdateAsync(jobRaw);
-                
-                await Task.Delay(TimeSpan.FromMilliseconds(50));
-                
+
                 return;
             }
 
             await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
-            await Task.Delay(TimeSpan.FromMilliseconds(50));
         }
         catch (Exception ex)
         {

@@ -1,0 +1,8 @@
+{
+  "scenarioName": "mysql-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["mysql-standalone"] },
+    { "name": "phase-2", "containers": ["mysql-coordinator", "mysql-executor"] }
+  ],
+  "api": { "container": "api" }
+}
