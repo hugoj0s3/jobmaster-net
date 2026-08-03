@@ -20,7 +20,7 @@ public static class JobMasterClusterApiExtensions
     /// <param name="services">The application service collection.</param>
     /// <param name="clusterId">Unique identifier for this cluster (letters, digits, hyphens, underscores; max 25 chars).</param>
     /// <param name="configure">Fluent configuration delegate. Use a provider extension (e.g. <c>UsePostgresForMaster</c>) to supply the master database connection.</param>
-    public static IServiceCollection UseJobMasterClusterApi(this IServiceCollection services, string clusterId, Action<IBaseClusterConfigSelector<IClusterConfigSelector>> configure)
+    public static IServiceCollection AddJobMasterClusterForApi(this IServiceCollection services, string clusterId, Action<IBaseClusterConfigSelector<IClusterConfigSelector>> configure)
     {
         return AddJobMasterClusterExtensions.AddJobMasterCluster(services, clusterId, selector =>
         {
@@ -36,7 +36,7 @@ public static class JobMasterClusterApiExtensions
     /// </summary>
     /// <param name="services">The application service collection.</param>
     /// <param name="configure">Fluent configuration delegate. Call <c>ClusterId(...)</c> and a provider extension (e.g. <c>UsePostgresForMaster</c>) to configure the connection.</param>
-    public static IServiceCollection UseJobMasterClusterApi(this IServiceCollection services, Action<IBaseClusterConfigSelector<IClusterConfigSelector>> configure)
+    public static IServiceCollection AddJobMasterClusterForApi(this IServiceCollection services, Action<IBaseClusterConfigSelector<IClusterConfigSelector>> configure)
     {
         return AddJobMasterClusterExtensions.AddJobMasterCluster(services, selector =>
         {
