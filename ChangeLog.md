@@ -72,6 +72,20 @@
 
 - **Draining multiple workers on the same agent connection at once was slower than it needed to be** — An internal lock meant to prevent workers from interfering with each other's bucket bookkeeping was being shared more broadly than necessary, so multiple workers draining in parallel ended up waiting on each other unnecessarily. Draining now scales better with the number of workers involved.
 
+- **Coordinator dispatch throughput was capped regardless of cluster size** — The Coordinator's per-batch dispatch parallelism was hardcoded to a fixed value, so adding more execution workers/buckets to a cluster didn't actually increase how fast the Coordinator could dispatch jobs to them — throughput plateaued well below what the cluster's own workers could otherwise handle. Dispatch parallelism now scales with how many distinct buckets a batch actually targets, so it grows with your cluster instead of staying fixed.
+
+- **Rare corruption when a process first resolved multiple agent connections concurrently** — Internal per-connection caching (repository and fingerprint-resolver lookups) used a plain, non-thread-safe cache, which could corrupt if two agent connections were resolved for the first time at the same moment in the same process (most likely on a Coordinator reaching several executors' connections concurrently right after startup). Fixed to use a thread-safe cache.
+
+- **Recurring schedules with an interval longer than the cluster's `TransientThreshold` could have their first occurrence delayed by several minutes, computed from the wrong reference time** — In practice this only affects NATS JetStream clusters, where `TransientThreshold` is capped at 5 minutes regardless of configuration, combined with a recurring schedule whose own interval is longer than that. The planner used to fall back to an internal planning-window boundary as its next reference point whenever an occurrence didn't fit within that window — a value unrelated to the recurring schedule's actual cadence — throwing off when the real next occurrence was computed from. Fixed: the next occurrence is now always computed relative to the schedule's own true starting point, and is dispatched as soon as it's known even if it's further out than `TransientThreshold` (if the schedule is later cancelled, that already-dispatched job is cancelled along with it, same as any other).
+
+- **A cluster's very first startup against a brand-new, empty database could fail** — Startup validation ran a consistency check against the previously-saved cluster configuration before the database schema had a chance to be created, so on a genuinely first-ever startup this check hit a "table doesn't exist" error instead of proceeding to provision the schema. Fixed: a not-yet-provisioned database is now correctly treated the same as "no configuration saved yet."
+
+- **Postgres: `LIKE`-based queries could fail against a database with a nondeterministic collation** — Postgres rejects `LIKE`/`ILIKE` outright in that configuration. Fixed by explicitly forcing a deterministic collation for the one comparison involved, without changing the case-insensitive matching behavior. MySQL and SQL Server were unaffected.
+
+- **A cluster that had ever run in standalone mode could never be reconfigured back to distributed mode** — Reconfiguring away from standalone silently had no effect once a cluster had been persisted as standalone at least once; it would keep running as standalone forever regardless of later configuration changes. Fixed.
+
+- **Migrating a recurring schedule to another cluster could fail on Postgres in one specific case** — If the schedule had ever been materialized from a static definition, an internal timestamp on it was missing timezone information, which Postgres rejects on write. The schedule would silently stay stuck on its original cluster, retried indefinitely, without surfacing as an error. Fixed.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha

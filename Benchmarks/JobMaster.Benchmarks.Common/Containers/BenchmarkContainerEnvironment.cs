@@ -1,0 +1,308 @@
+using DotNet.Testcontainers.Builders;
+using DotNet.Testcontainers.Containers;
+using DotNet.Testcontainers.Images;
+using DotNet.Testcontainers.Networks;
+using Testcontainers.MsSql;
+using Testcontainers.MySql;
+using Testcontainers.Nats;
+using Testcontainers.PostgreSql;
+using Testcontainers.Redis;
+
+namespace JobMaster.Benchmarks.Common.Containers;
+
+/// <summary>Which database engine backs the shared DB container -- Postgres for JobMaster's
+/// PostgresPure config (the default, preserving existing behavior), SqlServer/MySql for frameworks
+/// benchmarked across multiple database engines (e.g. Quartz.NET).</summary>
+public enum DbEngine
+{
+    Postgres,
+    SqlServer,
+    MySql,
+}
+
+/// <summary>
+/// Single-Docker-host benchmark topology: one resource-limited DB container (2 CPU / 2GB, matching
+/// Hugo's "DB server" spec), one unconstrained Redis container (benchmark plumbing -- latency and
+/// completion recording -- not part of what's being measured, so not resource-limited), and N
+/// resource-limited worker containers (0.5 CPU / 512MB each) built from a single app Dockerfile with
+/// per-container environment variables (so each can be configured with a different JobMaster
+/// cluster-config role: Coordinator+Drain vs. Execution-only).
+///
+/// Everything shares one Docker network exactly like <c>ScenarioGlobalEnvironment</c> does, just
+/// built standalone here rather than through xUnit's <c>IAsyncLifetime</c> -- this environment is
+/// created and torn down once per benchmark run (console app), not once per test collection.
+/// </summary>
+public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
+{
+    private const long DbNanoCpus = 2_000_000_000; // 2 CPU
+    private const long DbMemoryBytes = 2L * 1024 * 1024 * 1024; // 2GB
+    private const long WorkerNanoCpus = 500_000_000; // 0.5 CPU
+    private const long WorkerMemoryBytes = 512L * 1024 * 1024; // 512MB
+
+    public const string DbNetworkAlias = "db";
+    public const string DbDatabaseName = "benchmark";
+    public const string DbUsername = "benchmark";
+    public const int DbPort = 5432;
+
+    // "sa" is the fixed admin username Testcontainers.MsSql's image expects.
+    public const string SqlServerUsername = "sa";
+    public const int SqlServerPort = 1433;
+
+    public const string MySqlUsername = "root";
+    public const int MySqlPort = 3306;
+
+    public const string RedisNetworkAlias = "redis";
+
+    public const string NatsNetworkAlias = "nats";
+    public const string NatsUsername = "natsuser";
+    public const int NatsPort = 4222;
+
+    // Generated once per process (one benchmark run), never hardcoded -- SQL Server's password
+    // complexity policy (3 of 4 character classes, 8+ chars) is satisfied by SecretGenerator's
+    // base64url alphabet, which already spans upper/lower/digit/symbol.
+    public static readonly string DbPassword = SecretGenerator.Generate();
+    public static readonly string SqlServerPassword = SecretGenerator.Generate();
+    public static readonly string MySqlPassword = SecretGenerator.Generate();
+    public static readonly string NatsPassword = SecretGenerator.Generate();
+
+    private INetwork? network;
+    private readonly List<IContainer> workerContainers = [];
+
+    public IDatabaseContainer DbContainer { get; private set; } = null!;
+    public IContainer RedisContainer { get; private set; } = null!;
+    public IContainer? NatsContainer { get; private set; }
+    public IReadOnlyList<IContainer> WorkerContainers => workerContainers;
+
+    public async Task StartAsync(
+        IReadOnlyList<WorkerContainerSpec> workerSpecs,
+        IReadOnlyList<string>? databaseNamesToProvision = null,
+        DbEngine dbEngine = DbEngine.Postgres,
+        bool includeNats = false,
+        Func<IDatabaseContainer, Task>? afterDbProvisionedAsync = null,
+        // Defaults preserve the original fixed 2 CPU / 2GB DB spec -- overridable per run so larger
+        // burst-capacity tiers can scale the DB up (capped at 16GB per Hugo's instruction) alongside
+        // worker count, without changing behavior for every existing paced-suite call site.
+        long? dbNanoCpus = null,
+        long? dbMemoryBytes = null,
+        CancellationToken ct = default)
+    {
+        network = new NetworkBuilder().Build();
+        await network.CreateAsync(ct);
+
+        var effectiveDbNanoCpus = dbNanoCpus ?? DbNanoCpus;
+        var effectiveDbMemoryBytes = dbMemoryBytes ?? DbMemoryBytes;
+
+        DbContainer = dbEngine switch
+        {
+            DbEngine.SqlServer => await StartSqlServerAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+            DbEngine.MySql => await StartMySqlAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+            _ => await StartPostgresAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+        };
+
+        // Extension point for schema that a framework doesn't create itself (e.g. Quartz.NET's
+        // AdoJobStore, which requires QRTZ_* tables to exist up front, unlike JobMaster's/Hangfire's
+        // self-migrating schema) -- runs after the database exists but before any worker container
+        // starts, so no container races another to use a not-yet-provisioned schema.
+        if (afterDbProvisionedAsync is not null)
+        {
+            await afterDbProvisionedAsync(DbContainer);
+        }
+
+        RedisContainer = new RedisBuilder()
+            .WithImage("redis:7-alpine")
+            .WithNetwork(network)
+            .WithNetworkAliases(RedisNetworkAlias)
+            .Build();
+        await RedisContainer.StartAsync(ct);
+
+        // Additive to the SQL master DB above, not a replacement -- JobMaster's "*Nats" configs keep
+        // the master/coordinator data in the chosen SQL engine and only swap each agent connection's
+        // RepositoryType to NatsJetStream (see JobMasterTopologyBuilder). No provisioning step needed
+        // here, unlike the SQL providers: JetStream has no CREATE DATABASE-equivalent -- the app
+        // provisions its own streams at startup, same as ScenarioGlobalEnvironment's NATS container.
+        if (includeNats)
+        {
+            NatsContainer = new NatsBuilder()
+                .WithImage("nats:2.10-alpine")
+                .WithNetwork(network)
+                .WithNetworkAliases(NatsNetworkAlias)
+                .WithUsername(NatsUsername)
+                .WithPassword(NatsPassword)
+                .Build();
+            await NatsContainer.StartAsync(ct);
+        }
+
+        var imageCache = new Dictionary<string, string>();
+
+        foreach (var spec in workerSpecs)
+        {
+            if (!imageCache.TryGetValue(spec.DockerfilePath, out var imageName))
+            {
+                imageName = await BuildImageAsync(spec.DockerfilePath, ct);
+                imageCache[spec.DockerfilePath] = imageName;
+            }
+
+            var builder = new ContainerBuilder()
+                .WithImage(imageName)
+                .WithNetwork(network)
+                .WithNetworkAliases(spec.Name)
+                .WithPortBinding(spec.HttpPort, true)
+                .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r
+                    .ForPath(spec.HealthCheckPath)
+                    .ForPort((ushort)spec.HttpPort)))
+                .WithCreateParameterModifier(p =>
+                {
+                    p.HostConfig.NanoCPUs = WorkerNanoCpus;
+                    p.HostConfig.Memory = WorkerMemoryBytes;
+                });
+
+            foreach (var (key, value) in spec.EnvironmentVariables)
+            {
+                builder = builder.WithEnvironment(key, value);
+            }
+
+            var container = builder.Build();
+            workerContainers.Add(container);
+            await container.StartAsync(ct);
+        }
+    }
+
+    public string GetWorkerBaseUrl(int index, int httpPort = 8080)
+    {
+        var container = workerContainers[index];
+        return $"http://localhost:{container.GetMappedPublicPort(httpPort)}";
+    }
+
+    private async Task<IDatabaseContainer> StartPostgresAsync(IReadOnlyList<string>? databaseNamesToProvision, long dbNanoCpus, long dbMemoryBytes, CancellationToken ct)
+    {
+        var container = new PostgreSqlBuilder()
+            .WithImage("postgres:16-alpine")
+            .WithNetwork(network)
+            .WithNetworkAliases(DbNetworkAlias)
+            .WithDatabase(DbDatabaseName)
+            .WithUsername(DbUsername)
+            .WithPassword(DbPassword)
+            // Default max_connections (100) gets exhausted once every worker container legitimately
+            // opens pooled connections to every agent database plus the master database -- confirmed
+            // via a real "sorry, too many clients already" error under heavy concurrent load; 500
+            // covers that. Raising this further (tried 2000, then 6000) does NOT help the 20-worker
+            // burst-at-100k scenario -- confirmed those still fail, just on a connection-establishment
+            // timeout instead (Postgres forking new backend processes faster than a sudden multi-
+            // thousand-connection storm arrives, not a count ceiling), so pushed back down to 500
+            // rather than leave an unhelpful, untested-at-scale value in place.
+            // NOTE: .WithCommand("postgres", "-c", "max_connections=500") reproducibly broke
+            // PostgreSqlBuilder's readiness wait (container reported "not running" on every attempt,
+            // even though a raw `docker run`/`docker exec` replicating the exact same command, env
+            // vars, and resource limits worked fine every time) -- append via Cmd through the create
+            // parameter modifier instead, which doesn't touch PostgreSqlBuilder's own command/wait
+            // strategy setup.
+            .WithCreateParameterModifier(p =>
+            {
+                p.HostConfig.NanoCPUs = dbNanoCpus;
+                p.HostConfig.Memory = dbMemoryBytes;
+                var cmd = p.Cmd?.ToList() ?? [];
+                cmd.AddRange(["-c", "max_connections=500"]);
+                p.Cmd = cmd;
+            })
+            .Build();
+        await container.StartAsync(ct);
+
+        // Postgres requires each database to exist before a worker container connects to it --
+        // provisioned here, before any worker container starts, using the DB container's
+        // host-mapped connection string (this runs on the host machine, not inside the network).
+        if (databaseNamesToProvision is { Count: > 0 })
+        {
+            await PostgresDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(container.GetConnectionString(), databaseNamesToProvision, ct);
+        }
+
+        return container;
+    }
+
+    private async Task<IDatabaseContainer> StartSqlServerAsync(IReadOnlyList<string>? databaseNamesToProvision, long dbNanoCpus, long dbMemoryBytes, CancellationToken ct)
+    {
+        var container = new MsSqlBuilder()
+            .WithNetwork(network)
+            .WithNetworkAliases(DbNetworkAlias)
+            .WithPassword(SqlServerPassword)
+            .WithCreateParameterModifier(p =>
+            {
+                p.HostConfig.NanoCPUs = dbNanoCpus;
+                p.HostConfig.Memory = dbMemoryBytes;
+            })
+            .Build();
+        await container.StartAsync(ct);
+
+        // Mirrors the Postgres path above -- SQL Server also requires each database to exist before
+        // a worker container connects to it.
+        if (databaseNamesToProvision is { Count: > 0 })
+        {
+            await SqlServerDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(container.GetConnectionString(), databaseNamesToProvision, ct);
+        }
+
+        return container;
+    }
+
+    private async Task<IDatabaseContainer> StartMySqlAsync(IReadOnlyList<string>? databaseNamesToProvision, long dbNanoCpus, long dbMemoryBytes, CancellationToken ct)
+    {
+        var container = new MySqlBuilder()
+            .WithImage("mysql:8.0")
+            .WithNetwork(network)
+            .WithNetworkAliases(DbNetworkAlias)
+            .WithDatabase("mysql")
+            .WithUsername(MySqlUsername)
+            .WithPassword(MySqlPassword)
+            // No leading "mysqld" -- docker-entrypoint.sh prepends it itself when the first arg
+            // starts with '-', matching ScenarioGlobalEnvironment's MySQL setup. Unlike Postgres,
+            // WithCommand doesn't break MsSqlBuilder's/MySqlBuilder's readiness wait here.
+            .WithCommand("--max-connections=400")
+            .WithCreateParameterModifier(p =>
+            {
+                p.HostConfig.NanoCPUs = dbNanoCpus;
+                p.HostConfig.Memory = dbMemoryBytes;
+            })
+            .Build();
+        await container.StartAsync(ct);
+
+        // Mirrors the Postgres/SqlServer paths above -- MySQL also requires each database to exist
+        // before a worker container connects to it.
+        if (databaseNamesToProvision is { Count: > 0 })
+        {
+            await MySqlDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(container.GetConnectionString(), databaseNamesToProvision, ct);
+        }
+
+        return container;
+    }
+
+    private static async Task<string> BuildImageAsync(string dockerfilePath, CancellationToken ct)
+    {
+        var key = dockerfilePath.Replace('\\', '/');
+        var repoRoot = RepoRootLocator.Find();
+        var imageName = $"{Path.GetFileName(Path.GetDirectoryName(key)!.TrimEnd('/')).ToLowerInvariant()}:benchmarks";
+
+        var image = new ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(new CommonDirectoryPath(repoRoot), "")
+            .WithDockerfile(key)
+            .WithName(imageName)
+            .WithCleanUp(true)
+            .Build();
+
+        await image.CreateAsync(ct);
+        return image.FullName!;
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        foreach (var container in workerContainers)
+        {
+            await container.DisposeAsync();
+        }
+
+        if (RedisContainer is not null) await RedisContainer.DisposeAsync();
+        if (NatsContainer is not null) await NatsContainer.DisposeAsync();
+        // IDatabaseContainer itself doesn't expose DisposeAsync -- both concrete container types
+        // (PostgreSqlContainer, MsSqlContainer) implement IAsyncDisposable via their shared
+        // DockerContainer base class, so this cast always succeeds at runtime.
+        if (DbContainer is IAsyncDisposable disposableDb) await disposableDb.DisposeAsync();
+        if (network is not null) await network.DeleteAsync();
+    }
+}
