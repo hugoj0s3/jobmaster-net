@@ -111,44 +111,48 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var (lastPlanCoverageUntilUtc, nextDates, planningHorizonUsed) = PlanNextDates(
-            recurringSchedule.Id, 
+            recurringSchedule.Id,
             scheduleRawModel.HasFailedOnLastPlanExecution ?? false,
             masterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId(),
-            recurringSchedule.RecurExpression, 
-            timeToScheduleInAdvance, 
-            baseDateTime, 
+            recurringSchedule.RecurExpression,
+            timeToScheduleInAdvance,
+            baseDateTime,
             scheduleRawModel.EndBefore);
-        
-        logger.Debug($"PlanNextDates returned {nextDates.Count} dates. lastPlanCoverageUntilUtc={lastPlanCoverageUntilUtc:O}, planningHorizonUsed={planningHorizonUsed:O}", 
+
+        logger.Debug($"PlanNextDates returned {nextDates.Count} dates. lastPlanCoverageUntilUtc={lastPlanCoverageUntilUtc:O}, planningHorizonUsed={planningHorizonUsed:O}",
             JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
-        
+
+        // Empty now only ever means either the recurrence has genuinely run out of occurrences, or its
+        // explicit EndBefore (still in the future -- already-passed EndBefore is caught earlier, at the
+        // top of this method) clamped the horizon before the next real occurrence -- PlanNextDates
+        // always returns at least one occurrence otherwise, even when it's beyond this pass's horizon
+        // (see its own remarks).
         if (nextDates.IsNullOrEmpty())
         {
-            // Check if schedule has permanently ended (e.g., reached end date)
             var ianaTimeZoneId = masterConfig?.IanaTimeZoneId ?? TimeZoneUtils.GetLocalIanaTimeZoneId();
             var checkTime = lastPlanCoverageUntilUtc ?? planningHorizonUsed;
-            
-            if (recurringSchedule.RecurExpression.HasEnded(checkTime, ianaTimeZoneId))
-            {
-                logger.Info($"Recurring schedule has ended. Marking as Completed. LastPlanCoverageUntil={checkTime:O}", 
-                    JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
-                
-                scheduleRawModel.Status = RecurringScheduleStatus.Completed;
-                scheduleRawModel.HasFailedOnLastPlanExecution = false;
-                scheduleRawModel.LastPlanCoverageUntil = checkTime;
-                scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
-                await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
-                return;
-            }
-            
-            logger.Warn($"No next dates to schedule in current window. Updating LastPlanCoverageUntil to {checkTime:O}", 
-                JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
-            
-            // Update LastPlanCoverageUntil even when empty to prevent infinite loop
-            // Schedule hasn't ended, just no occurrences in this planning window
+
+            // Advance the watermark either way -- no need to re-derive the exact same empty result
+            // again next tick. In the EndBefore-clamped case this stably pins LastPlanCoverageUntil at
+            // EndBefore itself (GetNextOccurrence(EndBefore) still lands beyond the still-EndBefore-
+            // clamped horizon on the following attempt, so it just holds here) until EndBefore actually
+            // passes and the check at the top of this method takes over.
             scheduleRawModel.HasFailedOnLastPlanExecution = false;
             scheduleRawModel.LastPlanCoverageUntil = checkTime;
             scheduleRawModel.LastExecutedPlan = DateTime.UtcNow;
+
+            if (recurringSchedule.RecurExpression.HasEnded(checkTime, ianaTimeZoneId))
+            {
+                logger.Info($"Recurring schedule has ended. Marking as Completed. LastPlanCoverageUntil={checkTime:O}",
+                    JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
+                scheduleRawModel.Status = RecurringScheduleStatus.Completed;
+            }
+            else
+            {
+                logger.Warn($"No next dates to schedule in current window (EndBefore clamp). LastPlanCoverageUntil advanced to {checkTime:O}.",
+                    JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
+            }
+
             await UpdateAndReleasePlanLockAsync(scheduleRawModel, lockToken);
             return;
         }
@@ -194,8 +198,15 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         DateTime? endBeforeUtc)
     {
         var stopAt = DateTime.UtcNow + horizon;
+
+        // Only an explicit EndBefore clamp forbids the "always at least one" fallback below (materializing
+        // a job past the schedule's own declared end would be wrong) -- a plain horizon clamp doesn't.
+        var stopAtIsExplicitEnd = false;
         if (endBeforeUtc.HasValue && endBeforeUtc.Value < stopAt)
+        {
             stopAt = endBeforeUtc.Value;
+            stopAtIsExplicitEnd = true;
+        }
 
         // When last plan failed: fetch already scheduled jobs in [baseDateTime, stopAt] and
         // build a seconds-level HashSet to skip duplicates within ±1s tolerance.
@@ -223,12 +234,17 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         var results = new List<DateTime>();
         var cursor = baseDateTime;
 
-        for (int i = 0; i < MaxOccurrencesPerRun && cursor <= stopAt; i++)
+        // No "cursor <= stopAt" loop guard -- unlike before, we need at least one GetNextOccurrence
+        // call to happen even when baseDateTime already starts beyond stopAt, so the "always at least
+        // one" rule below can apply. Every iteration still terminates via an internal break (occurrence
+        // exhausted, occurrence beyond stopAt, or the progress guard), bounded by MaxOccurrencesPerRun
+        // regardless.
+        for (int i = 0; i < MaxOccurrencesPerRun; i++)
         {
             var cursorInTheTimeZone = TimeZoneUtils.ConvertUtcToDateTimeTz(cursor, ianaTimeZoneId);
             var nextInTimeZone = expr.GetNextOccurrence(cursorInTheTimeZone, ianaTimeZoneId);
             if (!nextInTimeZone.HasValue) break;
-            
+
             var next = TimeZoneUtils.ConvertDateTimeTzToUtc(nextInTimeZone.Value, ianaTimeZoneId);
 
             // If we have prior scheduled items (due to a failed plan), skip
@@ -252,15 +268,29 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             if (i > 0 && at <= cursor + MinInterval)
                 at = cursor + MinInterval;
 
-            // Respect horizon/end bound
-            if (at > stopAt) break;
+            if (at > stopAt)
+            {
+                // Always return at least one occurrence rather than leaving results empty just because
+                // the recurrence's own cadence exceeds this pass's horizon (e.g. an "every year" schedule
+                // against a horizon measured in minutes) -- the job gets materialized/dispatched right
+                // away regardless of how far out it is; if the schedule is later cancelled, this job is
+                // cancelled along with it like any other. Only withheld when the horizon was clamped by
+                // the schedule's own explicit EndBefore, since materializing a job past a declared end
+                // would contradict it -- that case still correctly falls through to empty, letting the
+                // HasEnded check in ScheduleNextJobsAsync mark the schedule Completed instead.
+                if (results.Count == 0 && !stopAtIsExplicitEnd)
+                {
+                    results.Add(at);
+                }
+                break;
+            }
 
             // Progress guard (if expression doesn’t advance and clamp didn’t either)
             if (i > 0 && at == cursor)
                 break;
 
             results.Add(at);
-            
+
             // Rely on expression to advance; we move the cursor to the accepted (possibly clamped) time
             cursor = at;
         }
@@ -272,14 +302,13 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         }
 
         lastScheduleAt ??= lastJobScheduledAt;
-        
-        if (lastJobScheduledAt.HasValue && 
-            lastScheduleAt.HasValue && 
+
+        if (lastJobScheduledAt.HasValue &&
+            lastScheduleAt.HasValue &&
             lastJobScheduledAt.Value > lastScheduleAt.Value)
         {
             lastScheduleAt = lastJobScheduledAt.Value;
         }
-        
 
         return (lastScheduleAt, results, stopAt);
     }

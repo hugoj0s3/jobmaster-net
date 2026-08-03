@@ -8,16 +8,12 @@ public sealed class PostgresNatsPhase1Emulator(ScenarioGlobalEnvironment global,
 {
     protected override string ClusterId => PostgresNatsClusters.PostgresNatsRecurring.ToString().ToKebabCase();
 
-    // NatsJetStreamConstants.MaxThreshold caps TransientThreshold at 5 minutes for any cluster with
-    // a NATS agent connection -- RecurringSchedulePlanner's planning horizon is max(TransientThreshold,
-    // 5min), so on this cluster the horizon is *always* exactly 5 minutes, strictly less than the
-    // 6-minute interval. The first occurrence can't be planned on the very first pass (candidate
-    // exceeds the horizon) -- it needs real time to advance far enough that a *later* replanning
-    // pass's horizon reaches the candidate date, which can genuinely push the first execution later
-    // than the other (Postgres/MySql/SqlServer) variants, whose 10-minute TransientThreshold clears
-    // the interval on the first pass. Both budgets below are widened accordingly.
-    protected override TimeSpan WaitForTwoFiringsTimeout => TimeSpan.FromMinutes(24);
-    protected override TimeSpan FirstFiringLateTolerance => TimeSpan.FromMinutes(9);
+    // NatsJetStreamConstants.MaxThreshold caps TransientThreshold at 5 minutes for any cluster with a
+    // NATS agent connection -- strictly less than this test's 6-minute interval. That used to force an
+    // extra replanning cycle (and a much wider tolerance) before the first occurrence materialized, but
+    // RecurringSchedulePlanner now always dispatches a schedule's next occurrence on its very first
+    // planning attempt regardless of whether it fits within the horizon, so no override is needed here
+    // any more -- this cluster behaves the same as the Pure variants.
 
     public override PostgresNatsPhases Phase() => PostgresNatsPhases.Phase1;
 }

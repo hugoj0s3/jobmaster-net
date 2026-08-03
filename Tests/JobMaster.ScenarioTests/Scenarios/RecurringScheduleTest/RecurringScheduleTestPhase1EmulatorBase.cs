@@ -12,9 +12,7 @@ namespace JobMaster.ScenarioTests.Scenarios.RecurringScheduleTest;
 ///
 /// Interval is a fixed 6 minutes for every combination -- deliberately in the middle of the
 /// required (5min, 15min) exclusive range: long enough to avoid seconds-level granularity, short
-/// enough to keep the observation window (~17 min) reasonable, and it divides 60 cleanly so the
-/// NaturalCron schedule's wall-clock-aligned firing pattern (":00/:06/:12/...") never straddles an
-/// hour boundary awkwardly during the wait.
+/// enough to keep the observation window (~17 min) reasonable.
 ///
 /// <b>TransientThreshold matters here</b>: RecurringSchedulePlanner floors its planning horizon at
 /// max(TransientThreshold, 5 minutes) (JobMasterConstants.DurationToLockRecords, not configurable).
@@ -24,12 +22,15 @@ namespace JobMaster.ScenarioTests.Scenarios.RecurringScheduleTest;
 /// something above 6 minutes (this base uses 10 minutes) -- do not copy the 2-minute value from the
 /// one-off ScheduleTest scenarios here.
 ///
-/// <b>Compiler behavioral difference</b>: TimeSpanInterval's GetNextOccurrence is relative
-/// (cursor.Add(interval) -- first fire is exactly `interval` after creation). NaturalCron
-/// "every 6 minutes" is wall-clock-aligned (cron-style, fires at fixed :00/:06/:12/... marks) --
-/// first-fire delay after creation is variable, not a fixed 6 minutes. Once firing has started,
-/// consecutive occurrences ARE exactly 6 minutes apart for both compilers (that part of the
-/// assertion is shared); only the first-occurrence timing check differs.
+/// <b>Compiler behavior is the same for both</b>: both TimeSpanInterval's and NaturalCron's
+/// GetNextOccurrence are relative to whatever cursor they're given (cursor + interval) -- NaturalCron
+/// is not wall-clock-grid-aligned (confirmed empirically: a schedule created at 17:16:21 fires its
+/// first occurrence at 17:22:21, i.e. CreatedAt+6min, not the next :18:00 grid mark). First fire is
+/// CreatedAt+Interval for both compilers; consecutive occurrences are exactly Interval apart for both
+/// too. An earlier version of this test assumed NaturalCron aligned to a fixed :00/:06/:12/... grid --
+/// that assumption was wrong and inflated the apparent first-firing delay by several minutes on every
+/// NaturalCron run (Pure and NATS alike), since it compared actual (correct) CreatedAt+Interval timing
+/// against a grid mark that was never the actual target.
 /// </summary>
 public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalEnvironment global, ScenarioRunner runner)
     : BasePhaseEmulator<TPhaseEnum>(global, runner)
@@ -53,29 +54,29 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
     private static readonly TimeSpan SettleWindowAfterCancel = TimeSpan.FromSeconds(90);
 
     /// <summary>
-    /// How long to wait for each schedule to reach 2 executions. Virtual so a provider whose
-    /// planning horizon is capped below the interval (NATS -- see
-    /// <c>RecurringScheduleTest.PostgresNats</c>'s override) can budget for the extra replanning
-    /// cycle its first occurrence may need.
+    /// How long to wait for each schedule to reach 2 executions. Still virtual in case a future
+    /// provider genuinely needs more room, but no current variant (including NATS) does --
+    /// RecurringSchedulePlanner always materializes/dispatches a schedule's next occurrence on its
+    /// very first planning attempt now, regardless of whether that occurrence falls within the
+    /// cluster's horizon, so there's no extra replanning cycle to budget for even when
+    /// TransientThreshold is capped below the interval (NATS).
     /// </summary>
     protected virtual TimeSpan WaitForTwoFiringsTimeout => TimeSpan.FromMinutes(17);
 
     // How far off "first execution should land at CreatedAt+Interval" is tolerated, in either
-    // direction -- wide enough to absorb container-startup/materialization latency (especially for
-    // the static schedules, whose true creation time is a little before this phase's own
-    // DateTime.UtcNow checkpoint) without being so wide it'd miss a genuine "fired far too early or
-    // never fired near the right time" bug. Observed in practice: a static NaturalCron schedule's
-    // first execution landed ~208s after the naive CreatedAt+Interval-style estimate (the gap
-    // between "container health check passed" and the schedule's true registration moment, plus
-    // one materialization cycle, adds up) -- 5 minutes covers that with headroom.
-    private static readonly TimeSpan FirstFiringEarlyTolerance = TimeSpan.FromMinutes(1.5);
+    // direction -- covers container-startup/materialization latency and normal dispatch overhead
+    // (including NATS publish/consumer-pickup), without being so wide it'd miss a genuine "fired far
+    // too early or never fired near the right time" bug. Real measured delays are much smaller than
+    // this (low tens of seconds at most across every DB/transport variant, including NATS, now that
+    // RecurringSchedulePlanner always dispatches on the first attempt) -- 1 minute leaves comfortable
+    // headroom without masking a real regression.
+    private static readonly TimeSpan FirstFiringEarlyTolerance = TimeSpan.FromMinutes(1);
 
     /// <summary>
-    /// Virtual for the same reason as <see cref="WaitForTwoFiringsTimeout"/>: a capped planning
-    /// horizon (NATS) can genuinely delay the first occurrence's materialization by up to one extra
-    /// replanning cycle beyond the naive CreatedAt+Interval estimate.
+    /// Same reasoning as <see cref="FirstFiringEarlyTolerance"/>. Still virtual for any future
+    /// provider that turns out to need more room, but no current variant does.
     /// </summary>
-    protected virtual TimeSpan FirstFiringLateTolerance => TimeSpan.FromMinutes(5);
+    protected virtual TimeSpan FirstFiringLateTolerance => TimeSpan.FromMinutes(1);
 
     // Consecutive-firing spacing must average within this fraction of Interval -- mirrors
     // JobMasterSchedulerTests.RunRecurringScheduleTest's ±10% pattern.
@@ -106,10 +107,10 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
 
         var combos = new[]
         {
-            new Combo(StaticTimeSpanIntervalTestIdentifier, IsNaturalCron: false, staticCreatedAtUtc),
-            new Combo(StaticNaturalCronTestIdentifier, IsNaturalCron: true, staticCreatedAtUtc),
-            new Combo(dynamicTimeSpanId, IsNaturalCron: false, dynamicTimeSpanCreatedAtUtc),
-            new Combo(dynamicNaturalCronId, IsNaturalCron: true, dynamicNaturalCronCreatedAtUtc),
+            new Combo(StaticTimeSpanIntervalTestIdentifier, staticCreatedAtUtc),
+            new Combo(StaticNaturalCronTestIdentifier, staticCreatedAtUtc),
+            new Combo(dynamicTimeSpanId, dynamicTimeSpanCreatedAtUtc),
+            new Combo(dynamicNaturalCronId, dynamicNaturalCronCreatedAtUtc),
         };
 
         // Nothing should have fired yet -- catches an accidental "fires immediately" bug (e.g. the
@@ -135,13 +136,11 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             executions.Should().HaveCountGreaterThanOrEqualTo(2, $"'{combo.TestIdentifier}' should have fired at least twice");
             executions.Select(e => e.JobId).Should().OnlyHaveUniqueItems($"'{combo.TestIdentifier}' must not duplicate-execute a job");
 
-            // First-firing timing: TimeSpanInterval is relative to creation; NaturalCron is
-            // wall-clock-aligned, so its "expected" first-fire time is the next 6-minute mark from
-            // creation, not a fixed offset.
+            // First-firing timing: both compilers are relative to creation (CreatedAt + Interval) --
+            // see the class remarks on why NaturalCron isn't wall-clock-grid-aligned despite reading
+            // like a cron expression.
             var firstExecUtc = executions[0].ExecutedAtUtc;
-            var expectedFirstUtc = combo.IsNaturalCron
-                ? NextSixMinuteMarkAtOrAfter(combo.CreatedAtUtc)
-                : combo.CreatedAtUtc + Interval;
+            var expectedFirstUtc = combo.CreatedAtUtc + Interval;
 
             (firstExecUtc - expectedFirstUtc).TotalSeconds.Should().BeInRange(
                 -FirstFiringEarlyTolerance.TotalSeconds, FirstFiringLateTolerance.TotalSeconds,
@@ -194,12 +193,5 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
                 s.JobDefinitionId == "RecurringApp.Tick");
     }
 
-    private static DateTime NextSixMinuteMarkAtOrAfter(DateTime utc)
-    {
-        var flooredMinute = utc.Minute - (utc.Minute % 6);
-        var floored = new DateTime(utc.Year, utc.Month, utc.Day, utc.Hour, flooredMinute, 0, DateTimeKind.Utc);
-        return floored <= utc ? floored.AddMinutes(6) : floored;
-    }
-
-    private sealed record Combo(string TestIdentifier, bool IsNaturalCron, DateTime CreatedAtUtc);
+    private sealed record Combo(string TestIdentifier, DateTime CreatedAtUtc);
 }

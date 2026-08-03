@@ -166,7 +166,7 @@ public class RecurringSchedulePlannerTests
     }
 
     [Fact]
-    public void PlanNextDates_WithBaseDateTimeBeyondHorizon_ShouldReturnEmpty()
+    public void PlanNextDates_WithBaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway()
     {
         // Arrange
         var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
@@ -175,13 +175,13 @@ public class RecurringSchedulePlannerTests
         var interval = TimeSpan.FromSeconds(5);
         var compiler = new TimeSpanIntervalExprCompiler();
         var expression = compiler.Compile(interval.ToString());
-        
-        output.WriteLine($"Test: PlanNextDates_WithBaseDateTimeBeyondHorizon_ShouldReturnEmpty");
+
+        output.WriteLine($"Test: PlanNextDates_WithBaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway");
         output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes from now)");
         output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
         output.WriteLine($"horizon: {horizon}");
         output.WriteLine($"stopAt: {DateTime.UtcNow.Add(horizon):O}");
-        
+
         // Act
         var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
             recurringScheduleId,
@@ -191,13 +191,94 @@ public class RecurringSchedulePlannerTests
             horizon: horizon,
             baseDateTime: baseDateTime,
             endBeforeUtc: null);
-        
+
         // Assert
         output.WriteLine($"Results: {nextDates.Count} dates generated");
         output.WriteLine($"lastScheduleAt: {lastScheduleAt:O}");
-        
-        nextDates.Should().BeEmpty("baseDateTime is beyond the planning horizon");
-        lastScheduleAt.Should().BeNull("no dates were generated");
+
+        // Even though baseDateTime itself is already beyond the horizon, PlanNextDates always
+        // materializes at least one occurrence rather than returning empty -- the job gets dispatched
+        // right away regardless of how far out it is (if the schedule is later cancelled, this job is
+        // cancelled along with it, same as any other).
+        nextDates.Should().ContainSingle("baseDateTime is beyond the horizon, but at least one occurrence is always returned");
+        nextDates[0].Should().BeCloseTo(baseDateTime + interval, TimeSpan.FromSeconds(1));
+        lastScheduleAt.Should().Be(nextDates[0]);
+    }
+
+    [Fact]
+    public void PlanNextDates_WithIntervalExceedingHorizon_ShouldReturnSingleOccurrenceAnyway()
+    {
+        // Arrange -- mirrors a NATS-backed cluster (TransientThreshold capped at 5 minutes) with a
+        // schedule interval that exceeds it, e.g. "every year" against a horizon measured in minutes.
+        // The very first planning pass structurally can't reach the occurrence within the horizon, but
+        // it's materialized/dispatched anyway rather than leaving nothing scheduled.
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromDays(365);
+        var compiler = new TimeSpanIntervalExprCompiler();
+        var expression = compiler.Compile(interval.ToString());
+
+        output.WriteLine($"Test: PlanNextDates_WithIntervalExceedingHorizon_ShouldReturnSingleOccurrenceAnyway");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"interval: {interval}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+
+        nextDates.Should().ContainSingle("a 1-year interval can never fit within a 5-minute horizon, but at least one occurrence is always returned");
+        nextDates[0].Should().BeCloseTo(baseDateTime + interval, TimeSpan.FromSeconds(1));
+        lastScheduleAt.Should().Be(nextDates[0]);
+    }
+
+    [Fact]
+    public void PlanNextDates_WithIntervalExceedingHorizon_AndExplicitEndBefore_ShouldReturnEmpty()
+    {
+        // Arrange -- the "always at least one" fallback above must NOT apply when the horizon was
+        // clamped by the schedule's own explicit EndBefore rather than by the cluster's horizon --
+        // materializing a job past a declared end would contradict it. This case should stay empty so
+        // ScheduleNextJobsAsync's HasEnded check marks the schedule Completed instead.
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var endBefore = DateTime.UtcNow.AddMinutes(1); // ends well before the horizon would anyway
+        var interval = TimeSpan.FromDays(365);
+        var compiler = new TimeSpanIntervalExprCompiler();
+        var expression = compiler.Compile(interval.ToString());
+
+        output.WriteLine($"Test: PlanNextDates_WithIntervalExceedingHorizon_AndExplicitEndBefore_ShouldReturnEmpty");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"endBefore: {endBefore:O}");
+        output.WriteLine($"interval: {interval}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: endBefore);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+
+        nextDates.Should().BeEmpty("the next occurrence is far beyond the schedule's own explicit EndBefore, so it must not be materialized");
+        lastScheduleAt.Should().BeNull();
+        planningHorizon.Should().Be(endBefore, "stopAt should be clamped to the explicit EndBefore, not the cluster horizon");
     }
 
     [Fact]
@@ -389,16 +470,17 @@ public class RecurringSchedulePlannerTests
     }
 
     [Fact]
-    public void PlanNextDates_WithNaturalCron_BaseDateTimeBeyondHorizon_ShouldReturnEmpty()
+    public void PlanNextDates_WithNaturalCron_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway()
     {
         // Arrange
         var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
         var baseDateTime = DateTime.UtcNow.AddMinutes(10);
         var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromSeconds(5);
         var compiler = new NaturalCronExprCompiler();
         var expression = compiler.Compile("every 5 seconds");
 
-        output.WriteLine($"Test: PlanNextDates_WithNaturalCron_BaseDateTimeBeyondHorizon_ShouldReturnEmpty");
+        output.WriteLine($"Test: PlanNextDates_WithNaturalCron_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway");
         output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes from now)");
         output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
         output.WriteLine($"horizon: {horizon}");
@@ -418,8 +500,9 @@ public class RecurringSchedulePlannerTests
         output.WriteLine($"Results: {nextDates.Count} dates generated");
         output.WriteLine($"lastScheduleAt: {lastScheduleAt:O}");
 
-        nextDates.Should().BeEmpty("baseDateTime is beyond the planning horizon");
-        lastScheduleAt.Should().BeNull("no dates were generated");
+        nextDates.Should().ContainSingle("baseDateTime is beyond the horizon, but at least one occurrence is always returned");
+        nextDates[0].Should().BeCloseTo(baseDateTime + interval, TimeSpan.FromSeconds(1));
+        lastScheduleAt.Should().Be(nextDates[0]);
     }
 
     [Fact]
