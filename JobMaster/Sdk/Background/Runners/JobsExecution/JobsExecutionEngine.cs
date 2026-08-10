@@ -824,11 +824,11 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     return;
                 }
 
-                logger.Error($"Job execution conflict. Job is probably running on another process. Trying to hold on master for safety. Status: ({existingJob.Status})", JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: ce);
+                logger.Error($"Job execution conflict. Job is probably running on another process. Recording this attempt as failed. Status: ({existingJob.Status})", JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: ce);
 
                 if (execution != null)
                 {
-                    execution.Fail($"Job execution conflict. Job is probably running on another process. Trying to hold on master for safety. Status: ({existingJob.Status})");
+                    execution.Fail($"Job execution conflict. Job is probably running on another process. Recording this attempt as failed. Status: ({existingJob.Status})");
                     await backgroundAgentWorker.WorkerClusterOperations
                         .ExecWithRetryAsync(o => o.AddJobExecutionAsync(execution), millisecondsToDelay: 50);
                 }

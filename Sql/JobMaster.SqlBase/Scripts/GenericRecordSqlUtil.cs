@@ -65,8 +65,6 @@ internal class GenericRecordSqlUtil
             where.Add($"{cExpiresAt} >= @ExpiresAtFrom");
         if (criteria.ExpiresAtTo.HasValue)
             where.Add($"{cExpiresAt} <= @ExpiresAtTo");
-
-        where.Add($"{sql.ColumnNameFor<SqlGenericRecordEntry>(x => x.IsReady)} = {sql.GetDbBool(true)}");
     }
     
     public (string Sql, object Args) BuildGetSql(string groupId, string entryId, bool includeExpired)
@@ -74,18 +72,16 @@ internal class GenericRecordSqlUtil
         var t = EntryTable(groupId);
         var baseSelectSql = BaseSelectSql(groupId);
         var uniqueId = GenericRecordEntry.UniqueId(clusterId, groupId, entryId);
-        var cIsReady = ColSqlEntry(x => x.IsReady);
 
         var sql = $@"
 {baseSelectSql}
 where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
-  and {t}.{cIsReady} = {this.sql.GetDbBool(true)}
 ";
         if (!includeExpired)
         {
             sql += $"and ( {Col(x => x.ExpiresAt)} IS NULL or {Col(x => x.ExpiresAt)} > @NowUtc)";
         }
-        
+
         return (sql, new {UniqueId = uniqueId, NowUtc = DateTime.UtcNow });
     }
     
@@ -99,7 +95,6 @@ where {t}.{Col(x => x.RecordUniqueId)} = @UniqueId
         var cEntryId   = Col(x => x.EntryId);
         var cCreatedAt = Col(x => x.CreatedAt);
         var cExpiresAt = Col(x => x.ExpiresAt);
-        var cIsReady   = ColSqlEntry(x => x.IsReady);
 
         return $@"
 SELECT {cRecordId},
@@ -108,7 +103,6 @@ SELECT {cRecordId},
        {cEntryId},
        {cCreatedAt},
        {cExpiresAt},
-       {cIsReady},
        {ColVal(x => x.KeyName)},
        {ColVal(x => x.ValueText)},
        {ColVal(x => x.ValueBinary)},
@@ -532,8 +526,7 @@ WHERE {cRecordId} = @RecordUniqueId;");
 {Col(x => x.EntryId)},
 {ColSqlEntry(x => x.EntryIdGuid)},
 {Col(x => x.CreatedAt)},
-{Col(x => x.ExpiresAt)},
-{ColSqlEntry(x => x.IsReady)}";
+{Col(x => x.ExpiresAt)}";
 
         var args = new Dictionary<string, object?>
         {
@@ -543,12 +536,11 @@ WHERE {cRecordId} = @RecordUniqueId;");
             {"EntryId", entry.EntryId},
             {"EntryIdGuid", entry.EntryIdGuid},
             {"CreatedAt", entry.CreatedAt},
-            {"ExpiresAt", entry.ExpiresAt},
-            {"IsReady", entry.IsReady}
+            {"ExpiresAt", entry.ExpiresAt}
         };
 
         var sb = new StringBuilder($"INSERT INTO {t} ({cols}) ");
-        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, @IsReady);");
+        sb.AppendLine("VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt);");
 
         return (sb.ToString(), args);
     }
@@ -637,7 +629,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         for (var i = 0; i < entries.Count; i++)
         {
             var entry = entries[i];
-            rows.Add($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
+            rows.Add($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i})");
 
             dynParams.Add($"RecordUniqueId_{i}", entry.RecordUniqueId, DbType.String);
             dynParams.Add($"ClusterId_{i}", entry.ClusterId, DbType.String);
@@ -646,10 +638,9 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
             dynParams.Add($"EntryIdGuid_{i}", entry.EntryIdGuid, DbType.Guid);
             dynParams.Add($"CreatedAt_{i}", entry.CreatedAt, DbType.DateTime);
             dynParams.Add($"ExpiresAt_{i}", entry.ExpiresAt, DbType.DateTime);
-            dynParams.Add($"IsReady_{i}", entry.IsReady, DbType.Boolean);
         }
 
-        var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
+        var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}";
         var sqlText = $"INSERT INTO {t} ({cols}) VALUES\n{string.Join(",\n", rows)};";
         return (sqlText, dynParams);
     }
@@ -728,23 +719,6 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
         return $"DELETE FROM {t} WHERE {inClause};";
     }
 
-    public string BuildSetReadySql(string groupId)
-    {
-        var t = EntryTable(groupId);
-        var cRecordId = Col(x => x.RecordUniqueId);
-        var cIsReady = ColSqlEntry(x => x.IsReady);
-        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {cRecordId} = @RecordUniqueId;";
-    }
-
-    public string BuildSetReadyMultipleSql(string groupId, string idsParamName = "@RecordUniqueIds")
-    {
-        var t = EntryTable(groupId);
-        var cRecordId = Col(x => x.RecordUniqueId);
-        var cIsReady = ColSqlEntry(x => x.IsReady);
-        var inClause = sql.InClauseFor(cRecordId, idsParamName);
-        return $"UPDATE {t} SET {cIsReady} = {sql.GetDbBool(true)} WHERE {inClause};";
-    }
-    
     public IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)
     {
         var dictionary = result.GroupBy(x => x.RecordUniqueId).ToDictionary(x => x.Key, x => x.ToList());
@@ -764,8 +738,7 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
                 GroupId = entry.Value[0].GroupId,
                 EntryId = entry.Value[0].EntryId,
                 CreatedAt = entry.Value[0].CreatedAt,
-                ExpiresAt = entry.Value[0].ExpiresAt,
-                IsReady = entry.Value[0].IsReady
+                ExpiresAt = entry.Value[0].ExpiresAt
             };
             
             sqlEntry.Values = entry.Value.Select(x => new SqlGenericRecordEntryValue

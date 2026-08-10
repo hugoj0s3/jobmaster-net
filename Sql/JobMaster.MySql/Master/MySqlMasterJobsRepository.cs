@@ -129,11 +129,6 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         var sqlText = $@"
 SELECT {selectCols}
 FROM {t} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e
-    ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)}
-    AND e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v
-    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 WHERE j.{Col(x => x.ClusterId)} = @ClusterId
   AND {inClause}
   AND j.{Col(x => x.PartitionLockId)} = @PartitionLockId
@@ -141,7 +136,6 @@ WHERE j.{Col(x => x.ClusterId)} = @ClusterId
 
         var fetchArgs = new Dictionary<string, object?>
         {
-            { "GroupId", MasterGenericRecordGroupIds.JobMetadata },
             { "ClusterId", ClusterConnConfig.ClusterId },
             { "Ids", ids },
             { "PartitionLockId", partitionLockId },
@@ -151,6 +145,104 @@ WHERE j.{Col(x => x.ClusterId)} = @ClusterId
         var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
         var rows = LinearListRecord(linearRows);
         return rows.Select(JobRawModel.RecoverFromDb).ToList();
+    }
+
+    // MySQL-specific: one multi-row UPDATE ... JOIN (derived table built from UNION ALL SELECTs)
+    // instead of N sequential single-row UPDATEs. Unlike Postgres/SQL Server, MySQL has no multi-row
+    // RETURNING/OUTPUT, so a follow-up query tells us which ids actually got updated. That follow-up
+    // re-joins the same derived table against t.version (not just existence) -- since new versions
+    // are freshly generated GUIDs never seen before, a match proves the UPDATE's own version-match
+    // join condition passed for that row, i.e. it wasn't skipped for carrying a stale/mismatched version.
+    public override async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
+
+        var newVersions = jobs.ToDictionary(j => j.Id, _ => JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant());
+
+        var p = new DynamicParameters();
+        p.Add("ClusterId", ClusterConnConfig.ClusterId, DbType.String);
+        var selects = new List<string>(jobs.Count);
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            var rec = JobRawModel.ToPersistence(jobs[i]);
+            var expectedVersion = rec.Version;
+            rec.Version = newVersions[jobs[i].Id];
+            AddBulkUpdateRowParams(p, i, rec, expectedVersion);
+            selects.Add($"SELECT @Id_{i} AS id, @JobDefinitionId_{i} AS jobdefinitionid, @TriggerSourceType_{i} AS triggersourcetype, " +
+                        $"@BucketId_{i} AS bucketid, @AgentConnectionId_{i} AS agentconnectionid, @AgentWorkerId_{i} AS agentworkerid, " +
+                        $"@Priority_{i} AS priority, @NextPlanExecutionAt_{i} AS nextplanexecutionat, @ScheduledAt_{i} AS scheduledat, " +
+                        $"@MsgData_{i} AS msgdata, @Status_{i} AS status, @NumberOfFailures_{i} AS numberoffailures, " +
+                        $"@TimeoutTicks_{i} AS timeoutticks, @MaxNumberOfRetries_{i} AS maxnumberofretries, @SourceId_{i} AS sourceid, " +
+                        $"@PartitionLockId_{i} AS partitionlockid, @PartitionLockExpiresAt_{i} AS partitionlockexpiresat, " +
+                        $"@ProcessDeadline_{i} AS processdeadline, @ProcessStartedAt_{i} AS processstartedat, @FinalizedAt_{i} AS finalizedat, " +
+                        $"@WorkerLane_{i} AS workerlane, @Version_{i} AS version, @HostId_{i} AS hostid, @HostDisplayName_{i} AS hostdisplayname, " +
+                        $"@ExpectedVersion_{i} AS expectedversion");
+        }
+
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var cVersion = Col(x => x.Version);
+        var derivedTable = $"{string.Join("\nUNION ALL\n", selects)}";
+        var updateSql = $@"
+UPDATE {t} AS t
+JOIN (
+{derivedTable}
+) AS v ON t.{cId} = v.id AND t.{cVersion} = v.expectedversion
+SET t.{Col(x => x.JobDefinitionId)} = v.jobdefinitionid,
+    t.{Col(x => x.TriggerSourceType)} = v.triggersourcetype,
+    t.{Col(x => x.BucketId)} = v.bucketid,
+    t.{Col(x => x.AgentConnectionId)} = v.agentconnectionid,
+    t.{Col(x => x.AgentWorkerId)} = v.agentworkerid,
+    t.{Col(x => x.Priority)} = v.priority,
+    t.{Col(x => x.NextPlanExecutionAt)} = v.nextplanexecutionat,
+    t.{Col(x => x.ScheduledAt)} = v.scheduledat,
+    t.{Col(x => x.MsgData)} = v.msgdata,
+    t.{Col(x => x.Status)} = v.status,
+    t.{Col(x => x.NumberOfFailures)} = v.numberoffailures,
+    t.{Col(x => x.TimeoutTicks)} = v.timeoutticks,
+    t.{Col(x => x.MaxNumberOfRetries)} = v.maxnumberofretries,
+    t.{Col(x => x.SourceId)} = v.sourceid,
+    t.{Col(x => x.PartitionLockId)} = v.partitionlockid,
+    t.{Col(x => x.PartitionLockExpiresAt)} = v.partitionlockexpiresat,
+    t.{Col(x => x.ProcessDeadline)} = v.processdeadline,
+    t.{Col(x => x.ProcessStartedAt)} = v.processstartedat,
+    t.{Col(x => x.FinalizedAt)} = v.finalizedat,
+    t.{Col(x => x.WorkerLane)} = v.workerlane,
+    t.{cVersion} = v.version,
+    t.{Col(x => x.HostId)} = v.hostid,
+    t.{Col(x => x.HostDisplayName)} = v.hostdisplayname
+WHERE t.{Col(x => x.ClusterId)} = @ClusterId;";
+
+        // Select t.id (not v.id): MySQL doesn't carry .NET type info for a parameter re-selected as a
+        // literal column in a derived table, so Dapper's strict Guid parsing fails on v.id. t.id is a
+        // real column with proper type metadata.
+        var verifySql = $@"
+SELECT t.{cId} FROM (
+{derivedTable}
+) AS v
+JOIN {t} AS t ON t.{cId} = v.id AND t.{cVersion} = v.version
+WHERE t.{Col(x => x.ClusterId)} = @ClusterId;";
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            await conn.ExecuteAsync(updateSql, p, trans);
+            var updatedIds = new HashSet<Guid>(await conn.QueryAsync<Guid>(verifySql, p, trans));
+            trans.Commit();
+
+            var updated = jobs.Where(j => updatedIds.Contains(j.Id)).ToList();
+            foreach (var job in updated)
+            {
+                job.SetVersion(newVersions[job.Id]);
+            }
+            return updated;
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
     }
 
     protected override string BuildQueryIdsToLockSql(
@@ -180,43 +272,6 @@ WHERE j.{Col(x => x.ClusterId)} = @ClusterId
         // with a silently smaller result set and causing downstream version
         // conflicts in fallback bucket assignment. Requires MySQL 8.0.1+.
         return $"SELECT {Col(x => x.Id)} FROM ({baseSql} FOR UPDATE SKIP LOCKED) AS _candidates";
-    }
-
-    private string BuildMetadataEntryUpsertSql()
-    {
-        var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata);
-        var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
-        return $@"
-INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0)
-ON DUPLICATE KEY UPDATE
-    expires_at = VALUES(expires_at);";
-    }
-
-    private string BuildMetadataValuesUpsertSql()
-    {
-        var vt = genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata);
-        var cRecordId = genericUtil.ColVal(x => x.RecordUniqueId);
-        var cKeyName = genericUtil.ColVal(x => x.KeyName);
-        var cValueText = genericUtil.ColVal(x => x.ValueText);
-        var cValueBinary = genericUtil.ColVal(x => x.ValueBinary);
-        var cValueInt64 = genericUtil.ColVal(x => x.ValueInt64);
-        var cValueBool = genericUtil.ColVal(x => x.ValueBool);
-        var cValueDecimal = genericUtil.ColVal(x => x.ValueDecimal);
-        var cValueDateTime = genericUtil.ColVal(x => x.ValueDateTime);
-        var cValueGuid = genericUtil.ColVal(x => x.ValueGuid);
-
-        return $@"
-INSERT INTO {vt} ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
-VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid)
-ON DUPLICATE KEY UPDATE
-    {cValueText} = VALUES({cValueText}),
-    {cValueBinary} = VALUES({cValueBinary}),
-    {cValueInt64} = VALUES({cValueInt64}),
-    {cValueBool} = VALUES({cValueBool}),
-    {cValueDecimal} = VALUES({cValueDecimal}),
-    {cValueDateTime} = VALUES({cValueDateTime}),
-    {cValueGuid} = VALUES({cValueGuid});";
     }
 
     private string BuildJobUpsertSql()
@@ -268,36 +323,6 @@ ON DUPLICATE KEY UPDATE
             return $"{col} = IF({versionMatch}, {val}, {col})";
         });
         return string.Join(", ", guarded);
-    }
-
-    private static Dictionary<string, object?> BuildMetadataEntryArgs(SqlGenericRecordEntry sqlEntry)
-    {
-        return new Dictionary<string, object?>
-        {
-            { "RecordUniqueId", sqlEntry.RecordUniqueId },
-            { "ClusterId", sqlEntry.ClusterId },
-            { "GroupId", sqlEntry.GroupId },
-            { "EntryId", sqlEntry.EntryId },
-            { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "CreatedAt", sqlEntry.CreatedAt },
-            { "ExpiresAt", sqlEntry.ExpiresAt }
-        };
-    }
-
-    private static IEnumerable<object> BuildMetadataValueRows(SqlGenericRecordEntry sqlEntry)
-    {
-        return sqlEntry.Values.Select(v => new
-        {
-            RecordUniqueId = sqlEntry.RecordUniqueId,
-            KeyName = v.KeyName,
-            ValueText = v.ValueText,
-            ValueBinary = v.ValueBinary,
-            ValueInt64 = v.ValueInt64,
-            ValueBoolean = v.ValueBool,
-            ValueDecimal = v.ValueDecimal,
-            ValueDateTime = v.ValueDateTime,
-            ValueGuid = v.ValueGuid
-        });
     }
 
 }

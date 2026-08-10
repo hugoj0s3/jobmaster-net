@@ -10,7 +10,6 @@ using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
-using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services.Agents;
 
@@ -47,46 +46,24 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         return await repository.PushSavePendingJobAsync(jobRaw);
     }
 
-    public async Task<IList<string>> BulkAddSavePendingJobAsync(List<JobRawModel> jobRawModels)
+    public async Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
     {
-        IDictionary<string, IList<JobRawModel>> jobsByBucket = new Dictionary<string, IList<JobRawModel>>();
+        if (jobRawModels.Count == 0)
+        {
+            return new List<string>();
+        }
+
         foreach (var jobRawModel in jobRawModels)
         {
             ValidateJobAssignedToBucket(jobRawModel);
-
-            if (!jobsByBucket.ContainsKey(jobRawModel.BucketId!))
-            {
-                jobsByBucket[jobRawModel.BucketId!] = new List<JobRawModel>();
-            }
-
-            jobsByBucket[jobRawModel.BucketId!].Add(jobRawModel);
         }
 
-        var results = new List<string>();
-        foreach (var item in jobsByBucket)
-        {
-            if (item.Value.Count == 0)
-            {
-                continue;
-            }
+        var repository = GetJobDispatcherRepository(agentConnectionId);
+        var throttler = GetOperationLimiter(agentConnectionId);
 
-            var bucketId = item.Key;
-            var agentConnectionId = item.Value[0].AgentConnectionId!;
-            var repository = GetJobDispatcherRepository(agentConnectionId);
-            var throttler = GetOperationLimiter(agentConnectionId);
-            var partitions = item.Value.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
-
-            foreach (var partition in partitions)
-            {
-                logger.Debug($"Bulk scheduling jobs. partition size: {partition.Count} for bucket {bucketId}",
-                    JobMasterLogCategory.Job, partition.First().Id);
-                var partitionResult = await throttler.ExecAsync(() =>
-                    repository.BulkPushSavePendingJobAsync(bucketId, partition.ToList()));
-                results.AddRange(partitionResult);
-            }
-        }
-
-        return results;
+        logger.Debug($"Bulk scheduling jobs. partition size: {jobRawModels.Count} for bucket {bucketId}",
+            JobMasterLogCategory.Job, jobRawModels[0].Id);
+        return await throttler.ExecAsync(() => repository.BulkPushSavePendingJobAsync(bucketId, jobRawModels));
     }
 
     public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
@@ -115,6 +92,26 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
 
         var throttler = GetOperationLimiter(jobRaw.AgentConnectionId!);
         return await throttler.ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
+    }
+
+    public async Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
+    {
+        if (jobRawModels.Count == 0)
+        {
+            return new List<string>();
+        }
+
+        foreach (var jobRawModel in jobRawModels)
+        {
+            ValidateJobAssignedToBucket(jobRawModel);
+        }
+
+        var repository = GetJobDispatcherRepository(agentConnectionId);
+        var throttler = GetOperationLimiter(agentConnectionId);
+
+        logger.Debug($"Bulk dispatching jobs for processing. partition size: {jobRawModels.Count} for bucket {bucketId}",
+            JobMasterLogCategory.Job, jobRawModels[0].Id);
+        return await throttler.ExecAsync(() => repository.BulkPushForProcessingAsync(bucketId, jobRawModels));
     }
 
     public async Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId,

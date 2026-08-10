@@ -325,22 +325,6 @@ FROM {t} j
         return await conn.QuerySingleAsync<JobProbeResult>(sqlText, args);
     }
 
-    public void ReleasePartitionLock(Guid jobId)
-    {
-        using var conn = connManager.Open(connString, additionalConnConfig);
-        var t = TableName();
-
-        var sqlText = @$"
-        UPDATE {t} SET 
-            {Col(x => x.PartitionLockId)} = NULL, 
-            {Col(x => x.PartitionLockExpiresAt)} = NULL,
-            {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-        WHERE {Col(x => x.ClusterId)} = @ClusterId and  
-            {Col(x => x.Id)} = @JobId";
-
-        conn.Execute(sqlText, new { ClusterId = this.ClusterConnConfig.ClusterId, JobId = jobId });
-    }
-
     public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
         if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
@@ -387,15 +371,20 @@ FROM {t} j
         }
     }
 
-    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    // ANSI-portable fallback: one single-row UPDATE per job. Providers override this with a
+    // dialect-specific multi-row UPDATE (see PostgresMasterJobsRepository, SqlServerMasterJobsRepository,
+    // MySqlMasterJobsRepository) since there's no ANSI-standard syntax for "UPDATE with per-row differing
+    // values from a value list".
+    public virtual async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
     {
         if (jobs.Count == 0) return Array.Empty<JobRawModel>();
 
         var t = TableName();
         var cId = Col(x => x.Id);
         var cClusterId = Col(x => x.ClusterId);
-        var setClause = $"{UpdateSetClauseWithoutVersion()}, {Col(x => x.Version)} = @Version";
-        var sqlText = $"UPDATE {t} SET {setClause} WHERE {cClusterId} = @ClusterId AND {cId} = @Id";
+        var cVersion = Col(x => x.Version);
+        var setClause = $"{UpdateSetClauseWithoutVersion()}, {cVersion} = @Version";
+        var sqlText = $"UPDATE {t} SET {setClause} WHERE {cClusterId} = @ClusterId AND {cId} = @Id AND {cVersion} = @ExpectedVersion";
 
         var newVersions = new Dictionary<Guid, string>(jobs.Count);
         foreach (var job in jobs)
@@ -412,8 +401,11 @@ FROM {t} j
             foreach (var job in jobs)
             {
                 var rec = JobRawModel.ToPersistence(job);
+                var expectedVersion = rec.Version;
                 rec.Version = newVersions[job.Id];
-                var rowsAffected = await conn.ExecuteAsync(sqlText, rec, trans);
+                var dp = new DynamicParameters(rec);
+                dp.Add("ExpectedVersion", expectedVersion);
+                var rowsAffected = await conn.ExecuteAsync(sqlText, dp, trans);
                 if (rowsAffected > 0)
                 {
                     updated.Add(job);
@@ -433,6 +425,46 @@ FROM {t} j
         }
 
         return updated;
+    }
+
+    /// <summary>
+    /// Binds one job's bulk-update row (id + the 21 <see cref="UpdateSetClauseWithoutVersion"/> columns
+    /// + a freshly generated version + the version the row is expected to currently be at) into
+    /// <paramref name="p"/> using suffixed parameter names (<c>Id_{i}</c>, <c>Status_{i}</c>, ...),
+    /// matching the indexed-parameter convention already used by <see cref="BuildBulkInsertIfNotExistsSql"/>.
+    /// Shared by the per-provider bulk-UPDATE overrides so the parameter list only needs to be kept in
+    /// sync with <see cref="JobPersistenceRecord"/> once. <paramref name="expectedVersion"/> must be
+    /// captured by the caller BEFORE overwriting <paramref name="rec"/>'s <c>Version</c> with the new
+    /// one -- it's what enforces optimistic concurrency: a row whose current version doesn't match is
+    /// left untouched instead of being silently overwritten.
+    /// </summary>
+    protected static void AddBulkUpdateRowParams(DynamicParameters p, int i, JobPersistenceRecord rec, string? expectedVersion)
+    {
+        p.Add($"Id_{i}", rec.Id, DbType.Guid);
+        p.Add($"JobDefinitionId_{i}", rec.JobDefinitionId, DbType.String);
+        p.Add($"TriggerSourceType_{i}", rec.TriggerSourceType, DbType.Int32);
+        p.Add($"BucketId_{i}", rec.BucketId, DbType.String);
+        p.Add($"AgentConnectionId_{i}", rec.AgentConnectionId, DbType.String);
+        p.Add($"AgentWorkerId_{i}", rec.AgentWorkerId, DbType.String);
+        p.Add($"Priority_{i}", rec.Priority, DbType.Int32);
+        p.Add($"NextPlanExecutionAt_{i}", rec.NextPlanExecutionAt, DbType.DateTime);
+        p.Add($"ScheduledAt_{i}", rec.ScheduledAt, DbType.DateTime);
+        p.Add($"MsgData_{i}", rec.MsgData, DbType.String);
+        p.Add($"Status_{i}", rec.Status, DbType.Int32);
+        p.Add($"NumberOfFailures_{i}", rec.NumberOfFailures, DbType.Int32);
+        p.Add($"TimeoutTicks_{i}", rec.TimeoutTicks, DbType.Int64);
+        p.Add($"MaxNumberOfRetries_{i}", rec.MaxNumberOfRetries, DbType.Int32);
+        p.Add($"SourceId_{i}", rec.SourceId, DbType.Guid);
+        p.Add($"PartitionLockId_{i}", rec.PartitionLockId, DbType.Guid);
+        p.Add($"PartitionLockExpiresAt_{i}", rec.PartitionLockExpiresAt, DbType.DateTime);
+        p.Add($"ProcessDeadline_{i}", rec.ProcessDeadline, DbType.DateTime);
+        p.Add($"ProcessStartedAt_{i}", rec.ProcessStartedAt, DbType.DateTime);
+        p.Add($"FinalizedAt_{i}", rec.FinalizedAt, DbType.DateTime);
+        p.Add($"WorkerLane_{i}", rec.WorkerLane, DbType.String);
+        p.Add($"Version_{i}", rec.Version, DbType.String);
+        p.Add($"HostId_{i}", rec.HostId, DbType.String);
+        p.Add($"HostDisplayName_{i}", rec.HostDisplayName, DbType.String);
+        p.Add($"ExpectedVersion_{i}", expectedVersion, DbType.String);
     }
 
     public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
@@ -497,8 +529,6 @@ WITH jobs_page AS (
 )
 SELECT {selectCols}
 FROM jobs_page j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{cId} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 {order}";
 
         var args = new
@@ -509,7 +539,6 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             Failed = (int)JobMasterJobStatus.Failed,
             Cancelled = (int)JobMasterJobStatus.Cancelled,
             Aborted = (int)JobMasterJobStatus.Aborted,
-            GroupId = MasterGenericRecordGroupIds.JobMetadata
         };
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
@@ -634,7 +663,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
             var rec = JobRawModel.ToPersistence(job);
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
-            selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
+            selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @MetadataJson_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
 WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");
 
             dynParams.Add($"ClusterId_{i}", rec.ClusterId, DbType.String);
@@ -648,6 +677,7 @@ WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AN
             dynParams.Add($"ScheduledAt_{i}", rec.ScheduledAt, DbType.DateTime);
             dynParams.Add($"NextPlanExecutionAt_{i}", rec.NextPlanExecutionAt, DbType.DateTime);
             dynParams.Add($"MsgData_{i}", rec.MsgData, DbType.String);
+            dynParams.Add($"MetadataJson_{i}", rec.MetadataJson, DbType.String);
             dynParams.Add($"Status_{i}", rec.Status, DbType.Int32);
             dynParams.Add($"NumberOfFailures_{i}", rec.NumberOfFailures, DbType.Int32);
             dynParams.Add($"TimeoutTicks_{i}", rec.TimeoutTicks, DbType.Int64);
@@ -700,7 +730,8 @@ UPDATE {t} {UpdateToLockTableHint}
 SET {Col(x => x.PartitionLockId)} = @PartitionLockId,
     {Col(x => x.PartitionLockExpiresAt)} = @LockExpiresAt,
     {Col(x => x.Version)} = {sql.GenerateVersionSql()}
-where {Col(x => x.Id)} in ({queryIdsSql})
+where {Col(x => x.ClusterId)} = @ClusterId
+  AND {Col(x => x.Id)} in ({queryIdsSql})
   AND {unlockedGuard}
   ;";
             var args2 = new Dictionary<string, object?>(args);
@@ -711,11 +742,15 @@ where {Col(x => x.Id)} in ({queryIdsSql})
             var rowsAffected = await conn.ExecuteAsync(updateSql, args2, trans);
 
             trans.Commit();
-            
-            if (rowsAffected == 0) return new List<JobRawModel>();
+
+            if (rowsAffected == 0)
+            {
+                return new List<JobRawModel>();
+            }
 
             using var conn2 = await connManager.OpenAsync(connString, additionalConnConfig);
-            return await QueryLockedJobsAsync(partitionLockId, nowUtcWithSkew, conn2);
+            var result = await QueryLockedJobsAsync(partitionLockId, nowUtcWithSkew, conn2);
+            return result;
         }
         catch
         {
@@ -724,7 +759,7 @@ where {Col(x => x.Id)} in ({queryIdsSql})
         }
     }
 
-    private async Task<IList<JobRawModel>> QueryLockedJobsAsync(
+    protected async Task<IList<JobRawModel>> QueryLockedJobsAsync(
         Guid partitionLockId,
         DateTime nowUtcWithSkew,
         IDbConnection cnn2)
@@ -736,20 +771,14 @@ where {Col(x => x.Id)} in ({queryIdsSql})
         var cPartitionLockExpiresAt = Col(x => x.PartitionLockExpiresAt);
 
         var sqlText = $@"
-SELECT {selectCols} 
+SELECT {selectCols}
 FROM {t} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e 
-    ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} 
-    AND e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v 
-    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
 WHERE j.{cClusterId} = @ClusterId
-  AND j.{cPartitionLockId} = @PartitionLockId 
+  AND j.{cPartitionLockId} = @PartitionLockId
   AND j.{cPartitionLockExpiresAt} > @NowUtcWithSkew";
 
         var args = new Dictionary<string, object?>
         {
-            { "GroupId", MasterGenericRecordGroupIds.JobMetadata },
             { "ClusterId", ClusterConnConfig.ClusterId },
             { "PartitionLockId", partitionLockId },
             { "NowUtcWithSkew", nowUtcWithSkew }
@@ -771,15 +800,12 @@ WHERE j.{cClusterId} = @ClusterId
     private (string, object) BuildGetSql(Guid jobId)
     {
         var selectCols = SelectProjection();
-        // var sqlText = $"SELECT {selectCols} FROM {t} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
         var sqlText = $@"
-SELECT {selectCols} 
+SELECT {selectCols}
 FROM {TableName()} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
- WHERE j.{Col(x => x.ClusterId)} = @ClusterId AND j.{Col(x => x.Id)} = @Id
+WHERE j.{Col(x => x.ClusterId)} = @ClusterId AND j.{Col(x => x.Id)} = @Id
 ";
-        var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId, GroupId = MasterGenericRecordGroupIds.JobMetadata };
+        var args = new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId };
         return (sqlText, args);
     }
     
@@ -833,8 +859,19 @@ FROM {TableName()} j
         
         var (whereSql, args) = BuildWhere(c, partitionLockId, isLocked);
 
-        var concatedArgs = args.Concat(new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.JobMetadata } })
-            .ToDictionary(x => x.Key, x => x.Value);
+        // MetadataFilters (if any) compile into an EXISTS(...) inside whereSql that correlates
+        // against alias "e" (genericUtil.BuildWhereClause's entryTableAlias) -- that EXISTS only
+        // defines its own value-table alias internally, so "e" itself still needs to come from a
+        // join in this outer query. Retrieval no longer needs it (MetadataJson replaces that), so
+        // this join -- unlike before -- is now conditional on filters actually being present.
+        var needsMetadataJoin = c.MetadataFilters is { Count: > 0 };
+        if (needsMetadataJoin)
+        {
+            args["GroupId"] = MasterGenericRecordGroupIds.JobMetadata;
+        }
+        var metadataJoin = needsMetadataJoin
+            ? $"LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} AND e.{Col(x => x.GroupId)} = @GroupId"
+            : string.Empty;
 
         if (c.CountLimit > 0)
         {
@@ -844,22 +881,20 @@ FROM {TableName()} j
 WITH jobs_page AS (
     SELECT j.*
     FROM {t} j
-    LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
+    {metadataJoin}
     {whereSql}
     {order}
     {offsetClause}
 )
 SELECT {selectCols}
 FROM jobs_page j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 {order}";
 
-            return (queryText, concatedArgs);
+            return (queryText, args);
         }
 
-        var (queryTextNoPaging, queryArgsNoPaging) = BuildQuery(t, selectCols, whereSql, order);
-        var concatedArgsNoPaging = concatedArgs.Concat(queryArgsNoPaging).ToDictionary(x => x.Key, x => x.Value);
+        var (queryTextNoPaging, queryArgsNoPaging) = BuildQuery(t, selectCols, whereSql, metadataJoin, order);
+        var concatedArgsNoPaging = args.Concat(queryArgsNoPaging).ToDictionary(x => x.Key, x => x.Value);
         return (queryTextNoPaging, concatedArgsNoPaging);
     }
 
@@ -1048,7 +1083,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         {
             Col(x => x.ClusterId), Col(x => x.Id), Col(x => x.JobDefinitionId), Col(x => x.TriggerSourceType),
             Col(x => x.BucketId), Col(x => x.AgentConnectionId), Col(x => x.AgentWorkerId), Col(x => x.Priority),
-            Col(x => x.ScheduledAt), Col(x => x.NextPlanExecutionAt), Col(x => x.MsgData), Col(x => x.Status),
+            Col(x => x.ScheduledAt), Col(x => x.NextPlanExecutionAt), Col(x => x.MsgData), Col(x => x.MetadataJson), Col(x => x.Status),
             Col(x => x.NumberOfFailures), Col(x => x.TimeoutTicks), Col(x => x.MaxNumberOfRetries),
             Col(x => x.CreatedAt), Col(x => x.SourceId),
             Col(x => x.PartitionLockId), Col(x => x.PartitionLockExpiresAt), Col(x => x.ProcessDeadline),
@@ -1059,7 +1094,7 @@ LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)}
         {
             "@ClusterId", "@Id", "@JobDefinitionId", "@TriggerSourceType",
             "@BucketId", "@AgentConnectionId", "@AgentWorkerId", "@Priority",
-            "@ScheduledAt", "@NextPlanExecutionAt", "@MsgData", "@Status",
+            "@ScheduledAt", "@NextPlanExecutionAt", "@MsgData", "@MetadataJson", "@Status",
             "@NumberOfFailures", "@TimeoutTicks", "@MaxNumberOfRetries",
             "@CreatedAt", "@SourceId",
             "@PartitionLockId", "@PartitionLockExpiresAt", "@ProcessDeadline",
@@ -1083,6 +1118,10 @@ WHERE {cClusterId} = @ClusterId
   AND {cVersion} = @ExpectedVersion;";
     }
 
+    // Deliberately excludes MetadataJson/Metadata: metadata is set once at insert time and is
+    // immutable through Update/Upsert/BulkUpdateAsync (confirmed by RepoConformance's
+    // Update_ShouldPersistChanges / BulkUpdate_Models_ShouldPersist_AllChanges, which assert the
+    // original metadata survives even when a caller passes a JobRawModel with different Metadata).
     protected string UpdateSetClause()
     {
         return string.Join(", ", new[]
@@ -1113,7 +1152,11 @@ WHERE {cClusterId} = @ClusterId
         });
     }
 
-    protected string SelectProjection(string jobAlias = "j", string genericEntryAlias = "e", string genericEntryValueAlias = "v")
+    // No more generic-record entry/value LEFT JOIN columns here -- Metadata is read straight off
+    // MetadataJson (see JobPersistenceRecord.MetadataJson), so every caller of this projection
+    // (Get/GetAsync/Query/QueryAsync/QueryLockedJobsAsync/QueryFinalizedToPurgeAsync) is a plain
+    // single-table read now, no join, no row multiplication.
+    protected string SelectProjection(string jobAlias = "j")
     {
         // No aliases needed; Dapper will map snake_case -> PascalCase
         return string.Join(", ", new[]
@@ -1129,6 +1172,7 @@ WHERE {cClusterId} = @ClusterId
             $"{jobAlias}.{Col(x => x.ScheduledAt)}",
             $"{jobAlias}.{Col(x => x.NextPlanExecutionAt)}",
             $"{jobAlias}.{Col(x => x.MsgData)}",
+            $"{jobAlias}.{Col(x => x.MetadataJson)}",
             $"{jobAlias}.{Col(x => x.Status)}",
             $"{jobAlias}.{Col(x => x.NumberOfFailures)}",
             $"{jobAlias}.{Col(x => x.TimeoutTicks)}",
@@ -1143,120 +1187,66 @@ WHERE {cClusterId} = @ClusterId
             $"{jobAlias}.{Col(x => x.WorkerLane)}",
             $"{jobAlias}.{Col(x => x.Version)}",
             $"{jobAlias}.{Col(x => x.HostId)}",
-            $"{jobAlias}.{Col(x => x.HostDisplayName)}",
-
-            // Entry
-            $"{genericEntryAlias}.{Col(x => x.RecordUniqueId)}",
-            $"{genericEntryAlias}.{Col(x => x.GroupId)}",
-            $"{genericEntryAlias}.{Col(x => x.EntryId)}",
-
-            // EntryValue
-            $"{genericEntryValueAlias}.{Col(x => x.KeyName)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueInt64)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueDecimal)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueText)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueBool)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueDateTime)}",
-            $"{genericEntryValueAlias}.{Col(x => x.ValueGuid)}"
+            $"{jobAlias}.{Col(x => x.HostDisplayName)}"
         });
     }
 
-    private (string sqlText, IDictionary<string, object?> args) BuildQuery(string jobTableName, string selectCols, string whereSql, string order)
+    private (string sqlText, IDictionary<string, object?> args) BuildQuery(string jobTableName, string selectCols, string whereSql, string metadataJoin, string order)
     {
         var sqlText =
             $@"
-SELECT {selectCols} 
+SELECT {selectCols}
 FROM {jobTableName} j
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata)} e ON e.{Col(x => x.EntryIdGuid)} = j.{Col(x => x.Id)} and e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata)} v ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)} 
+{metadataJoin}
 {whereSql}
 {order}";
-        
-        return (sqlText, new Dictionary<string, object?> { { "GroupId", MasterGenericRecordGroupIds.JobMetadata } });
+
+        return (sqlText, new Dictionary<string, object?>());
     }
 
     protected string Col(Expression<Func<JobPersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
 
+    // Named "Linear" from when this flattened a LEFT JOIN's (job, metadata-key) rows back into one
+    // JobPersistenceRecord per job. That join is gone -- Metadata now comes straight off
+    // MetadataJson (no reconstruction needed) -- so every row is already exactly one job, and this
+    // is a 1:1 map. Kept as its own step (rather than casting JobPersistenceRecordLinearDto
+    // directly) since it's still the place callers get a plain JobPersistenceRecord back.
     protected IList<JobPersistenceRecord> LinearListRecord(IList<JobPersistenceRecordLinearDto> list)
     {
-        if (list.Count == 0) return new List<JobPersistenceRecord>(0);
-
-        var result = new List<JobPersistenceRecord>();
-        foreach (var jobGroup in list.GroupBy(x => x.Id))
+        return list.Select(row => new JobPersistenceRecord
         {
-            var first = jobGroup.First();
-
-            // Build metadata dictionary from linear rows (skip when no key)
-            var kvs = new Dictionary<string, object?>(StringComparer.Ordinal);
-            string? groupId = null;
-            string? entryId = null;
-            foreach (var row in jobGroup)
-            {
-                if (string.IsNullOrEmpty(row.KeyName)) continue;
-                groupId ??= row.GroupId;
-                entryId ??= row.EntryId;
-
-                object? val = row.ValueText ??
-                              (object?)row.ValueBinary ??
-                              row.ValueInt64 ??
-                              row.ValueBool ??
-                              (object?)row.ValueDecimal ??
-                              (object?)row.ValueDateTime ??
-                              row.ValueGuid;
-                kvs[row.KeyName] = val;
-            }
-
-            GenericRecordEntry? metadata = null;
-            // Since GenericRecordEntry.FromWritableMetadata expects IWritableMetadata,
-            // build via Contracts.Models.Metadata which implements IWritable/IReadable.
-            if (kvs.Count > 0 && !string.IsNullOrEmpty(groupId) && !string.IsNullOrEmpty(entryId))
-            {
-                var metaWritable = WritableMetadata.FromDictionary(kvs);
-                metadata = GenericRecordEntry.FromWritableMetadata(
-                    ClusterConnConfig.ClusterId,
-                    groupId!,
-                    entryId!,
-                    metaWritable
-                );
-            }
-
-            var rec = new JobPersistenceRecord
-            {
-                ClusterId = first.ClusterId,
-                Id = first.Id,
-                JobDefinitionId = first.JobDefinitionId,
-                TriggerSourceType = first.TriggerSourceType,
-                BucketId = first.BucketId,
-                AgentConnectionId = first.AgentConnectionId,
-                AgentWorkerId = first.AgentWorkerId,
-                Priority = first.Priority,
-                ScheduledAt = first.ScheduledAt,
-                NextPlanExecutionAt = first.NextPlanExecutionAt,
-                MsgData = first.MsgData,
-                Status = first.Status,
-                NumberOfFailures = first.NumberOfFailures,
-                TimeoutTicks = first.TimeoutTicks,
-                MaxNumberOfRetries = first.MaxNumberOfRetries,
-                CreatedAt = first.CreatedAt,
-                SourceId = first.SourceId,
-                PartitionLockId = first.PartitionLockId,
-                PartitionLockExpiresAt = first.PartitionLockExpiresAt,
-                ProcessDeadline = first.ProcessDeadline,
-                ProcessStartedAt = first.ProcessStartedAt,
-                FinalizedAt = first.FinalizedAt,
-                Metadata = metadata,
-                WorkerLane = first.WorkerLane,
-                Version = first.Version,
-                HostId = first.HostId,
-                HostDisplayName = first.HostDisplayName,
-            };
-
-            result.Add(rec);
-        }
-
-        return result;
+            ClusterId = row.ClusterId,
+            Id = row.Id,
+            JobDefinitionId = row.JobDefinitionId,
+            TriggerSourceType = row.TriggerSourceType,
+            BucketId = row.BucketId,
+            AgentConnectionId = row.AgentConnectionId,
+            AgentWorkerId = row.AgentWorkerId,
+            Priority = row.Priority,
+            ScheduledAt = row.ScheduledAt,
+            NextPlanExecutionAt = row.NextPlanExecutionAt,
+            MsgData = row.MsgData,
+            MetadataJson = row.MetadataJson,
+            Status = row.Status,
+            NumberOfFailures = row.NumberOfFailures,
+            TimeoutTicks = row.TimeoutTicks,
+            MaxNumberOfRetries = row.MaxNumberOfRetries,
+            CreatedAt = row.CreatedAt,
+            SourceId = row.SourceId,
+            PartitionLockId = row.PartitionLockId,
+            PartitionLockExpiresAt = row.PartitionLockExpiresAt,
+            ProcessDeadline = row.ProcessDeadline,
+            ProcessStartedAt = row.ProcessStartedAt,
+            FinalizedAt = row.FinalizedAt,
+            WorkerLane = row.WorkerLane,
+            Version = row.Version,
+            HostId = row.HostId,
+            HostDisplayName = row.HostDisplayName,
+        }).ToList<JobPersistenceRecord>();
     }
     
+    // Deliberately excludes MetadataJson/Metadata -- see UpdateSetClause's comment; the same
+    // immutability contract applies to BulkUpdateAsync.
     protected string UpdateSetClauseWithoutVersion()
     {
         return string.Join(", ", new[]

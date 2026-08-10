@@ -41,6 +41,17 @@ internal sealed class BulkJobUpdateRequest
             BulkJobUpdateProperty.For(j => j.BucketId, null));
     }
 
+    /// <summary>
+    /// Clears only the partition lock fields, matching <c>IMasterJobsRepository.ReleasePartitionLock</c>'s
+    /// single-row UPDATE exactly (no Status/BucketId/AgentConnectionId reset -- these jobs are still
+    /// OnMaster and keep that assignment, they're just being made re-acquirable again).
+    /// </summary>
+    public static BulkJobUpdateRequest ReleasePartitionLock(IList<Guid> jobIds)
+        => For(
+            jobIds,
+            BulkJobUpdateProperty.For(j => j.PartitionLockId, null),
+            BulkJobUpdateProperty.For(j => j.PartitionLockExpiresAt, null));
+
     public static BulkJobUpdateRequest HeldOnMaster(IList<Guid> jobIds)
         => For(
             jobIds,

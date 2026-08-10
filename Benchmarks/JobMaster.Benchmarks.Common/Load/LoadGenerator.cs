@@ -79,15 +79,19 @@ public sealed class LoadGenerator(
         await Task.WhenAll(inFlight);
     }
 
-    // No pacing at all -- every job is immediate, fired in batches of BurstBatchSize as fast as
-    // MaxConcurrentRequests allows. The caller (Program.cs) is responsible for polling completions
-    // afterward and measuring the actual drain time; this method's job is only to get every batch
-    // fired as quickly as possible.
+    // No pacing at all -- every job is fired in batches of BurstBatchSize as fast as
+    // MaxConcurrentRequests allows. Immediate by default; when BurstDelay is set, every batch is
+    // scheduled with that same fixed delay instead, so the whole burst becomes due at roughly the
+    // same time rather than being already-due. The caller (Program.cs) is responsible for polling
+    // completions afterward and measuring the actual drain time; this method's job is only to get
+    // every batch fired as quickly as possible.
     private async Task RunBurstAsync(int totalJobs, CancellationToken ct)
     {
         using var semaphore = new SemaphoreSlim(options.MaxConcurrentRequests);
         var batchSize = Math.Max(1, options.BurstBatchSize);
-        var tasks = ChunksOf(totalJobs, batchSize).Select(batch => FireImmediateAsync(batch, semaphore, ct));
+        var tasks = options.BurstDelay is { } delay
+            ? ChunksOf(totalJobs, batchSize).Select(batch => FireDelayedAsync(batch, delay, semaphore, ct))
+            : ChunksOf(totalJobs, batchSize).Select(batch => FireImmediateAsync(batch, semaphore, ct));
         await Task.WhenAll(tasks);
     }
 

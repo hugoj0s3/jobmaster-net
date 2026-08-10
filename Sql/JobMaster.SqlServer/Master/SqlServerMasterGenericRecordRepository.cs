@@ -28,7 +28,6 @@ internal class SqlServerMasterGenericRecordRepository : SqlMasterGenericRecordRe
             
         // SQL Server-specific: Upsert entry using MERGE statement
             var t = genericUtil.EntryTable(recordEntry.GroupId);
-            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
 MERGE {t} AS target
 USING (SELECT @RecordUniqueId AS record_unique_id) AS source
@@ -37,8 +36,8 @@ WHEN MATCHED THEN
     UPDATE SET
         expires_at = @ExpiresAt
 WHEN NOT MATCHED THEN
-    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0);";
+    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at)
+    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt);";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
 
             var entryArgs = new Dictionary<string, object?>
@@ -104,8 +103,6 @@ WHEN NOT MATCHED THEN
                 conn.Execute(valueUpsertSql, valueRows, transaction);
             }
 
-            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-
             transaction.Commit();
         }
         catch
@@ -125,7 +122,6 @@ WHEN NOT MATCHED THEN
             
         // SQL Server-specific: Upsert entry using MERGE statement
             var t = genericUtil.EntryTable(recordEntry.GroupId);
-            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
 MERGE {t} AS target
 USING (SELECT @RecordUniqueId AS record_unique_id) AS source
@@ -134,8 +130,8 @@ WHEN MATCHED THEN
     UPDATE SET
         expires_at = @ExpiresAt
 WHEN NOT MATCHED THEN
-    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0);";
+    INSERT (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at)
+    VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt);";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
 
             var entryArgs = new Dictionary<string, object?>
@@ -200,8 +196,6 @@ WHEN NOT MATCHED THEN
                 
                 await conn.ExecuteAsync(valueUpsertSql, valueRows, transaction);
             }
-
-            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
 
             transaction.Commit();
         }

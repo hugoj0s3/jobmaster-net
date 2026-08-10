@@ -96,6 +96,26 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         return await processingRepository.PushMessageAsync(fullBucketAddressId, json, jobRaw.GetSafeNextPlanExecutionAt(), correlationId);
     }
 
+    public async Task<IList<string>> BulkPushForProcessingAsync(string bucketId, IList<JobRawModel> jobRaw)
+    {
+        var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobProcessingBucketAddress(bucketId);
+        IList<(string payload, DateTime referenceTime, string correlationId)> messages = new List<(string payload, DateTime referenceTime, string correlationId)>();
+        foreach (var job in jobRaw)
+        {
+            if (job.BucketId != bucketId)
+            {
+                throw new ArgumentException("All jobs must be in the same bucket");
+            }
+
+            var json = InternalJobMasterSerializer.Serialize(job);
+            var correlationId = GetCorrelationId(job);
+
+            messages.Add((json, job.GetSafeNextPlanExecutionAt(), correlationId));
+        }
+
+        return await processingRepository.BulkPushMessageAsync(fullBucketAddressId, messages);
+    }
+
     public async Task<IList<string>> BulkPushSavePendingJobAsync(string bucketId, IList<JobRawModel> jobRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(bucketId);

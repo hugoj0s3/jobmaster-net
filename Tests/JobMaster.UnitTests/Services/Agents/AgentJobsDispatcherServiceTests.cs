@@ -144,7 +144,7 @@ public class AgentJobsDispatcherServiceTests
     }
 
     [Fact]
-    public async Task BulkAddSavePendingJobAsync_WhenMoreThanMaxBatchSize_ShouldPartitionCalls()
+    public async Task BulkAddSavePendingJobAsync_ShouldPushWholePartitionInOneCall()
     {
         var clusterId = NewClusterId();
         var clusterConfig = CreateClusterConfig(clusterId);
@@ -185,10 +185,10 @@ public class AgentJobsDispatcherServiceTests
             })
             .ToList();
 
-        await sut.BulkAddSavePendingJobAsync(jobs);
+        await sut.BulkAddSavePendingJobAsync(agentConnId, bucketId, jobs);
 
-        // 51 jobs with MaxBatchSize=50 => 2 calls
-        repo.Verify(x => x.BulkPushSavePendingJobAsync(bucketId, It.IsAny<IList<JobRawModel>>()), Times.Exactly(2));
+        // Partitioning now happens in the caller -- the service pushes whatever it's given in one call.
+        repo.Verify(x => x.BulkPushSavePendingJobAsync(bucketId, It.Is<IList<JobRawModel>>(l => l.Count == jobs.Count)), Times.Once);
         factory.Verify(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue)), Times.Once);
     }
 

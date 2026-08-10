@@ -13,7 +13,6 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task AddJobExecutionAsync(JobExecution jobExecution);
     Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
-    void ReleasePartitionLock(Guid jobId);
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
     
@@ -30,7 +29,23 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task<bool> CheckVersionAsync(Guid jobId, string? version);
     JobRawModel? Get(Guid jobId);
     Task<JobRawModel?> GetAsync(Guid jobId);
-    Task BulkUpdateAsync(BulkJobUpdateRequest request);
+    
+    /// <summary>
+    /// When <paramref name="useAcquireThrottler"/> is true, routes through the same 1-at-a-time,
+    /// per-cluster throttler as <see cref="AcquireAndFetchAsync"/> instead of the general
+    /// operation throttler -- use this so a caller can't run concurrently with another
+    /// coordinator's acquire/bulk update. Leave false for callers (e.g. execution workers
+    /// persisting completion status) that shouldn't be serialized with the acquire pipeline.
+    /// </summary>
+    Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false);
 
-    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs);
+    /// <summary>
+    /// When <paramref name="useAcquireThrottler"/> is true, routes through the same 1-at-a-time,
+    /// per-cluster throttler as <see cref="AcquireAndFetchAsync"/> instead of the general
+    /// operation throttler -- use this from <c>AssignJobsToBucketsRunner</c>'s OnMaster-to-InBucket
+    /// bulk update so it can't run concurrently with another coordinator's acquire/bulk update.
+    /// Leave false for other callers (e.g. execution workers persisting completion status) that
+    /// shouldn't be serialized with the acquire pipeline.
+    /// </summary>
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false);
 }

@@ -48,16 +48,28 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         this.lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
 
-    public async Task DispatchJobToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket)
+    // Same-worker short-circuit still happens per job (cheap, in-memory), but everything that needs
+    // an actual agent-DB write is collected and sent through BulkAddForProcessingAsync in one call
+    // instead of one dispatch call per job. Caller passes one bucket's jobs at a time -- grouping by
+    // bucket and partitioning happen in AssignJobsToBucketsRunner, so a failure here only holds back
+    // this one partition instead of the whole tick's batch.
+    public async Task BulkDispatchJobsToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker,
+        BucketModel bucket, IList<JobRawModel> jobs)
     {
-        if (jobRaw.Status != JobMasterJobStatus.InBucket)
-        {
-            throw new InvalidOperationException($"Job {jobRaw.Id} is not in bucket. Status: {jobRaw.Status}");
-        }
+        var toBulkDispatch = new List<JobRawModel>();
 
-        try
+        foreach (var jobRaw in jobs)
         {
-            // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
+            if (jobRaw.Status != JobMasterJobStatus.InBucket)
+            {
+                // Skip, don't throw: this job is one of a whole partition batched into this call,
+                // and its bad status isn't the other jobs' problem -- throwing here would abort
+                // dispatch for the rest of a perfectly fine partition. Left untouched (not held on
+                // master) since we don't know what state it's legitimately in.
+                logger.Error($"Job {jobRaw.Id} is not in bucket, skipping dispatch. Status: {jobRaw.Status}", JobMasterLogCategory.Job, jobRaw.Id);
+                continue;
+            }
+
             var engine = backgroundAgentWorker.GetEngine(bucket.Id);
             if (engine != null &&
                 jobRaw.IsWithinOnboardingWindow() &&
@@ -67,35 +79,48 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 if (result == OnBoardingResult.Accepted)
                 {
                     logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-                    return;
+                    continue;
                 }
 
                 if (result == OnBoardingResult.MovedToMaster)
                 {
                     logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-                    return;
+                    continue;
                 }
 
                 if (result == OnBoardingResult.Cancelled)
                 {
                     logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-                    return;
+                    continue;
                 }
 
                 logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogCategory.Job, jobRaw.Id);
                 jobRaw.MarkAsHeldOnMaster();
                 await masterJobsService.UpdateAsync(jobRaw);
-
-                return;
+                continue;
             }
 
-            await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
+            toBulkDispatch.Add(jobRaw);
+        }
+
+        if (toBulkDispatch.Count == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await agentJobsDispatcherService.BulkAddForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
         }
         catch (Exception ex)
         {
-            logger.Error($"Failed to dispatch job {jobRaw.Id} to bucket {bucket.Id}.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
-            jobRaw.MarkAsHeldOnMaster();
-            await masterJobsService.UpdateAsync(jobRaw);
+            logger.Error($"Failed to bulk dispatch {toBulkDispatch.Count} jobs to bucket {bucket.Id}.", JobMasterLogCategory.Job, toBulkDispatch[0].Id, exception: ex);
+            foreach (var jobRaw in toBulkDispatch)
+            {
+                jobRaw.MarkAsHeldOnMaster();
+                await masterJobsService.UpdateAsync(jobRaw);
+            }
+
             throw;
         }
     }

@@ -79,13 +79,13 @@ internal static class JobsExecutionEngineFixture
         jobs.Setup(x => x.QueryAsync(It.IsAny<JobQueryCriteria>()))
             .ReturnsAsync(new List<JobRawModel>());
 
-        jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<IList<JobRawModel>>()))
-            .Callback<IList<JobRawModel>>(list =>
+        jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<IList<JobRawModel>>(), It.IsAny<bool>()))
+            .Callback<IList<JobRawModel>, bool>((list, _) =>
             {
                 foreach (var job in list)
                     bulkUpdateWatcher.Add(Clone(job));
             })
-            .ReturnsAsync((IList<JobRawModel> list) => list.ToList());
+            .ReturnsAsync((IList<JobRawModel> list, bool _) => list.ToList());
 
         ops.Setup(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
             .Callback<JobRawModel, JobExecution?>((job, _) => singleUpdateWatcher.Add(Clone(job)));

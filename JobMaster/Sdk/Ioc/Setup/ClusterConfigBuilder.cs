@@ -517,6 +517,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             DisablePriority(disabledPriority);
         }
 
+        if (config.DebugJsonlFilePath != null)
+            DebugJsonlFileLogger(config.DebugJsonlFilePath);
+
         if (config.Standalone)
         {
             // IClusterStandaloneConfigSelector.AddWorker only accepts a name and a batch size — there is

@@ -125,11 +125,6 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         var sqlText = $@"
 SELECT {selectCols}
 FROM {t} s
-LEFT JOIN {genericUtil.EntryTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} e
-    ON e.{Col(x => x.EntryIdGuid)} = s.{Col(x => x.Id)}
-    AND e.{Col(x => x.GroupId)} = @GroupId
-LEFT JOIN {genericUtil.EntryValueTable(MasterGenericRecordGroupIds.RecurringScheduleMetadata)} v
-    ON v.{Col(x => x.RecordUniqueId)} = e.{Col(x => x.RecordUniqueId)}
 WHERE s.{Col(x => x.ClusterId)} = @ClusterId
   AND {inClause}
   AND s.{Col(x => x.PartitionLockId)} = @PartitionLockId
@@ -137,7 +132,6 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId
 
         var fetchArgs = new Dictionary<string, object?>
         {
-            { "GroupId", MasterGenericRecordGroupIds.RecurringScheduleMetadata },
             { "ClusterId", ClusterConnConfig.ClusterId },
             { "Ids", ids },
             { "PartitionLockId", partitionLockId },

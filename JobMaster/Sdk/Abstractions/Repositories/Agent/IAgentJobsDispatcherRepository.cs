@@ -17,7 +17,9 @@ internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareCompon
     
     string PushForProcessing(JobRawModel jobRaw);
     Task<string> PushForProcessingAsync(JobRawModel jobRaw);
-    
+
+    Task<IList<string>> BulkPushForProcessingAsync(string bucketId, IList<JobRawModel> jobRaw);
+
     Task<IList<JobRawModel>> PullForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
     
     Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs);

@@ -8,6 +8,18 @@ public sealed class CliOptions
     public required int WorkerCount { get; init; }
     public required int BucketsPerWorker { get; init; }
     public int? BucketBufferSize { get; init; }
+
+    /// <summary>Coordinator instances packed into the dedicated coordinator+drainer container.</summary>
+    public required int CoordinatorCount { get; init; }
+
+    /// <summary>Overrides <c>JobMasterDefaults.Worker.TransferBatchSize</c> (1000) on every coordinator
+    /// instance. Null leaves the SDK default in place.</summary>
+    public int? TransferBatchSize { get; init; }
+
+    /// <summary>When true, the coordinator+drainer container mirrors every log entry (including
+    /// Debug-level tick-timing logs, which are never persisted to the DB) to a JSONL file, copied out
+    /// into container-logs/ after the run.</summary>
+    public required bool EnableDebugJsonl { get; init; }
     public required bool SkipWarmUpTime { get; init; }
     public required TimeSpan Duration { get; init; }
     public required bool Smoke { get; init; }
@@ -52,6 +64,12 @@ public sealed class CliOptions
     public int? BurstTotalJobs { get; init; }
     public int BurstBatchSize { get; init; } = 100;
 
+    /// <summary>When set alongside <see cref="BurstTotalJobs"/>, every burst job is scheduled with
+    /// this fixed delay instead of immediately -- fires a burst of jobs that all become due at
+    /// roughly the same time, isolating "many jobs claimable/completing at once" from general
+    /// backlog size or concurrency. See <see cref="Common.Load.LoadGeneratorOptions.BurstDelay"/>.</summary>
+    public TimeSpan? BurstDelay { get; init; }
+
     /// <summary>Max time to wait for a burst to fully drain before giving up and reporting whatever
     /// didn't finish as lost -- burst runs have no DelayMax to derive a grace period from, unlike the
     /// paced test, so this is an explicit safety cap instead.</summary>
@@ -82,9 +100,13 @@ public sealed class CliOptions
         var sharedAgentConnection = false;
         int? burstTotalJobs = null;
         var burstBatchSize = 100;
+        double? burstDelayMinutes = null;
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
         var dbMemoryGb = 2.0;
+        var coordinatorCount = 4;
+        int? transferBatchSize = null;
+        var enableDebugJsonl = false;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -96,6 +118,9 @@ public sealed class CliOptions
                 case "--burst-batch-size":
                     burstBatchSize = int.Parse(args[++i]);
                     break;
+                case "--burst-delay-minutes":
+                    burstDelayMinutes = double.Parse(args[++i]);
+                    break;
                 case "--burst-max-wait-minutes":
                     burstMaxWaitMinutes = double.Parse(args[++i]);
                     break;
@@ -104,6 +129,15 @@ public sealed class CliOptions
                     break;
                 case "--db-memory-gb":
                     dbMemoryGb = double.Parse(args[++i]);
+                    break;
+                case "--coordinators":
+                    coordinatorCount = int.Parse(args[++i]);
+                    break;
+                case "--transfer-batch-size":
+                    transferBatchSize = int.Parse(args[++i]);
+                    break;
+                case "--debug-jsonl":
+                    enableDebugJsonl = true;
                     break;
                 case "--db":
                     dbEngine = args[++i].ToLowerInvariant() switch
@@ -193,6 +227,9 @@ public sealed class CliOptions
             WorkerCount = workers,
             BucketsPerWorker = bucketsPerWorker,
             BucketBufferSize = bucketBufferSize,
+            CoordinatorCount = coordinatorCount,
+            TransferBatchSize = transferBatchSize,
+            EnableDebugJsonl = enableDebugJsonl,
             SkipWarmUpTime = skipWarmUpTime,
             Duration = duration,
             Smoke = smoke,
@@ -209,6 +246,7 @@ public sealed class CliOptions
             SharedAgentConnection = sharedAgentConnection,
             BurstTotalJobs = burstTotalJobs,
             BurstBatchSize = burstBatchSize,
+            BurstDelay = burstDelayMinutes.HasValue ? TimeSpan.FromMinutes(burstDelayMinutes.Value) : null,
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,
             DbMemoryGb = dbMemoryGb

@@ -4,7 +4,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
-using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
@@ -47,25 +47,8 @@ internal static class RecurringScheduleConvertUtil
             StaticDefinitionLastEnsured = raw.StaticDefinitionLastEnsured,
         };
 
-        if (!string.IsNullOrEmpty(raw.MsgData))
-        {
-            var dict = InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(raw.MsgData);
-            entity.MsgData = new MessageData(dict);
-        }
-        else
-        {
-            entity.MsgData = new MessageData();
-        }
-        
-        if (!string.IsNullOrEmpty(raw.Metadata))
-        {
-            var metaDict = InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(raw.Metadata!);
-            entity.Metadata = new Metadata(metaDict);
-        }
-        else
-        {
-            entity.Metadata = new Metadata();
-        }
+        entity.MsgData = KeyValueBagUtil.DeserializeMessageData(raw.MsgData);
+        entity.Metadata = KeyValueBagUtil.DeserializeMetadata(raw.Metadata);
         
         // Version is persisted at the raw/persistence layers; propagate to the entity when present
         entity.Version = raw.Version;
@@ -86,8 +69,8 @@ internal static class RecurringScheduleConvertUtil
             ProfileId = s.ProfileId,
             Status = s.Status,
             RecurringScheduleType = s.RecurringScheduleType,
-            MsgData = InternalJobMasterSerializer.Serialize(s.MsgData.ToDictionary()),
-            Metadata = s.Metadata != null ? InternalJobMasterSerializer.Serialize(s.Metadata?.ToDictionary()) : "{}",
+            MsgData = KeyValueBagUtil.Serialize(s.MsgData),
+            Metadata = KeyValueBagUtil.Serialize(s.Metadata),
             Priority = s.Priority,
             MaxNumberOfRetries = s.MaxNumberOfRetries,
             BucketId = s.BucketId,
@@ -116,10 +99,6 @@ internal static class RecurringScheduleConvertUtil
     // Persistence helpers
     public static RecurringScheduleRawModel FromPersistence(RecurringSchedulePersistenceRecord d)
     {
-        static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
-        static DateTime? UtcN(DateTime? dt) => dt.HasValue ? DateTime.SpecifyKind(dt.Value, DateTimeKind.Utc) : (DateTime?)null;
-
-        var metadataDictionary = d.Metadata?.ToReadable().ToDictionary();
         var m = new RecurringScheduleRawModel(d.ClusterId)
         {
             Id = d.Id,
@@ -130,10 +109,10 @@ internal static class RecurringScheduleConvertUtil
             ProfileId = d.ProfileId,
             Status = (RecurringScheduleStatus)d.Status,
             RecurringScheduleType = (RecurringScheduleType)d.RecurringScheduleType,
-            StaticDefinitionLastEnsured = UtcN(d.StaticDefinitionLastEnsured),
-            TerminatedAt = UtcN(d.TerminatedAt),
+            StaticDefinitionLastEnsured = d.StaticDefinitionLastEnsured.AsUtc(),
+            TerminatedAt = d.TerminatedAt.AsUtc(),
             MsgData = string.IsNullOrEmpty(d.MsgData) ? "{}" : d.MsgData,
-            Metadata =d.Metadata is null ? null : InternalJobMasterSerializer.Serialize(metadataDictionary),
+            Metadata = d.MetadataJson,
             Priority = d.Priority.HasValue ? (JobMasterPriority?)d.Priority.Value : null,
             MaxNumberOfRetries = d.MaxNumberOfRetries,
             Timeout = d.TimeoutTicks.HasValue ? TimeSpan.FromTicks(d.TimeoutTicks.Value) : null,
@@ -142,12 +121,12 @@ internal static class RecurringScheduleConvertUtil
             AgentWorkerId = d.AgentWorkerId,
             PartitionLockId = d.PartitionLockId,
             HostId = d.HostId != null ? HostId.Recover(d.HostDisplayName ?? "", d.HostId) : null,
-            PartitionLockExpiresAt = UtcN(d.PartitionLockExpiresAt),
-            CreatedAt = Utc(d.CreatedAt),
-            StartAfter = UtcN(d.StartAfter),
-            EndBefore = UtcN(d.EndBefore),
-            LastPlanCoverageUntil = UtcN(d.LastPlanCoverageUntil),
-            LastExecutedPlan = UtcN(d.LastExecutedPlan),
+            PartitionLockExpiresAt = d.PartitionLockExpiresAt.AsUtc(),
+            CreatedAt = d.CreatedAt.AsUtc(),
+            StartAfter = d.StartAfter.AsUtc(),
+            EndBefore = d.EndBefore.AsUtc(),
+            LastPlanCoverageUntil = d.LastPlanCoverageUntil.AsUtc(),
+            LastExecutedPlan = d.LastExecutedPlan.AsUtc(),
             HasFailedOnLastPlanExecution = d.HasFailedOnLastPlanExecution,
             IsJobCancellationPending = d.IsJobCancellationPending,
             WorkerLane = d.WorkerLane,
@@ -160,8 +139,7 @@ internal static class RecurringScheduleConvertUtil
     public static RecurringSchedulePersistenceRecord ToPersistence(RecurringScheduleRawModel m)
     {
         
-        var dictionary = string.IsNullOrEmpty(m.Metadata) ? new Dictionary<string, object?>() : InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(m.Metadata!);
-        var writableMetadata = new Metadata(dictionary);
+        var writableMetadata = KeyValueBagUtil.DeserializeMetadata(m.Metadata);
         var metadataEntry = GenericRecordEntry.FromWritableMetadata(m.ClusterId, MasterGenericRecordGroupIds.RecurringScheduleMetadata, m.Id.ToString("N"), writableMetadata);
 
         return new RecurringSchedulePersistenceRecord
@@ -179,6 +157,7 @@ internal static class RecurringScheduleConvertUtil
             TerminatedAt = m.TerminatedAt,
             MsgData = string.IsNullOrEmpty(m.MsgData) ? "{}" : m.MsgData,
             Metadata = metadataEntry,
+            MetadataJson = string.IsNullOrEmpty(m.Metadata) ? null : m.Metadata,
             Priority = m.Priority.HasValue ? (int?)m.Priority.Value : null,
             MaxNumberOfRetries = m.MaxNumberOfRetries,
             TimeoutTicks = m.Timeout?.Ticks,
@@ -215,7 +194,7 @@ internal static class RecurringScheduleConvertUtil
             JobDefinitionId = recurringSchedule.JobDefinitionId,
             StartAfter = recurringSchedule.StartAfter,
             EndBefore = recurringSchedule.EndBefore,
-            Metadata = !string.IsNullOrEmpty(recurringSchedule.Metadata) ? new Metadata(InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(recurringSchedule.Metadata ?? "{}")) : Metadata.Empty,
+            Metadata = KeyValueBagUtil.DeserializeMetadata(recurringSchedule.Metadata).ToReadable(),
             WorkerLane = recurringSchedule.WorkerLane,
         };
     }

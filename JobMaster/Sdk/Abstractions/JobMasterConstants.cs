@@ -64,6 +64,12 @@ internal static class JobMasterConstants
 
     public const int MaxBatchSizeForBulkOperation = 50;
     public const int MaxAllowedRetries = 10;
+
+    /// <summary>Max distinct agent connections dispatched to concurrently -- each is a separate DB/broker.</summary>
+    public const int MaxParallelAgentConnectionDispatch = 10;
+
+    /// <summary>Max buckets dispatched to concurrently within a single agent connection.</summary>
+    public const int MaxParallelBucketDispatchPerAgentConnection = 5;
     public static readonly TimeSpan DefaultGracefulStopPeriod = TimeSpan.FromMinutes(15);
     
     /// <summary>

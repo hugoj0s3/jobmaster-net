@@ -1,3 +1,4 @@
+using System.Data;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -27,57 +28,88 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
 
     protected override string UpdateToLockTableHint => "WITH (UPDLOCK, READPAST)";
 
-    private string BuildMetadataEntryUpsertSql()
+    // SQL Server-specific: one multi-row UPDATE ... FROM ... JOIN (VALUES ...) instead of N
+    // sequential single-row UPDATEs. OUTPUT inserted.<id> gives back exactly which ids were
+    // touched in the same round trip, so no follow-up query is needed here (unlike MySQL).
+    public override async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
     {
-        var t2 = genericUtil.EntryTable(MasterGenericRecordGroupIds.JobMetadata);
-        var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
-        return $@"
-UPDATE {t2} WITH (UPDLOCK, SERIALIZABLE)
-SET expires_at = @ExpiresAt
-WHERE record_unique_id = @RecordUniqueId;
+        if (jobs.Count == 0) return Array.Empty<JobRawModel>();
 
-IF @@ROWCOUNT = 0
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM {t2} WITH (UPDLOCK, SERIALIZABLE) WHERE record_unique_id = @RecordUniqueId)
-    BEGIN
-        INSERT INTO {t2} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-        VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0);
-    END
-END";
-    }
+        var newVersions = jobs.ToDictionary(j => j.Id, _ => JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant());
 
-    private string BuildMetadataValuesUpsertSql()
-    {
-        var vt = genericUtil.EntryValueTable(MasterGenericRecordGroupIds.JobMetadata);
-        var cRecordId = genericUtil.ColVal(x => x.RecordUniqueId);
-        var cKeyName = genericUtil.ColVal(x => x.KeyName);
-        var cValueText = genericUtil.ColVal(x => x.ValueText);
-        var cValueBinary = genericUtil.ColVal(x => x.ValueBinary);
-        var cValueInt64 = genericUtil.ColVal(x => x.ValueInt64);
-        var cValueBool = genericUtil.ColVal(x => x.ValueBool);
-        var cValueDecimal = genericUtil.ColVal(x => x.ValueDecimal);
-        var cValueDateTime = genericUtil.ColVal(x => x.ValueDateTime);
-        var cValueGuid = genericUtil.ColVal(x => x.ValueGuid);
+        var p = new DynamicParameters();
+        p.Add("ClusterId", ClusterConnConfig.ClusterId, DbType.String);
+        var valuesRows = new List<string>(jobs.Count);
+        for (var i = 0; i < jobs.Count; i++)
+        {
+            var rec = JobRawModel.ToPersistence(jobs[i]);
+            var expectedVersion = rec.Version;
+            rec.Version = newVersions[jobs[i].Id];
+            AddBulkUpdateRowParams(p, i, rec, expectedVersion);
+            valuesRows.Add($"(@Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, " +
+                            $"@AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @NextPlanExecutionAt_{i}, " +
+                            $"@ScheduledAt_{i}, @MsgData_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, " +
+                            $"@MaxNumberOfRetries_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, " +
+                            $"@ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, " +
+                            $"@Version_{i}, @HostId_{i}, @HostDisplayName_{i}, @ExpectedVersion_{i})");
+        }
 
-        return $@"
-UPDATE {vt} WITH (UPDLOCK, SERIALIZABLE)
-SET {cValueText} = @ValueText,
-    {cValueBinary} = @ValueBinary,
-    {cValueInt64} = @ValueInt64,
-    {cValueBool} = @ValueBoolean,
-    {cValueDecimal} = @ValueDecimal,
-    {cValueDateTime} = @ValueDateTime,
-    {cValueGuid} = @ValueGuid
-WHERE {cRecordId} = @RecordUniqueId AND {cKeyName} = @KeyName;
+        var t = TableName();
+        var cId = Col(x => x.Id);
+        var sqlText = $@"
+UPDATE t WITH (UPDLOCK)
+SET {Col(x => x.JobDefinitionId)} = v.jobdefinitionid,
+    {Col(x => x.TriggerSourceType)} = v.triggersourcetype,
+    {Col(x => x.BucketId)} = v.bucketid,
+    {Col(x => x.AgentConnectionId)} = v.agentconnectionid,
+    {Col(x => x.AgentWorkerId)} = v.agentworkerid,
+    {Col(x => x.Priority)} = v.priority,
+    {Col(x => x.NextPlanExecutionAt)} = v.nextplanexecutionat,
+    {Col(x => x.ScheduledAt)} = v.scheduledat,
+    {Col(x => x.MsgData)} = v.msgdata,
+    {Col(x => x.Status)} = v.status,
+    {Col(x => x.NumberOfFailures)} = v.numberoffailures,
+    {Col(x => x.TimeoutTicks)} = v.timeoutticks,
+    {Col(x => x.MaxNumberOfRetries)} = v.maxnumberofretries,
+    {Col(x => x.SourceId)} = v.sourceid,
+    {Col(x => x.PartitionLockId)} = v.partitionlockid,
+    {Col(x => x.PartitionLockExpiresAt)} = v.partitionlockexpiresat,
+    {Col(x => x.ProcessDeadline)} = v.processdeadline,
+    {Col(x => x.ProcessStartedAt)} = v.processstartedat,
+    {Col(x => x.FinalizedAt)} = v.finalizedat,
+    {Col(x => x.WorkerLane)} = v.workerlane,
+    {Col(x => x.Version)} = v.version,
+    {Col(x => x.HostId)} = v.hostid,
+    {Col(x => x.HostDisplayName)} = v.hostdisplayname
+OUTPUT inserted.{cId}
+FROM {t} AS t
+JOIN (VALUES {string.Join(",\n", valuesRows)}) AS v(id, jobdefinitionid, triggersourcetype, bucketid,
+    agentconnectionid, agentworkerid, priority, nextplanexecutionat, scheduledat, msgdata, status,
+    numberoffailures, timeoutticks, maxnumberofretries, sourceid, partitionlockid, partitionlockexpiresat,
+    processdeadline, processstartedat, finalizedat, workerlane, version, hostid, hostdisplayname, expectedversion)
+    ON t.{cId} = v.id
+WHERE t.{Col(x => x.ClusterId)} = @ClusterId
+  AND t.{Col(x => x.Version)} = v.expectedversion;";
 
-IF @@ROWCOUNT = 0
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM {vt} WITH (UPDLOCK, SERIALIZABLE) WHERE {cRecordId} = @RecordUniqueId AND {cKeyName} = @KeyName)
-    BEGIN
-        INSERT INTO {vt} ({cRecordId}, {cKeyName}, {cValueText}, {cValueBinary}, {cValueInt64}, {cValueBool}, {cValueDecimal}, {cValueDateTime}, {cValueGuid})
-        VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @ValueBoolean, @ValueDecimal, @ValueDateTime, @ValueGuid);
-    END
-END";
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var updatedIds = new HashSet<Guid>(await conn.QueryAsync<Guid>(sqlText, p, trans));
+            trans.Commit();
+
+            var updated = jobs.Where(j => updatedIds.Contains(j.Id)).ToList();
+            foreach (var job in updated)
+            {
+                job.SetVersion(newVersions[job.Id]);
+            }
+            return updated;
+        }
+        catch
+        {
+            trans.SafeRollback();
+            throw;
+        }
     }
 
     private string BuildJobUpsertSql()
@@ -102,36 +134,6 @@ BEGIN
         INSERT INTO {t} ({cols}) VALUES ({vals});
     END
 END";
-    }
-
-    private static Dictionary<string, object?> BuildMetadataEntryArgs(SqlGenericRecordEntry sqlEntry)
-    {
-        return new Dictionary<string, object?>
-        {
-            { "RecordUniqueId", sqlEntry.RecordUniqueId },
-            { "ClusterId", sqlEntry.ClusterId },
-            { "GroupId", sqlEntry.GroupId },
-            { "EntryId", sqlEntry.EntryId },
-            { "EntryIdGuid", sqlEntry.EntryIdGuid },
-            { "CreatedAt", sqlEntry.CreatedAt },
-            { "ExpiresAt", sqlEntry.ExpiresAt }
-        };
-    }
-
-    private static IEnumerable<object> BuildMetadataValueRows(SqlGenericRecordEntry sqlEntry)
-    {
-        return sqlEntry.Values.Select(v => new
-        {
-            RecordUniqueId = sqlEntry.RecordUniqueId,
-            KeyName = v.KeyName,
-            ValueText = v.ValueText,
-            ValueBinary = v.ValueBinary,
-            ValueInt64 = v.ValueInt64,
-            ValueBoolean = v.ValueBool,
-            ValueDecimal = v.ValueDecimal,
-            ValueDateTime = v.ValueDateTime,
-            ValueGuid = v.ValueGuid
-        });
     }
 
 }

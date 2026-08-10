@@ -1,3 +1,5 @@
+using System.Collections.Concurrent;
+using System.Diagnostics;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -48,9 +50,9 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
     private readonly JobMasterLockKeys lockKeys;
 
+    // Fallbacks control.
     private PollingJobsExecutionRunner? fallBackRunner;
     private BucketModel? fallbackBucket;
-
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
     private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
 
@@ -99,6 +101,12 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         var startTimeUtc = DateTime.UtcNow;
         var durationToLock = JobMasterConstants.DurationToLockRecords;
         var cutOffTime = startTimeUtc.Add(durationToLock).Subtract(JobMasterConstants.ClockSkewPadding);
+
+        // The actual claim lease is deliberately longer (50%) than cutOffTime above -- cutOffTime is
+        // when THIS tick voluntarily stops doing more work, but a merely-slow tick that finishes just
+        // past it shouldn't already have its claim yanked by another coordinator; the buffer keeps
+        // those two thresholds from overlapping.
+        var lockExpiryDuration = TimeSpan.FromTicks(durationToLock.Ticks * 3 / 2);
         var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;
 
         var jobQueryCriteria = new JobQueryCriteria()
@@ -114,6 +122,9 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             },
         };
 
+        // Step 1: Probe -- cheap COUNT + MIN(NextPlanExecutionAt) check that decides whether to run
+        // now (imminent path) or defer to the scan-plan interval, and acquires the distributed lock
+        // for whichever path applies.
         var probeDiagnosticResult = await ProbeDiagnosticAsync(jobQueryCriteria, transientThreshold);
         if (probeDiagnosticResult.Action == ProbeDiagnosticAction.Skip)
             return OnTickResult.Skipped(this);
@@ -123,85 +134,37 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             LastAssignExecution = DateTime.UtcNow;
 
         jobQueryCriteria.CountLimit = probeDiagnosticResult.BatchSize;
-
         try
         {
-            var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, startTimeUtc.Add(durationToLock));
+            // Step 2: Acquire -- claim OnMaster jobs (PartitionLockId/Expiry set) up to the batch size.
+            var acquireSw = Stopwatch.StartNew();
+            var jobs = await AcquireJobsAsync(jobQueryCriteria, startTimeUtc.Add(lockExpiryDuration));
+            acquireSw.Stop();
             if (jobs.Count <= 0)
             {
                 return OnTickResult.Skipped(this);
             }
 
-            logger.Debug(
-                $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
-                JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+            // Step 3: In-memory assignment -- decide which bucket each job goes to.
+            var assignSw = Stopwatch.StartNew();
+            var (assignedJobs, bucketAssignments) = await AssignJobsToBucketsInMemoryAsync(jobs, cutOffTime, durationToLock, ct);
+            assignSw.Stop();
 
-            var bucketAssignments = new Dictionary<Guid, BucketModel>();
-            foreach (var job in new List<JobRawModel>(jobs))
-            {
-                var (result, bucket) = await HandleJobBucketAssignmentAsync(job, ct);
-                if (result == HandleJobBucketAssignmentResult.Canceled)
-                {
-                    break;
-                }
+            // Step 4: Bulk update on master -- flip assigned jobs from OnMaster to InBucket.
+            var bulkUpdateSw = Stopwatch.StartNew();
+            var updatedJobs = await BulkUpdateJobsOnMasterAsync(assignedJobs, cutOffTime, durationToLock, ct);
+            bulkUpdateSw.Stop();
 
-                if (result == HandleJobBucketAssignmentResult.Failed ||
-                    result == HandleJobBucketAssignmentResult.FallbackAssignment)
-                {
-                    jobs.Remove(job);
-                }
-
-                if (bucket != null)
-                {
-                    bucketAssignments[job.Id] = bucket;
-                }
-            }
-
-            var updatedJobs = new List<JobRawModel>();
-            foreach (var partition in jobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
-            {
-                var updated = await masterJobsService.BulkUpdateAsync(partition.ToList());
-                updatedJobs.AddRange(updated);
-            }
-
-            var timeRemaining = cutOffTime - DateTime.UtcNow;
-            using var batchTimeoutCts =
-                new CancellationTokenSource(timeRemaining > TimeSpan.FromSeconds(5)
-                    ? timeRemaining
-                    : TimeSpan.FromSeconds(5));
-
-            // Dispatch parallelism scales with how many distinct buckets this batch actually targets,
-            // floored at the old fixed value and capped at MaxBatchSizeForBulkOperation (the same
-            // batch-sizing constant used for the bulk update above) -- a fixed floor-less cap here
-            // throttled the whole cluster's dispatch rate regardless of how many buckets/workers
-            // existed downstream, but growing it unbounded with bucket count isn't safe either.
-            var maxParallelism = bucketAssignments.Values.Select(b => b.Id).Distinct().Count();
-            maxParallelism = Math.Max(maxParallelism, 5);
-            maxParallelism = Math.Min(maxParallelism, JobMasterConstants.MaxBatchSizeForBulkOperation);
-            var parallelOptions = new ParallelOptions()
-            {
-                CancellationToken = batchTimeoutCts.Token,
-                MaxDegreeOfParallelism = maxParallelism,
-            };
-
-            await JobMasterParallelUtil.ForEachAsync(
-                updatedJobs,
-                parallelOptions,
-                async (job, _) =>
-                {
-                    if (cutOffTime <= DateTime.UtcNow)
-                    {
-                        logger.Warn($"Assigning jobs to buckets is taking too long. Stopping early.",
-                            JobMasterLogCategory.AgentWorker,
-                            BackgroundAgentWorker.AgentWorkerId);
-                        return;
-                    }
-
-                    await DispatchJobToBucketAsync(bucketAssignments, job);
-                });
+            // Step 5: Dispatch -- push each updated job to its assigned bucket.
+            var dispatchSw = Stopwatch.StartNew();
+            await DispatchJobsToBucketsAsync(updatedJobs, bucketAssignments, ct);
+            dispatchSw.Stop();
 
             logger.Debug(
-                $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
+                $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. " +
+                $"acquireMs={acquireSw.ElapsedMilliseconds} assignMs={assignSw.ElapsedMilliseconds} " +
+                $"bulkUpdateMs={bulkUpdateSw.ElapsedMilliseconds} dispatchMs={dispatchSw.ElapsedMilliseconds} " +
+                $"JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
                 JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
             return OnTickResult.Success(this);
@@ -214,6 +177,240 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                     probeDiagnosticResult.LockToken);
             }
         }
+    }
+
+    // Step 1: Probe -- a cheap COUNT + MIN(NextPlanExecutionAt) check that decides whether to run
+    // now (imminent path, time-bucketed distributed lock) or defer to the scan-plan interval
+    // (scan-plan path, slot-based distributed lock), acquiring whichever lock applies.
+    private async Task<ProbeDiagnosticResult> ProbeDiagnosticAsync(JobQueryCriteria jobQueryCriteria,
+        TimeSpan transientThreshold)
+    {
+        var durationToLock = JobMasterConstants.DurationToLockRecords.Add(TimeSpan.FromMinutes(1));
+        var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;
+        var probeResult = await this.masterJobsService.ProbeForAcquireAsync(jobQueryCriteria);
+
+        if (probeResult.MinNextPlanExecutionAt.HasValue &&
+            probeResult.MinNextPlanExecutionAt <= DateTime.UtcNow.AddSeconds(ProbeWindowInSeconds))
+        {
+            var windowKey = GetProbeWindowKey(probeResult.MinNextPlanExecutionAt.Value);
+            var lockKey = lockKeys.BucketAssignerImminentLock(windowKey);
+            var token = this.masterDistributedLockerService.TryLock(lockKey, durationToLock);
+            if (!string.IsNullOrEmpty(token))
+            {
+                return ProbeDiagnosticResult.AssignImminent(transferBatchSize, lockKey, token!);
+            }
+
+            return ProbeDiagnosticResult.Locked();
+        }
+
+        var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
+        if (workerCount <= 0)
+        {
+            workerCount = 1;
+        }
+
+        var scanResult = ScanPlanner.ComputeScanPlanHalfWindow(
+            probeResult.Count,
+            workerCount,
+            transferBatchSize,
+            transientThreshold,
+            lockerLane: 0);
+
+        if ((DateTime.UtcNow - LastAssignExecution) < scanResult.Interval)
+        {
+            return ProbeDiagnosticResult.Skip();
+        }
+
+        var randomKey = JobMasterRandomUtil.GetInt(scanResult.LockerMin, scanResult.LockerMax + 1);
+        var lockKey2 = lockKeys.BucketAssignerLock(randomKey);
+        var token2 = this.masterDistributedLockerService.TryLock(lockKey2, durationToLock);
+        if (!string.IsNullOrEmpty(token2))
+        {
+            return ProbeDiagnosticResult.Assign(transferBatchSize, lockKey2, token2!);
+        }
+
+        return ProbeDiagnosticResult.Locked();
+    }
+
+    // Step 2: Acquire -- claims up to jobQueryCriteria.CountLimit OnMaster jobs by setting their
+    // PartitionLockId/Expiry, without changing their Status.
+    private async Task<IList<JobRawModel>> AcquireJobsAsync(JobQueryCriteria jobQueryCriteria, DateTime lockExpiresAtUtc)
+    {
+        var jobs = await masterJobsService.AcquireAndFetchAsync(jobQueryCriteria, lockExpiresAtUtc);
+
+        if (jobs.Count > 0)
+        {
+            logger.Debug(
+                $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
+                JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+        }
+
+        return jobs;
+    }
+
+    // Step 3: In-memory assignment -- decides a target bucket for each claimed job (or routes it to
+    // fallback assignment) without touching its Status. Jobs are claimed (PartitionLockId/Expiry set)
+    // but stay Status=OnMaster until Step 4 flips them to InBucket -- so this whole window, up to that
+    // point, is where a slow tick risks its claim lease expiring while another coordinator re-acquires
+    // the same rows, causing duplicates. If we're already past cutOffTime, the remaining jobs are left
+    // completely untouched (still OnMaster with their original claim) rather than pushing on -- they're
+    // safe to expire naturally and get re-acquired cleanly next time, unlike anything that's already
+    // been flipped to InBucket.
+    private async Task<(List<JobRawModel> AssignedJobs, Dictionary<Guid, BucketModel> BucketAssignments)> AssignJobsToBucketsInMemoryAsync(
+        IList<JobRawModel> jobs, DateTime cutOffTime, TimeSpan durationToLock, CancellationToken ct)
+    {
+        var assignedJobs = new List<JobRawModel>(jobs.Count);
+        var bucketAssignments = new Dictionary<Guid, BucketModel>();
+        var jobIdsNeedingLockRelease = new List<Guid>();
+        var assignmentTimedOut = false;
+
+        foreach (var job in jobs)
+        {
+            if (DateTime.UtcNow >= cutOffTime)
+            {
+                if (!assignmentTimedOut)
+                {
+                    assignmentTimedOut = true;
+                    logger.Warn(
+                        $"AssignJobsToBucketsRunner: bucket assignment exceeded the {durationToLock} claim lock duration. " +
+                        "Stopping early -- remaining jobs are left untouched (still claimed OnMaster) and will be re-acquired safely once the lock lapses.",
+                        JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                }
+
+                continue;
+            }
+
+            var (result, bucket) = await HandleJobBucketAssignmentAsync(job, ct, jobIdsNeedingLockRelease);
+            if (result == HandleJobBucketAssignmentResult.Canceled)
+            {
+                break;
+            }
+
+            if (result == HandleJobBucketAssignmentResult.Success)
+            {
+                assignedJobs.Add(job);
+            }
+
+            if (bucket != null)
+            {
+                bucketAssignments[job.Id] = bucket;
+            }
+        }
+
+        // Batched instead of one release call per job -- this path can fire for many jobs in a
+        // single tick when buckets are unavailable/at capacity, and each release now also
+        // contends for the same acquire throttler as AcquireAndFetchAsync/BulkUpdateAsync.
+        foreach (var partition in jobIdsNeedingLockRelease.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        {
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.ReleasePartitionLock(partition.ToList()), useAcquireThrottler: true);
+        }
+
+        return (assignedJobs, bucketAssignments);
+    }
+
+    // Step 4: Bulk update on master -- flips each assigned job's Status from OnMaster to InBucket,
+    // partitioned to respect the bulk-operation batch size.
+    private async Task<List<JobRawModel>> BulkUpdateJobsOnMasterAsync(
+        List<JobRawModel> assignedJobs, DateTime cutOffTime, TimeSpan durationToLock, CancellationToken ct)
+    {
+        var updatedJobs = new List<JobRawModel>();
+        foreach (var partition in assignedJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        {
+            if (DateTime.UtcNow >= cutOffTime)
+            {
+                logger.Warn(
+                    $"AssignJobsToBucketsRunner: bulk-update phase exceeded the {durationToLock} claim lock duration. " +
+                    "Stopping early -- remaining jobs are left untouched (still claimed OnMaster) and will be re-acquired safely once the lock lapses.",
+                    JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+                break;
+            }
+
+            // useAcquireThrottler: true routes this through the same 1-at-a-time, per-cluster
+            // (all coordinators) throttler as AcquireAndFetchAsync -- otherwise this used the
+            // general, much-higher-capacity throttler, letting two coordinators' bulk updates
+            // and acquires run fully concurrently against each other.
+            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList(), useAcquireThrottler: true);
+            updatedJobs.AddRange(updated);
+
+            // Small per-partition jitter so this coordinator's back-to-back UPDATEs don't stay
+            // phase-locked with another coordinator's own partition loop for the whole bulk-update
+            // phase -- cheap since each partition is one multi-row UPDATE, not many single-row ones.
+            await Task.Delay(TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(0, 11)), ct);
+        }
+
+        return updatedJobs;
+    }
+
+    // Step 5: Dispatch -- pushes each updated job to its assigned bucket. Jobs that fail to dispatch
+    // are moved back to OnMaster (HeldOnMaster) so they're re-acquired cleanly next tick instead of
+    // staying stuck InBucket with a stale bucket/lock assignment.
+    private async Task DispatchJobsToBucketsAsync(
+        List<JobRawModel> updatedJobs, Dictionary<Guid, BucketModel> bucketAssignments, CancellationToken ct)
+    {
+        // Grouping by bucket and partitioning happen here rather than inside the dispatcher so a
+        // failed partition only holds back that partition's jobs, not the whole tick's batch.
+        var jobsByBucket = new Dictionary<string, (BucketModel Bucket, List<JobRawModel> Jobs)>();
+        foreach (var job in updatedJobs)
+        {
+            if (!bucketAssignments.TryGetValue(job.Id, out var bucket))
+            {
+                continue;
+            }
+
+            if (!jobsByBucket.TryGetValue(bucket.Id, out var entry))
+            {
+                entry = (bucket, new List<JobRawModel>());
+                jobsByBucket[bucket.Id] = entry;
+            }
+
+            entry.Jobs.Add(job);
+        }
+
+        // Two-level parallelism: distinct agent connections are separate DBs/brokers, so they
+        // fan out first (capped so a huge cluster doesn't open too many connections at once);
+        // buckets within one agent connection fan out too, bounded lower since they share that
+        // connection's own OperationThrottler.
+        var bucketGroupsByAgentConnection = jobsByBucket.Values
+            .GroupBy(entry => entry.Bucket.AgentConnectionId.IdValue)
+            .ToList();
+
+        var agentConnectionParallelOptions = new ParallelOptions
+        {
+            CancellationToken = ct,
+            MaxDegreeOfParallelism = JobMasterConstants.MaxParallelAgentConnectionDispatch,
+        };
+
+        await JobMasterParallelUtil.ForEachAsync(bucketGroupsByAgentConnection, agentConnectionParallelOptions,
+            async (agentConnectionGroup, _) =>
+            {
+                var bucketParallelOptions = new ParallelOptions
+                {
+                    CancellationToken = ct,
+                    MaxDegreeOfParallelism = JobMasterConstants.MaxParallelBucketDispatchPerAgentConnection,
+                };
+
+                await JobMasterParallelUtil.ForEachAsync(agentConnectionGroup, bucketParallelOptions,
+                    async (entry, __) =>
+                    {
+                        var (bucket, bucketJobs) = entry;
+                        foreach (var partition in bucketJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+                        {
+                            try
+                            {
+                                await BackgroundAgentWorker.WorkerClusterOperations.BulkDispatchJobsToBucketAsync(
+                                    BackgroundAgentWorker, bucket, partition.ToList());
+                            }
+                            catch (Exception ex)
+                            {
+                                logger.Error(
+                                    $"Failed to dispatch partition of {partition.Count} jobs to bucket {bucket.Id}. Continuing with remaining partitions.",
+                                    JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
+                                var idsToHeldOnMaster = partition.Select(x => x.Id).ToList();
+                                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), useAcquireThrottler: true);
+                            }
+                        }
+                    });
+            });
     }
 
     public override async Task OnStopAsync()
@@ -239,37 +436,16 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     }
 
 
-    private async Task DispatchJobToBucketAsync(IReadOnlyDictionary<Guid, BucketModel> jobIdByBucketModel,
-        JobRawModel job)
-    {
-        if (!jobIdByBucketModel.TryGetValue(job.Id, out var bucket))
-        {
-            return;
-        }
-
-        logger.Debug($"Assigning job {job.Id} to bucket {bucket.Id}", JobMasterLogCategory.Job, job.Id);
-
-        try
-        {
-            await BackgroundAgentWorker.WorkerClusterOperations.DispatchJobToBucketAsync(this.BackgroundAgentWorker,
-                job, bucket);
-        }
-        catch (Exception e)
-        {
-            logger.Error($"Failed to assign job to bucket. JobId={job.Id}", JobMasterLogCategory.Job, job.Id,
-                exception: e);
-        }
-    }
-
     private async Task<(HandleJobBucketAssignmentResult, BucketModel?)> HandleJobBucketAssignmentAsync(
         JobRawModel job,
-        CancellationToken ct)
+        CancellationToken ct,
+        List<Guid> jobIdsNeedingLockRelease)
     {
         if (job.Status != JobMasterJobStatus.OnMaster)
         {
             logger.Error($"Job {job.Id} is not held on master. This is not allowed.", JobMasterLogCategory.Job,
                 job.Id);
-            masterJobsService.ReleasePartitionLock(job.Id);
+            jobIdsNeedingLockRelease.Add(job.Id);
             return (HandleJobBucketAssignmentResult.Failed, null);
         }
 
@@ -278,11 +454,21 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             return (HandleJobBucketAssignmentResult.Canceled, null);
         }
 
-        var bucket = await GetBucketAvailableForJobAsync(job);
+        var bucket = await masterBucketsService.SelectBucketAsync(
+            JobMasterConstants.BucketFastAllowDiscrepancy,
+            job.Priority,
+            job.WorkerLane);
+
         if (bucket is null)
         {
-            await HandleJobFallbackAssignmentAsync(job);
-            return (HandleJobBucketAssignmentResult.FallbackAssignment, null);
+            // No standard bucket available. HandleJobFallbackAssignmentAsync either assigns the
+            // fallback bucket in-memory (same as a normal assignment, below) so it flows through
+            // the same bulk-update/dispatch steps as any other job, or returns null to delay the
+            // job and queue its lock for release instead.
+            bucket = await HandleJobFallbackAssignmentAsync(job, jobIdsNeedingLockRelease);
+            return bucket != null
+                ? (HandleJobBucketAssignmentResult.Success, bucket)
+                : (HandleJobBucketAssignmentResult.Failed, null);
         }
 
         bucketAssignFirstFailure.Remove(BucketFailureKey(job));
@@ -291,7 +477,10 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         return (HandleJobBucketAssignmentResult.Success, bucket);
     }
 
-    private async Task HandleJobFallbackAssignmentAsync(JobRawModel job)
+    // Returns the fallback bucket once NoBucketFallbackThreshold has elapsed with no standard
+    // bucket found, or null while still within the threshold (the job is delayed and its lock
+    // queued for release instead).
+    private async Task<BucketModel?> HandleJobFallbackAssignmentAsync(JobRawModel job, List<Guid> jobIdsNeedingLockRelease)
     {
         var bucketKey = BucketFailureKey(job);
         if (!bucketAssignFirstFailure.TryGetValue(bucketKey, out var firstFailure))
@@ -311,9 +500,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             var bucket = await EnsureFallbackBucketAsync();
             job.AdvanceNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold);
             job.AssignToBucket(bucket);
-            await masterJobsService.UpdateAsync(job);
-            await DispatchJobToBucketAsync(new Dictionary<Guid, BucketModel> { [job.Id] = bucket }, job);
-            return;
+            return bucket;
         }
         else
         {
@@ -324,17 +511,10 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 JobMasterLogCategory.Job, job.Id);
         }
 
-        masterJobsService.ReleasePartitionLock(job.Id);
+        jobIdsNeedingLockRelease.Add(job.Id);
+        return null;
     }
-
-    private async Task<BucketModel?> GetBucketAvailableForJobAsync(JobRawModel job)
-    {
-        return await masterBucketsService.SelectBucketAsync(
-            JobMasterConstants.BucketFastAllowDiscrepancy,
-            job.Priority,
-            job.WorkerLane);
-    }
-
+    
     private async Task<BucketModel> EnsureFallbackBucketAsync()
     {
         if (fallbackBucket is not null)
@@ -415,58 +595,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private enum HandleJobBucketAssignmentResult
     {
         Success,
-        FallbackAssignment,
         Failed,
         Canceled
-    }
-
-    private async Task<ProbeDiagnosticResult> ProbeDiagnosticAsync(JobQueryCriteria jobQueryCriteria,
-        TimeSpan transientThreshold)
-    {
-        var durationToLock = JobMasterConstants.DurationToLockRecords.Add(TimeSpan.FromMinutes(1));
-        var transferBatchSize = BackgroundAgentWorker.TransferBatchSize;
-        var probeResult = await this.masterJobsService.ProbeForAcquireAsync(jobQueryCriteria);
-
-        if (probeResult.MinNextPlanExecutionAt.HasValue &&
-            probeResult.MinNextPlanExecutionAt <= DateTime.UtcNow.AddSeconds(ProbeWindowInSeconds))
-        {
-            var windowKey = GetProbeWindowKey(probeResult.MinNextPlanExecutionAt.Value);
-            var lockKey = lockKeys.BucketAssignerImminentLock(windowKey);
-            var token = this.masterDistributedLockerService.TryLock(lockKey, durationToLock);
-            if (!string.IsNullOrEmpty(token))
-            {
-                return ProbeDiagnosticResult.AssignImminent(transferBatchSize, lockKey, token!);
-            }
-
-            return ProbeDiagnosticResult.Locked();
-        }
-
-        var workerCount = await BackgroundAgentWorker.WorkerClusterOperations.CountActiveCoordinatorWorkersAsync();
-        if (workerCount <= 0)
-        {
-            workerCount = 1;
-        }
-
-        var scanResult = ScanPlanner.ComputeScanPlanHalfWindow(
-            probeResult.Count,
-            workerCount,
-            transferBatchSize,
-            transientThreshold,
-            lockerLane: 0);
-
-        if ((DateTime.UtcNow - LastAssignExecution) < scanResult.Interval)
-        {
-            return ProbeDiagnosticResult.Skip();
-        }
-
-        var randomKey = JobMasterRandomUtil.GetInt(scanResult.LockerMin, scanResult.LockerMax + 1);
-        var lockKey2 = lockKeys.BucketAssignerLock(randomKey);
-        var token2 = this.masterDistributedLockerService.TryLock(lockKey2, durationToLock);
-        if (!string.IsNullOrEmpty(token2))
-        {
-            return ProbeDiagnosticResult.Assign(transferBatchSize, lockKey2, token2!);
-        }
-
-        return ProbeDiagnosticResult.Locked();
     }
 }

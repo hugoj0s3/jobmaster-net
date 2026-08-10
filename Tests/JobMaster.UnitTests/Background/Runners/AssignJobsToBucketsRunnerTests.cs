@@ -123,7 +123,7 @@ public class AssignJobsToBucketsRunnerTests
     // ── Fallback bucket ───────────────────────────────────────────────────────
 
     [Fact]
-    public async Task HandleJobFallbackAssignmentAsync_WhenThresholdElapsed_CreatesFallbackBucketOnReservedConnectionAndDispatches()
+    public async Task HandleJobFallbackAssignmentAsync_WhenThresholdElapsed_ReturnsFallbackBucketOnReservedConnectionAndAssignsJobToIt()
     {
         var f = RunnerFixture.Create();
         f.ClusterConfig.Config = ActiveClusterConfig();
@@ -149,7 +149,11 @@ public class AssignJobsToBucketsRunnerTests
 
         try
         {
-            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+            // Assigns the fallback bucket in-memory and returns it -- it no longer persists or
+            // dispatches the job itself; that now flows through the runner's normal bulk-update
+            // and dispatch steps, same as any other bucket assignment.
+            var resultTask = (Task<BucketModel?>)handleFallbackMethod.Invoke(runner, new object[] { job, new List<Guid>() })!;
+            var returnedBucket = await resultTask;
 
             var fallbackBucket = f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
                 .Subject;
@@ -157,12 +161,10 @@ public class AssignJobsToBucketsRunnerTests
             fallbackBucket.AgentConnectionId.ClusterId.Should().Be(f.ClusterId);
             fallbackBucket.Priority.Should().Be(JobMasterPriority.Critical);
 
-            f.WorkerClusterOps.Verify(
-                x => x.DispatchJobToBucketAsync(
-                    f.Worker.Object,
-                    It.Is<JobRawModel>(j => j.Id == job.Id),
-                    It.Is<BucketModel>(b => b.Id == fallbackBucket.Id)),
-                Times.Once);
+            returnedBucket.Should().NotBeNull();
+            returnedBucket!.Id.Should().Be(fallbackBucket.Id);
+            job.Status.Should().Be(JobMasterJobStatus.InBucket);
+            job.BucketId.Should().Be(fallbackBucket.Id);
         }
         finally
         {
@@ -201,7 +203,7 @@ public class AssignJobsToBucketsRunnerTests
 
         try
         {
-            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job, new List<Guid>() })!;
 
             f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
                 .Subject.Priority.Should().Be(JobMasterPriority.High);
@@ -246,7 +248,7 @@ public class AssignJobsToBucketsRunnerTests
 
         try
         {
-            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job })!;
+            await (Task)handleFallbackMethod.Invoke(runner, new object[] { job, new List<Guid>() })!;
 
             f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
                 .Subject.Priority.Should().Be(JobMasterPriority.Medium);

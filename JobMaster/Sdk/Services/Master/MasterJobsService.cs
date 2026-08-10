@@ -20,7 +20,12 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     private readonly IKnownExceptionIdentifier exceptionIdentifier;
     private OperationThrottler operationThrottler;
     
-    // Less concurrent for acquire operations is better for performance only 1 per 5000ms.
+    // Serializes AcquireAndFetchAsync/BulkUpdateAsync (when useAcquireThrottler is set) to 1-at-a-time --
+    // this is a per-cluster singleton (see ClusterConfigBuilder's AddSingleton registration), so this
+    // throttler is shared by every coordinator instance in the cluster, not just one. Confirmed via
+    // benchmark this reduces one coordinator's bulk-update phase overlapping with another's acquire
+    // (previously bulkUpdateAsync used the general, much-higher-capacity operationThrottler, which let
+    // two coordinators' bulk updates and acquires run fully concurrently against each other).
     private OperationThrottler acquireOperationThrottler = new (1, 5000);
     private RetryDeadlockPolicy retryDeadlockPolicy;
 
@@ -129,11 +134,6 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return await retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
     }
 
-    public void ReleasePartitionLock(Guid jobId)
-    {
-        retryDeadlockPolicy.Exec(() => acquireOperationThrottler.Exec(() => masterJobsRepository.ReleasePartitionLock(jobId)));
-    }
-
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
         return operationThrottler.Exec(() => masterJobsRepository.Query(queryCriteria));
@@ -196,16 +196,18 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return job.Version == expectedVersion;
     }
 
-    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false)
     {
         if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
-        await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
+        var throttler = useAcquireThrottler ? acquireOperationThrottler : operationThrottler;
+        await throttler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
     }
 
-    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false)
     {
         if (jobs.Count == 0) return Array.Empty<JobRawModel>();
-        return await operationThrottler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
+        var throttler = useAcquireThrottler ? acquireOperationThrottler : operationThrottler;
+        return await throttler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
     }
     
     

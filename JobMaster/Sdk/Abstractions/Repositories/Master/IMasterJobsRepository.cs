@@ -30,8 +30,6 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     /// </summary>
     Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria queryCriteria);
     
-    void ReleasePartitionLock(Guid jobId);
-    
     Task BulkUpdateAsync(BulkJobUpdateRequest request);
     
     Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels);

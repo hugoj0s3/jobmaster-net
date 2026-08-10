@@ -24,6 +24,12 @@ internal sealed class ClusterJsonConfig
     /// "Medium" cannot be disabled.
     /// </summary>
     public List<string>? DisabledPriorities { get; set; }
+
+    /// <summary>
+    /// When set, mirrors every log entry (including Debug-level, which is never persisted to the
+    /// DB) to this JSONL file path. See <see cref="JobMaster.Sdk.Abstractions.Ioc.Selectors.IClusterConfigSelector.DebugJsonlFileLogger"/>.
+    /// </summary>
+    public string? DebugJsonlFilePath { get; set; }
     public List<AgentConnectionJsonConfig>? AgentConnections { get; set; }
     public List<WorkerJsonConfig>? Workers { get; set; }
 }

@@ -22,7 +22,7 @@ internal class KeyValueBag
     public void SetCharValue(string key, char value) => Set(key, value);
     public void SetBoolValue(string key, bool value) => Set(key, value);
     public void SetDoubleValue(string key, double value) => Set(key, value);
-    public void SetUtcDateTimeValue(string key, DateTime value) => Set(key, value.ToUniversalTime());
+    public void SetDateTimeValue(string key, DateTime value) => Set(key, value);
     public void SetEnumValue<TEnum>(string key, TEnum value) where TEnum : struct, Enum => Set(key, value);
     public void SetByteArrayValue(string key, byte[] value) => Set(key, value);
     public void SetDecimalValue(string key, decimal value) => Set(key, value);
@@ -38,12 +38,7 @@ internal class KeyValueBag
         var json = JobMasterMessageJson.Serialize<T>(value!);
         SetStringValue(key, json);
     }
-
-    private void Set(string key, object? value)
-    {
-        values[key] = value;
-    }
-
+    
     // ========= Read API (TryGet*) =========
     public string? TryGetStringValue(string key)
     {
@@ -160,6 +155,11 @@ internal class KeyValueBag
     public IDictionary<string, object?> ToDictionary()
     {
         return new Dictionary<string, object?>(values);
+    }
+    
+    private void Set(string key, object? value)
+    {
+        values[key] = value;
     }
 
     // ========= Helpers =========

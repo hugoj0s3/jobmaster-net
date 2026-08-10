@@ -27,8 +27,6 @@ internal static class MasterGenericRecordGroupIds
     
     public const string JobMetadata = "JobMasterMetadata";
     public const string RecurringScheduleMetadata = "RecurringScheduleMetadata";
-    
-    public const string JobExecution = "JobExecution";
 }
 
 internal class GenericRecordEntry : JobMasterBaseModel
@@ -280,7 +278,7 @@ internal class GenericRecordEntry : JobMasterBaseModel
         
         if (t == typeof(DateTime))
         {
-            if (stored is DateTime dt) return DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+            if (stored is DateTime dt) return dt.Kind == DateTimeKind.Utc ? dt : dt.ToUniversalTime();
             var s = stored.ToString()!;
             return DateTime.Parse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind).ToUniversalTime();
         }

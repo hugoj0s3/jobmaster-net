@@ -104,14 +104,30 @@ internal static class InternalJobMasterSerializer
                 // If the JSON string looks like an ISO-8601 timestamp, normalize it to a DateTime.
                 // This enables typed storage/querying for metadata DateTime filters.
                 // We keep other strings as-is.
+                //
+                // RoundtripKind figures out the Kind from the string itself: a "Z" suffix parses as
+                // Utc, an explicit numeric offset parses as Local (converted to this machine's local
+                // time, same as DateTime.Parse always does for offset strings), and no timezone info
+                // at all parses as Unspecified. Do NOT relabel the result to Utc after the fact --
+                // Ticks only means what its Kind says, so slapping DateTimeKind.Utc onto Local-kind
+                // ticks silently shifts the instant by the local UTC offset instead of converting it.
                 if (s.Contains('T') && DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
                 {
-                    return new DateTime(dto.Ticks, DateTimeKind.Utc);
+                    return dto;
                 }
-                
+
                 if (s.Contains('T') && DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto2))
                 {
                     return dto2.UtcDateTime;
+                }
+
+                // Same idea for Guid: cheap shape pre-check (canonical "8-4-4-4-12" hyphen
+                // positions) before bothering to ask TryParse, so ordinary strings skip the
+                // parse attempt entirely.
+                if (s!.Length == 36 && s[8] == '-' && s[13] == '-' && s[18] == '-' && s[23] == '-'
+                    && Guid.TryParse(s, out var gg))
+                {
+                    return gg;
                 }
 
                 return s;

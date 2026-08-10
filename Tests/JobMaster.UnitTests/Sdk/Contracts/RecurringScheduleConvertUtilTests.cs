@@ -30,7 +30,10 @@ public class RecurringScheduleConvertUtilTests
     public void RecurringScheduleRawModel_And_RecurringSchedulePersistenceRecord_ShouldHaveMatchingPublicPropertyNames_ForConversion()
     {
         var rawProps = GetRelevantPublicPropertyNames(typeof(RecurringScheduleRawModel), "IsValid");
-        var recordProps = GetRelevantPublicPropertyNames(typeof(RecurringSchedulePersistenceRecord));
+        // MetadataJson is a persistence-only optimization column (avoids a LEFT JOIN on reads) with
+        // no RawModel counterpart -- RawModel's Metadata (string) is what FromPersistence/ToPersistence
+        // actually round-trip against it.
+        var recordProps = GetRelevantPublicPropertyNames(typeof(RecurringSchedulePersistenceRecord), "MetadataJson");
 
         static string Normalize(string name)
         {
@@ -157,6 +160,9 @@ public class RecurringScheduleConvertUtilTests
                 MasterGenericRecordGroupIds.RecurringScheduleMetadata,
                 "e",
                 WritableMetadata.New().SetStringValue("m", "x")),
+            // A real repository read populates MetadataJson directly (no more LEFT JOIN
+            // reconstruction of Metadata) -- FromPersistence reads from this, not Metadata.
+            MetadataJson = InternalJobMasterSerializer.Serialize(WritableMetadata.New().SetStringValue("m", "x").ToDictionary()),
             Priority = (int)JobMasterPriority.High,
             MaxNumberOfRetries = 3,
             TimeoutTicks = TimeSpan.FromSeconds(7).Ticks,

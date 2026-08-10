@@ -115,6 +115,9 @@ public class JobConvertUtilTests
                 "g",
                 "e",
                 WritableMetadata.New().SetStringValue("m", "x")),
+            // A real repository read populates MetadataJson directly (no more LEFT JOIN
+            // reconstruction of Metadata) -- FromPersistence reads from this, not Metadata.
+            MetadataJson = InternalJobMasterSerializer.Serialize(WritableMetadata.New().SetStringValue("m", "x").ToDictionary()),
             Status = (int)JobMasterJobStatus.OnMaster,
             NumberOfFailures = 2,
             TimeoutTicks = TimeSpan.FromSeconds(7).Ticks,

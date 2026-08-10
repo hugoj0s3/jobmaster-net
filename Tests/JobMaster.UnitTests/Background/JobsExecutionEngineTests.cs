@@ -338,7 +338,7 @@ public class JobsExecutionEngineTests
         var f = JobsExecutionEngineFixture.Create();
         await f.Engine.TryOnBoardingJobAsync(JobsExecutionEngineFixture.CreateInBucketJob());
 
-        f.Jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<BulkJobUpdateRequest>()))
+        f.Jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<BulkJobUpdateRequest>(), It.IsAny<bool>()))
             .ThrowsAsync(new Exception("db unavailable"));
 
         var act = async () => await f.Engine.FlushToMasterAsync();

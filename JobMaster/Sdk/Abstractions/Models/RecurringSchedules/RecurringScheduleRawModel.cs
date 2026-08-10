@@ -7,7 +7,6 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
-using JobMaster.Sdk.Abstractions.Serialization;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
@@ -282,7 +281,7 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         StartAfter = definition.StartAfter;
         EndBefore = definition.EndBefore;
         
-        Metadata = Metadata = definition.Metadata != null ? InternalJobMasterSerializer.Serialize(definition.Metadata?.ToDictionary()) : "{}";
+        Metadata = KeyValueBagUtil.Serialize(definition.Metadata);
 
         Status =  (EndBefore is null || EndBefore > DateTime.UtcNow) ? RecurringScheduleStatus.Active : RecurringScheduleStatus.Inactive;
         StaticDefinitionLastEnsured = DateTime.UtcNow;

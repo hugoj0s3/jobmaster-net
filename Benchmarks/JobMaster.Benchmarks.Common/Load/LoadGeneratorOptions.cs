@@ -53,4 +53,11 @@ public sealed class LoadGeneratorOptions
     public int? BurstTotalJobs { get; init; }
 
     public int BurstBatchSize { get; init; } = 100;
+
+    /// <summary>When set alongside <see cref="BurstTotalJobs"/>, every burst job is scheduled with
+    /// this fixed delay instead of immediately -- fires a burst of jobs that all become due at
+    /// roughly the same time, rather than a flood of already-due jobs. Used to isolate whether a
+    /// slowdown comes from many jobs becoming claimable/completing at once versus general backlog
+    /// size or concurrency.</summary>
+    public TimeSpan? BurstDelay { get; init; }
 }

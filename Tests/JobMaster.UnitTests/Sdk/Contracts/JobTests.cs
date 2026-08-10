@@ -196,7 +196,6 @@ public class JobTests
         var clusterId = "cluster";
         var guid = Guid.Parse("8e8fd3b4-1c3b-4a2b-9d86-3c28b7c7f7b1");
         var dt = new DateTime(2025, 01, 02, 03, 04, 05, DateTimeKind.Utc);
-        var bytes = new byte[] { 1, 2, 3, 4 };
 
         var metadata = WritableMetadata.New()
             .SetStringValue("str", "hello")
@@ -208,10 +207,8 @@ public class JobTests
             .SetBoolValue("bool", true)
             .SetDoubleValue("double", 1.5)
             .SetDecimalValue("decimal", 12.34m)
-            .SetUtcDateTimeValue("dt", dt)
-            .SetGuidValue("guid", guid)
-            .SetEnumValue("enum", JobMasterPriority.High)
-            .SetByteArrayValue("bytes", bytes);
+            .SetDateTimeValue("dt", dt)
+            .SetGuidValue("guid", guid);
 
         var job = Job.New(
             clusterId,
@@ -230,8 +227,6 @@ public class JobTests
         r.GetDecimalValue("decimal").Should().Be(12.34m);
         r.GetDateTimeValue("dt").Should().Be(dt);
         r.GetGuidValue("guid").Should().Be(guid);
-        r.GetEnumValue<JobMasterPriority>("enum").Should().Be(JobMasterPriority.High);
-        r.GetByteArrayValue("bytes").Should().Equal(bytes);
     }
 
     [Fact]
@@ -251,9 +246,8 @@ public class JobTests
             .SetBoolValue("bool", true)
             .SetDoubleValue("double", 1.5)
             .SetDecimalValue("decimal", 12.34m)
-            .SetUtcDateTimeValue("dt", dt)
-            .SetGuidValue("guid", guid)
-            .SetEnumValue("enum", JobMasterPriority.High);
+            .SetDateTimeValue("dt", dt)
+            .SetGuidValue("guid", guid);
 
         var job = Job.New(
             clusterId,
@@ -272,9 +266,8 @@ public class JobTests
         r.GetBoolValue("bool").Should().BeTrue();
         r.GetDoubleValue("double").Should().BeApproximately(1.5, 0.0000001);
         r.GetDecimalValue("decimal").Should().Be(12.34m);
-        r.GetDateTimeValue("dt").ToUniversalTime().Should().Be(dt);
+        r.GetDateTimeValue("dt").Should().Be(dt);
         r.GetGuidValue("guid").Should().Be(guid);
-        r.GetEnumValue<JobMasterPriority>("enum").Should().Be(JobMasterPriority.High);
     }
     
     [JobMasterDefinitionId("JobHandlerForTest")]

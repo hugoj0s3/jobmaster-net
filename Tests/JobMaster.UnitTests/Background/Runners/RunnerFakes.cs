@@ -194,13 +194,13 @@ internal static class RunnerFakes
             return Task.FromResult<IList<JobRawModel>>(fetched);
         }
 
-        public Task BulkUpdateAsync(BulkJobUpdateRequest request)
+        public Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false)
         {
             BulkUpdateRequests.Add(request);
             return Task.CompletedTask;
         }
 
-        public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
+        public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false)
         {
             foreach (var updated in jobs)
             {
@@ -230,7 +230,6 @@ internal static class RunnerFakes
 
         public Task AddJobExecutionAsync(JobExecution jobExecution) { JobExecutions.Add(jobExecution); return Task.CompletedTask; }
         public Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId) => Task.FromResult<IList<JobExecution>>(JobExecutions.Where(e => e.JobId == jobId).ToList());
-        public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
         public bool CheckVersion(Guid jobId, string? version) => throw new NotImplementedException();
         public Task<bool> CheckVersionAsync(Guid jobId, string? version) => throw new NotImplementedException();
         public JobRawModel? Get(Guid jobId) => Jobs.FirstOrDefault(j => j.Id == jobId);
@@ -409,7 +408,6 @@ internal static class RunnerFakes
         public Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
         public long Count(JobQueryCriteria criteria) => throw new NotImplementedException();
         public Task<JobProbeResult> ProbeForAcquireAsync(JobQueryCriteria criteria) => throw new NotImplementedException();
-        public void ReleasePartitionLock(Guid jobId) => throw new NotImplementedException();
         public Task BulkUpdateAsync(BulkJobUpdateRequest request) => throw new NotImplementedException();
         public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels) => throw new NotImplementedException();
 
@@ -620,7 +618,7 @@ internal static class RunnerFakes
             return Task.FromResult("ok");
         }
 
-        public Task<IList<string>> BulkAddSavePendingJobAsync(List<JobRawModel> jobRawModels)
+        public Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
             => throw new NotImplementedException();
 
         public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
@@ -633,6 +631,9 @@ internal static class RunnerFakes
         }
 
         public Task<string> AddForProcessingAsync(JobRawModel jobRaw)
+            => throw new NotImplementedException();
+
+        public Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
             => throw new NotImplementedException();
 
         public Task<IList<JobRawModel>> PullForProcessingAsync(

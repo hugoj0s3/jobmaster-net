@@ -7,7 +7,7 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
 {
-    Task DispatchJobToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobRawModel jobRaw, BucketModel bucket);
+    Task BulkDispatchJobsToBucketAsync(IJobMasterBackgroundAgentWorker backgroundAgentWorker, BucketModel bucket, IList<JobRawModel> jobs);
     void MarkAsHeldOnMaster(Guid jobId);
     void CancelJob(Guid jobId);
     void Upsert(JobRawModel jobRawModel);

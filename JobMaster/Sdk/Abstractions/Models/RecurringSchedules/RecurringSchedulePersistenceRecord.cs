@@ -23,7 +23,17 @@ internal class RecurringSchedulePersistenceRecord
     public DateTime? TerminatedAt { get; set; }
 
     public string MsgData { get; set; } = "{}";
-    
+
+    /// <summary>
+    /// JSON-serialized form of the schedule's metadata (already-serialized, straight from
+    /// <see cref="JobMaster.Sdk.Abstractions.Models.RecurringSchedules.RecurringScheduleRawModel.Metadata"/> --
+    /// no transformation needed). Stored directly on the row so ordinary reads (Get/acquire/Query)
+    /// don't need to LEFT JOIN the generic-record entry/value tables. Those tables remain the
+    /// source of truth for <c>MetadataFilters</c> querying and are still written from
+    /// <see cref="Metadata"/> below.
+    /// </summary>
+    public string? MetadataJson { get; set; }
+
     public GenericRecordEntry? Metadata { get; set; }
 
     public int? Priority { get; set; }

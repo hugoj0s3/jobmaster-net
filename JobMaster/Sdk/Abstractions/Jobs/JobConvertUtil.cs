@@ -3,7 +3,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
-using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
@@ -43,27 +43,8 @@ internal static class JobConvertUtil
             HostId = raw.HostId,
         };
 
-        if (!string.IsNullOrEmpty(raw.MsgData))
-        {
-            var values = InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(raw.MsgData)
-                         ?? new Dictionary<string, object?>();
-            job.MsgData = new MessageData(values);
-        }
-        else
-        {
-            job.MsgData = new MessageData();
-        }
-        
-        if (!string.IsNullOrEmpty(raw.Metadata))
-        {
-            var values = InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(raw.Metadata!)
-                         ?? new Dictionary<string, object?>();
-            job.Metadata = new Metadata(values);
-        }
-        else
-        {
-            job.Metadata = new Metadata();
-        }
+        job.MsgData = KeyValueBagUtil.DeserializeMessageData(raw.MsgData);
+        job.Metadata = KeyValueBagUtil.DeserializeMetadata(raw.Metadata);
 
         return job;
     }
@@ -86,8 +67,8 @@ internal static class JobConvertUtil
             MaxNumberOfRetries = job.MaxNumberOfRetries,
             Timeout = job.Timeout,
             NumberOfFailures = job.NumberOfFailures,
-            MsgData = InternalJobMasterSerializer.Serialize(job.MsgData.ToDictionary()),
-            Metadata = job.Metadata != null ? InternalJobMasterSerializer.Serialize(job.Metadata?.ToDictionary()) : "{}",
+            MsgData = KeyValueBagUtil.Serialize(job.MsgData),
+            Metadata = KeyValueBagUtil.Serialize(job.Metadata),
             CreatedAt = job.CreatedAt,
             SourceId = job.SourceId,
             WorkerLane = job.WorkerLane,
@@ -132,10 +113,6 @@ internal static class JobConvertUtil
     // Persistence helpers (centralized here)
     public static JobRawModel FromPersistence(JobPersistenceRecord d)
     {
-        // Normalize to UTC where appropriate to avoid Kind=Unspecified surprises
-        static DateTime Utc(DateTime dt) => DateTime.SpecifyKind(dt, DateTimeKind.Utc);
-        static DateTime? UtcN(DateTime? dt) => dt.HasValue ? DateTime.SpecifyKind(dt.Value, DateTimeKind.Utc) : (DateTime?)null;
-
         var m = new JobRawModel(d.ClusterId)
         {
             Id = d.Id,
@@ -145,21 +122,21 @@ internal static class JobConvertUtil
             AgentConnectionId = d.AgentConnectionId != null ? new AgentConnectionId(d.AgentConnectionId) : null,
             AgentWorkerId = d.AgentWorkerId,
             Priority = (JobMasterPriority)d.Priority,
-            ScheduledAt = Utc(d.ScheduledAt),
-            NextPlanExecutionAt = UtcN(d.NextPlanExecutionAt),
+            ScheduledAt = d.ScheduledAt.AsUtc(),
+            NextPlanExecutionAt = d.NextPlanExecutionAt.AsUtc(),
             MsgData = string.IsNullOrEmpty(d.MsgData) ? "{}" : d.MsgData,
-            Metadata = d.Metadata is null ? null : InternalJobMasterSerializer.Serialize(d.Metadata?.ToReadable().ToDictionary()),
+            Metadata = d.MetadataJson,
             Status = (JobMasterJobStatus)d.Status,
             NumberOfFailures = d.NumberOfFailures,
             Timeout = TimeSpan.FromTicks(d.TimeoutTicks),
             MaxNumberOfRetries = d.MaxNumberOfRetries,
-            CreatedAt = Utc(d.CreatedAt),
+            CreatedAt = d.CreatedAt.AsUtc(),
             SourceId = d.SourceId,
             PartitionLockId = d.PartitionLockId,
-            PartitionLockExpiresAt = UtcN(d.PartitionLockExpiresAt),
-            ProcessDeadline = UtcN(d.ProcessDeadline),
-            ProcessStartedAt = UtcN(d.ProcessStartedAt),
-            FinalizedAt = UtcN(d.FinalizedAt),
+            PartitionLockExpiresAt = d.PartitionLockExpiresAt.AsUtc(),
+            ProcessDeadline = d.ProcessDeadline.AsUtc(),
+            ProcessStartedAt = d.ProcessStartedAt.AsUtc(),
+            FinalizedAt = d.FinalizedAt.AsUtc(),
             WorkerLane = d.WorkerLane,
             Version = d.Version,
             HostId = !string.IsNullOrEmpty(d.HostId) && !string.IsNullOrEmpty(d.HostDisplayName)
@@ -172,8 +149,7 @@ internal static class JobConvertUtil
 
     public static JobPersistenceRecord ToPersistence(JobRawModel m)
     {
-        IWritableMetadata metadata = !string.IsNullOrEmpty(m.Metadata)? 
-            new Metadata(InternalJobMasterSerializer.Deserialize<Dictionary<string, object?>>(m.Metadata!)) : new Metadata();
+        IWritableMetadata metadata = KeyValueBagUtil.DeserializeMetadata(m.Metadata);
         GenericRecordEntry metadataEntry = GenericRecordEntry.FromWritableMetadata(m.ClusterId, MasterGenericRecordGroupIds.JobMetadata, m.Id.ToString("N"), metadata);
         
         return new JobPersistenceRecord
@@ -189,6 +165,7 @@ internal static class JobConvertUtil
             ScheduledAt = m.ScheduledAt,
             NextPlanExecutionAt = m.NextPlanExecutionAt,
             MsgData = string.IsNullOrEmpty(m.MsgData) ? "{}" : m.MsgData,
+            MetadataJson = string.IsNullOrEmpty(m.Metadata) ? null : m.Metadata,
             Metadata = metadataEntry,
             Status = (int)m.Status,
             NumberOfFailures = m.NumberOfFailures,

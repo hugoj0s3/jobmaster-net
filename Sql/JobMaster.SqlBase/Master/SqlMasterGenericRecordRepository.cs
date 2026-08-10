@@ -105,7 +105,6 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             var (sqlText, args) = BuildInsertEntrySql(sqlEntry);
             conn.Execute(sqlText, args, transaction);
             InsertEntryValues(conn, transaction, sqlEntry);
-            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             transaction.Commit();
         }
         catch (Exception)
@@ -125,7 +124,6 @@ internal abstract class SqlMasterGenericRecordRepository : JobMasterClusterAware
             var (sqlText, args) = BuildInsertEntrySql(sqlEntry);
             await conn.ExecuteAsync(sqlText, args, transaction);
             await InsertEntryValuesAsync(conn, transaction, sqlEntry);
-            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
             transaction.Commit();
         }
         catch (Exception)
@@ -253,14 +251,14 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
 
                     // Build one multi-values INSERT for entries
                     var t = genericUtil.EntryTable(batch[0].GroupId);
-                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}, {ColSqlEntry(x => x.IsReady)}";
+                    var cols = $@"{Col(x => x.RecordUniqueId)}, {Col(x => x.ClusterId)}, {Col(x => x.GroupId)}, {Col(x => x.EntryId)}, {ColSqlEntry(x => x.EntryIdGuid)}, {Col(x => x.CreatedAt)}, {Col(x => x.ExpiresAt)}";
                     var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
                     var dynParams = new DynamicParameters();
 
                     for (int i = 0; i < sqlEntries.Count; i++)
                     {
                         var e = sqlEntries[i];
-                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i}, @IsReady_{i})");
+                        sb.Append($"(@RecordUniqueId_{i}, @ClusterId_{i}, @GroupId_{i}, @EntryId_{i}, @EntryIdGuid_{i}, @CreatedAt_{i}, @ExpiresAt_{i})");
                         if (i < sqlEntries.Count - 1) sb.Append(",\n"); else sb.Append(";");
 
                         dynParams.Add($"RecordUniqueId_{i}", e.RecordUniqueId);
@@ -270,7 +268,6 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                         dynParams.Add($"EntryIdGuid_{i}", e.EntryIdGuid);
                         dynParams.Add($"CreatedAt_{i}", e.CreatedAt);
                         dynParams.Add($"ExpiresAt_{i}", e.ExpiresAt);
-                        dynParams.Add($"IsReady_{i}", false);
                     }
 
                     await conn.ExecuteAsync(AppendSqlTag(sb.ToString(), "BulkInsert.InsertEntries", batch[0].GroupId), dynParams, transaction);
@@ -280,10 +277,6 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
                     {
                         await InsertEntryValuesAsync(conn, transaction, e);
                     }
-
-                    // Final step for batch: set IsReady = 1
-                    var setReadySql = genericUtil.BuildSetReadyMultipleSql(batch[0].GroupId, "@Ids");
-                    await conn.ExecuteAsync(AppendSqlTag(setReadySql, "BulkInsert.SetReady", batch[0].GroupId), new { Ids = sqlEntries.Select(x => x.RecordUniqueId).ToArray() }, transaction);
                 }
             }
 

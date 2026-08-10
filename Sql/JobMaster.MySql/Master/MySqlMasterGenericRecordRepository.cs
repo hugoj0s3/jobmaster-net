@@ -28,10 +28,9 @@ internal class MySqlMasterGenericRecordRepository : SqlMasterGenericRecordReposi
             
             // MySQL-specific: Upsert entry using INSERT ... ON DUPLICATE KEY UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
-            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at)
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt)
 ON DUPLICATE KEY UPDATE
     expires_at = VALUES(expires_at);";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "Upsert.Entry", recordEntry.GroupId);
@@ -94,8 +93,6 @@ ON DUPLICATE KEY UPDATE
                 conn.Execute(valueUpsertSql, valueRows, transaction);
             }
 
-            conn.Execute(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
-
             transaction.Commit();
         }
         catch
@@ -115,10 +112,9 @@ ON DUPLICATE KEY UPDATE
             
             // MySQL-specific: Upsert entry using INSERT ... ON DUPLICATE KEY UPDATE
             var t = genericUtil.EntryTable(recordEntry.GroupId);
-            var cIsReady = genericUtil.ColSqlEntry(x => x.IsReady);
             var entryUpsertSql = $@"
-INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at, {cIsReady})
-VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt, 0)
+INSERT INTO {t} (record_unique_id, cluster_id, group_id, entry_id, entry_id_guid, created_at, expires_at)
+VALUES (@RecordUniqueId, @ClusterId, @GroupId, @EntryId, @EntryIdGuid, @CreatedAt, @ExpiresAt)
 ON DUPLICATE KEY UPDATE
     expires_at = VALUES(expires_at);";
             entryUpsertSql = AppendSqlTag(entryUpsertSql, "UpsertAsync.Entry", recordEntry.GroupId);
@@ -180,8 +176,6 @@ ON DUPLICATE KEY UPDATE
                 
                 await conn.ExecuteAsync(valueUpsertSql, valueRows, transaction);
             }
-
-            await conn.ExecuteAsync(genericUtil.BuildSetReadySql(recordEntry.GroupId), new { RecordUniqueId = sqlEntry.RecordUniqueId }, transaction);
 
             transaction.Commit();
         }

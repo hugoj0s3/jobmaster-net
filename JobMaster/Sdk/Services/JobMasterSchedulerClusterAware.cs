@@ -16,6 +16,7 @@ using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services;
 
@@ -106,10 +107,18 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             jobsToSave.Add(jobRawModel);
         }
 
-        if (jobsToSave.Count > 0)
+        foreach (var bucketGroup in jobsToSave.GroupBy(j => j.BucketId!))
         {
-            logger.Debug($"$Bulk scheduling jobs. {jobsToSave.Count}", JobMasterLogCategory.Job, jobsToSave.First().Id);
-            await agentJobsDispatcherService.BulkAddSavePendingJobAsync(jobsToSave);
+            var bucketId = bucketGroup.Key;
+            var bucketJobs = bucketGroup.ToList();
+            var agentConnectionId = bucketJobs[0].AgentConnectionId!;
+            foreach (var partition in bucketJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+            {
+                var partitionJobs = partition.ToList();
+                logger.Debug($"Bulk scheduling jobs. partition size: {partitionJobs.Count} for bucket {bucketId}",
+                    JobMasterLogCategory.Job, partitionJobs.First().Id);
+                await agentJobsDispatcherService.BulkAddSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs);
+            }
         }
     }
 

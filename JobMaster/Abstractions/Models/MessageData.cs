@@ -23,7 +23,7 @@ internal class MessageData : IReadableMessageData, IWriteableMessageData
     public IWriteableMessageData SetCharValue(string key, char value) { bag.SetCharValue(key, value); return this; }
     public IWriteableMessageData SetBoolValue(string key, bool value) { bag.SetBoolValue(key, value); return this; }
     public IWriteableMessageData SetDoubleValue(string key, double value) { bag.SetDoubleValue(key, value); return this; }
-    public IWriteableMessageData SetDateTimeValue(string key, DateTime value) { bag.SetUtcDateTimeValue(key, value); return this; }
+    public IWriteableMessageData SetDateTimeValue(string key, DateTime value) { bag.SetDateTimeValue(key, value); return this; }
     public IWriteableMessageData SetEnumValue<TEnum>(string key, TEnum value) where TEnum : struct, Enum { bag.SetEnumValue(key, value); return this; }
     public IWriteableMessageData SetByteArrayValue(string key, byte[] value) { bag.SetByteArrayValue(key, value); return this; }
     public IWriteableMessageData SetDecimalValue(string key, decimal value) { bag.SetDecimalValue(key, value); return this; }

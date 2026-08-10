@@ -3,6 +3,7 @@ using System.Text.Json;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Utils;
 using Xunit;
@@ -54,6 +55,50 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         AssertJobEquivalent(job, fromDb!);
         // Version should be initialized on insert
         Assert.False(string.IsNullOrEmpty(fromDb!.Version));
+    }
+
+    [Fact]
+    public async Task AddAndGet_ShouldRoundTrip_AllMetadataTypes()
+    {
+        var job = NewJob("job-def-meta-rt-" + JobMasterRandomUtil.NewGuid4());
+
+        var guid = Guid.Parse("8e8fd3b4-1c3b-4a2b-9d86-3c28b7c7f7b1");
+        var dt = new DateTime(2025, 06, 15, 10, 30, 0, DateTimeKind.Utc);
+
+        var metadata = WritableMetadata.New()
+            .SetStringValue("str", "hello world")
+            .SetIntValue("int", 42)
+            .SetLongValue("long", 9999999999L)
+            .SetShortValue("short", (short)123)
+            .SetByteValue("byte", (byte)7)
+            .SetCharValue("char", 'Z')
+            .SetBoolValue("bool", true)
+            .SetDoubleValue("double", 3.14159)
+            .SetDecimalValue("decimal", 123.456m)
+            .SetDateTimeValue("dt", dt)
+            .SetGuidValue("guid", guid);
+
+        job.Metadata = KeyValueBagUtil.Serialize(metadata);
+
+        await Fixture.MasterJobs.AddAsync(job);
+
+        var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
+        Assert.NotNull(fromDb);
+
+        var recovered = KeyValueBagUtil.DeserializeMetadata(fromDb!.Metadata).ToReadable();
+
+        Assert.Equal("hello world", recovered.GetStringValue("str"));
+        Assert.Equal(42, recovered.GetIntValue("int"));
+        Assert.Equal(9999999999L, recovered.GetLongValue("long"));
+        Assert.Equal((short)123, recovered.GetShortValue("short"));
+        Assert.Equal((byte)7, recovered.GetByteValue("byte"));
+        Assert.Equal('Z', recovered.GetCharValue("char"));
+        Assert.True(recovered.GetBoolValue("bool"));
+        Assert.Equal(3.14159, recovered.GetDoubleValue("double"), 5);
+        Assert.Equal(123.456m, recovered.GetDecimalValue("decimal"));
+        Assert.Equal(dt, recovered.GetDateTimeValue("dt"));
+        Assert.Equal(DateTimeKind.Utc, recovered.GetDateTimeValue("dt").Kind);
+        Assert.Equal(guid, recovered.GetGuidValue("guid"));
     }
 
     [Fact]
@@ -1137,6 +1182,49 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkUpdate_Models_ShouldOnlyUpdate_RowsWithMatchingVersion()
+    {
+        var def = "defBulkModelsVerMismatch-" + JobMasterRandomUtil.NewGuid4();
+
+        var matching = new List<JobRawModel> { NewJob(def), NewJob(def), NewJob(def) };
+        var mismatched = new List<JobRawModel> { NewJob(def), NewJob(def), NewJob(def) };
+        foreach (var job in matching.Concat(mismatched))
+        {
+            await Fixture.MasterJobs.AddAsync(job);
+        }
+
+        var mismatchedOriginalVersions = mismatched.ToDictionary(j => j.Id, j => j.Version);
+
+        foreach (var job in matching.Concat(mismatched))
+        {
+            job.Status = JobMasterJobStatus.Cancelled;
+        }
+        // Simulate concurrently-modified rows: each carries a version that no longer matches the DB.
+        foreach (var job in mismatched)
+        {
+            job.SetVersion(JobMasterRandomUtil.NewGuid4().ToString("N"));
+        }
+
+        var returned = await Fixture.MasterJobs.BulkUpdateAsync(matching.Concat(mismatched).ToList());
+
+        Assert.Equal(3, returned.Count);
+        Assert.Equal(matching.Select(j => j.Id).ToHashSet(), returned.Select(j => j.Id).ToHashSet());
+
+        foreach (var job in matching)
+        {
+            var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
+            Assert.Equal(JobMasterJobStatus.Cancelled, fromDb!.Status);
+        }
+
+        foreach (var job in mismatched)
+        {
+            var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
+            Assert.Equal(JobMasterJobStatus.OnMaster, fromDb!.Status);
+            Assert.Equal(mismatchedOriginalVersions[job.Id], fromDb.Version);
+        }
+    }
+
+    [Fact]
     public async Task BulkUpdate_Models_ShouldHandle_EmptyList()
     {
         var returned = await Fixture.MasterJobs.BulkUpdateAsync(Array.Empty<JobRawModel>());
@@ -1414,6 +1502,104 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             }
         });
         Assert.Equal(j1.Id, Assert.Single(queried).Id);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldPersist_AllMetadataAndMsgDataTypes()
+    {
+        var def = "defBulkInsertMetaMsg-" + JobMasterRandomUtil.NewGuid4();
+
+        var guid1 = Guid.Parse("8e8fd3b4-1c3b-4a2b-9d86-3c28b7c7f7b1");
+        var dt1 = new DateTime(2025, 06, 15, 10, 30, 0, DateTimeKind.Utc);
+        var guid2 = Guid.Parse("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d");
+        var dt2 = new DateTime(2025, 03, 10, 08, 15, 0, DateTimeKind.Utc);
+
+        var j1 = NewJob(def, JobMasterJobStatus.Succeeded);
+        j1.Metadata = KeyValueBagUtil.Serialize(WritableMetadata.New()
+            .SetStringValue("str", "j1-meta")
+            .SetIntValue("int", 1)
+            .SetLongValue("long", 111L)
+            .SetShortValue("short", (short)11)
+            .SetByteValue("byte", (byte)1)
+            .SetCharValue("char", 'A')
+            .SetBoolValue("bool", true)
+            .SetDoubleValue("double", 1.1)
+            .SetDecimalValue("decimal", 1.11m)
+            .SetDateTimeValue("dt", dt1)
+            .SetGuidValue("guid", guid1));
+        j1.MsgData = KeyValueBagUtil.Serialize(new MessageData()
+            .SetStringValue("mstr", "j1-msg")
+            .SetIntValue("mint", 10)
+            .SetBoolValue("mbool", true)
+            .SetDateTimeValue("mdt", dt1)
+            .SetGuidValue("mguid", guid1));
+
+        var j2 = NewJob(def, JobMasterJobStatus.Failed);
+        j2.Metadata = KeyValueBagUtil.Serialize(WritableMetadata.New()
+            .SetStringValue("str", "j2-meta")
+            .SetIntValue("int", 2)
+            .SetLongValue("long", 222L)
+            .SetShortValue("short", (short)22)
+            .SetByteValue("byte", (byte)2)
+            .SetCharValue("char", 'B')
+            .SetBoolValue("bool", false)
+            .SetDoubleValue("double", 2.2)
+            .SetDecimalValue("decimal", 2.22m)
+            .SetDateTimeValue("dt", dt2)
+            .SetGuidValue("guid", guid2));
+        j2.MsgData = KeyValueBagUtil.Serialize(new MessageData()
+            .SetStringValue("mstr", "j2-msg")
+            .SetIntValue("mint", 20)
+            .SetBoolValue("mbool", false)
+            .SetDateTimeValue("mdt", dt2)
+            .SetGuidValue("mguid", guid2));
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 });
+
+        var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
+        var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+        Assert.NotNull(fromDb1);
+        Assert.NotNull(fromDb2);
+
+        var meta1 = KeyValueBagUtil.DeserializeMetadata(fromDb1!.Metadata).ToReadable();
+        Assert.Equal("j1-meta", meta1.GetStringValue("str"));
+        Assert.Equal(1, meta1.GetIntValue("int"));
+        Assert.Equal(111L, meta1.GetLongValue("long"));
+        Assert.Equal((short)11, meta1.GetShortValue("short"));
+        Assert.Equal((byte)1, meta1.GetByteValue("byte"));
+        Assert.Equal('A', meta1.GetCharValue("char"));
+        Assert.True(meta1.GetBoolValue("bool"));
+        Assert.Equal(1.1, meta1.GetDoubleValue("double"));
+        Assert.Equal(1.11m, meta1.GetDecimalValue("decimal"));
+        Assert.Equal(dt1, meta1.GetDateTimeValue("dt"));
+        Assert.Equal(guid1, meta1.GetGuidValue("guid"));
+
+        var msg1 = KeyValueBagUtil.DeserializeMessageData(fromDb1.MsgData).ToReadable();
+        Assert.Equal("j1-msg", msg1.GetStringValue("mstr"));
+        Assert.Equal(10, msg1.GetIntValue("mint"));
+        Assert.True(msg1.GetBoolValue("mbool"));
+        Assert.Equal(dt1, msg1.GetDateTimeValue("mdt"));
+        Assert.Equal(guid1, msg1.GetGuidValue("mguid"));
+
+        var meta2 = KeyValueBagUtil.DeserializeMetadata(fromDb2!.Metadata).ToReadable();
+        Assert.Equal("j2-meta", meta2.GetStringValue("str"));
+        Assert.Equal(2, meta2.GetIntValue("int"));
+        Assert.Equal(222L, meta2.GetLongValue("long"));
+        Assert.Equal((short)22, meta2.GetShortValue("short"));
+        Assert.Equal((byte)2, meta2.GetByteValue("byte"));
+        Assert.Equal('B', meta2.GetCharValue("char"));
+        Assert.False(meta2.GetBoolValue("bool"));
+        Assert.Equal(2.2, meta2.GetDoubleValue("double"));
+        Assert.Equal(2.22m, meta2.GetDecimalValue("decimal"));
+        Assert.Equal(dt2, meta2.GetDateTimeValue("dt"));
+        Assert.Equal(guid2, meta2.GetGuidValue("guid"));
+
+        var msg2 = KeyValueBagUtil.DeserializeMessageData(fromDb2.MsgData).ToReadable();
+        Assert.Equal("j2-msg", msg2.GetStringValue("mstr"));
+        Assert.Equal(20, msg2.GetIntValue("mint"));
+        Assert.False(msg2.GetBoolValue("mbool"));
+        Assert.Equal(dt2, msg2.GetDateTimeValue("mdt"));
+        Assert.Equal(guid2, msg2.GetGuidValue("mguid"));
     }
 
     [Fact]

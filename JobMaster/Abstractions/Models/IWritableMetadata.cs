@@ -19,10 +19,10 @@ public interface IWritableMetadata
     public IWritableMetadata SetBoolValue(string key, bool value);
     /// <summary>Stores a <see cref="double"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetDoubleValue(string key, double value);
-    /// <summary>Stores a <see cref="DateTime"/> value (converted to UTC) under <paramref name="key"/>.</summary>
-    public IWritableMetadata SetUtcDateTimeValue(string key, DateTime value);
-    /// <summary>Stores a <see cref="byte"/> array value under <paramref name="key"/>.</summary>
-    public IWritableMetadata SetByteArrayValue(string key, byte[] value);
+    /// <summary>Stores a <see cref="DateTime"/> value under <paramref name="key"/>, preserving its
+    /// <see cref="DateTime.Kind"/> (Utc, Local, or Unspecified) -- read back via <see cref="IReadableMetadata.GetDateTimeValue"/>,
+    /// which figures out the correct kind on deserialization.</summary>
+    public IWritableMetadata SetDateTimeValue(string key, DateTime value);
     /// <summary>Stores a <see cref="decimal"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetDecimalValue(string key, decimal value);
     /// <summary>Stores a <see cref="short"/> value under <paramref name="key"/>.</summary>
@@ -31,8 +31,6 @@ public interface IWritableMetadata
     public IWritableMetadata SetByteValue(string key, byte value);
     /// <summary>Stores a <see cref="Guid"/> value under <paramref name="key"/>.</summary>
     public IWritableMetadata SetGuidValue(string key, Guid value);
-    /// <summary>Stores an enum value under <paramref name="key"/>.</summary>
-    public IWritableMetadata SetEnumValue<TEnum>(string key, TEnum value) where TEnum : struct, Enum;
 
     /// <summary>Returns all entries as a dictionary.</summary>
     public IDictionary<string, object?> ToDictionary();

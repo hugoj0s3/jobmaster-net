@@ -25,6 +25,7 @@ var dbLabel = (options.DbEngine, options.UseNats) switch
 Console.WriteLine($"Framework=jobmaster Db={dbLabel} Rate={options.TargetJobsPerMinute}/min " +
                    $"Workers={options.WorkerCount} BucketsPerWorker={options.BucketsPerWorker} " +
                    $"BucketBufferSize={options.BucketBufferSize?.ToString() ?? "default"} SkipWarmUpTime={options.SkipWarmUpTime} " +
+                   $"CoordinatorCount={options.CoordinatorCount} TransferBatchSize={options.TransferBatchSize?.ToString() ?? "default"} " +
                    $"Duration={options.Duration} Smoke={options.Smoke}");
 if (options.StepDownJobsPerMinute.HasValue)
 {
@@ -34,7 +35,7 @@ if (options.StepDownJobsPerMinute.HasValue)
 var runId = Guid.NewGuid().ToString("N")[..8];
 Console.WriteLine($"RunId={runId}");
 
-var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.WorkerCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection);
+var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.WorkerCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection, options.CoordinatorCount, options.TransferBatchSize, options.EnableDebugJsonl);
 var databaseNames = JobMasterTopologyBuilder.AllDatabaseNames(options.UseNats, options.WorkerCount, options.SharedAgentConnection);
 
 await using var environment = new BenchmarkContainerEnvironment();
@@ -123,14 +124,16 @@ var loadGeneratorOptions = new LoadGeneratorOptions
     StepDownAt = options.StepDownAt,
     MaxConcurrentRequests = options.MaxConcurrentRequests ?? 200,
     BurstTotalJobs = options.BurstTotalJobs,
-    BurstBatchSize = options.BurstBatchSize
+    BurstBatchSize = options.BurstBatchSize,
+    BurstDelay = options.BurstDelay
 };
 var loadGenerator = new LoadGenerator(roundRobinClient, latencyRecorder, loadGeneratorOptions, scheduleCallLatencyRecorder);
 var isBurst = options.BurstTotalJobs.HasValue;
 
 var startedAtUtc = DateTime.UtcNow;
 Console.WriteLine(isBurst
-    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs in batches of {options.BurstBatchSize}..."
+    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs in batches of {options.BurstBatchSize}" +
+      (options.BurstDelay is { } burstDelay ? $" (all delayed by {burstDelay})..." : " (immediate)...")
     : $"Load generation starting for {options.Duration}...");
 try
 {
@@ -274,6 +277,41 @@ foreach (var (container, spec) in environment.WorkerContainers.Zip(workerSpecs))
     var (stdOut, stdErr) = await container.GetLogsAsync();
     await File.WriteAllTextAsync(Path.Combine(logsDirectory, $"{spec.Name}.stdout.log"), stdOut);
     await File.WriteAllTextAsync(Path.Combine(logsDirectory, $"{spec.Name}.stderr.log"), stdErr);
+}
+
+if (options.EnableDebugJsonl)
+{
+    // Only worker-0 (the coordinator+drainer container) is configured with a DebugJsonlFilePath --
+    // see JobMasterTopologyBuilder.BuildWorkerSpecs. Debug-level logs (e.g. runner tick timing) are
+    // never persisted to jm_log, so this file is the only way to recover them after the run.
+    // JsonlFileLogger doesn't write to the literal path -- it chunks output into 4-hour buckets named
+    // "{baseName}_{yyyyMMdd_HH}.jsonl", so a run spanning a chunk boundary produces multiple files.
+    var coordinatorContainer = environment.WorkerContainers.Zip(workerSpecs)
+        .FirstOrDefault(x => x.Second.Name == "worker-0").First;
+    if (coordinatorContainer != null)
+    {
+        try
+        {
+            var containerDir = Path.GetDirectoryName(JobMasterTopologyBuilder.DebugJsonlContainerPath)!.Replace('\\', '/');
+            var baseName = Path.GetFileNameWithoutExtension(JobMasterTopologyBuilder.DebugJsonlContainerPath);
+            var listResult = await coordinatorContainer.ExecAsync(["sh", "-c", $"ls {containerDir}/{baseName}_*.jsonl 2>/dev/null"]);
+            var chunkPaths = listResult.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var chunkPath in chunkPaths)
+            {
+                var chunkBytes = await coordinatorContainer.ReadFileAsync(chunkPath);
+                await File.WriteAllBytesAsync(Path.Combine(logsDirectory, Path.GetFileName(chunkPath)), chunkBytes);
+            }
+
+            if (chunkPaths.Length == 0)
+            {
+                Console.WriteLine("No debug JSONL chunk files found on coordinator container.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not read debug JSONL from coordinator container: {ex.Message}");
+        }
+    }
 }
 
 Console.WriteLine($"Container logs written to {logsDirectory}");

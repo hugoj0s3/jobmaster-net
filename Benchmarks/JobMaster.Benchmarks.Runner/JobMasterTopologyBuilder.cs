@@ -24,6 +24,11 @@ public static class JobMasterTopologyBuilder
     private const string ClusterId = "benchmark";
     private const string TransientThreshold = "00:02:00";
 
+    /// <summary>In-container path for the coordinator+drainer's optional debug JSONL mirror log --
+    /// copied out to container-logs/ after the run when enabled. See <see cref="BuildWorkerSpecs"/>'s
+    /// <c>enableDebugJsonl</c> parameter.</summary>
+    public const string DebugJsonlContainerPath = "/app/debug-log.jsonl";
+
     // Every job in this benchmark schedules at the default JobMasterPriority.Medium (NoOpBenchmarkHandler
     // carries no [JobMasterPriority] attribute, and the schedule endpoints pass none explicitly) --
     // disabling the other priorities avoids the framework standing up buckets/runners for priority
@@ -40,7 +45,10 @@ public static class JobMasterTopologyBuilder
         int bucketsPerWorker = 1,
         int? bucketBufferSize = null,
         bool skipWarmUpTime = false,
-        bool sharedAgentConnection = false)
+        bool sharedAgentConnection = false,
+        int coordinatorCount = 4,
+        int? transferBatchSize = null,
+        bool enableDebugJsonl = false)
     {
         if (workerCount < 2)
         {
@@ -91,10 +99,18 @@ public static class JobMasterTopologyBuilder
             List<object> workers = [];
             if (isCoordinatorDrainer)
             {
-                // Two Coordinator instances, not one -- AssignJobsToBucketsRunner claims work via
-                // distributed locks, so running two concurrently in one process is safe.
-                workers.Add(new { WorkerName = "coordinator-1", WorkerMode = "Coordinator", SkipWarmUpTime = skipWarmUpTime });
-                workers.Add(new { WorkerName = "coordinator-2", WorkerMode = "Coordinator", SkipWarmUpTime = skipWarmUpTime });
+                // coordinatorCount Coordinator instances -- AssignJobsToBucketsRunner's imminent-path
+                // lock is keyed by a shared 10-second wall-clock window (doesn't scale with instance
+                // count), but the scan-plan path (delayed jobs) picks a random lock key from a range
+                // that widens with CountActiveCoordinatorWorkersAsync(), so multiple instances
+                // genuinely divide that work. transferBatchSize defaults to null (SDK's 1000 default);
+                // raising it previously OOM-killed the DB and caused duplicate dispatches when the
+                // claim lock expired mid-batch -- now that dispatch is bulked and partitioned with
+                // per-partition failure isolation, this is being retested at 5000.
+                for (var c = 1; c <= coordinatorCount; c++)
+                {
+                    workers.Add(new { WorkerName = $"coordinator-{c}", WorkerMode = "Coordinator", SkipWarmUpTime = skipWarmUpTime, TransferBatchSize = transferBatchSize });
+                }
                 workers.Add(new { WorkerName = "drainer", AgentConnectionName = agentConnectionName, WorkerMode = "Drain", SkipWarmUpTime = skipWarmUpTime });
             }
             else
@@ -111,6 +127,7 @@ public static class JobMasterTopologyBuilder
                 ConnectionString = masterConnectionString,
                 TransientThreshold,
                 DisabledPriorities,
+                DebugJsonlFilePath = isCoordinatorDrainer && enableDebugJsonl ? DebugJsonlContainerPath : null,
                 AgentConnections = allAgentConnections,
                 Workers = workers
             };
