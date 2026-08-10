@@ -265,6 +265,63 @@ public class AssignJobsToBucketsRunnerTests
     }
 
     [Fact]
+    public async Task OnTickAsync_WhenNoBucketAvailableAndFallbackThresholdElapsed_ShouldAssignAndDispatchViaFallbackBucket()
+    {
+        var f = RunnerFixture.Create();
+        f.ClusterConfig.Config = ActiveClusterConfig();
+
+        var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
+        engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
+        engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+
+        var job = OnMasterJob();
+        f.JobsService.Jobs.Add(job);
+        // No buckets registered -- SelectBucketAsync returns null, forcing the fallback path.
+
+        var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
+
+        // Seed the "first failure seen" clock so the fallback threshold is already elapsed —
+        // mirrors what OnTickAsync would build up over repeated ticks without a real bucket.
+        var firstFailureField = typeof(AssignJobsToBucketsRunner)
+            .GetField("bucketAssignFirstFailure", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var bucketAssignFirstFailure = (Dictionary<string, DateTime>)firstFailureField.GetValue(runner)!;
+        bucketAssignFirstFailure[$"{f.ClusterId}_{job.WorkerLane}_{job.Priority}"] = DateTime.UtcNow.AddMinutes(-10);
+
+        try
+        {
+            var result = await runner.OnTickAsync(CancellationToken.None);
+
+            result.Status.Should().Be(TicketResultStatus.Success);
+
+            var fallbackBucket = f.Buckets.Buckets.Should().ContainSingle(b => b.BucketType == BucketType.Fallback)
+                .Subject;
+
+            // Went through the normal bulk-update step, same as any other bucket assignment.
+            var updatedJob = f.JobsService.Jobs.Should().ContainSingle(j => j.Id == job.Id).Subject;
+            updatedJob.Status.Should().Be(JobMasterJobStatus.InBucket);
+            updatedJob.BucketId.Should().Be(fallbackBucket.Id);
+
+            // Went through the normal bulk dispatch step -- no separate single-job dispatch call.
+            f.WorkerClusterOps.Verify(
+                x => x.BulkDispatchJobsToBucketAsync(
+                    f.Worker.Object,
+                    It.Is<BucketModel>(b => b.Id == fallbackBucket.Id),
+                    It.Is<IList<JobRawModel>>(jobs => jobs.Any(j => j.Id == job.Id))),
+                Times.Once);
+        }
+        finally
+        {
+            var fallBackRunnerField = typeof(AssignJobsToBucketsRunner)
+                .GetField("fallBackRunner", BindingFlags.NonPublic | BindingFlags.Instance)!;
+            if (fallBackRunnerField.GetValue(runner) is IJobMasterRunner fallBackRunner)
+            {
+                await fallBackRunner.StopAsync();
+            }
+        }
+    }
+
+    [Fact]
     public async Task OnTickAsync_WhenFallbackBucketExists_HeartbeatsItsReservedConnection()
     {
         var f = RunnerFixture.Create();

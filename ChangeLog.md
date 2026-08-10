@@ -40,6 +40,8 @@
 
 - **NATS JetStream: `TransientThreshold` cap raised from 2 to 5 minutes** — Jobs dispatched into NATS ahead of their execution time sit in the stream as unacknowledged messages until they're due, so this transport has always needed a cap on `TransientThreshold`; it's now more generous. JobMaster automatically scales the NATS consumer's pending-message capacity to match whatever `TransientThreshold` you configure, up to the cap, so no manual NATS tuning is required. If you're unsure what to set, 2 minutes is a good starting recommendation. See the [NATS JetStream provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/nats#transientthreshold-and-nats-capacity) for sizing guidance.
 
+- ⚠️ **Breaking change: `byte[]` and enum values removed from `Metadata`** — `GetByteArrayValue`/`TryGetByteArrayValue`/`SetByteArrayValue` and `GetEnumValue<TEnum>`/`TryGetEnumValue<TEnum>`/`SetEnumValue<TEnum>` are no longer available on `IReadableMetadata`/`IWritableMetadata`. Both round-trip ambiguously through Metadata's JSON-based serialization — a `byte[]` comes back indistinguishable from a plain base64 string, and an enum comes back as a bare number with no type information to reconstruct it from — so support for them was removed rather than left silently unreliable. Store a byte array as a Base64 string, or an enum as its underlying numeric/string value, and convert on read instead. Message data (`IReadableMessageData`/`IWriteableMessageData`, used for job/recurring-schedule payloads) is unaffected and still supports both.
+
 ### Fixed
 
 - **`IsStandalone` not applied when cluster is configured via `ConfigFromJson`** — `ClusterDefinition.IsStandalone` is now nullable. When it is null (not set in code), the runtime correctly falls back to the value already stored in the database (`modelToSave.IsStandalone`). Previously a null code-level value unconditionally overwrote the stored value with `false`, so a cluster configured as standalone purely through JSON would silently start in cluster mode.
@@ -85,6 +87,8 @@
 - **A cluster that had ever run in standalone mode could never be reconfigured back to distributed mode** — Reconfiguring away from standalone silently had no effect once a cluster had been persisted as standalone at least once; it would keep running as standalone forever regardless of later configuration changes. Fixed.
 
 - **Migrating a recurring schedule to another cluster could fail on Postgres in one specific case** — If the schedule had ever been materialized from a static definition, an internal timestamp on it was missing timezone information, which Postgres rejects on write. The schedule would silently stay stuck on its original cluster, retried indefinitely, without surfacing as an error. Fixed.
+
+- **A job could rarely be executed twice under high load** — When assigning a batch of jobs to buckets, an internal bulk-update step didn't check that a job's data hadn't changed since it was last read, so two concurrent writers racing on the same job could both "win," with the second silently overwriting the first instead of being rejected. Fixed: this step now enforces the same optimistic-concurrency check already used everywhere else in the framework.
 
 ---
 
