@@ -38,4 +38,10 @@ public sealed class ExecutionTracker(IConnectionMultiplexer mux) : IExecutionTra
             .Select(v => JsonSerializer.Deserialize<ExecutionRecord>(v.ToString(), ScenarioJsonOptions.Default)!)
             .ToList();
     }
+
+    public async Task ClearAsync(string testIdentifier, CancellationToken ct = default)
+    {
+        var db = mux.GetDatabase();
+        await db.KeyDeleteAsync($"scenario:{testIdentifier}:executions");
+    }
 }

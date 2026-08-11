@@ -89,6 +89,16 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
         var api = Runner.Api ?? throw new InvalidOperationException("This scenario has no api container configured.");
         var recurring = Runner.RecurringScheduleFor(ClusterId);
 
+        // The static identifiers are literal strings baked into TargetTestRecurringApp, so every
+        // DB-provider variant of this scenario reuses the exact same ones -- and Redis is one shared,
+        // run-scoped container for the whole test run (ScenarioGlobalEnvironment), not per-scenario.
+        // Without clearing first, a variant that runs later than another (real executions accumulate
+        // over its ~17min run) would see those leftover records here and fail the "hasn't fired yet"
+        // check below immediately. Dynamic identifiers are fresh GUIDs per run and can't collide, so
+        // they don't need clearing.
+        await Runner.Tracker.ClearAsync(StaticTimeSpanIntervalTestIdentifier);
+        await Runner.Tracker.ClearAsync(StaticNaturalCronTestIdentifier);
+
         // Captured right after the container's health check passed (StartPhaseAsync already
         // returned by the time RunAsync runs) -- a reasonably tight upper bound on when the static
         // profiles were actually registered, since /health only starts responding after

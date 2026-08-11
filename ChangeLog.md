@@ -90,6 +90,8 @@
 
 - **A job could rarely be executed twice under high load** — When assigning a batch of jobs to buckets, an internal bulk-update step didn't check that a job's data hadn't changed since it was last read, so two concurrent writers racing on the same job could both "win," with the second silently overwriting the first instead of being rejected. Fixed: this step now enforces the same optimistic-concurrency check already used everywhere else in the framework.
 
+- **MySQL: distributed locks could occasionally be granted while still held by someone else** — On MySQL clusters specifically, JobMaster's internal distributed lock (used for bucket coordination, agent-connection bookkeeping, and other internal safety checks) could report a lock as successfully acquired even though the previous holder's lease hadn't actually expired yet. Postgres and SQL Server were unaffected. Fixed by using the same reliable "read back and verify" check the other two providers already used, instead of relying on a database-reported row count that didn't behave as expected for this specific MySQL query.
+
 ---
 
 ## JobMaster 0.0.9-alpha / JobMaster.Dashboard 0.0.2-alpha
