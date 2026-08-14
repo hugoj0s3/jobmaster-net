@@ -2,7 +2,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ScheduleTest.PostgresNats;
 
 // Member names -> kebab-cased ClusterId (max 25 chars, letters/numbers/hyphens/underscores only —
 // see ClusterConfigBuilder.ClusterId). No standalone cluster here, unlike the *Pure scenarios:
-// NatsJetStreamConnectionOptionsStrategy.SetOptions(IClusterConfigSelector, ...) throws for master
+// NatsJetStreamConnectionOptionsBinder.SetOptions(IClusterConfigSelector, ...) throws for master
 // usage ("NATS JetStream is not supported as a cluster master repository"), so a NATS-backed
 // cluster can only ever be a distributed cluster (Postgres master + NATS agent connections), never
 // a standalone one.

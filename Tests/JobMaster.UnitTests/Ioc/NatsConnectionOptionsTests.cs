@@ -13,9 +13,9 @@ public class NatsConnectionOptionsTests
 {
     static NatsConnectionOptionsTests()
     {
-        // Force the NatsJetStream assembly to load before the strategy factory
+        // Force the NatsJetStream assembly to load before the binder factory
         // initializes its static discovery scan.
-        _ = typeof(NatsJetStreamConnectionOptionsStrategy);
+        _ = typeof(NatsJetStreamConnectionOptionsBinder);
     }
 
     // ── fake agent selector ──────────────────────────────────────────────────
@@ -39,7 +39,7 @@ public class NatsConnectionOptionsTests
         }
     }
 
-    private static NatsJetStreamConnectionOptionsStrategy Strategy() => new();
+    private static NatsJetStreamConnectionOptionsBinder Binder() => new();
     private static FakeAgentSelector Selector() => new();
 
     private static NatsAuthOpts CapturedAuth(FakeAgentSelector sel)
@@ -60,7 +60,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_UsernamePassword_SetsAuthOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object>
+        Binder().SetOptions(sel, new Dictionary<string, object>
         {
             ["username"] = "alice",
             ["password"] = "secret"
@@ -75,7 +75,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_Token_SetsAuthOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["token"] = "tok123" });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["token"] = "tok123" });
 
         CapturedAuth(sel).Token.Should().Be("tok123");
     }
@@ -84,7 +84,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_CredentialsFile_SetsCredsFile()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["credentialsFile"] = "/etc/nats/my.creds" });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["credentialsFile"] = "/etc/nats/my.creds" });
 
         CapturedAuth(sel).CredsFile.Should().Be("/etc/nats/my.creds");
     }
@@ -93,7 +93,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_NKeyAndJwt_SetsAuthOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object>
+        Binder().SetOptions(sel, new Dictionary<string, object>
         {
             ["nkey"] = "SUANQ...",
             ["jwt"]  = "eyJ..."
@@ -108,7 +108,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_NoAuthKeys_DoesNotWriteAuthOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsCaFile"] = "/etc/ca.pem" });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["tlsCaFile"] = "/etc/ca.pem" });
 
         sel.Captured.Should().NotContain(c => c.Key == NatsJetStreamConfigKey.NatsAuthOptsKey);
     }
@@ -119,7 +119,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_TlsCertBundleFile_SetsTlsOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object>
+        Binder().SetOptions(sel, new Dictionary<string, object>
         {
             ["tlsCertBundleFile"]         = "/etc/nats/bundle.pfx",
             ["tlsCertBundleFilePassword"] = "pfxpass"
@@ -134,7 +134,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_TlsCaFile_SetsTlsOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsCaFile"] = "/etc/ca.pem" });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["tlsCaFile"] = "/etc/ca.pem" });
 
         CapturedTls(sel).CaFile.Should().Be("/etc/ca.pem");
     }
@@ -143,7 +143,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_InsecureSkipVerify_True_SetsFlag()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object>
+        Binder().SetOptions(sel, new Dictionary<string, object>
         {
             ["tlsCaFile"]             = "/etc/ca.pem",
             ["tlsInsecureSkipVerify"] = "true"
@@ -156,7 +156,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_InsecureSkipVerify_False_ClearFlag()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object>
+        Binder().SetOptions(sel, new Dictionary<string, object>
         {
             ["tlsCaFile"]             = "/etc/ca.pem",
             ["tlsInsecureSkipVerify"] = "false"
@@ -174,7 +174,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_TlsMode_ParsesCaseInsensitive(string input, TlsMode expected)
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsMode"] = input });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["tlsMode"] = input });
 
         CapturedTls(sel).Mode.Should().Be(expected);
     }
@@ -183,7 +183,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_InvalidTlsMode_ThrowsArgumentException()
     {
         var sel = Selector();
-        var act = () => Strategy().SetOptions(sel, new Dictionary<string, object> { ["tlsMode"] = "SuperSecure" });
+        var act = () => Binder().SetOptions(sel, new Dictionary<string, object> { ["tlsMode"] = "SuperSecure" });
 
         act.Should().Throw<ArgumentException>().WithMessage("*SuperSecure*");
     }
@@ -192,7 +192,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_NoTlsKeys_DoesNotWriteTlsOpts()
     {
         var sel = Selector();
-        Strategy().SetOptions(sel, new Dictionary<string, object> { ["username"] = "u" });
+        Binder().SetOptions(sel, new Dictionary<string, object> { ["username"] = "u" });
 
         sel.Captured.Should().NotContain(c => c.Key == NatsJetStreamConfigKey.NatsTlsOptsKey);
     }
@@ -203,7 +203,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_UnknownKey_ThrowsArgumentException()
     {
         var sel = Selector();
-        var act = () => Strategy().SetOptions(sel, new Dictionary<string, object> { ["unknownProp"] = "x" });
+        var act = () => Binder().SetOptions(sel, new Dictionary<string, object> { ["unknownProp"] = "x" });
 
         act.Should().Throw<ArgumentException>().WithMessage("*unknownProp*");
     }
@@ -217,7 +217,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_KeysCaseInsensitive_DoesNotThrow(string key, string value)
     {
         var sel = Selector();
-        var act = () => Strategy().SetOptions(
+        var act = () => Binder().SetOptions(
             sel,
             new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [key] = value });
 
@@ -230,7 +230,7 @@ public class NatsConnectionOptionsTests
     public void SetOptions_ClusterSelector_ThrowsInvalidOperationException()
     {
         var cluster = new ClusterConfigBuilder(null, new ServiceCollection());
-        var act = () => Strategy().SetOptions(cluster, new Dictionary<string, object> { ["username"] = "u" });
+        var act = () => Binder().SetOptions(cluster, new Dictionary<string, object> { ["username"] = "u" });
 
         act.Should().Throw<InvalidOperationException>().WithMessage("*cluster master*");
     }

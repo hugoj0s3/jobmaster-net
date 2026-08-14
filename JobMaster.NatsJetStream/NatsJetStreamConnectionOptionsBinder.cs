@@ -4,7 +4,7 @@ using NATS.Client.Core;
 
 namespace JobMaster.NatsJetStream;
 
-internal sealed class NatsJetStreamConnectionOptionsStrategy : IConnectionOptionsStrategy
+internal sealed class NatsJetStreamConnectionOptionsBinder : IConnectionOptionsBinder
 {
     private static readonly HashSet<string> KnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {

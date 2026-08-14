@@ -9,11 +9,13 @@ public enum ClusterMode
     Active = 1,
 
     /// <summary>
-    /// The cluster is registered but does not dispatch jobs locally — jobs and recurring schedules
-    /// are held on master and continuously forwarded to a mandatory <c>TargetActiveClusterId</c>
-    /// cluster instead. Used for online migration: point traffic at a new Active cluster, flip this
-    /// one into Migrating mode, and let it drain out (pre-existing buckets finish via Drain workers;
-    /// anything not yet dispatched is forwarded) without stopping traffic or losing work.
+    /// The cluster never locally dispatches or executes new work — <c>OnMaster</c> jobs and recurring
+    /// schedules are held on master and continuously moved (bulk-inserted, then deleted from here) to
+    /// a mandatory <c>TargetActiveClusterId</c> cluster, which does the actual acquire/dispatch/execute
+    /// cycle instead. Used for online migration: point traffic at a new Active cluster, flip this one
+    /// into Migrating mode, and let it drain out (buckets already dispatched before the flip still
+    /// finish locally via Drain workers; everything still <c>OnMaster</c> is moved) without stopping
+    /// traffic or losing work.
     /// </summary>
     Migrating = 2,
 

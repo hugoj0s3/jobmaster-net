@@ -30,7 +30,7 @@ using Microsoft.Extensions.DependencyInjection;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
-using JobMaster.Sdk.Ioc.Setup.Strategies;
+using JobMaster.Sdk.Ioc.Setup.Binders;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
@@ -550,7 +550,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             if (config.RepoType != null) ClusterRepoType(config.RepoType);
             if (config.ConnectionString != null) ClusterConnString(config.ConnectionString);
             if (config.ConnectionOptions != null && config.RepoType != null)
-                ConnectionOptionsStrategyFactory.Create(config.RepoType).SetOptions(this, ToIgnoreCase(config.ConnectionOptions));
+                ConnectionOptionsBinderFactory.Create(config.RepoType).SetOptions(this, ToIgnoreCase(config.ConnectionOptions));
 
             foreach (var agent in config.AgentConnections ?? [])
             {
@@ -558,7 +558,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
                 if (agent.ProtectConnectionChanges.HasValue)
                     agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
                 if (agent.ConnectionOptions != null && agent.RepositoryType != null)
-                    ConnectionOptionsStrategyFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+                    ConnectionOptionsBinderFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
             }
 
             foreach (var w in config.Workers ?? [])
