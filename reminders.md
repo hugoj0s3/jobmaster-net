@@ -23,6 +23,30 @@ fingerprinting, and config persistence are currently one intertwined loop), and 
 effect of whatever feature happens to touch `JobMasterRuntime` next. Worth its own dedicated
 investigation/PR rather than opportunistic bundling.
 
+## `ConfigFromJson` — `RepoType` comparisons are case-sensitive, inconsistent with the rest of the surface
+
+Raised 2026-08-14 while checking `ConfigFromJson`'s case-sensitivity end to end. JSON property names
+(`PropertyNameCaseInsensitive` on the `string`/`Stream` overloads, `IConfiguration.Get<T>()`'s inherent
+case-insensitivity on the `IConfiguration` overload) and every enum-like string value (`ClusterMode`,
+`DisabledPriorities`, `WorkerMode`, `BucketQtyConfig` keys — all parsed via
+`Enum.TryParse(value, ignoreCase: true, ...)`) are deliberately case-insensitive, with test coverage to
+match.
+
+`RepoType` (`ClusterRepoType`/`AgentRepoType` — `"Postgres"`/`"MySql"`/`"SqlServer"`/`"NatsJetStream"`) is
+the one exception, and it doesn't look deliberate: `JobMasterIocRegistrationAttribute
+.RegisterProviderExtensionsForMaster`/`RegisterProviderExtensionsForAgent` resolve the provider module via
+a plain `repoTypeProp.GetValue(null)?.ToString() != repositoryType` (ordinal comparison, no
+`ignoreCase`), and `ConnectionOptionsBinderFactory`'s repo-type dictionary is built via
+`.ToDictionary(s => s.RepoType, s => s)` with no `StringComparer.OrdinalIgnoreCase` either. A lowercase
+`"postgres"` in a JSON config silently matches no registered provider instead of raising a clear
+validation error — the failure only surfaces later as a confusing missing-implementation error, not an
+obvious "invalid RepoType" message at config time.
+
+Fix should make repo-type comparisons case-insensitive throughout (both spots above), matching the rest
+of `ConfigFromJson`'s design. This was found by spot-checking one specific field, not a systematic
+sweep — worth auditing every other enum-like/identifier string this surface parses to confirm nothing
+else was missed the same way before considering this done.
+
 ## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
 
 `OnStartingAsync` was renamed to `OnBeforeStartAsync` (interface + all implementers: `SqlJobMasterRuntimeSetup`,
