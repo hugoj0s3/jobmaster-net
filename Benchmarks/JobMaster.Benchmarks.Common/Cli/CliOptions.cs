@@ -2,9 +2,8 @@ namespace JobMaster.Benchmarks.Common.Cli;
 
 /// <summary>Framework-agnostic CLI options shared by any runner that doesn't need JobMaster-specific
 /// concepts (buckets/buffer-size/skip-warmup, which have no analog in Quartz/Hangfire's peer-to-peer
-/// clustering). Originally duplicated per-runner; moved here once a third runner (Hangfire) would
-/// have been byte-for-byte identical to the second (Quartz) -- <c>JobMaster.Benchmarks.Runner</c>'s
-/// own <c>CliOptions</c> stays independent and untouched since it has real additional fields.</summary>
+/// clustering). <c>JobMaster.Benchmarks.Runner</c>'s own <c>CliOptions</c> stays independent since it
+/// has real additional fields.</summary>
 public sealed class CliOptions
 {
     public required int TargetJobsPerMinute { get; init; }

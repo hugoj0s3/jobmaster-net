@@ -234,11 +234,10 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         var results = new List<DateTime>();
         var cursor = baseDateTime;
 
-        // No "cursor <= stopAt" loop guard -- unlike before, we need at least one GetNextOccurrence
-        // call to happen even when baseDateTime already starts beyond stopAt, so the "always at least
-        // one" rule below can apply. Every iteration still terminates via an internal break (occurrence
-        // exhausted, occurrence beyond stopAt, or the progress guard), bounded by MaxOccurrencesPerRun
-        // regardless.
+        // No "cursor <= stopAt" loop guard -- at least one GetNextOccurrence call must happen even
+        // when baseDateTime already starts beyond stopAt, so the "always at least one" rule below can
+        // apply. Every iteration still terminates via an internal break (occurrence exhausted,
+        // occurrence beyond stopAt, or the progress guard), bounded by MaxOccurrencesPerRun regardless.
         for (int i = 0; i < MaxOccurrencesPerRun; i++)
         {
             var cursorInTheTimeZone = TimeZoneUtils.ConvertUtcToDateTimeTz(cursor, ianaTimeZoneId);

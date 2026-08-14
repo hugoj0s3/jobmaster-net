@@ -22,10 +22,9 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     
     // Serializes AcquireAndFetchAsync/BulkUpdateAsync (when useAcquireThrottler is set) to 1-at-a-time --
     // this is a per-cluster singleton (see ClusterConfigBuilder's AddSingleton registration), so this
-    // throttler is shared by every coordinator instance in the cluster, not just one. Confirmed via
-    // benchmark this reduces one coordinator's bulk-update phase overlapping with another's acquire
-    // (previously bulkUpdateAsync used the general, much-higher-capacity operationThrottler, which let
-    // two coordinators' bulk updates and acquires run fully concurrently against each other).
+    // throttler is shared by every coordinator instance in the cluster, not just one. Keeps one
+    // coordinator's bulk-update phase from overlapping with another's acquire; the general,
+    // much-higher-capacity operationThrottler would otherwise let those run fully concurrently.
     private OperationThrottler acquireOperationThrottler = new (1, 5000);
     private RetryDeadlockPolicy retryDeadlockPolicy;
 

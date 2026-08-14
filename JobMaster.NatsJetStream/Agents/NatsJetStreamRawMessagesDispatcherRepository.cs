@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Text;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
@@ -57,13 +58,18 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
         await EnsureStreamAsync();
         var subject = GetSubjectName(fullBucketAddressId);
 
-        var results = new List<string>();
-        foreach (var (payload, referenceTime, correlationId) in messages)
-        {
-            var result = await DoPublishAsync(subject, payload, referenceTime, correlationId);
-            results.Add(result);
-        }
-        
+        // JetStream has no bulk-publish wire primitive -- every publish is its own
+        // request/ack round trip -- so the win here is firing them concurrently instead of
+        // awaiting each ack before starting the next, not batching in the SQL sense.
+        var results = new string[messages.Count];
+        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = JobMasterConstants.MaxBatchSizeForBulkOperation };
+        await JobMasterParallelUtil.ForEachAsync(messages.Select((message, index) => (message, index)), parallelOptions,
+            async (item, _) =>
+            {
+                var ((payload, referenceTime, correlationId), index) = item;
+                results[index] = await DoPublishAsync(subject, payload, referenceTime, correlationId);
+            });
+
         return results;
     }
 

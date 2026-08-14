@@ -29,13 +29,12 @@ public static class SqlServerDatabaseProvisioner
             }
 
             // READ_COMMITTED_SNAPSHOT makes readers use row versioning instead of shared locks under
-            // the default READ COMMITTED isolation level -- confirmed via a real benchmark run that
-            // multiple clustered app instances hammering the same tables (e.g. Quartz.NET's AdoJobStore
-            // trigger-acquisition polling) produce real SQL Server deadlocks otherwise. Safe to run
-            // unconditionally here (right after CREATE DATABASE, before anything else connects) since
-            // ALTER DATABASE just needs no other active connections at that moment, which nothing yet
-            // has. ALTER DATABASE can't run inside a multi-statement batch with other DDL, so it's its
-            // own command against a database with no rows/schema yet to lock.
+            // the default READ COMMITTED isolation level, avoiding deadlocks when multiple clustered
+            // app instances hammer the same tables (e.g. Quartz.NET's AdoJobStore trigger-acquisition
+            // polling). Safe to run unconditionally here (right after CREATE DATABASE, before anything
+            // else connects) since ALTER DATABASE just needs no other active connections at that
+            // moment, which nothing yet has. ALTER DATABASE can't run inside a multi-statement batch
+            // with other DDL, so it's its own command against a database with no rows/schema yet to lock.
             await using (var command = connection.CreateCommand())
             {
                 command.CommandText = $"ALTER DATABASE [{databaseName}] SET READ_COMMITTED_SNAPSHOT ON";

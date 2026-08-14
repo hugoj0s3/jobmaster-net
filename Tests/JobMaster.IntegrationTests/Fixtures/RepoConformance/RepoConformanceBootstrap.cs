@@ -24,8 +24,8 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 /// <see cref="SqlServerRepositoryFixture"/>) each need their own cluster, so this shared bootstrap --
 /// one instance per test run, registered as a collection fixture alongside them -- owns all three
 /// Testcontainers databases and the single <see cref="ServiceCollection"/> + start call all three
-/// fixtures rely on. Calling <c>StartJobMasterRuntimeAsync()</c> independently per fixture (the
-/// original design) throws "JobMasterRuntime is already started" for every fixture after the first.
+/// fixtures rely on. Calling <c>StartJobMasterRuntimeAsync()</c> independently per fixture throws
+/// "JobMasterRuntime is already started" for every fixture after the first.
 ///
 /// xunit v2 collection fixtures can't take other collection fixtures as constructor parameters (only
 /// class fixtures can depend on collection fixtures, not fixture-to-fixture), so the 3 provider

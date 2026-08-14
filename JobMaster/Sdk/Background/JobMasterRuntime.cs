@@ -491,13 +491,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone clusters. Cannot be used as a worker's AgentConnectionName in a non-standalone cluster.");
             }
 
-            // A Full worker on an Archived cluster behaves exactly like Coordinator (no connection at
-            // all — see JobMasterBackgroundAgentWorker.StartAsync), so it shares the same exemptions.
-            bool ActsAsCoordinator(WorkerDefinition w) =>
-                w.Mode == AgentWorkerMode.Coordinator ||
-                (clusterDefinition.ClusterMode == ClusterMode.Archived && w.Mode == AgentWorkerMode.Full);
-
-            if (workerDefinitions.Any(x => ActsAsCoordinator(x) && !string.IsNullOrEmpty(x.AgentConnectionName)))
+            if (workerDefinitions.Any(x => ActsAsCoordinator(x, clusterDefinition) && !string.IsNullOrEmpty(x.AgentConnectionName)))
             {
                 throw new InvalidOperationException(
                     "Coordinator workers (and Full workers on an Archived cluster) must not have an AgentConnectionName configured.");
@@ -508,7 +502,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 // Standalone workers always get AgentConnectionName forced to StandaloneAgentConnName by the
                 // builder, so there's nothing to cross-reference there — only check explicit clusters.
                 var invalidWorkers = workerDefinitions
-                    .Where(x => !ActsAsCoordinator(x))
+                    .Where(x => !ActsAsCoordinator(x, clusterDefinition))
                     .Where(x => !agentDefinitions.Any(a => string.Equals(a.AgentConnectionName, x.AgentConnectionName, StringComparison.OrdinalIgnoreCase)))
                     .Select(x => string.IsNullOrEmpty(x.WorkerName) ? "(unnamed)" : x.WorkerName)
                     .ToList();
@@ -579,6 +573,13 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
         }
     }
+
+    // A Full worker on an Archived cluster behaves exactly like Coordinator (no connection at all --
+    // see JobMasterBackgroundAgentWorker.StartAsync), so it shares the same exemptions used by
+    // PreValidation's AgentConnectionName checks.
+    private static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
+        w.Mode == AgentWorkerMode.Coordinator ||
+        (clusterDefinition.ClusterMode == ClusterMode.Archived && w.Mode == AgentWorkerMode.Full);
 
     /// <summary>
     /// Reads the cluster's previously-saved configuration, if any -- used by <see cref="PreValidation"/>

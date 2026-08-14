@@ -402,11 +402,10 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                             }
                             catch (Exception ex)
                             {
+                                // Only log error here. the operation is responsible for holding the partition on back master
                                 logger.Error(
                                     $"Failed to dispatch partition of {partition.Count} jobs to bucket {bucket.Id}. Continuing with remaining partitions.",
                                     JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: ex);
-                                var idsToHeldOnMaster = partition.Select(x => x.Id).ToList();
-                                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), useAcquireThrottler: true);
                             }
                         }
                     });

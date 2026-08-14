@@ -6,7 +6,7 @@
 
 ---
 
-## [Unreleased]
+## JobMaster 0.0.10-alpha / JobMaster.Dashboard 0.0.3-alpha
 
 ### Added
 
@@ -46,7 +46,7 @@
 
 - **`IsStandalone` not applied when cluster is configured via `ConfigFromJson`** — `ClusterDefinition.IsStandalone` is now nullable. When it is null (not set in code), the runtime correctly falls back to the value already stored in the database (`modelToSave.IsStandalone`). Previously a null code-level value unconditionally overwrote the stored value with `false`, so a cluster configured as standalone purely through JSON would silently start in cluster mode.
 
-- **Coordinator fallback bucket durability** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" now persists jobs to the master database (through a dedicated reserved connection) instead of an in-process queue, so they survive a Coordinator restart instead of being lost.
+- **Fallback bucket is now a real, master-DB-backed bucket, not an in-process queue** — When no bucket is available for a job for too long, the Coordinator's temporary "fallback bucket" used to hold those jobs purely in memory, so they were lost if the Coordinator restarted. It's now created and dispatched through the same path as a normal bucket, persisted to the master database via a dedicated reserved connection — so fallback jobs survive a Coordinator restart instead of being lost. It tries `Critical` priority first, then `High`, then `Medium` (which can never be disabled), skipping any priority the cluster has disabled via `DisablePriority`.
 
 - **Orphaned fallback buckets after a Coordinator crash** — If the worker that created a fallback bucket died, the bucket could get stuck forever instead of being cleaned up, leaking rows in the master database (the jobs themselves were never at risk — only the bucket's own bookkeeping). Fallback buckets are now destroyed automatically once their owning worker is confirmed dead.
 
@@ -60,11 +60,9 @@
 
 - **Cached reads could serve stale data far longer than expected after a change** — Agent connection saves/deletes and host registration/stats/deletion notified other processes' caches to refresh *after* writing the change. If anything went wrong between the write and that notification (including the process simply stopping), other processes kept serving pre-change data until their cache entry's normal expiry, rather than picking up the change promptly. The notification now always happens first, so a change is never silently missed.
 
-- **Fallback bucket ignored `DisablePriority`** — The temporary "fallback bucket" created when no real bucket is available for too long always used `Critical` priority, even if `Critical` had been explicitly disabled for the cluster. It now tries `Critical`, then `High`, then `Medium` (which can never be disabled), skipping any priority the cluster has disabled.
-
 - **Message size validation consolidated and made consistent** — The maximum message size limit is now checked once, consistently, every time you schedule a job or recurring schedule, regardless of whether it's saved immediately or held for later dispatch. Scheduling a batch of jobs now validates the entire batch up front, so a single oversized job can no longer cause part of the batch to be saved before the call fails.
 
-- **Clearer NATS `TransientThreshold` validation error** — The startup error thrown when a NATS cluster's `TransientThreshold` exceeds the allowed cap now reports your actual configured value alongside the limit, and links to the relevant documentation.
+- **Clearer NATS `TransientThreshold` validation error** — The startup error thrown when a NATS cluster's `TransientThreshold` exceeds the allowed cap (now 5 minutes, see above) now reports your actual configured value alongside the limit, and links to the relevant documentation.
 
 - **Static recurring schedules built with `NaturalCronBuilder` failed to parse at startup** — Registering a static recurring schedule from a `NaturalCronExpr` built via the fluent `NaturalCronBuilder` (e.g. `NaturalCronBuilder.Every(6).Minutes().Build()`) was evaluated by the wrong expression compiler internally, causing a parse failure when the cluster started. Static schedules registered from a raw natural-language string were unaffected.
 
@@ -91,6 +89,14 @@
 - **A job could rarely be executed twice under high load** — When assigning a batch of jobs to buckets, an internal bulk-update step didn't check that a job's data hadn't changed since it was last read, so two concurrent writers racing on the same job could both "win," with the second silently overwriting the first instead of being rejected. Fixed: this step now enforces the same optimistic-concurrency check already used everywhere else in the framework.
 
 - **MySQL: distributed locks could occasionally be granted while still held by someone else** — On MySQL clusters specifically, JobMaster's internal distributed lock (used for bucket coordination, agent-connection bookkeeping, and other internal safety checks) could report a lock as successfully acquired even though the previous holder's lease hadn't actually expired yet. Postgres and SQL Server were unaffected. Fixed by using the same reliable "read back and verify" check the other two providers already used, instead of relying on a database-reported row count that didn't behave as expected for this specific MySQL query.
+
+- **A job could rarely be executed twice under high load (second case)** — Dispatching a batch of jobs to a bucket could, if part of that batch failed to dispatch, incorrectly reset the status of *other* jobs in the same batch that had already started executing moments earlier on the same worker — making them eligible to be picked up and dispatched again elsewhere while the original execution was still running. Fixed: a dispatch failure now only affects the jobs that were actually part of it.
+
+- **NATS: configuring only a password (no username) via `connectionOptions` silently produced no authentication** — If a NATS connection's username was already part of the base connection string and only the password was supplied separately through `connectionOptions` (a common way to keep secrets out of a checked-in config), the password was silently dropped and the connection proceeded with no authentication configured, instead of using it. Fixed.
+
+### JobMaster.Dashboard 0.0.3-alpha
+
+- **Theme-builder parameters now correctly annotated as nullable** — `IJobMasterDashboardThemeColorSelector`/`IJobMasterDashboardFontFamilySelector` methods that genuinely accept an optional value (e.g. `Logo`'s `content`, `SetFontSans`'s `fontUrl`) are now typed `string?` instead of `string`. No behavior change — this only fixes inaccurate nullable-reference-type warnings for callers.
 
 ---
 

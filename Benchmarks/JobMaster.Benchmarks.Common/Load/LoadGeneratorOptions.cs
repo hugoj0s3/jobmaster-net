@@ -13,14 +13,12 @@ public sealed class LoadGeneratorOptions
     public int? StepDownJobsPerMinute { get; init; }
     public TimeSpan? StepDownAt { get; init; }
 
-    /// <summary>Fraction of jobs scheduled for immediate execution vs. delayed. Not specified by
-    /// Hugo's original spec -- defaulted to 50/50, flagged as an assumption to confirm once Phase A
-    /// produces its first real report.</summary>
+    /// <summary>Fraction of jobs scheduled for immediate execution vs. delayed. Defaults to
+    /// 50/50 -- adjust to match the traffic pattern a given run is meant to model.</summary>
     public double ImmediateFraction { get; init; } = 0.5;
 
-    /// <summary>Delayed jobs get a uniformly random delay in [DelayMin, DelayMax). Hugo specified
-    /// "more than 5 minutes" with no upper bound -- 30 minutes is a placeholder default, same
-    /// assumption-flag as ImmediateFraction.</summary>
+    /// <summary>Delayed jobs get a uniformly random delay in [DelayMin, DelayMax). Defaults to a
+    /// 5-30 minute range.</summary>
     public TimeSpan DelayMin { get; init; } = TimeSpan.FromMinutes(5);
     public TimeSpan DelayMax { get; init; } = TimeSpan.FromMinutes(30);
 
@@ -38,9 +36,9 @@ public sealed class LoadGeneratorOptions
     public int MaxConcurrentRequests { get; init; } = 200;
 
     /// <summary>Jobs requested per HTTP call. Defaults to 1 (one schedule call per job) to most
-    /// closely simulate independent concurrent client requests, per Hugo's "simulate real scenario"
-    /// instruction -- raise this to trade realism for less HTTP overhead if a tier's enqueue side
-    /// becomes the bottleneck instead of the framework under test.</summary>
+    /// closely simulate independent concurrent client requests -- raise this to trade realism for
+    /// less HTTP overhead if a tier's enqueue side becomes the bottleneck instead of the framework
+    /// under test.</summary>
     public int JobsPerRequest { get; init; } = 1;
 
     /// <summary>When set, switches the whole run from the paced steady-arrival model above to a

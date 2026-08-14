@@ -97,7 +97,7 @@ builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Cluster-1")
           .TransientThreshold(TimeSpan.FromMinutes(1))
-          .DebugJsonlFileLogger("/home/hugo/logs/Cluster-1.log")
+          .DebugJsonlFileLogger("/var/log/jobmaster/Cluster-1.log")
           .Mode(ClusterMode.Active);
 
     // Master database (must be SQL)

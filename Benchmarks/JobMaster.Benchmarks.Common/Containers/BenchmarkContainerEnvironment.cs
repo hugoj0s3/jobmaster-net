@@ -21,8 +21,8 @@ public enum DbEngine
 }
 
 /// <summary>
-/// Single-Docker-host benchmark topology: one resource-limited DB container (2 CPU / 2GB, matching
-/// Hugo's "DB server" spec), one unconstrained Redis container (benchmark plumbing -- latency and
+/// Single-Docker-host benchmark topology: one resource-limited DB container (2 CPU / 2GB, the
+/// benchmark's baseline DB sizing), one unconstrained Redis container (benchmark plumbing -- latency and
 /// completion recording -- not part of what's being measured, so not resource-limited), and N
 /// resource-limited worker containers (0.5 CPU / 512MB each) built from a single app Dockerfile with
 /// per-container environment variables (so each can be configured with a different JobMaster
@@ -80,7 +80,7 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         bool includeNats = false,
         Func<IDatabaseContainer, Task>? afterDbProvisionedAsync = null,
         // Defaults preserve the original fixed 2 CPU / 2GB DB spec -- overridable per run so larger
-        // burst-capacity tiers can scale the DB up (capped at 16GB per Hugo's instruction) alongside
+        // burst-capacity tiers can scale the DB up (capped at 16GB) alongside
         // worker count, without changing behavior for every existing paced-suite call site.
         long? dbNanoCpus = null,
         long? dbMemoryBytes = null,
@@ -182,20 +182,14 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             .WithDatabase(DbDatabaseName)
             .WithUsername(DbUsername)
             .WithPassword(DbPassword)
-            // Default max_connections (100) gets exhausted once every worker container legitimately
-            // opens pooled connections to every agent database plus the master database -- confirmed
-            // via a real "sorry, too many clients already" error under heavy concurrent load; 500
-            // covers that. Raising this further (tried 2000, then 6000) does NOT help the 20-worker
-            // burst-at-100k scenario -- confirmed those still fail, just on a connection-establishment
-            // timeout instead (Postgres forking new backend processes faster than a sudden multi-
-            // thousand-connection storm arrives, not a count ceiling), so pushed back down to 500
-            // rather than leave an unhelpful, untested-at-scale value in place.
-            // NOTE: .WithCommand("postgres", "-c", "max_connections=500") reproducibly broke
-            // PostgreSqlBuilder's readiness wait (container reported "not running" on every attempt,
-            // even though a raw `docker run`/`docker exec` replicating the exact same command, env
-            // vars, and resource limits worked fine every time) -- append via Cmd through the create
-            // parameter modifier instead, which doesn't touch PostgreSqlBuilder's own command/wait
-            // strategy setup.
+            // Default max_connections (100) is too low once every worker container opens pooled
+            // connections to every agent database plus the master database under heavy concurrent
+            // load; 500 gives enough headroom. Raising it further doesn't help -- Postgres's own
+            // backend-forking rate becomes the bottleneck before the connection count ceiling does.
+            // Set via the create parameter modifier rather than .WithCommand(...): .WithCommand(...)
+            // breaks PostgreSqlBuilder's own readiness-wait strategy (container reports "not running"
+            // on every attempt), even though the same command/env/resource-limits combination works
+            // fine via a raw docker run/exec.
             .WithCreateParameterModifier(p =>
             {
                 p.HostConfig.NanoCPUs = dbNanoCpus;

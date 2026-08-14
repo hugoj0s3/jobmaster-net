@@ -103,10 +103,9 @@ public static class JobMasterTopologyBuilder
                 // lock is keyed by a shared 10-second wall-clock window (doesn't scale with instance
                 // count), but the scan-plan path (delayed jobs) picks a random lock key from a range
                 // that widens with CountActiveCoordinatorWorkersAsync(), so multiple instances
-                // genuinely divide that work. transferBatchSize defaults to null (SDK's 1000 default);
-                // raising it previously OOM-killed the DB and caused duplicate dispatches when the
-                // claim lock expired mid-batch -- now that dispatch is bulked and partitioned with
-                // per-partition failure isolation, this is being retested at 5000.
+                // genuinely divide that work. transferBatchSize defaults to null (SDK's 1000 default)
+                // -- raise with care, since a large batch can put real pressure on the DB and risks
+                // duplicate dispatches if the claim lock expires mid-batch.
                 for (var c = 1; c <= coordinatorCount; c++)
                 {
                     workers.Add(new { WorkerName = $"coordinator-{c}", WorkerMode = "Coordinator", SkipWarmUpTime = skipWarmUpTime, TransferBatchSize = transferBatchSize });
@@ -185,7 +184,7 @@ public static class JobMasterTopologyBuilder
     // Flags (Max Pool Size, UseAffectedRows/AllowUserVariables) match exactly what
     // Tests/JobMaster.ScenarioTests' SqlServerPure/MySqlPure JSON templates already use -- JobMaster's
     // MySql provider specifically depends on UseAffectedRows/AllowUserVariables for its bulk
-    // upsert logic, confirmed via those working templates rather than guessed.
+    // upsert logic.
     private static string BuildConnectionString(DbEngine dbEngine, string databaseName) => dbEngine switch
     {
         DbEngine.SqlServer =>

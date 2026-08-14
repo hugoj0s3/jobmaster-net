@@ -47,7 +47,7 @@ internal sealed class NatsJetStreamConnectionOptionsStrategy : IConnectionOption
         var nkey            = GetString(options, "nkey");
         var jwt             = GetString(options, "jwt");
 
-        if (username is null && token is null && credentialsFile is null && nkey is null && jwt is null)
+        if (username is null && password is null && token is null && credentialsFile is null && nkey is null && jwt is null)
             return null;
 
         return new NatsAuthOpts

@@ -70,37 +70,46 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 continue;
             }
 
-            var engine = backgroundAgentWorker.GetEngine(bucket.Id);
-            if (engine != null &&
-                jobRaw.IsWithinOnboardingWindow() &&
-                engine.HasOnBoardingAvailability())
+            try
             {
-                var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
-                if (result == OnBoardingResult.Accepted)
+                var engine = backgroundAgentWorker.GetEngine(bucket.Id);
+                if (engine != null &&
+                    jobRaw.IsWithinOnboardingWindow() &&
+                    engine.HasOnBoardingAvailability())
                 {
-                    logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                    var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
+                    if (result == OnBoardingResult.Accepted)
+                    {
+                        logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        continue;
+                    }
+
+                    if (result == OnBoardingResult.MovedToMaster)
+                    {
+                        logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        continue;
+                    }
+
+                    if (result == OnBoardingResult.Cancelled)
+                    {
+                        logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        continue;
+                    }
+
+                    logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogCategory.Job, jobRaw.Id);
+                    jobRaw.MarkAsHeldOnMaster();
+                    await masterJobsService.UpdateAsync(jobRaw);
                     continue;
                 }
 
-                if (result == OnBoardingResult.MovedToMaster)
-                {
-                    logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-                    continue;
-                }
-
-                if (result == OnBoardingResult.Cancelled)
-                {
-                    logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-                    continue;
-                }
-
-                logger.Error($"Short-circuit failed unexpected result: {result}", JobMasterLogCategory.Job, jobRaw.Id);
+                toBulkDispatch.Add(jobRaw);
+            }
+            catch (Exception ex)
+            {
+                logger.Error($"Failed short-circuit attempt for job {jobRaw.Id}, holding on master.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 jobRaw.MarkAsHeldOnMaster();
                 await masterJobsService.UpdateAsync(jobRaw);
-                continue;
             }
-
-            toBulkDispatch.Add(jobRaw);
         }
 
         if (toBulkDispatch.Count == 0)
@@ -115,12 +124,8 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         catch (Exception ex)
         {
             logger.Error($"Failed to bulk dispatch {toBulkDispatch.Count} jobs to bucket {bucket.Id}.", JobMasterLogCategory.Job, toBulkDispatch[0].Id, exception: ex);
-            foreach (var jobRaw in toBulkDispatch)
-            {
-                jobRaw.MarkAsHeldOnMaster();
-                await masterJobsService.UpdateAsync(jobRaw);
-            }
-
+            var idsToHeldOnMaster = toBulkDispatch.Select(x => x.Id).ToList();
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), useAcquireThrottler: true);
             throw;
         }
     }

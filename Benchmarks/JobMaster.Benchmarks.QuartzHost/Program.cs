@@ -20,13 +20,12 @@ builder.Services.AddQuartz(q =>
     q.SchedulerId = "AUTO";
 
     // Defaults (MaxBatchSize=1, thread pool MaxConcurrency=10) throttle acquisition far below what
-    // a 0.5-CPU container can actually do -- confirmed via a real benchmark run where worker CPU sat
-    // at ~12% avg/36% max under a 2500/min sustained load while a large backlog of WAITING triggers
-    // built up. 50 matches the batch-size convention already used elsewhere in this benchmark
-    // (LoadGenerator.TargetJobsPerTick, JobMaster's dispatch MaxBatchSizeForBulkOperation cap) rather
-    // than an arbitrary new number. The no-op job body is near-instant (one Redis write), so thread
-    // pool size mostly bounds concurrent DB completion-writes, not CPU-bound execution time -- 25 is
-    // a modest bump from default, not a large guess, to avoid just shifting the bottleneck blindly.
+    // a 0.5-CPU container can actually do. 50 matches the batch-size convention already used
+    // elsewhere in this benchmark (LoadGenerator.TargetJobsPerTick, JobMaster's dispatch
+    // MaxBatchSizeForBulkOperation cap) rather than an arbitrary new number. The no-op job body is
+    // near-instant (one Redis write), so thread pool size mostly bounds concurrent DB
+    // completion-writes, not CPU-bound execution time -- 25 is a modest bump from default rather
+    // than a large guess, to avoid shifting the bottleneck blindly.
     q.MaxBatchSize = 50;
     q.UseDefaultThreadPool(tp => tp.MaxConcurrency = 25);
 
