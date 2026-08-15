@@ -33,7 +33,10 @@ internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterCluste
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
-    private string CompareExchangeKey(string key) => $"lock/{ClusterConnConfig.ClusterId}/{key}";
+    // Compare-exchange keys aren't RavenDB collections, but reusing the same {Prefix}{Name}/{ClusterId}/{Key}
+    // scheme as every document ID anyway gives locks the same collision protection (avoid colliding with
+    // an unrelated app/deployment sharing this RavenDB database) as everything else this provider stores.
+    private string CompareExchangeKey(string key) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, "lock", key);
 
     private static IMetadataDictionary ExpiresMetadata(DateTime expiresAt) =>
         new MetadataAsDictionary { [Constants.Documents.Metadata.Expires] = expiresAt.Add(ZombieLockGracePeriod) };

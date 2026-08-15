@@ -16,7 +16,8 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 /// <summary>
 /// Standalone RavenDB conformance fixture, deliberately separate from <see cref="RepoConformanceBootstrap"/>
 /// and the "RepoConformance" collection the 3 SQL providers share. Only <see cref="IMasterDistributedLockerRepository"/>
-/// exists so far -- registering a RavenDB cluster into the shared bootstrap would require
+/// and <see cref="IMasterGenericRecordRepository"/> exist so far -- registering a RavenDB cluster into
+/// the shared bootstrap would require
 /// <c>StartJobMasterRuntimeAsync()</c>, which starts background runners for every registered cluster and
 /// would immediately fail against the 4 Master interfaces that don't exist yet. This fixture instead
 /// builds its own cluster and resolves the lock repository directly via
@@ -48,11 +49,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         set => throw new NotSupportedException();
     }
 
-    internal override IMasterGenericRecordRepository MasterGenericRecords
-    {
-        get => throw new NotImplementedException("RavenDB GenericRecords repository -- not implemented until a later increment.");
-        set => throw new NotSupportedException();
-    }
+    internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
 
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
@@ -89,6 +86,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         // Deliberately no StartJobMasterRuntimeAsync() call -- see the class doc above.
         var factory = JobMasterClusterAwareComponentFactories.GetFactory(ClusterId);
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
+        MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
     }
 
     public override async Task DisposeAsync()

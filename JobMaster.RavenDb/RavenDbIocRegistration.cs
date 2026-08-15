@@ -17,7 +17,8 @@ internal static class RavenDbIocRegistration
         registration.ClusterServices.AddKeyedSingleton<IRavenDbDocumentStoreManager, RavenDbDocumentStoreManager>(RepositoryType);
         registration.ClusterServices.AddSingleton<IRavenDbDocumentStoreManager>(sp => sp.GetRequiredKeyedService<IRavenDbDocumentStoreManager>(RepositoryType));
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, RavenDbMasterDistributedLockerRepository>();
-        // Other 4 Master interfaces + RegisterForAgent land in later increments, one at a time --
+        registration.AddJobMasterComponent<IMasterGenericRecordRepository, RavenDbMasterGenericRecordRepository>();
+        // Other 3 Master interfaces + RegisterForAgent land in later increments, one at a time --
         // see the RavenDB plan's roadmap for the order.
     }
 }
