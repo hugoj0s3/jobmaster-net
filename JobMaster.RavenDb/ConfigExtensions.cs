@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 
 namespace JobMaster.RavenDb;
 
@@ -18,6 +19,16 @@ public static class ConfigExtensions
         clusterConfigSelector.ClusterConnString(connectionString);
         clusterConfigSelector.ClusterRepoType(RavenDbRepositoryConstants.RepositoryTypeId);
         return clusterConfigSelector;
+    }
+
+    /// <summary>
+    /// Configures an agent connection to use RavenDB with the given connection string.
+    /// </summary>
+    public static IAgentConnectionConfigSelector UseRavenDbForAgent(this IAgentConnectionConfigSelector agentConfigSelector, string connectionString)
+    {
+        agentConfigSelector.AgentConnString(connectionString);
+        agentConfigSelector.AgentRepoType(RavenDbRepositoryConstants.RepositoryTypeId);
+        return agentConfigSelector;
     }
 
     /// <summary>

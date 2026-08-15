@@ -3,9 +3,11 @@ using JobMaster.Ioc.Extensions;
 using JobMaster.RavenDb;
 using JobMaster.RavenDb.Connections;
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Ioc;
 using Microsoft.Extensions.DependencyInjection;
 using Raven.Client.Documents;
 using Raven.Client.ServerWide;
@@ -16,20 +18,20 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
 /// <summary>
 /// Standalone RavenDB conformance fixture, deliberately separate from <see cref="RepoConformanceBootstrap"/>
-/// and the "RepoConformance" collection the 3 SQL providers share. Only <see cref="IMasterDistributedLockerRepository"/>
-/// and <see cref="IMasterGenericRecordRepository"/> exist so far -- registering a RavenDB cluster into
-/// the shared bootstrap would require
+/// and the "RepoConformance" collection the 3 SQL providers share. <see cref="IMasterJobsRepository"/> and
+/// <see cref="IMasterRecurringSchedulesRepository"/> are the remaining Master interfaces not implemented yet
+/// -- registering a RavenDB cluster into the shared bootstrap would require
 /// <c>StartJobMasterRuntimeAsync()</c>, which starts background runners for every registered cluster and
-/// would immediately fail against the 4 Master interfaces that don't exist yet. This fixture instead
-/// builds its own cluster and resolves the lock repository directly via
-/// <see cref="JobMasterClusterAwareComponentFactories.GetFactory"/> -- confirmed safe because that
-/// resolution path is plain DI (<c>GetRequiredService</c>) with no dependency on the runtime having been
-/// started. Fold this into <see cref="RepoConformanceBootstrap"/> once all 5 Master + Agent interfaces
-/// are implemented (see the RavenDB provider plan's roadmap).
+/// would immediately fail against those. This fixture instead builds its own cluster and resolves
+/// repositories directly via <see cref="JobMasterClusterAwareComponentFactories.GetFactory"/> -- confirmed
+/// safe because that resolution path is plain DI (<c>GetRequiredService</c>) with no dependency on the
+/// runtime having been started. Fold this into <see cref="RepoConformanceBootstrap"/> once all 5 Master +
+/// Agent interfaces are implemented (see the RavenDB provider plan's roadmap).
 /// </summary>
 public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 {
     private const string ClusterIdValue = "RT-RavenDb-1";
+    private const string AgentConnectionName = "AgentForRepoTests-RavenDb-1";
 
     private RavenDbContainer container = null!;
     private ServiceProvider serviceProvider = null!;
@@ -66,11 +68,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
     internal IRavenDbDocumentStoreManager DocumentStoreManager { get; private set; } = null!;
     internal string ConnectionString { get; private set; } = string.Empty;
 
-    internal override IAgentRawMessagesDispatcherRepository AgentMessages
-    {
-        get => throw new NotImplementedException("RavenDB agent messages repository -- not implemented until a later increment.");
-        set => throw new NotSupportedException();
-    }
+    internal override IAgentRawMessagesDispatcherRepository AgentMessages { get; set; } = null!;
 
     public override async Task InitializeAsync()
     {
@@ -92,6 +90,8 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         services.AddJobMasterCluster(ClusterIdValue, cfg =>
         {
             cfg.UseRavenDbForMaster(connectionString);
+            cfg.AddAgentConnectionConfig(AgentConnectionName)
+                .UseRavenDbForAgent(connectionString);
             cfg.Mode(ClusterMode.Active);
         });
         serviceProvider = services.BuildServiceProvider();
@@ -107,6 +107,22 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         // builds its own inner ServiceCollection per cluster (see ClusterIocRegistration.ClusterServices),
         // separate from the container AddJobMasterCluster's caller builds.
         DocumentStoreManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
+
+        var agentConfig = JobMasterClusterConnectionConfig
+            .Get(ClusterId, includeNotReady: true)
+            .TryGetAgentConnectionConfig(AgentConnectionName);
+        if (agentConfig == null)
+        {
+            throw new Exception($"Agent config '{AgentConnectionName}' not found for cluster '{ClusterId}'.");
+        }
+
+        var rawRepo = factory.ClusterServiceProvider
+            .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
+                ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(RavenDbRepositoryConstants.RepositoryTypeId));
+        rawRepo.Initialize(agentConfig);
+        AgentMessages = rawRepo;
+
+        AgentConnectionId = new AgentConnectionId(ClusterId, AgentConnectionName);
     }
 
     public override async Task DisposeAsync()

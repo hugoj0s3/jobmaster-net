@@ -29,7 +29,6 @@ internal static class RavenDbIocRegistration
         registration.ClusterServices.AddKeyedSingleton<IRavenDbDocumentStoreManager, RavenDbDocumentStoreManager>(RepositoryType);
         registration.ClusterServices.AddSingleton<IRavenDbDocumentStoreManager>(sp => sp.GetRequiredKeyedService<IRavenDbDocumentStoreManager>(RepositoryType));
         registration.AddFingerprintResolver<RavenDbAgentFingerprintResolver>(RepositoryType);
-        // AddRepositoryDispatcher (IAgentRawMessagesDispatcherRepository) lands in the next Agent-side
-        // increment -- see the RavenDB plan's roadmap.
+        registration.AddRepositoryDispatcher<RavenDbJobsDispatcherRepository, RavenDbRawMessagesDispatcherRepository, RavenDbRawMessagesDispatcherRepository>(RepositoryType);
     }
 }
