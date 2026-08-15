@@ -33,7 +33,7 @@ await app.Services.StartJobMasterRuntimeAsync();
 ### Implement a Job Handler
 
 ```csharp
-public sealed class HelloJobHandler : IJobHandler
+public sealed class HelloJobHandler : IJobMasterHandler
 {
     public async Task HandleAsync(JobContext job)
     {

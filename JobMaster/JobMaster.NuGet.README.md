@@ -50,9 +50,9 @@ await app.Services.StartJobMasterRuntimeAsync();
 ```
 
 ### Implement a Job Handler
-Define your logic by implementing IJobHandler
+Define your logic by implementing IJobMasterHandler
 ```csharp
-public class NotificationHandler : IJobHandler
+public class NotificationHandler : IJobMasterHandler
 {
     public async Task HandleAsync(JobContext job)
     {
