@@ -17,5 +17,11 @@ internal static class RavenDbDocumentNaming
         $"{clusterConnConfig.GetCollectionPrefix()}{collection}";
 
     public static string DocumentId(JobMasterClusterConnectionConfig clusterConnConfig, string collection, string entityId) =>
-        $"{CollectionName(clusterConnConfig, collection)}/{clusterConnConfig.ClusterId}/{entityId}";
+        DocumentId(clusterConnConfig.GetCollectionPrefix(), clusterConnConfig.ClusterId, collection, entityId);
+
+    // Low-level form for callers that don't have a JobMasterClusterConnectionConfig in scope --
+    // RavenDbAgentFingerprintResolver only gets a JobMasterAgentConnectionConfig (via Initialize) plus
+    // clusterId/agentConnectionId as method parameters, never a cluster-aware config.
+    public static string DocumentId(string prefix, string clusterId, string collection, string entityId) =>
+        $"{prefix}{collection}/{clusterId}/{entityId}";
 }

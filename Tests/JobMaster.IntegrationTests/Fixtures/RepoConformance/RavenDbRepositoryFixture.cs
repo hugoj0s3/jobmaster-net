@@ -1,6 +1,7 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
 using JobMaster.RavenDb;
+using JobMaster.RavenDb.Connections;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
@@ -58,6 +59,13 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
     // property for RavenDbLogsRepositoryConformanceTests, which is RavenDB-only for the same reason.
     internal IMasterLogsRepository MasterLogs { get; set; } = null!;
 
+    // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
+    // only registers UseRavenDbForMaster, so RegisterForAgent never runs and there's no DI-resolved
+    // IAgentFingerprintResolver available. RavenDbAgentFingerprintResolverConformanceTests constructs the
+    // resolver directly instead (same document store, no full agent-connection DI wiring needed).
+    internal IRavenDbDocumentStoreManager DocumentStoreManager { get; private set; } = null!;
+    internal string ConnectionString { get; private set; } = string.Empty;
+
     internal override IAgentRawMessagesDispatcherRepository AgentMessages
     {
         get => throw new NotImplementedException("RavenDB agent messages repository -- not implemented until a later increment.");
@@ -93,6 +101,12 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
         MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
+
+        ConnectionString = connectionString;
+        // ClusterServiceProvider, not the fixture's own outer serviceProvider -- ClusterIocRegistration
+        // builds its own inner ServiceCollection per cluster (see ClusterIocRegistration.ClusterServices),
+        // separate from the container AddJobMasterCluster's caller builds.
+        DocumentStoreManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
     }
 
     public override async Task DisposeAsync()

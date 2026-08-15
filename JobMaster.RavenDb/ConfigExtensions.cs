@@ -39,4 +39,12 @@ public static class ConfigExtensions
         return clusterConnectionConfig.AdditionalConnConfig.TryGetValue<string>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CollectionPrefixKey)
                ?? RavenDbConfigKeys.DefaultCollectionPrefix;
     }
+
+    // Agent-side counterpart -- RavenDbAgentFingerprintResolver only ever has a JobMasterAgentConnectionConfig
+    // in scope (via Initialize), never a JobMasterClusterConnectionConfig.
+    internal static string GetCollectionPrefix(this JobMasterAgentConnectionConfig agentConnectionConfig)
+    {
+        return agentConnectionConfig.AdditionalConnConfig.TryGetValue<string>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CollectionPrefixKey)
+               ?? RavenDbConfigKeys.DefaultCollectionPrefix;
+    }
 }
