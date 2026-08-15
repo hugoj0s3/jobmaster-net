@@ -47,6 +47,24 @@ of `ConfigFromJson`'s design. This was found by spot-checking one specific field
 sweep — worth auditing every other enum-like/identifier string this surface parses to confirm nothing
 else was missed the same way before considering this done.
 
+## No shared `Logs` RepoConformance suite for any provider
+
+Raised 2026-08-15 while implementing `IMasterLogsRepository` for the RavenDB provider. Unlike the other
+4 Master interfaces (Jobs, RecurringSchedules, GenericRecords, DistributedLocker), `RepositoryFixtureBase`
+(`Tests/JobMaster.IntegrationTests/Fixtures/RepoConformance/RepositoryFixtureBase.cs`) has no `MasterLogs`
+slot, and there is no shared `RepositoryLogsConformanceTests<TFixture>` base class the way
+`RepositoryDistributedLockerConformanceTests`/`RepositoryGenericRecordsConformanceTests` exist. This means
+SQL's `SqlMasterLogsRepository`/provider overrides have never had cross-provider conformance coverage —
+a pre-existing gap, not something introduced by the RavenDB work.
+
+Because of this, RavenDB's Logs implementation shipped with its own standalone test class
+(`RavenDbLogsRepositoryConformanceTests`, 6 tests against a concrete `RavenDbRepositoryFixture`, not a
+shared generic base) rather than the reused-shared-base pattern the other 4 interfaces followed. Properly
+fixing this means adding `MasterLogs` to `RepositoryFixtureBase`, writing a shared
+`RepositoryLogsConformanceTests<TFixture>` base class, and wiring it into all 4 provider fixtures
+(Postgres/MySql/SqlServer/RavenDb) — bigger than the RavenDB increment it was found in, and touches SQL
+provider test files outside that scope, so deferred rather than opportunistically bundled in.
+
 ## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
 
 `OnStartingAsync` was renamed to `OnBeforeStartAsync` (interface + all implementers: `SqlJobMasterRuntimeSetup`,

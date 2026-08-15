@@ -53,6 +53,11 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
+    // Not part of RepositoryFixtureBase's contract -- no shared "Logs" RepoConformance category exists
+    // for any provider (SQL included), so there's no base-class slot to fill. Exposed as a plain extra
+    // property for RavenDbLogsRepositoryConformanceTests, which is RavenDB-only for the same reason.
+    internal IMasterLogsRepository MasterLogs { get; set; } = null!;
+
     internal override IAgentRawMessagesDispatcherRepository AgentMessages
     {
         get => throw new NotImplementedException("RavenDB agent messages repository -- not implemented until a later increment.");
@@ -87,6 +92,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         var factory = JobMasterClusterAwareComponentFactories.GetFactory(ClusterId);
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
         MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
+        MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
     }
 
     public override async Task DisposeAsync()

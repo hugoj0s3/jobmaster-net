@@ -7,12 +7,33 @@ using JobMaster.Sdk.Ioc.Markups;
 using Raven.Client;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Operations;
+using Raven.Client.Documents.Queries;
+using Raven.Client.Documents.Session;
 using Raven.Client.Json;
 
 namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwareRepository, IMasterGenericRecordRepository
 {
+    // WaitForNonStaleResults() short-circuits immediately when the index is already caught up (no pending
+    // writes behind the query's cutoff etag) -- this bound only ever gets exercised under genuine indexing
+    // lag, not on every call.
+    private static readonly TimeSpan NonStaleResultsTimeout = TimeSpan.FromSeconds(2);
+
+    // Only these groups feed SentinelCachedReader's refresh factories (see MasterHostService,
+    // MasterAgentWorkersService, MasterAgentConnectionService, MasterBucketService) -- a stale Query result
+    // there gets cached and trusted for up to JobMasterConstants.DefaultCacheEntryExpiry. Every other group
+    // (heartbeats, Sentinel itself) is read directly, uncached, and already established as fine with a
+    // slightly-behind snapshot -- no reason to pay the wait there.
+    private static readonly HashSet<string> GroupsRequiringFreshRead = new(StringComparer.Ordinal)
+    {
+        MasterGenericRecordGroupIds.Bucket,
+        MasterGenericRecordGroupIds.Host,
+        MasterGenericRecordGroupIds.AgentWorker,
+        MasterGenericRecordGroupIds.AgentConnection,
+        MasterGenericRecordGroupIds.ClusterConfiguration,
+    };
+
     private readonly IDocumentStore store;
 
     public RavenDbMasterGenericRecordRepository(
@@ -55,7 +76,12 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenSession();
         var (rql, parameters) = BuildQueryRql(groupId, criteria);
 
-        var query = session.Advanced.RawQuery<RavenDbGenericRecordDocument>(rql);
+        // Dynamic/auto-index queries can be stale immediately after a write (indexing is async). Only groups
+        // backing a SentinelCachedReader factory need to wait for it -- see GroupsRequiringFreshRead.
+        var rawQuery = session.Advanced.RawQuery<RavenDbGenericRecordDocument>(rql);
+        var query = GroupsRequiringFreshRead.Contains(groupId)
+            ? rawQuery.WaitForNonStaleResults(NonStaleResultsTimeout)
+            : rawQuery;
         foreach (var kv in parameters)
         {
             query = query.AddParameter(kv.Key, kv.Value);
@@ -70,7 +96,10 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenAsyncSession();
         var (rql, parameters) = BuildQueryRql(groupId, criteria);
 
-        var query = session.Advanced.AsyncRawQuery<RavenDbGenericRecordDocument>(rql);
+        var rawQuery = session.Advanced.AsyncRawQuery<RavenDbGenericRecordDocument>(rql);
+        var query = GroupsRequiringFreshRead.Contains(groupId)
+            ? rawQuery.WaitForNonStaleResults(NonStaleResultsTimeout)
+            : rawQuery;
         foreach (var kv in parameters)
         {
             query = query.AddParameter(kv.Key, kv.Value);
@@ -85,7 +114,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenSession();
         var doc = ToDocument(recordEntry);
         session.Store(doc, DocumentId(recordEntry.GroupId, recordEntry.EntryId));
-        session.Advanced.GetMetadataFor(doc)[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
+        ApplyMetadata(session.Advanced.GetMetadataFor(doc), recordEntry);
         session.SaveChanges();
     }
 
@@ -94,7 +123,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenAsyncSession();
         var doc = ToDocument(recordEntry);
         await session.StoreAsync(doc, DocumentId(recordEntry.GroupId, recordEntry.EntryId));
-        session.Advanced.GetMetadataFor(doc)[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
+        ApplyMetadata(session.Advanced.GetMetadataFor(doc), recordEntry);
         await session.SaveChangesAsync();
     }
 
@@ -106,7 +135,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         // ConcurrencyException on a duplicate, left unmodified/unmapped since neither the interface
         // nor SQL's base Insert special-cases this at the repository layer.
         session.Store(doc, changeVector: string.Empty, id: DocumentId(recordEntry.GroupId, recordEntry.EntryId));
-        session.Advanced.GetMetadataFor(doc)[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
+        ApplyMetadata(session.Advanced.GetMetadataFor(doc), recordEntry);
         session.SaveChanges();
     }
 
@@ -115,7 +144,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenAsyncSession();
         var doc = ToDocument(recordEntry);
         await session.StoreAsync(doc, changeVector: string.Empty, id: DocumentId(recordEntry.GroupId, recordEntry.EntryId));
-        session.Advanced.GetMetadataFor(doc)[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
+        ApplyMetadata(session.Advanced.GetMetadataFor(doc), recordEntry);
         await session.SaveChangesAsync();
     }
 
@@ -141,8 +170,25 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         foreach (var record in records)
         {
             var doc = ToDocument(record);
-            var metadata = new MetadataAsDictionary { [Constants.Documents.Metadata.Collection] = CollectionName(record.GroupId) };
+            var metadata = new MetadataAsDictionary();
+            ApplyMetadata(metadata, record);
             await bulkInsert.StoreAsync(doc, DocumentId(record.GroupId, record.EntryId), metadata);
+        }
+    }
+
+    // @expires is a pure storage-reclamation backstop here, not a correctness dependency the way it had
+    // to be handled carefully for the distributed locker -- Get/Query already hide expired records via
+    // the ExpiresAt field filter regardless of whether RavenDB's async expiration sweep has physically
+    // deleted the document yet, so there's no "presence implies still valid" risk to guard against. No
+    // grace buffer either (unlike the locker's 2-day zombie-lock buffer): an expired GenericRecord isn't
+    // a sign something's wrong the way an expired-but-unclaimed lock is, so there's no forensic window
+    // worth preserving -- reclaim the storage as soon as RavenDB's expiration sweep gets to it.
+    private void ApplyMetadata(IMetadataDictionary metadata, GenericRecordEntry recordEntry)
+    {
+        metadata[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
+        if (recordEntry.ExpiresAt.HasValue)
+        {
+            metadata[Constants.Documents.Metadata.Expires] = DateTime.SpecifyKind(recordEntry.ExpiresAt.Value, DateTimeKind.Utc);
         }
     }
 
@@ -164,6 +210,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
             using var session = store.OpenAsyncSession();
             var rql = $"from '{collectionName}' as e where e.ClusterId = $clusterId and e.ExpiresAt != null and e.ExpiresAt <= $cutoff order by e.ExpiresAt asc limit 0, $limit";
             var docs = await session.Advanced.AsyncRawQuery<RavenDbGenericRecordDocument>(rql)
+                .WaitForNonStaleResults(NonStaleResultsTimeout)
                 .AddParameter("clusterId", ClusterConnConfig.ClusterId)
                 .AddParameter("cutoff", cutoff)
                 .AddParameter("limit", limit)
@@ -189,22 +236,24 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
 
         var cutoff = DateTime.SpecifyKind(createdAtTo, DateTimeKind.Utc);
 
-        using var session = store.OpenAsyncSession();
+        // CreatedAt is write-once (only set at creation, never updated), so unlike DeleteExpiredAsync's
+        // ExpiresAt (mutable via Upsert), a stale index here can only cause this tick to miss a
+        // just-inserted old-looking entry -- never wrongly delete something it shouldn't -- and a missed
+        // entry is still just as old next tick. AllowStale is safe.
         var rql = $"from '{CollectionName(groupId)}' as e where e.ClusterId = $clusterId and e.CreatedAt <= $cutoff order by e.CreatedAt asc limit 0, $limit";
-        var docs = await session.Advanced.AsyncRawQuery<RavenDbGenericRecordDocument>(rql)
-            .AddParameter("clusterId", ClusterConnConfig.ClusterId)
-            .AddParameter("cutoff", cutoff)
-            .AddParameter("limit", limit)
-            .ToListAsync();
-
-        if (docs.Count == 0) return 0;
-
-        foreach (var doc in docs)
+        var operation = await store.Operations.SendAsync(new DeleteByQueryOperation(new IndexQuery
         {
-            session.Delete(session.Advanced.GetDocumentId(doc));
-        }
-        await session.SaveChangesAsync();
-        return docs.Count;
+            Query = rql,
+            QueryParameters = new Parameters
+            {
+                ["clusterId"] = ClusterConnConfig.ClusterId,
+                ["cutoff"] = cutoff,
+                ["limit"] = limit,
+            }
+        }, new QueryOperationOptions { AllowStale = true }));
+
+        var result = await operation.WaitForCompletionAsync<BulkOperationResult>();
+        return (int)result.Total;
     }
 
     public int Count(string groupId, GenericRecordQueryCriteria? criteria = null)
@@ -213,6 +262,10 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         using var session = store.OpenSession();
         var (rql, parameters) = BuildQueryRql(groupId, criteria, forCount: true);
 
+        // No WaitForNonStaleResults here -- unlike Query (which gates a sentinel-driven cache refresh,
+        // see MasterChangesSentinelService/SentinelCachedReader), a Count is never used to decide "is my
+        // cached copy still valid"; a stale count is just a slightly-behind number, not a silently-wrong
+        // freshness signal.
         var query = session.Advanced.RawQuery<RavenDbGenericRecordDocument>(rql).Statistics(out var stats);
         foreach (var kv in parameters)
         {
