@@ -13,18 +13,21 @@ namespace JobMaster.IntegrationTests.RepoConformance.RavenDb;
 [Trait("DB", "RavenDb")]
 public sealed class RavenDbLogsRepositoryConformanceTests
 {
-    // Production QueryAsync/CountAsync deliberately don't wait for index freshness (matches SQL's actual
-    // consistency model -- see the RavenDB provider plan's design reference), so a test that writes then
-    // immediately asserts needs to let indexing settle first, rather than assume the very next read
-    // already reflects it.
-    private static readonly TimeSpan IndexSettleDelay = TimeSpan.FromSeconds(2);
-
     private readonly RavenDbRepositoryFixture fixture;
 
     public RavenDbLogsRepositoryConformanceTests(RavenDbRepositoryFixture fixture)
     {
         this.fixture = fixture;
     }
+
+    // Production QueryAsync/CountAsync deliberately don't wait for index freshness (matches SQL's actual
+    // consistency model -- see the RavenDB provider plan's design reference), so a test that writes then
+    // immediately asserts needs to let indexing settle first, rather than assume the very next read
+    // already reflects it. Same name/purpose as RepositoryJobsConformanceTests.SettleAsync -- not shared
+    // with it since this class has no shared-with-SQL base to hang a virtual override on (see the class
+    // doc above), but kept as its own method rather than an inline delay so future settle points here
+    // stay consistent and easy to find.
+    private static Task SettleAsync() => Task.Delay(TimeSpan.FromSeconds(2));
 
     private LogItem NewItem(JobMasterLogLevel level, JobMasterLogCategory? category, string message, string? referenceId = null, DateTime? timestamp = null)
     {
@@ -85,7 +88,7 @@ public sealed class RavenDbLogsRepositoryConformanceTests
         var info = NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.Bucket, "unrelated info message");
 
         await fixture.MasterLogs.BulkInsertAsync(new List<LogItem> { warn, error, info });
-        await Task.Delay(IndexSettleDelay);
+        await SettleAsync();
 
         var byLevel = await fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { Level = JobMasterLogLevel.Warning, CountLimit = 100 });
         Assert.Contains(byLevel, x => x.Id == warn.Id);
@@ -119,7 +122,7 @@ public sealed class RavenDbLogsRepositoryConformanceTests
             items.Add(NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.Api, $"msg-{i}", referenceId: groupReferenceId, timestamp: baseTime.AddMinutes(i)));
         }
         await fixture.MasterLogs.BulkInsertAsync(items);
-        await Task.Delay(IndexSettleDelay);
+        await SettleAsync();
 
         var inRange = await fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria
         {
@@ -148,7 +151,7 @@ public sealed class RavenDbLogsRepositoryConformanceTests
             .ToList();
 
         await fixture.MasterLogs.BulkInsertAsync(items);
-        await Task.Delay(IndexSettleDelay);
+        await SettleAsync();
 
         var count = await fixture.MasterLogs.CountAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 2 });
         Assert.Equal(7, count);
@@ -171,12 +174,12 @@ public sealed class RavenDbLogsRepositoryConformanceTests
         // Let the writes settle before the one-shot delete -- DeleteByTimestampAsync uses AllowStale, and
         // unlike a read it isn't safe to retry (a retry would delete additional records beyond `limit`,
         // not just re-check the same outcome), so the writes need to be visible before calling it once.
-        await Task.Delay(IndexSettleDelay);
+        await SettleAsync();
 
         var deleted = await fixture.MasterLogs.DeleteByTimestampAsync(cutoff, limit: 2);
         Assert.Equal(2, deleted);
 
-        await Task.Delay(IndexSettleDelay);
+        await SettleAsync();
         var remaining = await fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 100 });
         Assert.Equal(3, remaining.Count); // 4 older - 2 deleted + 1 newer
         Assert.Contains(remaining, x => x.Id == newer.Id);

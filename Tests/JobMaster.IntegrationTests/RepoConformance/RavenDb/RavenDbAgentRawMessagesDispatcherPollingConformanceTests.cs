@@ -12,4 +12,8 @@ public sealed class RavenDbAgentRawMessagesDispatcherPollingConformanceTests
     public RavenDbAgentRawMessagesDispatcherPollingConformanceTests(RavenDbRepositoryFixture fixture) : base(fixture)
     {
     }
+
+    // See the base class's SettleAsync doc comment -- RavenDB's PullMessagesAsync deliberately
+    // doesn't wait for index freshness, so push-then-immediately-pull tests need to accommodate that lag.
+    protected override Task SettleAsync() => Task.Delay(TimeSpan.FromMilliseconds(250));
 }

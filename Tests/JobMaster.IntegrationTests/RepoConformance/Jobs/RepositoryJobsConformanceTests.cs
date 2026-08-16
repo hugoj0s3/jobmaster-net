@@ -10,6 +10,13 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
+// Some providers' Query/AcquireAndFetchAsync/ProbeForAcquireAsync/PurgeFinalizedAsync/BulkUpdateAsync(request)
+// don't wait for read freshness after a write (RavenDB deliberately doesn't -- see
+// RavenDbMasterJobsRepository's own comments on why), so a write immediately followed by one of those
+// reads in the same test needs to accommodate that lag itself rather than assume it. SettleAsync is
+// called after seeding, before the read that depends on seeing it -- point lookups (GetAsync/ExistsAsync)
+// never need it. No-op by default (SQL providers have no equivalent lag to begin with); overridden per
+// provider that actually needs it, so only that provider's test run pays the wait.
 public abstract class RepositoryJobsConformanceTests<TFixture>
     where TFixture : RepositoryFixtureBase
 {
@@ -19,6 +26,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     {
         Fixture = fixture;
     }
+
+    protected virtual Task SettleAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task AddAndGet_ShouldRoundTrip()
@@ -196,6 +205,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(NewJob(jobDefinitionId: def, status: JobMasterJobStatus.Succeeded));
 
         var c = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.Succeeded, CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.NotEmpty(queried);
@@ -214,6 +224,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(late);
 
         var c = new JobQueryCriteria { JobDefinitionId = def, NextPlanExecutionAtFrom = baseTime.AddMinutes(5), CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == late.Id);
@@ -232,6 +243,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(late);
 
         var c = new JobQueryCriteria { JobDefinitionId = def, NextPlanExecutionAtTo = baseTime.AddMinutes(5), CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == early.Id);
@@ -253,6 +265,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(after);
 
         var c = new JobQueryCriteria { JobDefinitionId = def, ProcessDeadlineTo = now.AddMinutes(10), CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == within.Id);
@@ -274,6 +287,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(other);
 
         var c = new JobQueryCriteria { JobDefinitionId = def, SourceId = sourceId, CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == match.Id);
@@ -291,6 +305,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(b);
 
         var c = new JobQueryCriteria { JobDefinitionId = defA, CountLimit = 100 };
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
 
         Assert.Contains(queried, j => j.Id == a.Id);
@@ -317,6 +332,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             Offset = 0
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(criteria);
 
         Assert.All(queried, j => Assert.Equal("LANE_A", j.WorkerLane));
@@ -345,6 +361,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             Offset = 1
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(c);
         Assert.Equal(2, queried.Count);
 
@@ -361,17 +378,18 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
         var a = NewJob(jobDefinitionId: def);
-        a.Metadata = "{\"s\":\"alpha\",\"n\":10,\"dt\":\"2025-01-01T00:00:00Z\"}";
+        a.Metadata = "{\"s\":\"alpha\",\"n\":10,\"dt\":\"2025-01-01T00:00:00Z\",\"g\":\"11111111-1111-1111-1111-111111111111\",\"dec\":10.5}";
 
         var b = NewJob(jobDefinitionId: def);
-        b.Metadata = "{\"s\":\"alphabet\",\"n\":20,\"dt\":\"2025-01-02T00:00:00Z\"}";
+        b.Metadata = "{\"s\":\"alphabet\",\"n\":20,\"dt\":\"2025-01-02T00:00:00Z\",\"g\":\"22222222-2222-2222-2222-222222222222\",\"dec\":20.5}";
 
         var cJob = NewJob(jobDefinitionId: def);
-        cJob.Metadata = "{\"s\":\"beta\",\"n\":30,\"dt\":\"2025-01-03T00:00:00Z\"}";
+        cJob.Metadata = "{\"s\":\"beta\",\"n\":30,\"dt\":\"2025-01-03T00:00:00Z\",\"g\":\"33333333-3333-3333-3333-333333333333\",\"dec\":30.5}";
 
         await Fixture.MasterJobs.AddAsync(a);
         await Fixture.MasterJobs.AddAsync(b);
         await Fixture.MasterJobs.AddAsync(cJob);
+        await SettleAsync();
 
         // String operations
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Eq, Value = "alpha" }, a.Id);
@@ -398,6 +416,22 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gte, Value = t0.AddDays(2) }, cJob.Id);
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lt, Value = t0.AddDays(2) }, a.Id, b.Id);
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lte, Value = t0.AddDays(1) }, a.Id, b.Id);
+
+        // Guid operations (Guid -> MetadataGuidValues bucket)
+        var g1 = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var g3 = Guid.Parse("33333333-3333-3333-3333-333333333333");
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.Eq, Value = g1 }, a.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.Neq, Value = g1 }, b.Id, cJob.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.In, Values = new object?[] { g1, g3 } }, a.Id, cJob.Id);
+
+        // Decimal operations (decimal -> MetadataDecimalValues bucket)
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Eq, Value = 20.5m }, b.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Neq, Value = 20.5m }, a.Id, cJob.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.In, Values = new object?[] { 10.5m, 30.5m } }, a.Id, cJob.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Gt, Value = 10.5m }, b.Id, cJob.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Gte, Value = 20.5m }, b.Id, cJob.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lt, Value = 30.5m }, a.Id, b.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lte, Value = 20.5m }, a.Id, b.Id);
     }
 
     internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
@@ -558,6 +592,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         };
         await Fixture.MasterJobs.AddJobExecutionAsync(execution);
 
+        await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
 
@@ -590,6 +625,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             await Fixture.MasterJobs.AddAsync(j);
         }
 
+        await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 3);
         Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
         Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
@@ -619,6 +655,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(processing);
         await Fixture.MasterJobs.AddAsync(pendingRetry);
 
+        await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
@@ -652,6 +689,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(failed);
         await Fixture.MasterJobs.AddAsync(canceled);
 
+        await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 3, $"Expected at least 3 deleted, got {deleted}");
 
@@ -682,6 +720,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(locked);
         await Fixture.MasterJobs.AddAsync(unlocked);
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         Assert.Contains(queried, j => j.Id == locked.Id);
@@ -700,6 +739,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         await Fixture.MasterJobs.AddAsync(expiredLock);
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         Assert.Contains(queried, j => j.Id == expiredLock.Id);
@@ -721,6 +761,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         job.MarkAsSucceeded();
         await Fixture.MasterJobs.UpdateAsync(job);
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         var fromDb = Assert.Single(queried, j => j.Id == job.Id);
@@ -744,6 +785,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var lockId = JobMasterRandomUtil.NewGuid4();
         var expiresAt = now.AddMinutes(30);
 
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, lockId, expiresAt);
 
         Assert.Equal(2, acquired.Count);
@@ -777,6 +819,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -799,6 +842,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         
         var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -819,6 +863,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
         var partitionLockId1 = JobMasterRandomUtil.NewGuid4();
+        await SettleAsync();
         var first = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId1, now.AddMinutes(30));
         Assert.Equal(2, first.Count);
 
@@ -842,6 +887,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -862,6 +908,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var partitionLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -920,6 +967,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         }
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 2 };
+        await SettleAsync();
         var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId1, now.AddMinutes(30));
 
         Assert.Equal(2, acquired.Count);
@@ -958,6 +1006,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(j3);
 
         var request = BulkJobUpdateRequest.Cancel(new[] { j1.Id, j2.Id });
+        await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
@@ -988,6 +1037,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var request = BulkJobUpdateRequest.For(
             new[] { job.Id },
             BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.Cancelled));
+        await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
         var fromDb = await Fixture.MasterJobs.GetAsync(job.Id);
@@ -1018,6 +1068,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         // Cancel excludes all final statuses (Succeeded, Failed, Cancelled)
         var request = BulkJobUpdateRequest.Cancel(new[] { onMaster.Id, succeeded.Id, failed.Id, cancelled.Id });
+        await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
         Assert.Equal(JobMasterJobStatus.Cancelled,  (await Fixture.MasterJobs.GetAsync(onMaster.Id))!.Status);
@@ -1038,6 +1089,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var request = BulkJobUpdateRequest.For(
             new[] { job.Id },
             BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.Cancelled));
+        await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
         var versionAfter = (await Fixture.MasterJobs.GetAsync(job.Id))!.Version;
@@ -1069,6 +1121,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var j2VersionBefore = (await Fixture.MasterJobs.GetAsync(j2.Id))!.Version;
 
         var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id });
+        await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
@@ -1308,6 +1361,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         foreach (var j in new[] { unlocked, activeLock, expiredLock, inBucketHigh, processingLow, succeeded, failed, cancelled, criticalA, onMasterB, withSource, farFuture, withDeadline })
             await Fixture.MasterJobs.AddAsync(j);
 
+        await SettleAsync();
         return new QueryDataset(def, unlocked, activeLock, expiredLock, inBucketHigh, processingLow, succeeded, failed, cancelled, criticalA, onMasterB, withSource, farFuture, withDeadline, specificSourceId);
     }
 
@@ -1454,10 +1508,41 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Fixture.MasterJobs.AddAsync(expiredLock);
 
         var criteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = 100 };
+        await SettleAsync();
         var probe = await Fixture.MasterJobs.ProbeForAcquireAsync(criteria);
 
         Assert.Equal(2, probe.Count);
         Assert.NotNull(probe.MinNextPlanExecutionAt);
+    }
+
+    [Fact]
+    public async Task ProbeForAcquire_ShouldIgnoreNullNextPlanExecutionAt_InMin()
+    {
+        // NextPlanExecutionAt is cleared on finalization. MIN() over a mix of null/non-null values must
+        // ignore the nulls (standard SQL aggregate semantics) rather than treating null as the smallest
+        // value -- a matching finalized job must not make the whole probe report "no next execution time".
+        var def = "defProbeNullNpe-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        var withValue = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(5));
+        var finalized = NewJob(def, JobMasterJobStatus.Succeeded, now.AddMinutes(1));
+        Assert.Null(finalized.NextPlanExecutionAt);
+
+        await Fixture.MasterJobs.AddAsync(withValue);
+        await Fixture.MasterJobs.AddAsync(finalized);
+
+        // No Status filter — both the OnMaster job and the finalized (null NextPlanExecutionAt) job match.
+        var criteria = new JobQueryCriteria { JobDefinitionId = def, CountLimit = 100 };
+        await SettleAsync();
+        var probe = await Fixture.MasterJobs.ProbeForAcquireAsync(criteria);
+
+        Assert.Equal(2, probe.Count);
+        Assert.NotNull(probe.MinNextPlanExecutionAt);
+        // Sub-millisecond precision isn't guaranteed to round-trip identically across providers
+        // (e.g. Postgres' microsecond storage vs .NET's 100ns ticks), so compare with a small tolerance.
+        Assert.True(
+            (withValue.NextPlanExecutionAt!.Value - probe.MinNextPlanExecutionAt!.Value).Duration() < TimeSpan.FromMilliseconds(5),
+            $"Expected ~{withValue.NextPlanExecutionAt.Value:O}, got {probe.MinNextPlanExecutionAt.Value:O}");
     }
 
     // -----------------------------------------------------------------------
@@ -1492,6 +1577,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         AssertJsonEquivalent(j1.Metadata, fromDb1.Metadata);
         AssertJsonEquivalent(j2.Metadata, fromDb2.Metadata);
 
+        await SettleAsync();
         var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
             JobDefinitionId = def,

@@ -20,7 +20,8 @@ internal static class RavenDbIocRegistration
         registration.AddJobMasterComponent<IMasterDistributedLockerRepository, RavenDbMasterDistributedLockerRepository>();
         registration.AddJobMasterComponent<IMasterGenericRecordRepository, RavenDbMasterGenericRecordRepository>();
         registration.AddJobMasterComponent<IMasterLogsRepository, RavenDbMasterLogsRepository>();
-        // Other 2 Master interfaces land in later increments, one at a time -- see the RavenDB plan's
+        registration.AddJobMasterComponent<IMasterJobsRepository, RavenDbMasterJobsRepository>();
+        // IMasterRecurringSchedulesRepository lands in the next increment -- see the RavenDB plan's
         // roadmap for the order.
     }
 

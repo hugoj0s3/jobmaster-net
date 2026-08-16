@@ -343,7 +343,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
 
         for (var i = 0; i < criteria.Filters.Count; i++)
         {
-            var (clause, paramName, paramValue) = BuildFilterClause(criteria.Filters[i], i);
+            var (clause, paramName, paramValue) = RavenDbFilterClauseBuilder.Build(criteria.Filters[i], i, "filterValue");
             where.Add(clause);
             if (paramName != null)
             {
@@ -379,60 +379,6 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
 
         var rql = $"from '{CollectionName(groupId)}' as e {whereClause} {orderByClause} {limitClause}";
         return (rql, parameters);
-    }
-
-    private static (string Clause, string? ParamName, object? ParamValue) BuildFilterClause(GenericRecordValueFilter filter, int index)
-    {
-        // RQL has no bracket-index syntax for nested-object field access (`Values['key']` is a parse
-        // error -- RQL only understands dot-path field access), so this only works for keys that are
-        // valid identifiers; caller-supplied keys with spaces/hyphens/leading digits aren't queryable
-        // this way -- a known limitation, not attempted here.
-        //
-        // Which bucket dictionary a key lives in (Values vs DateTimeValues/GuidValues/DecimalValues) is
-        // determined by the FILTER's own value type, mirroring exactly how the write path (ToDocument)
-        // dispatches by the stored value's runtime type -- the two must always agree.
-        var sampleValue = filter.Operation == GenericFilterOperation.In
-            ? filter.Values?.FirstOrDefault(v => v != null)
-            : filter.Value;
-        var bucket = sampleValue switch
-        {
-            DateTime => "DateTimeValues",
-            Guid => "GuidValues",
-            decimal => "DecimalValues",
-            _ => "Values"
-        };
-        var field = $"e.{bucket}.{filter.Key}";
-        var paramName = $"filterValue{index}";
-
-        switch (filter.Operation)
-        {
-            case GenericFilterOperation.Eq:
-                return ($"{field} = ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.Neq:
-                // Must also match documents that don't have this key at all -- a missing field access
-                // in RQL yields null/undefined, and null != a non-null value is true, same as JS.
-                return ($"{field} != ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.In:
-                return ($"{field} in (${paramName})", paramName, filter.Values?.ToArray() ?? Array.Empty<object?>());
-            case GenericFilterOperation.Gt:
-                return ($"{field} > ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.Gte:
-                return ($"{field} >= ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.Lt:
-                return ($"{field} < ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.Lte:
-                return ($"{field} <= ${paramName}", paramName, filter.Value);
-            case GenericFilterOperation.Contains:
-                // No plain substring operator in RQL outside full-text search (which is token-based, not
-                // substring-based) -- regex() against an escaped literal gives exact substring semantics.
-                return ($"regex({field}, ${paramName})", paramName, System.Text.RegularExpressions.Regex.Escape(filter.Value?.ToString() ?? string.Empty));
-            case GenericFilterOperation.StartsWith:
-                return ($"startsWith({field}, ${paramName})", paramName, filter.Value?.ToString());
-            case GenericFilterOperation.EndsWith:
-                return ($"endsWith({field}, ${paramName})", paramName, filter.Value?.ToString());
-            default:
-                throw new NotSupportedException($"Unsupported filter operation: {filter.Operation}");
-        }
     }
 
     private static RavenDbGenericRecordDocument ToDocument(GenericRecordEntry entry)
