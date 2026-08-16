@@ -18,14 +18,15 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 
 /// <summary>
 /// Standalone RavenDB conformance fixture, deliberately separate from <see cref="RepoConformanceBootstrap"/>
-/// and the "RepoConformance" collection the 3 SQL providers share. <see cref="IMasterRecurringSchedulesRepository"/>
-/// is the remaining Master interface not implemented yet -- registering a RavenDB cluster into the shared
-/// bootstrap would require <c>StartJobMasterRuntimeAsync()</c>, which starts background runners for every
-/// registered cluster and would immediately fail against it. This fixture instead builds its own cluster
-/// and resolves repositories directly via <see cref="JobMasterClusterAwareComponentFactories.GetFactory"/>
-/// -- confirmed safe because that resolution path is plain DI (<c>GetRequiredService</c>) with no
-/// dependency on the runtime having been started. Fold this into <see cref="RepoConformanceBootstrap"/>
-/// once all 5 Master + Agent interfaces are implemented (see the RavenDB provider plan's roadmap).
+/// and the "RepoConformance" collection the 3 SQL providers share. Registering a RavenDB cluster into that
+/// shared bootstrap would require <c>StartJobMasterRuntimeAsync()</c>, which starts background runners for
+/// every registered cluster and also invokes <c>RavenDbJobMasterRuntimeSetup</c> (index deployment and
+/// database provisioning aren't implemented there, only expiration config). This fixture instead builds
+/// its own cluster and resolves repositories directly via
+/// <see cref="JobMasterClusterAwareComponentFactories.GetFactory"/>, which is plain DI
+/// (<c>GetRequiredService</c>) with no dependency on the runtime having been started. Fold this into
+/// <see cref="RepoConformanceBootstrap"/> once index deployment and database provisioning are implemented
+/// on <c>RavenDbJobMasterRuntimeSetup</c>.
 /// </summary>
 public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 {
@@ -41,11 +42,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     internal override IMasterJobsRepository MasterJobs { get; set; } = null!;
 
-    internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules
-    {
-        get => throw new NotImplementedException("RavenDB RecurringSchedules repository -- not implemented until a later increment.");
-        set => throw new NotSupportedException();
-    }
+    internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; } = null!;
 
     internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
 
@@ -67,8 +64,8 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     public override async Task InitializeAsync()
     {
-        // Must track the RavenDB.Client package's major version (7.x) -- an older 5.4 server rejected
-        // client 7.2.5's request bodies with a binary/JSON protocol mismatch during manual verification.
+        // Must track the RavenDB.Client package's major version (7.x) -- a mismatched server major
+        // version (e.g. 5.4) rejects this client's request bodies with a binary/JSON protocol mismatch.
         container = new RavenDbBuilder().WithImage("ravendb/ravendb:7.2-ubuntu-latest").Build();
         await container.StartAsync();
 
@@ -97,6 +94,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
         MasterJobs = factory.GetMasterRepository<IMasterJobsRepository>();
+        MasterRecurringSchedules = factory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
 
         ConnectionString = connectionString;
         // ClusterServiceProvider, not the fixture's own outer serviceProvider -- ClusterIocRegistration

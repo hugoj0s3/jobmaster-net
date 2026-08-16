@@ -12,6 +12,12 @@ using Xunit;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RecurringSchedules;
 
+// Some providers' Query/AcquireAndFetchAsync/ProbeCountForAcquireAsync/PurgeTerminatedAsync don't wait for
+// read freshness after a write (RavenDB deliberately doesn't -- see RavenDbMasterRecurringSchedulesRepository's
+// own comments on why, mirroring RavenDbMasterJobsRepository), so a write immediately followed by one of
+// those reads in the same test needs to accommodate that lag itself rather than assume it. SettleAsync is
+// called after seeding, before the read that depends on seeing it -- point lookups (GetAsync/ExistsAsync)
+// never need it. No-op by default; overridden per provider that actually needs it.
 public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     where TFixture : RepositoryFixtureBase
 {
@@ -21,6 +27,8 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     {
         Fixture = fixture;
     }
+
+    protected virtual Task SettleAsync() => Task.CompletedTask;
 
     [Fact]
     public async Task AddAndGet_ShouldRoundTrip_AllProperties()
@@ -225,6 +233,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(matching);
         await Fixture.MasterRecurringSchedules.AddAsync(nonStatic);
 
+        await SettleAsync();
         var got = Fixture.MasterRecurringSchedules.GetByStaticId(staticId);
         Assert.NotNull(got);
         Assert.Equal(matching.Id, got!.Id);
@@ -269,6 +278,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             Offset = 0
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
         var count = Fixture.MasterRecurringSchedules.Count(c);
 
@@ -299,6 +309,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
 
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var count = await Fixture.MasterRecurringSchedules.ProbeCountForAcquireAsync(criteria);
 
         Assert.Equal(2, count);
@@ -334,6 +345,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             CountLimit = 100
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
 
         Assert.Contains(queried, x => x.Id == nulls.Id);
@@ -367,6 +379,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             CountLimit = 100
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
 
         Assert.Contains(queried, x => x.Id == nullCoverage.Id);
@@ -395,6 +408,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             CountLimit = 100
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
         Assert.Contains(queried, x => x.Id == a.Id);
         Assert.DoesNotContain(queried, x => x.Id == b.Id);
@@ -427,6 +441,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             CountLimit = 100
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
         Assert.Contains(queried, x => x.Id == canceled.Id);
         Assert.Contains(queried, x => x.Id == inactive.Id);
@@ -460,6 +475,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             CountLimit = 100
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
         Assert.Contains(queried, x => x.Id == a.Id);
         Assert.DoesNotContain(queried, x => x.Id == b.Id);
@@ -484,6 +500,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(a);
         await Fixture.MasterRecurringSchedules.AddAsync(b);
         await Fixture.MasterRecurringSchedules.AddAsync(cSch);
+        await SettleAsync();
 
         // String operations
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "s", Operation = GenericFilterOperation.Eq, Value = "alpha" }, a.Id);
@@ -535,6 +552,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             Offset = 1
         };
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(c);
         Assert.Equal(2, queried.Count);
 
@@ -597,6 +615,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         AssertJsonEquivalent(s1.Metadata, fromDb1.Metadata);
         AssertJsonEquivalent(s2.Metadata, fromDb2.Metadata);
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
         {
             JobDefinitionId = def,
@@ -956,6 +975,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(recentInactive);
         await Fixture.MasterRecurringSchedules.AddAsync(active);
 
+        await SettleAsync();
         var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 100);
         Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
 
@@ -987,6 +1007,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
             await Fixture.MasterRecurringSchedules.AddAsync(s);
         }
 
+        await SettleAsync();
         var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 3);
         Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
         Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
@@ -1019,6 +1040,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(activeOld);
         await Fixture.MasterRecurringSchedules.AddAsync(pendingSaveOld);
 
+        await SettleAsync();
         var deleted = await Fixture.MasterRecurringSchedules.PurgeTerminatedAsync(cutoff, limit: 100);
 
         var remaining = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria
@@ -1051,6 +1073,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(locked);
         await Fixture.MasterRecurringSchedules.AddAsync(unlocked);
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         Assert.Contains(queried, s => s.Id == locked.Id);
@@ -1069,6 +1092,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         await Fixture.MasterRecurringSchedules.AddAsync(expiredLock);
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         Assert.Contains(queried, s => s.Id == expiredLock.Id);
@@ -1090,6 +1114,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         schedule.TryToCancel();
         await Fixture.MasterRecurringSchedules.UpdateAsync(schedule);
 
+        await SettleAsync();
         var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, CountLimit = 100 });
 
         var fromDb = Assert.Single(queried, s => s.Id == schedule.Id);
@@ -1115,6 +1140,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         var lockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
 
         Assert.Equal(2, acquired.Count);
@@ -1148,6 +1174,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         var lockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -1170,6 +1197,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         var newLockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, newLockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -1189,6 +1217,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.AddAsync(s2);
 
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var first = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
         Assert.Equal(2, first.Count);
 
@@ -1214,6 +1243,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
 
         var lockId = JobMasterRandomUtil.NewGuid4();
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId, now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -1233,6 +1263,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var originalVersion = beforeAcquire!.Version;
 
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 100 };
+        await SettleAsync();
         var acquired = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
 
         Assert.Single(acquired);
@@ -1258,6 +1289,11 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         var lockIds = Enumerable.Range(0, callers).Select(_ => JobMasterRandomUtil.NewGuid4()).ToArray();
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = scheduleCount };
 
+        // Unlike Jobs' equivalent concurrent-acquire test, empirically this one DOES need an explicit
+        // settle: 100 sequential AddAsync calls don't reliably provide enough natural elapsed time for
+        // every document to be indexed before the concurrent AcquireAndFetchAsync calls' candidate
+        // selection queries run (confirmed by a real failure -- 91/100 acquired without this).
+        await SettleAsync();
         var tasks = lockIds.Select(id => Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, id, now.AddMinutes(30))).ToArray();
         var results = await Task.WhenAll(tasks);
 
@@ -1293,6 +1329,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         }
 
         var criteria = new RecurringScheduleQueryCriteria { JobDefinitionId = def, Status = RecurringScheduleStatus.Active, CountLimit = 2 };
+        await SettleAsync();
         var first = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId1, now.AddMinutes(30));
 
         Assert.Equal(2, first.Count);
@@ -1394,6 +1431,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         foreach (var s in new[] { activeDynLaneA, activeStatLaneB, canceledLaneA, inactiveLaneB, pendingSave, activeLock, expiredLock, coverageNear, coverageFar, startAfterPast, startAfterFuture, cancelPending })
             await Fixture.MasterRecurringSchedules.AddAsync(s);
 
+        await SettleAsync();
         return new QueryDataset(def, activeDynLaneA, activeStatLaneB, canceledLaneA, inactiveLaneB, pendingSave, activeLock, expiredLock, coverageNear, coverageFar, startAfterPast, startAfterFuture, cancelPending);
     }
 

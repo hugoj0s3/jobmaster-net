@@ -295,15 +295,15 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
             throw new NotSupportedException("MetadataFilters are not supported by ProbeForAcquireAsync.");
         }
 
-        // Not a group-by aggregate -- confirmed empirically that RavenDB's dynamic group-by only supports
-        // count()/sum() as aggregation methods (min() throws "Unknown aggregation method in SELECT clause
-        // of the group by query"), and even count()-only group-by requires WHERE to come AFTER group by,
-        // which only lets it filter on group-key/aggregate fields -- unusable for our arbitrary
-        // pre-aggregation criteria filters.
+        // Not a group-by aggregate -- RavenDB's dynamic group-by only supports count()/sum() as
+        // aggregation methods (min() throws "Unknown aggregation method in SELECT clause of the group by
+        // query"), and even count()-only group-by requires WHERE to come AFTER group by, which only lets
+        // it filter on group-key/aggregate fields -- unusable for our arbitrary pre-aggregation criteria
+        // filters.
         //
         // One round trip in the common case, two only when needed: NextPlanExecutionAt is nullable
-        // (cleared on finalization), and confirmed empirically that RavenDB sorts nulls FIRST ascending --
-        // unlike SQL's MIN(), which silently ignores NULLs. So the first query orders by
+        // (cleared on finalization), and RavenDB sorts nulls FIRST ascending -- unlike SQL's MIN(), which
+        // silently ignores NULLs. So the first query orders by
         // NextPlanExecutionAt asc and takes row 0 alongside Statistics() for Count. If row 0's
         // NextPlanExecutionAt isn't null, that's already the true min -- nulls sorting first means no row
         // could have a smaller sort key, so no null exists anywhere in the result set. Only when row 0 is

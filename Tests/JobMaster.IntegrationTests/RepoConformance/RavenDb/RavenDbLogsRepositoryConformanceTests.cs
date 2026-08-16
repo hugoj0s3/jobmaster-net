@@ -21,8 +21,8 @@ public sealed class RavenDbLogsRepositoryConformanceTests
     }
 
     // Production QueryAsync/CountAsync deliberately don't wait for index freshness (matches SQL's actual
-    // consistency model -- see the RavenDB provider plan's design reference), so a test that writes then
-    // immediately asserts needs to let indexing settle first, rather than assume the very next read
+    // consistency model -- read-after-write isn't guaranteed any sooner than that), so a test that writes
+    // then immediately asserts needs to let indexing settle first, rather than assume the very next read
     // already reflects it. Same name/purpose as RepositoryJobsConformanceTests.SettleAsync -- not shared
     // with it since this class has no shared-with-SQL base to hang a virtual override on (see the class
     // doc above), but kept as its own method rather than an inline delay so future settle points here

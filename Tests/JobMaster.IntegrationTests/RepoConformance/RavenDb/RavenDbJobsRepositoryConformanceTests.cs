@@ -21,9 +21,9 @@ public sealed class RavenDbJobsRepositoryConformanceTests
     protected override Task SettleAsync() => Task.Delay(TimeSpan.FromMilliseconds(250));
 
     // Not a test of RavenDbMasterJobsRepository -- a direct test of RavenDB's own SaveChangesAsync
-    // contract, since a planned redesign of BulkUpdateAsync(IList<JobRawModel>) (single shared session +
-    // fallback to per-row retry only when the batch itself throws ConcurrencyException) depends entirely
-    // on SaveChangesAsync being genuinely all-or-nothing per session. If RavenDB instead applied some
+    // contract, since RavenDbMasterJobsRepository.BulkUpdateAsync(IList<JobRawModel>)'s design (single
+    // shared session + fallback to per-row retry only when the batch itself throws ConcurrencyException)
+    // depends entirely on SaveChangesAsync being genuinely all-or-nothing per session. If RavenDB instead applied some
     // writes before hitting the conflicting one, the fallback's "retry every pending item from its
     // original expected version" would be unsafe: an item that actually committed during the "failed"
     // batch would fail its retry (server version already moved on) and be wrongly excluded from the

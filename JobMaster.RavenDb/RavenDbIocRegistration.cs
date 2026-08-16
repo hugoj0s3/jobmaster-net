@@ -21,8 +21,7 @@ internal static class RavenDbIocRegistration
         registration.AddJobMasterComponent<IMasterGenericRecordRepository, RavenDbMasterGenericRecordRepository>();
         registration.AddJobMasterComponent<IMasterLogsRepository, RavenDbMasterLogsRepository>();
         registration.AddJobMasterComponent<IMasterJobsRepository, RavenDbMasterJobsRepository>();
-        // IMasterRecurringSchedulesRepository lands in the next increment -- see the RavenDB plan's
-        // roadmap for the order.
+        registration.AddJobMasterComponent<IMasterRecurringSchedulesRepository, RavenDbMasterRecurringSchedulesRepository>();
     }
 
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)

@@ -8,7 +8,7 @@ internal sealed class RavenDbLogDocument
     // treats any property literally named Id as the holder for the RavenDB document ID string itself, auto-
     // populating/overwriting it on load/store. Since this is LogItem's own Guid, not RavenDB's document ID,
     // that collision throws ("Cannot set identity value '...' on property 'Id' ... property type is not a
-    // string") -- confirmed via a real conformance-test failure, not by inspection.
+    // string").
     public Guid LogId { get; set; }
     public string ClusterId { get; set; } = string.Empty;
     public JobMasterLogLevel Level { get; set; }

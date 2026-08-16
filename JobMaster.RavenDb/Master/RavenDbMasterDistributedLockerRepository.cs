@@ -14,8 +14,8 @@ namespace JobMaster.RavenDb.Master;
 internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterClusterAwareRepository, IMasterDistributedLockerRepository
 {
     // Grace window added on top of the lease's own ExpiresAt before RavenDB's native expiration feature
-    // (assumed enabled at the database level -- see RavenDbJobMasterRuntimeSetup once it exists) actually
-    // deletes the compare-exchange entry. Lock *validity* never depends on this -- TryLock/IsLocked always
+    // (enabled at the database level by RavenDbJobMasterRuntimeSetup) actually deletes the compare-exchange
+    // entry. Lock *validity* never depends on this -- TryLock/IsLocked always
     // compare ExpiresAt client-side and can steal/report-unlocked immediately once a lease is past due,
     // regardless of whether RavenDB's expiration sweep (DeleteFrequencyInSec, not real-time) has caught up
     // yet. @expires is purely a housekeeping backstop for entries nobody ever explicitly released or stole,
