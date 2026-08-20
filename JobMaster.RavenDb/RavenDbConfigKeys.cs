@@ -13,5 +13,9 @@ internal static class RavenDbConfigKeys
 
     public static string EnableDocumentExpirationKey => "EnableDocumentExpiration";
 
+    public static string DocumentExpirationFrequencyKey => "DocumentExpirationFrequency";
+
+    public static readonly TimeSpan DefaultDocumentExpirationFrequency = TimeSpan.FromHours(1);
+
     public static string CertificateKey => "Certificate";
 }

@@ -13,6 +13,7 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
     private static readonly HashSet<string> ClusterKnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {
         "certificateFile", "certificatePassword", "collectionPrefix", "enableDocumentExpiration",
+        "documentExpirationFrequencySeconds",
     };
 
     // No enableDocumentExpiration here -- agent messages never use @expires, matching UseRavenDb's
@@ -47,6 +48,17 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
                 RavenDbConfigKeys.NamespaceUniqueKey,
                 RavenDbConfigKeys.EnableDocumentExpirationKey,
                 string.Equals(enableDocumentExpiration, "true", StringComparison.OrdinalIgnoreCase));
+        }
+
+        var documentExpirationFrequencySeconds = GetString(options, "documentExpirationFrequencySeconds");
+        if (documentExpirationFrequencySeconds != null)
+        {
+            if (!long.TryParse(documentExpirationFrequencySeconds, out var seconds))
+            {
+                throw new ArgumentException($"documentExpirationFrequencySeconds must be an integer number of seconds. Received: '{documentExpirationFrequencySeconds}'.");
+            }
+
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey, seconds);
         }
     }
 

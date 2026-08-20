@@ -172,6 +172,51 @@ public class RavenDbConnectionOptionsTests : IDisposable
         act.Should().Throw<ArgumentException>().WithMessage("*enableDocumentExpiration*");
     }
 
+    [Fact]
+    public void SetOptions_Cluster_DocumentExpirationFrequencySeconds_SetsValue()
+    {
+        var cluster = Cluster();
+
+        Binder().SetOptions(cluster, new Dictionary<string, object> { ["documentExpirationFrequencySeconds"] = "7200" });
+
+        cluster.clusterDefinition.AdditionalConnConfig!
+            .TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey)
+            .Should().Be(7200);
+    }
+
+    [Fact]
+    public void SetOptions_Cluster_DocumentExpirationFrequencySeconds_NotAnInteger_ThrowsArgumentException()
+    {
+        var cluster = Cluster();
+
+        var act = () => Binder().SetOptions(cluster, new Dictionary<string, object> { ["documentExpirationFrequencySeconds"] = "not-a-number" });
+
+        act.Should().Throw<ArgumentException>().WithMessage("*documentExpirationFrequencySeconds*");
+    }
+
+    [Fact]
+    public void SetOptions_Cluster_NoDocumentExpirationFrequencyKey_DoesNotWriteValue()
+    {
+        var cluster = Cluster();
+
+        Binder().SetOptions(cluster, new Dictionary<string, object> { ["collectionPrefix"] = "JM_" });
+
+        cluster.clusterDefinition.AdditionalConnConfig!
+            .TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void SetOptions_Agent_DocumentExpirationFrequencySeconds_ThrowsArgumentException()
+    {
+        var cluster = Cluster();
+        var agentSel = cluster.AddAgentConnectionConfig("Agent-1", "RavenDB", "Urls=http://localhost:8080;Database=Test");
+
+        var act = () => Binder().SetOptions(agentSel, new Dictionary<string, object> { ["documentExpirationFrequencySeconds"] = "7200" });
+
+        act.Should().Throw<ArgumentException>().WithMessage("*documentExpirationFrequencySeconds*");
+    }
+
     // ── key validation ──────────────────────────────────────────────────────
 
     [Fact]
@@ -198,6 +243,7 @@ public class RavenDbConnectionOptionsTests : IDisposable
     [Theory]
     [InlineData("CollectionPrefix", "JM_")]
     [InlineData("ENABLEDOCUMENTEXPIRATION", "true")]
+    [InlineData("DOCUMENTEXPIRATIONFREQUENCYSECONDS", "7200")]
     public void SetOptions_Cluster_KeysCaseInsensitive_DoesNotThrow(string key, string value)
     {
         var cluster = Cluster();
@@ -221,7 +267,8 @@ public class RavenDbConnectionOptionsTests : IDisposable
             "ConnectionString": "Urls=http://localhost:8080;Database=Test",
             "ConnectionOptions": {
                 "collectionPrefix": "Custom_",
-                "enableDocumentExpiration": "true"
+                "enableDocumentExpiration": "true",
+                "documentExpirationFrequencySeconds": "7200"
             }
         }
         """;
@@ -233,6 +280,7 @@ public class RavenDbConnectionOptionsTests : IDisposable
         config.Should().NotBeNull();
         config!.TryGetValue<string>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CollectionPrefixKey).Should().Be("Custom_");
         config.TryGetValue<bool?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.EnableDocumentExpirationKey).Should().BeTrue();
+        config.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey).Should().Be(7200);
     }
 
     [Fact]

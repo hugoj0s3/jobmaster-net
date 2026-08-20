@@ -11,12 +11,6 @@ namespace JobMaster.RavenDb;
 
 internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
-    // RavenDB Community licenses reject any sweep frequency below this floor
-    // (Raven.Client.Exceptions.Commercial.LicenseLimitException). This backstop is housekeeping, not a
-    // latency-sensitive path, so the floor is requested unconditionally rather than exposing it as a
-    // separate setting.
-    private const long DeleteFrequencyInSec = 36 * 60 * 60;
-
     private const int DefaultDbOperationThrottleLimitForCluster = 50;
     private const int DefaultDbOperationThrottleLimitForAgent = 25;
 
@@ -89,7 +83,7 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             await store.Maintenance.SendAsync(new ConfigureExpirationOperation(new ExpirationConfiguration
             {
                 Disabled = false,
-                DeleteFrequencyInSec = DeleteFrequencyInSec,
+                DeleteFrequencyInSec = (long)clusterConfig.GetDocumentExpirationFrequency().TotalSeconds,
             }));
         }
     }

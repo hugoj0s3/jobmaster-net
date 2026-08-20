@@ -24,20 +24,25 @@ public static class ConfigExtensions
     /// separating multiple clusters -- that's what the compound document ID (which embeds ClusterId)
     /// already does.</param>
     /// <param name="enableDocumentExpiration">Opts the master database into RavenDB's native
-    /// document-expiration background job (disabled by default on every RavenDB database). Without this,
-    /// <c>@expires</c> metadata -- currently only used by the distributed locker's zombie-lock backstop --
-    /// is inert; nothing ever physically deletes those entries. Not enabled automatically because it's a
-    /// database-wide setting, not scoped to JobMaster's own collections, and forcing it on could conflict
-    /// with an operator already managing expiration for other data sharing this database. RavenDB
-    /// Community licenses cap the sweep frequency at a 36-hour minimum -- fine for this backstop's purpose
-    /// (housekeeping for entries nobody ever explicitly released or stole, not a latency-sensitive path),
-    /// so enabling this always requests that floor rather than exposing a configurable frequency.</param>
+    /// document-expiration background job (disabled by default on every RavenDB database), which
+    /// physically deletes any entry carrying <c>@expires</c> metadata once it's past due -- currently
+    /// only the distributed locker's zombie-lock entries. Purely a housekeeping extra, not required for
+    /// correctness: JobMaster already cleans those up itself on its own schedule (a periodic sweep
+    /// independent of this setting), so leaving this off just means a crashed lock's leftover entry stays
+    /// in the database a little longer than it otherwise would, with no functional effect. Not enabled
+    /// automatically because it's a database-wide setting, not scoped to JobMaster's own collections, and
+    /// forcing it on could conflict with an operator already managing expiration for other data sharing
+    /// this database.</param>
+    /// <param name="documentExpirationFrequency">How often RavenDB's expiration sweep runs, once
+    /// <paramref name="enableDocumentExpiration"/> is set. Defaults to 1 hour. Only takes effect when
+    /// document expiration is enabled.</param>
     public static T UseRavenDb<T>(
         this T clusterConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
         string? collectionPrefix = null,
-        bool enableDocumentExpiration = false)
+        bool enableDocumentExpiration = false,
+        TimeSpan? documentExpirationFrequency = null)
         where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.ClusterConnString(connectionString);
@@ -56,6 +61,11 @@ public static class ConfigExtensions
         if (enableDocumentExpiration)
         {
             clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.EnableDocumentExpirationKey, true);
+        }
+
+        if (documentExpirationFrequency.HasValue)
+        {
+            clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey, (long)documentExpirationFrequency.Value.TotalSeconds);
         }
 
         return clusterConfigSelector;
@@ -98,6 +108,12 @@ public static class ConfigExtensions
     {
         return clusterConnectionConfig.AdditionalConnConfig.TryGetValue<bool?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.EnableDocumentExpirationKey)
                ?? false;
+    }
+
+    internal static TimeSpan GetDocumentExpirationFrequency(this JobMasterClusterConnectionConfig clusterConnectionConfig)
+    {
+        var seconds = clusterConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey);
+        return seconds.HasValue ? TimeSpan.FromSeconds(seconds.Value) : RavenDbConfigKeys.DefaultDocumentExpirationFrequency;
     }
 
     internal static X509Certificate2? GetCertificate(this JobMasterClusterConnectionConfig clusterConnectionConfig)
