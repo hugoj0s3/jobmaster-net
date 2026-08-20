@@ -142,23 +142,46 @@ of the RavenDB provider's first release. Not a RavenDB issue -- 0 of the 390 fai
 (RavenDB's own conformance suite passed 142/142, reproduced on a clean re-run). Every failure was in the
 Postgres/MySql/SqlServer RepoConformance suite.
 
-`RepoConformanceBootstrap` (`Tests/JobMaster.IntegrationTests/Fixtures/RepoConformance/RepoConformanceBootstrap.cs`)
-already guards against concurrent double-registration within itself via a `SemaphoreSlim` + double-checked
-`started` flag -- that part works. But `JobMasterClusterConnectionConfig.Create(...)` still throws
-"Cluster ID 'RT-Postgres-1' already exists" when the whole `IntegrationTests` assembly runs unfiltered,
-because xUnit runs independent collections (RepoConformance, RavenDb's own `RavenDbRepoConformanceCollection`,
-and whatever collections back the Recurring/Scheduler/DrainMode test types) in parallel by default, and
-something outside `RepoConformanceBootstrap`'s own lock registers the same hardcoded cluster ID a second
-time from a different collection. Reproduced deterministically twice (390 failed/142 passed both times),
-so not a flake.
+**Root cause found 2026-08-21, confirmed from an actual CI log, not just reproduced locally.** The
+triggering error is `Connection refused` trying to reach RavenDB's Testcontainers instance while resolving
+`JM_ClusterConfiguration/RT-RavenDb-1/RT-RavenDb-1` -- but RavenDB's own conformance collection had *already
+finished and disposed its container* by that point (RavenDB's ~40 tests all pass within the first ~30-45s).
+Something in the SQL fixtures' startup path is reaching for RavenDB's already-dead container.
 
-This has plausibly always been latent -- `scripts-utils/run-integration-tests.sh` never runs the project
-unfiltered, it always scopes to one `DB=$DB&TestType=X` combination per `dotnet test` invocation, which
-happens to avoid ever triggering the cross-collection race. Nobody had run the whole assembly in one
-process before. Needs a proper fix (either give every hardcoded test cluster ID a per-collection-unique
-suffix, or synchronize registration across collections, not just within `RepoConformanceBootstrap`) --
-deferred since it's a test-infrastructure gap unrelated to any single provider, not something to bundle
-into the RavenDB-scoped PR that surfaced it.
+The mechanism: `JobMasterRuntime.StartAsync()` (`JobMaster/Sdk/Background/JobMasterRuntime.cs:78`) validates
+clusters via `JobMasterClusterConnectionConfig.GetAllConfigs()` -- a **process-wide static list**, not
+scoped to the `IServiceProvider` actually being started. RavenDB's `RavenDbRepositoryFixture` and SQL's
+`RepoConformanceBootstrap` each register their own clusters into this same static registry, from two xUnit
+collections (`RepoConformance` and `RavenDbRepoConformance`) that run *concurrently* in the same process
+(both are separately marked `DisableParallelization = true` on their own `[CollectionDefinition]`, which
+only affects parallelization *within* that collection, not across different collections -- confirmed
+empirically, RavenDB's tests visibly interleave with SQL's container startup in the CI log). When SQL's
+`StartJobMasterRuntimeAsync()` runs, it iterates *every* cluster ever registered in the process, including
+RavenDB's -- which isn't part of SQL's `ServiceProvider` at all. If RavenDB's container is already torn
+down by then, that step throws, so `StartJobMasterRuntimeAsync()` fails. Since `RepoConformanceBootstrap.
+EnsureStartedAsync()` only sets `started = true` *after* that call succeeds (and `JobMasterClusterConnectionConfig.Create`
+adds each cluster to the static list synchronously, immediately, with no rollback on a later failure), the
+three SQL clusters are left registered but `started` stays `false`. A different SQL fixture then retries
+`EnsureStartedAsync()`, sees `started == false`, re-enters the whole setup block, and hits "Cluster ID
+'RT-Postgres-1' already exists" on the clusters the failed first attempt left behind. Reproduced
+deterministically (390 failed/142 passed) both locally and in CI -- not a flake, a real race.
+
+Two fix directions, neither implemented yet:
+1. **Core-SDK fix**: scope `JobMasterRuntime.StartAsync()`'s cluster-validation loop to only the clusters
+   registered on the `IServiceProvider` it was actually given, not the global static list. This is the
+   architecturally correct fix, but touches core SDK production code (`JobMasterClusterConnectionConfig`'s
+   registry is process-wide static by design elsewhere too), so it needs its own careful review, not a
+   same-day fix.
+2. **Test-infra-only fix**: merge the `RavenDbRepoConformance` and `RepoConformance` xUnit collections into
+   one (e.g. give RavenDB's test classes `[Collection("RepoConformance")]` and add
+   `ICollectionFixture<RavenDbRepositoryFixture>` to `RepoConformanceCollection`) so xUnit's own
+   same-collection-never-parallel rule prevents the race, without touching production code. Lower risk,
+   but doesn't fix the underlying static-registry scoping issue for any other future caller that hits it.
+
+**2026-08-21**: `.github/workflows/repo-conformance-tests.yml` had its `push`/`pull_request` triggers
+removed (now `workflow_dispatch`-only, matching `schedule-scenario-tests.yml`) so this stops blocking PRs
+with a red badge for a test-infra race, not a real regression. Re-enable those triggers once one of the
+two fixes above lands.
 
 ## `TryGetApplicableIndexName` (Jobs) treats `Statuses` (plural) and `Status` (singular) inconsistently
 
