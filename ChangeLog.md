@@ -6,6 +6,12 @@
 
 ---
 
+## JobMaster 0.0.10-alpha.2
+
+### Added
+
+- **`InternalsVisibleTo` grant for `JobMaster.RavenDb`** — Core `JobMaster` now grants internal-member access to `JobMaster.RavenDb`, published for the first time in this release. No other changes in this version; Postgres/MySql/SqlServer/NatsJetStream/Api/Dashboard packages are unaffected and remain at their previously published versions.
+
 ## JobMaster 0.0.10-alpha / JobMaster.Dashboard 0.0.3-alpha
 
 ### Added
