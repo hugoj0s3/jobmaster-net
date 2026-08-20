@@ -73,13 +73,20 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         container = new RavenDbBuilder().WithImage("ravendb/ravendb:7.2-ubuntu-latest").Build();
         await container.StartAsync();
 
-        const string database = "RepoConformanceTests";
-        var connectionString = $"Urls={container.GetConnectionString()};Database={database}";
+        // Master and agent deliberately use separate databases (not just separate collection prefixes on
+        // one shared database) -- this cluster is non-standalone, so the same-database shortcut standalone
+        // legitimately relies on would otherwise risk silently masking a bug that only manifests when the
+        // master's and an agent's own state are genuinely independent.
+        const string masterDatabase = "RepoConformanceTests";
+        const string agentDatabase = "RepoConformanceTestsAgent";
+        var connectionString = $"Urls={container.GetConnectionString()};Database={masterDatabase}";
+        var agentConnectionString = $"Urls={container.GetConnectionString()};Database={agentDatabase}";
 
-        using (var bootstrapStore = new DocumentStore { Urls = [container.GetConnectionString()], Database = database })
+        using (var bootstrapStore = new DocumentStore { Urls = [container.GetConnectionString()] })
         {
             bootstrapStore.Initialize();
-            bootstrapStore.Maintenance.Server.Send(new CreateDatabaseOperation(new DatabaseRecord(database)));
+            bootstrapStore.Maintenance.Server.Send(new CreateDatabaseOperation(new DatabaseRecord(masterDatabase)));
+            bootstrapStore.Maintenance.Server.Send(new CreateDatabaseOperation(new DatabaseRecord(agentDatabase)));
         }
 
         var services = new ServiceCollection();
@@ -87,7 +94,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         {
             cfg.UseRavenDb(connectionString);
             cfg.AddAgentConnectionConfig(AgentConnectionName)
-                .UseRavenDb(connectionString);
+                .UseRavenDb(agentConnectionString);
             cfg.Mode(ClusterMode.Active);
         });
         serviceProvider = services.BuildServiceProvider();
@@ -124,7 +131,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         // deliberately never invokes (see the class doc above) -- without it, RavenDbRawMessagesDispatcherRepository's
         // queries (which target this index by name) throw IndexDoesNotExistException.
         var messageCollectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
-        await RavenDbMessageIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(connectionString), messageCollectionName);
+        await RavenDbMessageIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(agentConnectionString), messageCollectionName);
 
         // Same reasoning, for AcquireAndFetchAsync's static index -- lives in the master database.
         var clusterConfig = JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true);

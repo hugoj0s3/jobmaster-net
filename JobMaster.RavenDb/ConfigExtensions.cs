@@ -13,29 +13,14 @@ public static class ConfigExtensions
     /// <summary>
     /// Configures the cluster master database to use RavenDB.
     /// </summary>
-    /// <param name="connectionString">Format: "Urls=url1,url2;Database=name" -- just the connection
-    /// target, not authentication. See <paramref name="certificate"/> for client-certificate auth.</param>
-    /// <param name="certificate">Client certificate for RavenDB's X.509 authentication, if the server
-    /// requires one. Pass an already-loaded <see cref="X509Certificate2"/> (from a cert store, Key Vault,
-    /// wherever) -- unlike the connection string, this can't be expressed as plain text.</param>
-    /// <param name="collectionPrefix">Custom collection-name prefix for all JobMaster collections created
-    /// in the master database. Defaults to <c>JM_</c> when not specified. Exists for the same reason as
-    /// SQL's table prefix: avoid colliding with unrelated data if the database is shared/reused, not for
-    /// separating multiple clusters -- that's what the compound document ID (which embeds ClusterId)
-    /// already does.</param>
+    /// <param name="connectionString">Format: "Urls=url1,url2;Database=name".</param>
+    /// <param name="certificate">Client certificate for RavenDB's X.509 authentication, if the server requires one.</param>
+    /// <param name="collectionPrefix">Custom collection-name prefix for all JobMaster collections. Defaults to <c>JM_</c>.</param>
     /// <param name="enableDocumentExpiration">Opts the master database into RavenDB's native
-    /// document-expiration background job (disabled by default on every RavenDB database), which
-    /// physically deletes any entry carrying <c>@expires</c> metadata once it's past due -- currently
-    /// only the distributed locker's zombie-lock entries. Purely a housekeeping extra, not required for
-    /// correctness: JobMaster already cleans those up itself on its own schedule (a periodic sweep
-    /// independent of this setting), so leaving this off just means a crashed lock's leftover entry stays
-    /// in the database a little longer than it otherwise would, with no functional effect. Not enabled
-    /// automatically because it's a database-wide setting, not scoped to JobMaster's own collections, and
-    /// forcing it on could conflict with an operator already managing expiration for other data sharing
-    /// this database.</param>
-    /// <param name="documentExpirationFrequency">How often RavenDB's expiration sweep runs, once
-    /// <paramref name="enableDocumentExpiration"/> is set. Defaults to 1 hour. Only takes effect when
-    /// document expiration is enabled.</param>
+    /// document-expiration background job. Disabled by default; purely a housekeeping extra, not required
+    /// for correctness.</param>
+    /// <param name="documentExpirationFrequency">How often the expiration sweep runs, once
+    /// <paramref name="enableDocumentExpiration"/> is set. Defaults to 1 hour.</param>
     public static T UseRavenDb<T>(
         this T clusterConfigSelector,
         string connectionString,

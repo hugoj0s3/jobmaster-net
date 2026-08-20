@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using Microsoft.Extensions.DependencyInjection;
 using Raven.Client.Documents.Operations.Expiration;
+using JobMasterConstants = JobMaster.Sdk.Abstractions.JobMasterConstants;
 
 namespace JobMaster.RavenDb;
 
@@ -31,6 +32,14 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             {
                 clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
             }
+
+            // Forces the lazy fallback-connection registration now, before allAgentConfigs is built below.
+            // JobMasterRuntime.StartAsync only creates it later (after OnBeforeStartAsync already ran), so
+            // without this the fallback connection's Message collection would never get its static index
+            // deployed here, and PullMessagesAsync/DestroyBucketAsync would throw IndexDoesNotExistException
+            // the first time a fallback bucket is actually used. Standalone needs no equivalent call --
+            // ClusterConfigBuilder already registers it eagerly at config-build time.
+            clusterConfig.TryGetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
         }
 
         var allAgentConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
@@ -48,7 +57,7 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 
         // The Message collection lives in each agent connection's own database (never the master's,
         // except for a fallback/standalone connection reusing the master's own connection string --
-        // already just another entry in GetAllAgentConnectionConfigs(), no special-casing needed here).
+        // now guaranteed to already be in GetAllAgentConnectionConfigs() by the force-registration above).
         // Deployed unconditionally, not gated behind an opt-in like document expiration -- this only
         // reduces indexing overhead, it doesn't change any behavior a user would need to opt into.
         foreach (var agentConfig in allAgentConfigs)
