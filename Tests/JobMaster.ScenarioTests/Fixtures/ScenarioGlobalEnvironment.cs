@@ -7,6 +7,7 @@ using Testcontainers.MsSql;
 using Testcontainers.MySql;
 using Testcontainers.Nats;
 using Testcontainers.PostgreSql;
+using Testcontainers.RavenDb;
 using Testcontainers.Redis;
 using Xunit;
 
@@ -42,6 +43,7 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     private readonly SemaphoreSlim sqlServerLock = new(1, 1);
     private readonly SemaphoreSlim redisLock = new(1, 1);
     private readonly SemaphoreSlim natsLock = new(1, 1);
+    private readonly SemaphoreSlim ravenDbLock = new(1, 1);
     private readonly SemaphoreSlim imageBuildLock = new(1, 1);
 
     private PostgreSqlContainer? postgres;
@@ -49,6 +51,7 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     private MsSqlContainer? sqlServer;
     private RedisContainer? redis;
     private NatsContainer? nats;
+    private RavenDbContainer? ravenDb;
 
     // Keyed by (normalized) DockerfilePath, so any number of distinct scenario app images can be
     // built and cached independently within one run -- not just the original schedule-app/api-app
@@ -214,6 +217,34 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         }
     }
 
+    public async Task<RavenDbContainer> GetOrStartRavenDbAsync(CancellationToken ct = default)
+    {
+        if (ravenDb != null) return ravenDb;
+
+        await ravenDbLock.WaitAsync(ct);
+        try
+        {
+            if (ravenDb != null) return ravenDb;
+
+            // Client major version (RavenDB.Client 7.x, referenced by JobMaster.RavenDb) must track the
+            // server image's major version -- a mismatch rejects the client's request bodies with a
+            // binary/JSON protocol error.
+            var container = new RavenDbBuilder()
+                .WithImage("ravendb/ravendb:7.2-ubuntu-latest")
+                .WithNetwork(Network)
+                .WithNetworkAliases("ravendb")
+                .Build();
+
+            await container.StartAsync(ct);
+            ravenDb = container;
+            return container;
+        }
+        finally
+        {
+            ravenDbLock.Release();
+        }
+    }
+
     /// <summary>
     /// Builds (once per run, cached) and returns the image name for the app at <paramref name="dockerfilePath"/>.
     /// The image name is derived from the Dockerfile's parent folder (e.g.
@@ -261,6 +292,7 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         if (sqlServer != null) await sqlServer.DisposeAsync();
         if (redis != null) await redis.DisposeAsync();
         if (nats != null) await nats.DisposeAsync();
+        if (ravenDb != null) await ravenDb.DisposeAsync();
 
         // Network may never have been assigned if InitializeAsync itself failed (e.g. Docker
         // unreachable) — don't let a NullReferenceException here mask that real error.

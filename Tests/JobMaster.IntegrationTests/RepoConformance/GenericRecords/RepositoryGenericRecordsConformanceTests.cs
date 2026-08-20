@@ -237,12 +237,18 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
 
         var t0 = new DateTime(2025, 01, 01, 0, 0, 0, DateTimeKind.Utc);
 
+        var g1 = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var g2 = Guid.Parse("22222222-2222-2222-2222-222222222222");
+        var g3 = Guid.Parse("33333333-3333-3333-3333-333333333333");
+
         var a = NewEntry(groupId, "a_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
         a.Values = new Dictionary<string, object?>(StringComparer.Ordinal)
         {
             ["s"] = "alpha",
             ["n"] = 10L,
             ["dt"] = t0,
+            ["g"] = g1,
+            ["dec"] = 10.5m,
         };
 
         var b = NewEntry(groupId, "b_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
@@ -251,6 +257,8 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["s"] = "alphabet",
             ["n"] = 20L,
             ["dt"] = t0.AddDays(1),
+            ["g"] = g2,
+            ["dec"] = 20.5m,
         };
 
         var c = NewEntry(groupId, "c_" + JobMasterRandomUtil.NewGuid4().ToString("N"));
@@ -259,6 +267,8 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
             ["s"] = "beta",
             ["n"] = 30L,
             ["dt"] = t0.AddDays(2),
+            ["g"] = g3,
+            ["dec"] = 30.5m,
         };
 
         await Fixture.MasterGenericRecords.InsertAsync(a);
@@ -290,6 +300,20 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Gte, Value = t0.AddDays(2) }, c.EntryId);
         await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lt, Value = t0.AddDays(2) }, a.EntryId, b.EntryId);
         await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dt", Operation = GenericFilterOperation.Lte, Value = t0.AddDays(1) }, a.EntryId, b.EntryId);
+
+        // Guid operations
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.Eq, Value = g1 }, a.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.Neq, Value = g1 }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "g", Operation = GenericFilterOperation.In, Values = new object?[] { g1, g3 } }, a.EntryId, c.EntryId);
+
+        // Decimal operations
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Eq, Value = 20.5m }, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Neq, Value = 20.5m }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.In, Values = new object?[] { 10.5m, 30.5m } }, a.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Gt, Value = 10.5m }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Gte, Value = 20.5m }, b.EntryId, c.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lt, Value = 30.5m }, a.EntryId, b.EntryId);
+        await AssertGenericFilter(groupId, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lte, Value = 20.5m }, a.EntryId, b.EntryId);
     }
 
     [Fact]

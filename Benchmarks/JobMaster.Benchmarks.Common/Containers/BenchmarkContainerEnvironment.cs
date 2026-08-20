@@ -6,18 +6,23 @@ using Testcontainers.MsSql;
 using Testcontainers.MySql;
 using Testcontainers.Nats;
 using Testcontainers.PostgreSql;
+using Testcontainers.RavenDb;
 using Testcontainers.Redis;
 
 namespace JobMaster.Benchmarks.Common.Containers;
 
 /// <summary>Which database engine backs the shared DB container -- Postgres for JobMaster's
 /// PostgresPure config (the default, preserving existing behavior), SqlServer/MySql for frameworks
-/// benchmarked across multiple database engines (e.g. Quartz.NET).</summary>
+/// benchmarked across multiple database engines (e.g. Quartz.NET). RavenDB is named to match
+/// exactly -- <c>RavenDbRepositoryConstants.RepositoryTypeId</c> ("RavenDB") -- since
+/// JobMasterTopologyBuilder derives the JSON config's RepoType/RepositoryType strings straight from
+/// <c>dbEngine.ToString()</c>, unlike a special-cased mapping for the other three.</summary>
 public enum DbEngine
 {
     Postgres,
     SqlServer,
     MySql,
+    RavenDB,
 }
 
 /// <summary>
@@ -67,11 +72,21 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
 
     private INetwork? network;
     private readonly List<IContainer> workerContainers = [];
+    private readonly List<IFutureDockerImage> builtImages = [];
 
+    // IDatabaseContainer for the 3 SQL engines; RavenDbContainer doesn't implement IDatabaseContainer
+    // (confirmed -- it's a different shape, GetConnectionString() is a concrete method, not an
+    // interface member), so RavenDB gets its own field instead, mirroring how NatsContainer is
+    // already separate. Exactly one of DbContainer/RavenDbContainer is ever populated per run.
     public IDatabaseContainer DbContainer { get; private set; } = null!;
+    public RavenDbContainer? RavenDbContainer { get; private set; }
     public IContainer RedisContainer { get; private set; } = null!;
     public IContainer? NatsContainer { get; private set; }
     public IReadOnlyList<IContainer> WorkerContainers => workerContainers;
+
+    /// <summary>Generic container identity for stats sampling / log capture, regardless of which DB
+    /// engine is active -- both IDatabaseContainer and RavenDbContainer are themselves IContainer.</summary>
+    public IContainer DbContainerForOps => RavenDbContainer is not null ? RavenDbContainer : (IContainer)DbContainer;
 
     public async Task StartAsync(
         IReadOnlyList<WorkerContainerSpec> workerSpecs,
@@ -92,12 +107,19 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         var effectiveDbNanoCpus = dbNanoCpus ?? DbNanoCpus;
         var effectiveDbMemoryBytes = dbMemoryBytes ?? DbMemoryBytes;
 
-        DbContainer = dbEngine switch
+        if (dbEngine == DbEngine.RavenDB)
         {
-            DbEngine.SqlServer => await StartSqlServerAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
-            DbEngine.MySql => await StartMySqlAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
-            _ => await StartPostgresAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
-        };
+            RavenDbContainer = await StartRavenDbAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct);
+        }
+        else
+        {
+            DbContainer = dbEngine switch
+            {
+                DbEngine.SqlServer => await StartSqlServerAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+                DbEngine.MySql => await StartMySqlAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+                _ => await StartPostgresAsync(databaseNamesToProvision, effectiveDbNanoCpus, effectiveDbMemoryBytes, ct),
+            };
+        }
 
         // Extension point for schema that a framework doesn't create itself (e.g. Quartz.NET's
         // AdoJobStore, which requires QRTZ_* tables to exist up front, unlike JobMaster's/Hangfire's
@@ -138,8 +160,10 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         {
             if (!imageCache.TryGetValue(spec.DockerfilePath, out var imageName))
             {
-                imageName = await BuildImageAsync(spec.DockerfilePath, ct);
+                var (name, image) = await BuildImageAsync(spec.DockerfilePath, ct);
+                imageName = name;
                 imageCache[spec.DockerfilePath] = imageName;
+                builtImages.Add(image);
             }
 
             var builder = new ContainerBuilder()
@@ -267,7 +291,40 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         return container;
     }
 
-    private static async Task<string> BuildImageAsync(string dockerfilePath, CancellationToken ct)
+    private async Task<RavenDbContainer> StartRavenDbAsync(IReadOnlyList<string>? databaseNamesToProvision, long dbNanoCpus, long dbMemoryBytes, CancellationToken ct)
+    {
+        var container = new RavenDbBuilder()
+            .WithImage("ravendb/ravendb:7.2-ubuntu-latest")
+            .WithNetwork(network)
+            .WithNetworkAliases(DbNetworkAlias)
+            .WithCreateParameterModifier(p =>
+            {
+                p.HostConfig.NanoCPUs = dbNanoCpus;
+                p.HostConfig.Memory = dbMemoryBytes;
+            })
+            .Build();
+        await container.StartAsync(ct);
+
+        // Mirrors the SQL paths above -- RavenDB also requires each database to exist before a
+        // worker container connects to it (unlike JobMaster's own schema/collections, which are
+        // implicit and need no separate provisioning step).
+        if (databaseNamesToProvision is { Count: > 0 })
+        {
+            await RavenDbDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(container.GetConnectionString(), databaseNamesToProvision, ct);
+        }
+
+        return container;
+    }
+
+    // Returns the built IFutureDockerImage alongside its name, not just the name -- WithCleanUp(true)
+    // below only actually removes the image when this object is disposed, and the caller needs to hold
+    // onto it (in builtImages) to do that in DisposeAsync(). Previously this returned just the name and
+    // let the image object fall out of scope undisposed, so WithCleanUp(true) never fired -- combined
+    // with every run reusing the same fixed tag (e.g. "jobmasterhost:benchmarks", no run-ID), each
+    // rebuild just moved the tag onto the new image and left the previous one behind as a dangling,
+    // untagged image still consuming disk. Confirmed as the cause of a real host-disk-exhaustion incident
+    // that crashed Docker mid-run.
+    private static async Task<(string Name, IFutureDockerImage Image)> BuildImageAsync(string dockerfilePath, CancellationToken ct)
     {
         var key = dockerfilePath.Replace('\\', '/');
         var repoRoot = RepoRootLocator.Find();
@@ -281,7 +338,7 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             .Build();
 
         await image.CreateAsync(ct);
-        return image.FullName!;
+        return (image.FullName!, image);
     }
 
     public async ValueTask DisposeAsync()
@@ -291,12 +348,20 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             await container.DisposeAsync();
         }
 
+        // Must come after the worker containers above -- they're still running off this image until
+        // disposed. See BuildImageAsync's comment for why this step didn't exist before.
+        foreach (var image in builtImages)
+        {
+            await image.DisposeAsync();
+        }
+
         if (RedisContainer is not null) await RedisContainer.DisposeAsync();
         if (NatsContainer is not null) await NatsContainer.DisposeAsync();
         // IDatabaseContainer itself doesn't expose DisposeAsync -- both concrete container types
         // (PostgreSqlContainer, MsSqlContainer) implement IAsyncDisposable via their shared
         // DockerContainer base class, so this cast always succeeds at runtime.
         if (DbContainer is IAsyncDisposable disposableDb) await disposableDb.DisposeAsync();
+        if (RavenDbContainer is not null) await RavenDbContainer.DisposeAsync();
         if (network is not null) await network.DeleteAsync();
     }
 }

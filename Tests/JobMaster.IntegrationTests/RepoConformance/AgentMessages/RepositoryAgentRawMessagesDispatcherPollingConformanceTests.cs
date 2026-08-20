@@ -6,6 +6,13 @@ using Xunit.Sdk;
 
 namespace JobMaster.IntegrationTests.RepoConformance.AgentMessages;
 
+// The settle delay after each push below exists for RavenDB. Its PullMessagesAsync selects candidates via
+// an index-backed query with no WaitForNonStaleResults (deliberately -- see RavenDbRawMessagesDispatcherRepository;
+// staleness there is safe by design, not a bug, given JobMaster's single-owner-per-bucket guarantee), so a
+// push-then-immediately-pull with zero delay is genuinely flaky against RavenDB, not just slow -- confirmed
+// empirically (one run missed all 3 pushed messages, another run missed 1 of 3, no delay). SQL providers
+// don't need this (read-after-write is always consistent, no async indexing) -- SettleAsync is a no-op
+// by default, overridden per provider that actually needs it, so only that provider's test run pays the wait.
 public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTests<TFixture>
     where TFixture : RepositoryFixtureBase
 {
@@ -21,6 +28,8 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
         }
     }
 
+    protected virtual Task SettleAsync() => Task.CompletedTask;
+
     [Fact]
     public async Task CreateBucket_Push_Dequeue_ShouldRoundTrip_And_Remove()
     {
@@ -34,6 +43,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
             var corrId = "c1";
 
             await Fixture.AgentMessages.PushMessageAsync(bucket, payload, refTime, corrId);
+            await SettleAsync();
 
             Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
 
@@ -66,6 +76,8 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":2}", baseTime.AddSeconds(2), "c2");
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", baseTime.AddSeconds(1), "c1");
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":3}", baseTime.AddSeconds(3), "c3");
+            
+            await SettleAsync();
 
             var msgs = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10);
             Assert.Equal(3, msgs.Count);
@@ -94,6 +106,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
 
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"t\":\"past\"}", now.AddMinutes(-1), "past");
             await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"t\":\"future\"}", now.AddMinutes(10), "future");
+            await SettleAsync();
 
             var msgs = await Fixture.AgentMessages.PullMessagesAsync(bucket, 10, referenceTimeTo: now);
             Assert.Single(msgs);
@@ -130,6 +143,7 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
             };
 
             await Fixture.AgentMessages.BulkPushMessageAsync(bucket, messages);
+            await SettleAsync();
 
             Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
 

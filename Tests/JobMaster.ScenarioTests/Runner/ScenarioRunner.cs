@@ -251,6 +251,7 @@ public sealed class ScenarioRunner : IAsyncDisposable
             ["NatsPort"] = "4222",
             ["NatsUsername"] = ScenarioGlobalEnvironment.NatsUsername,
             ["NatsPassword"] = global.NatsPassword,
+            ["RavenDbUrl"] = "http://ravendb:8080",
             ["ApiKey"] = apiKey,
             ["ApiUsername"] = apiUsername,
             ["ApiPassword"] = apiPassword
@@ -342,6 +343,11 @@ public sealed class ScenarioRunner : IAsyncDisposable
                 // CREATE DATABASE-equivalent -- NatsJetStreamJobMasterRuntimeSetup provisions streams
                 // itself inside the app container at startup.
                 await global.GetOrStartNatsAsync(ct);
+            }
+            else if (string.Equals(repoType, "RavenDB", StringComparison.OrdinalIgnoreCase))
+            {
+                var ravenDb = await global.GetOrStartRavenDbAsync(ct);
+                await RavenDbDatabaseProvisioner.CreateDatabasesIfNotExistsAsync(ravenDb.GetConnectionString(), databaseNames, ct);
             }
         }
     }
