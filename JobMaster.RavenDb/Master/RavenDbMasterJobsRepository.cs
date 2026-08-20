@@ -15,6 +15,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils.Extensions;
 using Raven.Client;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Operations;
@@ -25,24 +26,17 @@ namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareRepository, IMasterJobsRepository
 {
-    private const string Collection = "Job";
+    // Exposed (not private) so RavenDbJobIndexDefinitions/RavenDbJobMasterRuntimeSetup can build the
+    // same prefix-qualified collection name for static-index deployment without duplicating this string.
+    internal const string Collection = "Job";
     private const string ExecutionCollection = "JobExecution";
 
-    // Deliberately separate from JobMasterConstants.MaxBatchSizeForBulkOperation (50) -- that constant
-    // bounds how many ids go in one server-side batch/patch call, not how many concurrent RavenDB
-    // sessions/connections this repository opens at once. 50 concurrent sessions per bulk call is too
-    // many; this only governs the per-row-session fallback paths (BulkUpdateAsync's per-row retry,
-    // BulkInsertIfNotExistsAsync).
     private const int PerRowSessionMaxDegreeOfParallelism = 10;
 
-    // Only AcquireAndFetchAsync's confirmatory read-back uses this -- it's the one read where staleness
-    // would silently strand a job the caller actually won (patch succeeded server-side, but the caller
-    // never finds out, so the job sits locked and unprocessed until the lease expires). Every other read
-    // in this repository is either self-correcting via repeated polling/claiming or fine with SQL-equivalent
-    // staleness, so this constant intentionally isn't reused elsewhere. 10s, not the 2s used elsewhere in
-    // this provider -- claim contention can be heavier than a single message-queue bucket, and missing a
-    // just-won job here is a worse outcome than the read taking a bit longer.
-    private static readonly TimeSpan AcquireConfirmationNonStaleTimeout = TimeSpan.FromSeconds(10);
+    // Tier-2 fallback granularity -- see SaveWithPartitionedFallbackAsync.
+    private const int FallbackPartitionSize = 5;
+
+    private static readonly TimeSpan ExecutionCleanupNonStaleTimeout = TimeSpan.FromSeconds(10);
     
     private static readonly JobMasterJobStatus[] FinalStatuses =
     {
@@ -57,7 +51,7 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         IRavenDbDocumentStoreManager storeManager,
         IJobMasterLogger logger) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
         this.logger = logger;
     }
 
@@ -295,24 +289,16 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
             throw new NotSupportedException("MetadataFilters are not supported by ProbeForAcquireAsync.");
         }
 
-        // Not a group-by aggregate -- RavenDB's dynamic group-by only supports count()/sum() as
-        // aggregation methods (min() throws "Unknown aggregation method in SELECT clause of the group by
-        // query"), and even count()-only group-by requires WHERE to come AFTER group by, which only lets
-        // it filter on group-key/aggregate fields -- unusable for our arbitrary pre-aggregation criteria
-        // filters.
-        //
-        // One round trip in the common case, two only when needed: NextPlanExecutionAt is nullable
-        // (cleared on finalization), and RavenDB sorts nulls FIRST ascending -- unlike SQL's MIN(), which
-        // silently ignores NULLs. So the first query orders by
-        // NextPlanExecutionAt asc and takes row 0 alongside Statistics() for Count. If row 0's
-        // NextPlanExecutionAt isn't null, that's already the true min -- nulls sorting first means no row
-        // could have a smaller sort key, so no null exists anywhere in the result set. Only when row 0 is
-        // null (or there are no rows at all) does a second query, adding "NextPlanExecutionAt != null" to
-        // the same predicate, run to find the true min among any remaining non-null rows.
+        // Not a group-by aggregate -- RavenDB's group-by doesn't support min(), and WHERE can't precede it.
+        // RavenDB also sorts nulls FIRST ascending (unlike SQL's MIN(), which ignores them), so a second
+        // query (excluding nulls) only runs when row 0's NextPlanExecutionAt is null.
         using var session = store.OpenAsyncSession();
         var (where, parameters) = BuildWhereRql(queryCriteria, isLocked: false);
 
-        var rql = $"from '{CollectionName}' as e where {where} order by e.NextPlanExecutionAt asc limit 0, 1";
+        var indexName = TryGetApplicableIndexName(queryCriteria, RavenDbJobIndexDefinitions.NextPlanExecutionAtField);
+        var from = indexName != null ? $"index '{indexName}'" : $"'{CollectionName}'";
+
+        var rql = $"from {from} as e where {where} order by e.NextPlanExecutionAt asc limit 0, 1";
         var query = session.Advanced.AsyncRawQuery<RavenDbJobDocument>(rql).Statistics(out var stats);
         foreach (var kv in parameters) query = query.AddParameter(kv.Key, kv.Value);
         var results = await query.ToListAsync();
@@ -328,7 +314,7 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         }
         else
         {
-            var minRql = $"from '{CollectionName}' as e where {where} and e.NextPlanExecutionAt != null order by e.NextPlanExecutionAt asc limit 0, 1";
+            var minRql = $"from {from} as e where {where} and e.NextPlanExecutionAt != null order by e.NextPlanExecutionAt asc limit 0, 1";
             var minQuery = session.Advanced.AsyncRawQuery<RavenDbJobDocument>(minRql);
             foreach (var kv in parameters) minQuery = minQuery.AddParameter(kv.Key, kv.Value);
             var minResults = await minQuery.ToListAsync();
@@ -361,34 +347,25 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         var lockNow = JobMasterConstants.NowUtcWithSkewTolerance();
         var lockExpiresAt = DateTime.SpecifyKind(expiresAtUtc, DateTimeKind.Utc);
 
-        // Step 1: candidate selection -- ordered/limited/filtered, index-backed, can be stale. No
-        // WaitForNonStaleResults here: this only decides which ids get a claim ATTEMPT, not who actually
-        // wins one, and AcquireAndFetchAsync is itself called repeatedly by a polling claim loop, so a
-        // candidate missed this round due to lag is picked up next round -- self-correcting, same
-        // reasoning as everywhere else staleness got dropped in this provider.
+        // Step 1: Select candidates to acquire
         using var candidateSession = store.OpenAsyncSession();
         var (where, parameters) = BuildWhereRql(queryCriteria, isLocked: false);
+        var orderByField = queryCriteria.SortBy != null ? MapSortProperty(queryCriteria.SortBy.Property) : RavenDbJobIndexDefinitions.NextPlanExecutionAtField;
         var orderBy = queryCriteria.SortBy != null
-            ? $"order by e.{MapSortProperty(queryCriteria.SortBy.Property)} {(queryCriteria.SortBy.Ascending ? "asc" : "desc")}"
-            : "order by e.NextPlanExecutionAt asc";
+            ? $"order by e.{orderByField} {(queryCriteria.SortBy.Ascending ? "asc" : "desc")}"
+            : $"order by e.{orderByField} asc";
         parameters["offset"] = queryCriteria.Offset;
         parameters["limit"] = queryCriteria.CountLimit;
-        var candidateRql = $"from '{CollectionName}' as e where {where} {orderBy} select id() as Id limit $offset, $limit";
+        var indexName = TryGetApplicableIndexName(queryCriteria, orderByField);
+        var candidateFrom = indexName != null ? $"index '{indexName}'" : $"'{CollectionName}'";
+        var candidateRql = $"from {candidateFrom} as e where {where} {orderBy} select id() as Id limit $offset, $limit";
         var candidateQuery = candidateSession.Advanced.AsyncRawQuery<IdProjection>(candidateRql);
         foreach (var kv in parameters) candidateQuery = candidateQuery.AddParameter(kv.Key, kv.Value);
         var candidateIds = (await candidateQuery.ToListAsync()).Select(p => p.Id).ToArray();
 
         if (candidateIds.Length == 0) return new List<JobRawModel>();
 
-        // Step 2: server-side patch, one round trip covering every candidate. The "still unlocked" check
-        // is repeated INSIDE the update script (not just in the outer where), so it's re-evaluated against
-        // each document's LIVE state at the moment RavenDB actually applies that document's write -- not
-        // against the (possibly stale) index snapshot used to build the candidate list above. RavenDB
-        // serializes concurrent writes to the same document, so whichever of two racing
-        // AcquireAndFetchAsync calls reaches a given document's write first sees it unlocked and claims
-        // it; the other's script sees it already locked and its `if` guard skips that document entirely.
-        // This is the RavenDB-native equivalent of SQL's outer WHERE re-check on the actual UPDATE
-        // statement (not just its candidate CTE) -- same mechanism, same reason.
+        // Step 2: Patch unlock documents.
         var patchRql = $@"from '{CollectionName}' as e
 where e.ClusterId = $clusterId and id() in ($candidateIds)
 update {{
@@ -397,8 +374,7 @@ update {{
         this.PartitionLockExpiresAt = $lockExpiresAt;
     }}
 }}";
-        // AllowStale=true -- safe for the same reason as BulkUpdateAsync's patch: the script's own if-guard
-        // re-checks live PartitionLockId/PartitionLockExpiresAt, so a stale id() in (...) candidate set can
+        // AllowStale=true -- the script's own if-guard re-checks live state, so a stale candidate set can
         // only under-claim, never double-claim.
         var patchOperation = await store.Operations.SendAsync(new PatchByQueryOperation(new IndexQuery
         {
@@ -414,25 +390,14 @@ update {{
         }, new QueryOperationOptions { AllowStale = true }));
         await patchOperation.WaitForCompletionAsync();
 
-        // Step 3: confirmatory read, by lock ownership (not by the candidate id list) -- this is what
-        // actually determines what THIS caller won, independent of whatever the patch's rowsAffected count
-        // says. This is the one query in the whole repository that keeps WaitForNonStaleResults -- see
-        // AcquireConfirmationNonStaleTimeout's own comment for why. Matches SQL's QueryLockedJobsAsync,
-        // which adds the identical "not already expired" guard using the same nowUtcWithSkew captured at
-        // the top of the method (not a fresh "now" at confirm time) -- WaitForNonStaleResults can itself
-        // take up to AcquireConfirmationNonStaleTimeout, so without this a very short-lived lease could
-        // already read back as expired by the time this query returns; excluding it here matches SQL
-        // rather than handing the caller a job whose lock the repository itself no longer considers held.
+        // Step 3: confirm by getting the documents and filtering locked based on partitionLockId passed in
         using var confirmSession = store.OpenAsyncSession();
-        var confirmRql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.PartitionLockId = $partitionLockId and e.PartitionLockExpiresAt > $lockNow";
-        var confirmed = await confirmSession.Advanced.AsyncRawQuery<RavenDbJobDocument>(confirmRql)
-            .WaitForNonStaleResults(AcquireConfirmationNonStaleTimeout)
-            .AddParameter("clusterId", ClusterConnConfig.ClusterId)
-            .AddParameter("partitionLockId", partitionLockId)
-            .AddParameter("lockNow", lockNow)
-            .ToListAsync();
+        var candidateDocs = await confirmSession.LoadAsync<RavenDbJobDocument>(candidateIds);
+        var confirmed = candidateDocs.Values
+            .Where(doc => doc != null && doc.PartitionLockId == partitionLockId && doc.PartitionLockExpiresAt > lockNow)
+            .ToList();
 
-        return confirmed.Select(doc => ToDomain(doc, confirmSession.Advanced.GetChangeVectorFor(doc))).ToList();
+        return confirmed.Select(doc => ToDomain(doc!, confirmSession.Advanced.GetChangeVectorFor(doc!))).ToList();
     }
 
     // ==================== BulkUpdateAsync (set-based) ====================
@@ -459,12 +424,8 @@ update {{
             }
         }
 
-        // ExcludeStatuses is re-checked INSIDE the update script against the live document (this.Status),
-        // not just in the outer where clause -- the where clause only selects a (possibly stale-index)
-        // candidate set by JobIds, but candidate selection being stale here would only risk a job briefly
-        // being skipped, never wrongly matched. The script's own condition is what's authoritative, so
-        // AllowStale=true on the query is safe: a stale candidate whose real current status is now
-        // excluded still won't be touched, because the script checks live state, not the index snapshot.
+        // ExcludeStatuses is re-checked INSIDE the update script against live this.Status, not just the
+        // outer where -- so a stale candidate set can only under-select, never mis-patch.
         var scriptGuard = "true";
         if (request.ExcludeStatuses is { Count: > 0 })
         {
@@ -483,10 +444,7 @@ update {{
 }}";
         var queryParameters = new Parameters();
         foreach (var kv in parameters) queryParameters.Add(kv.Key, kv.Value);
-        // AllowStale=true -- PatchByQueryOperation throws "Index is stale" by default instead of the
-        // DeleteByQueryOperation-style silent-proceed. Safe here specifically because the script's own
-        // guard re-checks live state (see comment above), so a stale candidate set can only under-select,
-        // never mis-patch.
+        // AllowStale=true -- safe because the script's own guard above re-checks live state.
         var operation = await store.Operations.SendAsync(new PatchByQueryOperation(new IndexQuery
         {
             Query = rql,
@@ -495,9 +453,7 @@ update {{
         await operation.WaitForCompletionAsync();
     }
 
-    // Mirrors SQL's sql.ColumnNameFor(field.Expression) -- maps a JobRawModel property to the RavenDB
-    // document field(s) it corresponds to, converting value-object properties (AgentConnectionId, HostId,
-    // Timeout) to their flattened storage representation. HostId needs two fields set together since
+    // Maps a JobRawModel property to its RavenDB field(s) -- HostId needs two fields set together since
     // HostId.IdValue alone doesn't carry HostDisplayName.
     private static List<(string RqlField, object? Value)> BuildBulkUpdateAssignments(BulkJobUpdateProperty property)
     {
@@ -542,23 +498,67 @@ update {{
 
     // ==================== BulkUpdateAsync (per-row CAS) ====================
 
-    // Single shared session for the common case (one bulk LoadAsync + one batch SaveChangesAsync -- 2
-    // round trips regardless of how many rows), falling back to independent per-row sessions only when
-    // the batch itself conflicts. This works because of two things, both verified against real RavenDB
-    // rather than assumed: (1) SaveChangesAsync is genuinely all-or-nothing per session -- a batch of N
-    // CAS stores where even one has a stale change vector rolls back the other N-1 too, confirmed via
-    // RavenDbJobsRepositoryConformanceTests.SaveChangesAsync_WithMixedValidAndStaleChangeVectors_ShouldRollBackEntireBatch
-    // (4 valid + 1 deliberately-stale write in one session, all 5 came back unchanged after the
-    // exception); and (2) the in-memory version check below happens BEFORE anything is queued into that
-    // shared session, so rows that are already known-stale at load time (the common case this overload
-    // exists for -- e.g. BulkUpdate_Models_ShouldOnlyUpdate_RowsWithMatchingVersion's mix of matching and
-    // deliberately-mismatched rows) never risk triggering a batch-wide rollback in the first place. Only a
-    // row that goes stale DURING this call's own load-to-save window can still cause the batch to throw,
-    // which is genuinely rare -- the per-row fallback exists for that case alone.
+    // Single shared session for the common case (bulk Load + one SaveChangesAsync), falling back to
+    // per-row sessions only when the batch itself conflicts -- SaveChangesAsync is all-or-nothing per
+    // session, so a batch failure means nothing from it was written yet.
     public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels)
     {
         if (jobRawModels.Count == 0) return new List<JobRawModel>();
 
+        try
+        {
+            return await InternalBulkUpdateAsync(jobRawModels);
+        }
+        catch (ConcurrencyException ex)
+        {
+            logger.Warn(
+                $"BulkUpdateAsync batch of {jobRawModels.Count} job(s) hit a change-vector conflict and fell back to partitions of {FallbackPartitionSize}.",
+                JobMasterLogCategory.Job,
+                exception: ex);
+
+            var result = new List<JobRawModel>();
+            var (succeededJobs, failedJobs) = await BulkUpdateFallbackPerPartitionAsync(jobRawModels);
+            result.AddRange(succeededJobs);
+
+            if (failedJobs.Count > 0)
+            {
+                result.AddRange(await BulkUpdateFallbackPerRowAsync(failedJobs));
+            }
+
+            return result;
+        }
+    }
+
+    private async Task<(IList<JobRawModel> SucceededJobs, IList<JobRawModel> FailedJobs)> BulkUpdateFallbackPerPartitionAsync(IList<JobRawModel> jobRawModels)
+    {
+        var failedJobs = new List<JobRawModel>();
+        var succeededJobs = new List<JobRawModel>();
+
+        foreach (var partition in jobRawModels.Partition(FallbackPartitionSize))
+        {
+            try
+            {
+                // Must use InternalBulkUpdateAsync's return value, not the input partition -- it silently
+                // excludes ghost jobs and already-stale versions.
+                var saved = await InternalBulkUpdateAsync(partition.ToList());
+                succeededJobs.AddRange(saved);
+            }
+            catch (Exception ex)
+            {
+                logger.Error(
+                    $"BulkUpdateAsync partition of {partition.Count} job(s) failed and fell back to per-row retry.",
+                    JobMasterLogCategory.Job,
+                    exception: ex);
+                failedJobs.AddRange(partition);
+            }
+        }
+
+        return (succeededJobs, failedJobs);
+    }
+
+    // Pure "save this list" unit, no exception handling -- reusable at any granularity.
+    private async Task<IList<JobRawModel>> InternalBulkUpdateAsync(IList<JobRawModel> jobRawModels)
+    {
         using var session = store.OpenAsyncSession();
         var ids = jobRawModels.Select(j => DocumentId(j.Id)).ToArray();
         var existingDocs = await session.LoadAsync<RavenDbJobDocument>(ids);
@@ -587,21 +587,7 @@ update {{
 
         if (pendingUpdates.Count == 0) return new List<JobRawModel>();
 
-        try
-        {
-            await session.SaveChangesAsync();
-        }
-        catch (ConcurrencyException ex)
-        {
-            // Some row in the batch was modified between our load and our save -- fall back to retrying
-            // each pending row independently rather than losing the whole batch. Warn, not Error: this is
-            // a handled, expected-to-be-rare race, not a failure -- the fallback recovers whatever it can.
-            logger.Warn(
-                $"BulkUpdateAsync batch of {pendingUpdates.Count} job(s) hit a change-vector conflict and fell back to per-row retry.",
-                JobMasterLogCategory.Job,
-                exception: ex);
-            return await BulkUpdateFallbackPerRowAsync(pendingUpdates);
-        }
+        await session.SaveChangesAsync();
 
         foreach (var (job, doc) in pendingUpdates)
         {
@@ -611,29 +597,26 @@ update {{
         return pendingUpdates.Select(x => x.Model).ToList();
     }
 
-    private async Task<IList<JobRawModel>> BulkUpdateFallbackPerRowAsync(List<(JobRawModel Model, RavenDbJobDocument Document)> pendingUpdates)
+    private async Task<IList<JobRawModel>> BulkUpdateFallbackPerRowAsync(IList<JobRawModel> jobRawModels)
     {
         var results = new System.Collections.Concurrent.ConcurrentBag<JobRawModel>();
 
         await JobMasterParallelUtil.ForEachAsync(
-            pendingUpdates,
+            jobRawModels,
             new ParallelOptions { MaxDegreeOfParallelism = PerRowSessionMaxDegreeOfParallelism },
-            async (pending, ct) =>
+            async (job, _) =>
             {
-                using var session = store.OpenAsyncSession();
+                IList<JobRawModel> saved;
                 try
                 {
-                    await session.StoreAsync(pending.Document, changeVector: pending.Model.Version ?? string.Empty, id: DocumentId(pending.Model.Id), token: ct);
-                    ApplyJobCollectionMetadata(session.Advanced.GetMetadataFor(pending.Document));
-                    await session.SaveChangesAsync(ct);
+                    saved = await InternalBulkUpdateAsync(new List<JobRawModel> { job });
                 }
                 catch (ConcurrencyException)
                 {
                     return; // Lost the race during the batch attempt too -- silently excluded.
                 }
 
-                pending.Model.SetVersion(session.Advanced.GetChangeVectorFor(pending.Document) ?? string.Empty);
-                results.Add(pending.Model);
+                foreach (var s in saved) results.Add(s);
             });
 
         return results.ToList();
@@ -696,6 +679,8 @@ update {{
             await session.SaveChangesAsync();
             totalDeleted += batch.Length;
 
+            // AllowStale = false fails immediately ("Index is stale") instead of waiting -- StaleTimeout
+            // makes it wait, since job-execution rows written just before a purge can still be indexing.
             var execRql = $"from '{ExecutionCollectionName}' as e where e.ClusterId = $clusterId and e.JobId in ($jobIds)";
             var execOperation = await store.Operations.SendAsync(new DeleteByQueryOperation(new IndexQuery
             {
@@ -705,7 +690,7 @@ update {{
                     ["clusterId"] = ClusterConnConfig.ClusterId,
                     ["jobIds"] = batch,
                 },
-            }, new QueryOperationOptions { AllowStale = false }));
+            }, new QueryOperationOptions { AllowStale = false, StaleTimeout = ExecutionCleanupNonStaleTimeout }));
             await execOperation.WaitForCompletionAsync();
         }
 
@@ -716,6 +701,29 @@ update {{
     {
         if (jobs.Count == 0) return;
 
+        try
+        {
+            await InternalBulkInsertIfNotExistsAsync(jobs);
+        }
+        catch (ConcurrencyException ex)
+        {
+            // One of the "missing" jobs got inserted by someone else between our load and our save.
+            logger.Warn(
+                $"BulkInsertIfNotExistsAsync batch of {jobs.Count} job(s) hit a change-vector conflict and fell back to partitions of {FallbackPartitionSize}.",
+                JobMasterLogCategory.Job,
+                exception: ex);
+
+            var (_, failedJobs) = await BulkInsertFallbackPerPartitionAsync(jobs);
+            if (failedJobs.Count > 0)
+            {
+                await BulkInsertFallbackPerRowAsync(failedJobs);
+            }
+        }
+    }
+
+    // Mirrors InternalBulkUpdateAsync -- "insert if not present" unit, reused at every fallback granularity.
+    private async Task<IList<JobRawModel>> InternalBulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    {
         using var session = store.OpenAsyncSession();
         var ids = jobs.Select(j => DocumentId(j.Id)).ToArray();
         var existingDocs = await session.LoadAsync<RavenDbJobDocument>(ids);
@@ -731,50 +739,58 @@ update {{
             pendingInserts.Add((job, doc));
         }
 
-        if (pendingInserts.Count == 0) return;
+        if (pendingInserts.Count == 0) return new List<JobRawModel>();
 
-        try
-        {
-            await session.SaveChangesAsync();
-        }
-        catch (ConcurrencyException ex)
-        {
-            // One of the "missing" jobs got inserted by someone else between our load and our save --
-            // fall back to inserting each pending job independently rather than losing the whole batch.
-            logger.Warn(
-                $"BulkInsertIfNotExistsAsync batch of {pendingInserts.Count} job(s) hit a change-vector conflict and fell back to per-row retry.",
-                JobMasterLogCategory.Job,
-                exception: ex);
-            await BulkInsertFallbackPerRowAsync(pendingInserts);
-            return;
-        }
+        await session.SaveChangesAsync();
 
         foreach (var (job, doc) in pendingInserts)
         {
             job.SetVersion(session.Advanced.GetChangeVectorFor(doc) ?? string.Empty);
         }
+
+        return pendingInserts.Select(x => x.Model).ToList();
     }
 
-    private async Task BulkInsertFallbackPerRowAsync(List<(JobRawModel Model, RavenDbJobDocument Document)> pendingInserts)
+    private async Task<(IList<JobRawModel> SucceededJobs, IList<JobRawModel> FailedJobs)> BulkInsertFallbackPerPartitionAsync(IList<JobRawModel> jobs)
+    {
+        var failedJobs = new List<JobRawModel>();
+        var succeededJobs = new List<JobRawModel>();
+
+        foreach (var partition in jobs.Partition(FallbackPartitionSize))
+        {
+            try
+            {
+                var saved = await InternalBulkInsertIfNotExistsAsync(partition.ToList());
+                succeededJobs.AddRange(saved);
+            }
+            catch (Exception ex)
+            {
+                logger.Error(
+                    $"BulkInsertIfNotExistsAsync partition of {partition.Count} job(s) failed and fell back to per-row retry.",
+                    JobMasterLogCategory.Job,
+                    exception: ex);
+                failedJobs.AddRange(partition);
+            }
+        }
+
+        return (succeededJobs, failedJobs);
+    }
+
+    private async Task BulkInsertFallbackPerRowAsync(IList<JobRawModel> jobs)
     {
         await JobMasterParallelUtil.ForEachAsync(
-            pendingInserts,
+            jobs,
             new ParallelOptions { MaxDegreeOfParallelism = PerRowSessionMaxDegreeOfParallelism },
-            async (pending, ct) =>
+            async (job, _) =>
             {
-                using var session = store.OpenAsyncSession();
                 try
                 {
-                    await session.StoreAsync(pending.Document, changeVector: string.Empty, id: DocumentId(pending.Model.Id), token: ct);
-                    ApplyJobCollectionMetadata(session.Advanced.GetMetadataFor(pending.Document));
-                    await session.SaveChangesAsync(ct);
+                    await InternalBulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
                 }
                 catch (ConcurrencyException)
                 {
-                    return; // Already exists now -- leave untouched, matches "insert if not exists" semantics.
+                    // Already exists now -- leave untouched, matches "insert if not exists" semantics.
                 }
-
-                pending.Model.SetVersion(session.Advanced.GetChangeVectorFor(pending.Document) ?? string.Empty);
             });
     }
 
@@ -903,6 +919,37 @@ update {{
         return (string.Join(" and ", where), parameters);
     }
 
+    // Returns the deployed static index this call's criteria can safely use, or null to fall back to a
+    // dynamic query -- errs conservative since a field the index doesn't map throws in RavenDB.
+    private static string? TryGetApplicableIndexName(JobQueryCriteria criteria, string orderByField)
+    {
+        if (criteria.Statuses.Count > 0) return null;
+        if (criteria.Priority.HasValue) return null;
+        if (criteria.ScheduledFrom.HasValue || criteria.ScheduledTo.HasValue) return null;
+        if (criteria.ProcessDeadlineTo.HasValue) return null;
+        if (criteria.TriggerSourceTypes.Count > 0) return null;
+        if (criteria.SourceId.HasValue || criteria.SourceIds.Count > 0) return null;
+        if (!string.IsNullOrEmpty(criteria.JobDefinitionId)) return null;
+        if (!string.IsNullOrEmpty(criteria.WorkerLane)) return null;
+        if (!string.IsNullOrEmpty(criteria.BucketId)) return null;
+        if (criteria.ExcludeBucketIds.Count > 0) return null;
+        if (criteria.JobIds.Count > 0) return null;
+        if (criteria.ExcludeJobIds.Count > 0) return null;
+        if (criteria.MetadataFilters.Count > 0) return null;
+        if (!string.Equals(orderByField, RavenDbJobIndexDefinitions.NextPlanExecutionAtField, StringComparison.Ordinal)) return null;
+
+        // PartitionLockId/PartitionLockExpiresAt are always included -- every caller (AcquireAndFetchAsync,
+        // ProbeForAcquireAsync) only ever queries isLocked: false candidates.
+        var tokens = new List<string> { RavenDbJobIndexDefinitions.ClusterIdField };
+        if (criteria.Status.HasValue) tokens.Add(RavenDbJobIndexDefinitions.StatusField);
+        tokens.Add(RavenDbJobIndexDefinitions.PartitionLockIdField);
+        tokens.Add(RavenDbJobIndexDefinitions.PartitionLockExpiresAtField);
+        tokens.Add(RavenDbJobIndexDefinitions.NextPlanExecutionAtField);
+
+        var requiredPrefix = "RavenDbJobs/" + string.Join("_", tokens);
+        return RavenDbJobIndexDefinitions.DeployedIndexNames.FirstOrDefault(name => name.StartsWith(requiredPrefix, StringComparison.Ordinal));
+    }
+
     // ==================== Mapping ====================
 
     private RavenDbJobDocument ToDocument(JobRawModel model)
@@ -940,11 +987,9 @@ update {{
         return doc;
     }
 
-    // MetadataJson is stored verbatim (returned as-is to callers -- zero round-trip risk regardless of
-    // which of KeyValueBag's 11 scalar types it encodes). MetadataValues/DateTimeValues/GuidValues/
-    // DecimalValues are a SEPARATE query-side-only projection for MetadataFilters, built fresh here every
-    // write -- same 4-bucket dispatch as RavenDbGenericRecordDocument, sufficient because MetadataFilters
-    // itself only ever targets string/int/datetime/guid/decimal, never the narrower short/byte/char types.
+    // MetadataJson is stored verbatim. MetadataValues/DateTimeValues/GuidValues/DecimalValues are a
+    // separate query-side-only projection for MetadataFilters, rebuilt fresh every write -- same 4-bucket
+    // dispatch as RavenDbGenericRecordDocument.
     private static void ApplyMetadata(RavenDbJobDocument doc, string? metadataJson)
     {
         doc.MetadataJson = metadataJson;

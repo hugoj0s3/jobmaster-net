@@ -24,7 +24,7 @@ internal sealed class RavenDbAgentFingerprintResolver : IAgentFingerprintResolve
 
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
     {
-        store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString, agentConnConfig.GetCertificate());
         prefix = agentConnConfig.GetCollectionPrefix();
     }
 

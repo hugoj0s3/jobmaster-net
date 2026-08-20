@@ -16,6 +16,8 @@
         <PackageReference Include="Testcontainers.MySql" Version="3.10.0" />
         <PackageReference Include="Testcontainers.Redis" Version="3.10.0" />
         <PackageReference Include="Testcontainers.Nats" Version="3.10.0" />
+        <PackageReference Include="Testcontainers.RavenDb" Version="3.10.0" />
+        <PackageReference Include="RavenDB.Client" Version="7.2.5" />
         <PackageReference Include="System.Net.Http.Json" Version="8.0.1" />
         <PackageReference Include="Npgsql" Version="8.0.3" />
         <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />

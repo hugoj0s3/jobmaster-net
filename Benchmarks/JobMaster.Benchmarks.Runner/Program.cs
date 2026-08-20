@@ -20,6 +20,7 @@ var dbLabel = (options.DbEngine, options.UseNats) switch
     (DbEngine.Postgres, true) => "postgresnats",
     (DbEngine.SqlServer, false) => "sqlserverpure",
     (DbEngine.MySql, false) => "mysqlpure",
+    (DbEngine.RavenDB, false) => "ravendbpure",
     _ => "postgrespure",
 };
 Console.WriteLine($"Framework=jobmaster Db={dbLabel} Rate={options.TargetJobsPerMinute}/min " +
@@ -72,7 +73,7 @@ var scheduleCallLatencyRecorder = new ScheduleCallLatencyRecorder();
 using var dockerClient = new DockerClientConfiguration().CreateClient();
 var statsSampler = new ContainerStatsSampler(dockerClient);
 
-var allContainers = new List<(string Name, string Id)> { (BenchmarkContainerEnvironment.DbNetworkAlias, ((IContainer)environment.DbContainer).Id) };
+var allContainers = new List<(string Name, string Id)> { (BenchmarkContainerEnvironment.DbNetworkAlias, environment.DbContainerForOps.Id) };
 allContainers.AddRange(environment.WorkerContainers.Select((c, i) => (workerSpecs[i].Name, c.Id)));
 
 var statsSamples = new List<ContainerStatsSample>();
@@ -194,6 +195,7 @@ var dbConfigLabel = (options.DbEngine, options.UseNats) switch
     (DbEngine.Postgres, true) => "PostgresNats",
     (DbEngine.SqlServer, false) => "SqlServerPure",
     (DbEngine.MySql, false) => "MySqlPure",
+    (DbEngine.RavenDB, false) => "RavenDbPure",
     _ => "PostgresPure",
 };
 
@@ -228,47 +230,57 @@ Console.WriteLine($"ScheduleCall(after) mean/p50/p90/p99={scheduleCallLatencyRep
 
 // Captured before teardown so anomalies (like the lost/high-latency jobs above) can actually be
 // diagnosed from the JobMaster host's own log output, not just guessed at from external symptoms.
-Console.WriteLine("Dumping master DB diagnostics (jm_job status distribution, jm_log entries)...");
+// SQL-only: these are raw ADO queries against JobMaster's SQL schema (jm_job/jm_bucket/jm_log/
+// jm_message_dispatcher), which has no RavenDB equivalent (RavenDB uses collections + RQL, not this
+// schema at all) -- not attempted for RavenDB rather than half-built with no real value.
 var diagnosticsDirectory = Path.Combine(outputDirectory, "db-diagnostics");
 Directory.CreateDirectory(diagnosticsDirectory);
 
-var masterConnectionString = BuildScopedConnectionString(options.DbEngine, environment.DbContainer.GetConnectionString(), BenchmarkContainerEnvironment.DbDatabaseName);
-
-await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT status, COUNT(*) AS cnt FROM jm_job GROUP BY status ORDER BY status",
-    Path.Combine(diagnosticsDirectory, "job-status-distribution.txt"));
-await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT * FROM jm_bucket ORDER BY id",
-    Path.Combine(diagnosticsDirectory, "buckets.txt"));
-await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT * FROM jm_log ORDER BY timestamp_utc ASC",
-    Path.Combine(diagnosticsDirectory, "jm-log.txt"));
-await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT job_id, bucket_id, started_at, finalized_at, DATEDIFF(millisecond, started_at, finalized_at) AS duration_ms FROM JM_job_execution ORDER BY started_at ASC",
-    Path.Combine(diagnosticsDirectory, "job-execution.txt"));
-
-// The processing message queue (jm_message_dispatcher) lives in each worker's own dedicated agent
-// connection database, not the master database -- same DB server, different database name. Only
-// applies to SQL-backed agent connections: NATS agent connections have no such table (JetStream
-// tracks its own state), so skip this when --nats is set.
-if (!options.UseNats)
+if (options.DbEngine == DbEngine.RavenDB)
 {
-    var agentDatabaseName = options.SharedAgentConnection ? "benchmark_agent" : "benchmark_agent_0";
-    var agentConnectionString = BuildScopedConnectionString(options.DbEngine, environment.DbContainer.GetConnectionString(), agentDatabaseName);
-    await DumpQueryAsync(options.DbEngine, agentConnectionString, "SELECT COUNT(*) AS cnt FROM jm_message_dispatcher",
-        Path.Combine(diagnosticsDirectory, "agent0-message-dispatcher-count.txt"));
-
-    // TOP/LIMIT syntax differs per engine -- SQL Server doesn't support LIMIT.
-    var sampleQuery = options.DbEngine == DbEngine.SqlServer
-        ? "SELECT TOP 50 * FROM jm_message_dispatcher ORDER BY reference_time ASC"
-        : "SELECT * FROM jm_message_dispatcher ORDER BY reference_time ASC LIMIT 50";
-    await DumpQueryAsync(options.DbEngine, agentConnectionString, sampleQuery,
-        Path.Combine(diagnosticsDirectory, "agent0-message-dispatcher-sample.txt"));
+    Console.WriteLine("Skipping DB diagnostics dump -- not applicable for RavenDB (SQL-schema-specific).");
 }
+else
+{
+    Console.WriteLine("Dumping master DB diagnostics (jm_job status distribution, jm_log entries)...");
+    var masterConnectionString = BuildScopedConnectionString(options.DbEngine, environment.DbContainer.GetConnectionString(), BenchmarkContainerEnvironment.DbDatabaseName);
 
-Console.WriteLine($"DB diagnostics written to {diagnosticsDirectory}");
+    await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT status, COUNT(*) AS cnt FROM jm_job GROUP BY status ORDER BY status",
+        Path.Combine(diagnosticsDirectory, "job-status-distribution.txt"));
+    await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT * FROM jm_bucket ORDER BY id",
+        Path.Combine(diagnosticsDirectory, "buckets.txt"));
+    await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT * FROM jm_log ORDER BY timestamp_utc ASC",
+        Path.Combine(diagnosticsDirectory, "jm-log.txt"));
+    await DumpQueryAsync(options.DbEngine, masterConnectionString, "SELECT job_id, bucket_id, started_at, finalized_at, DATEDIFF(millisecond, started_at, finalized_at) AS duration_ms FROM JM_job_execution ORDER BY started_at ASC",
+        Path.Combine(diagnosticsDirectory, "job-execution.txt"));
+
+    // The processing message queue (jm_message_dispatcher) lives in each worker's own dedicated agent
+    // connection database, not the master database -- same DB server, different database name. Only
+    // applies to SQL-backed agent connections: NATS agent connections have no such table (JetStream
+    // tracks its own state), so skip this when --nats is set.
+    if (!options.UseNats)
+    {
+        var agentDatabaseName = options.SharedAgentConnection ? "benchmark_agent" : "benchmark_agent_0";
+        var agentConnectionString = BuildScopedConnectionString(options.DbEngine, environment.DbContainer.GetConnectionString(), agentDatabaseName);
+        await DumpQueryAsync(options.DbEngine, agentConnectionString, "SELECT COUNT(*) AS cnt FROM jm_message_dispatcher",
+            Path.Combine(diagnosticsDirectory, "agent0-message-dispatcher-count.txt"));
+
+        // TOP/LIMIT syntax differs per engine -- SQL Server doesn't support LIMIT.
+        var sampleQuery = options.DbEngine == DbEngine.SqlServer
+            ? "SELECT TOP 50 * FROM jm_message_dispatcher ORDER BY reference_time ASC"
+            : "SELECT * FROM jm_message_dispatcher ORDER BY reference_time ASC LIMIT 50";
+        await DumpQueryAsync(options.DbEngine, agentConnectionString, sampleQuery,
+            Path.Combine(diagnosticsDirectory, "agent0-message-dispatcher-sample.txt"));
+    }
+
+    Console.WriteLine($"DB diagnostics written to {diagnosticsDirectory}");
+}
 
 Console.WriteLine("Capturing container logs...");
 var logsDirectory = Path.Combine(outputDirectory, "container-logs");
 Directory.CreateDirectory(logsDirectory);
 
-var (dbStdOut, dbStdErr) = await ((IContainer)environment.DbContainer).GetLogsAsync();
+var (dbStdOut, dbStdErr) = await environment.DbContainerForOps.GetLogsAsync();
 await File.WriteAllTextAsync(Path.Combine(logsDirectory, "db.stdout.log"), dbStdOut);
 await File.WriteAllTextAsync(Path.Combine(logsDirectory, "db.stderr.log"), dbStdErr);
 

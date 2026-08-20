@@ -1,4 +1,6 @@
+using JobMaster.RavenDb.Agents;
 using JobMaster.RavenDb.Connections;
+using JobMaster.RavenDb.Master;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
@@ -7,16 +9,17 @@ using Raven.Client.Documents.Operations.Expiration;
 
 namespace JobMaster.RavenDb;
 
-/// <summary>
-/// RavenDB provider runtime setup. Auto-discovered and invoked by <c>ClusterConfigBuilder</c> like every
-/// other <see cref="IJobMasterRuntimeSetup"/> implementation -- no manual registration needed. Enables
-/// RavenDB's native document-expiration background job on each configured database, which is disabled
-/// by default and required for <see cref="JobMaster.RavenDb.Master.RavenDbMasterDistributedLockerRepository"/>'s
-/// zombie-lock <c>@expires</c> backstop to actually delete anything. Database provisioning and index
-/// deployment are not handled here.
-/// </summary>
 internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
+    // RavenDB Community licenses reject any sweep frequency below this floor
+    // (Raven.Client.Exceptions.Commercial.LicenseLimitException). This backstop is housekeeping, not a
+    // latency-sensitive path, so the floor is requested unconditionally rather than exposing it as a
+    // separate setting.
+    private const long DeleteFrequencyInSec = 36 * 60 * 60;
+
+    private const int DefaultDbOperationThrottleLimitForCluster = 50;
+    private const int DefaultDbOperationThrottleLimitForAgent = 25;
+
     public Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
         return Task.FromResult<IList<string>>(new List<string>());
@@ -24,35 +27,70 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 
     public async Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
-        var clusterConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
-            .Where(cfg => cfg.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
+        var allClusterConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
+            .Where(c => c.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
             .ToList();
 
-        foreach (var clusterConfig in clusterConfigs)
+        foreach (var clusterConfig in allClusterConfigs)
         {
-            await ConfigureExpirationAsync(clusterConfig.ClusterId, clusterConfig.ConnectionString);
+            if (!clusterConfig.RuntimeDbOperationLimit.HasValue)
+            {
+                clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
+            }
         }
 
-        var agentConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
-            .SelectMany(x => x.GetAllAgentConnectionConfigs())
+        var allAgentConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
+            .SelectMany(c => c.GetAllAgentConnectionConfigs())
             .Where(a => a.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
             .ToList();
 
-        foreach (var agentConfig in agentConfigs)
+        foreach (var agentConfig in allAgentConfigs)
         {
-            await ConfigureExpirationAsync(agentConfig.ClusterId, agentConfig.ConnectionString);
+            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
+            {
+                agentConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForAgent);
+            }
         }
-    }
-    
-    private static async Task ConfigureExpirationAsync(string clusterId, string connectionString)
-    {
-        var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
-        var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
-        var store = storeManager.GetOrCreateStore(connectionString);
-        
-        await store.Maintenance.SendAsync(new ConfigureExpirationOperation(new ExpirationConfiguration
+
+        // The Message collection lives in each agent connection's own database (never the master's,
+        // except for a fallback/standalone connection reusing the master's own connection string --
+        // already just another entry in GetAllAgentConnectionConfigs(), no special-casing needed here).
+        // Deployed unconditionally, not gated behind an opt-in like document expiration -- this only
+        // reduces indexing overhead, it doesn't change any behavior a user would need to opt into.
+        foreach (var agentConfig in allAgentConfigs)
         {
-            Disabled = false,
-        }));
+            var factory = JobMasterClusterAwareComponentFactories.GetFactory(agentConfig.ClusterId);
+            var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
+            var store = storeManager.GetOrCreateStore(agentConfig.ConnectionString, agentConfig.GetCertificate());
+            var collectionName = agentConfig.GetCollectionPrefix() + RavenDbRawMessagesDispatcherRepository.Collection;
+            await RavenDbMessageIndexDefinitions.DeployAsync(store, collectionName);
+        }
+
+        // The Job collection lives in the master database -- one deployment per cluster is enough,
+        // unlike Message's per-agent-connection loop above. Deployed unconditionally, same reasoning as
+        // the Message index.
+        foreach (var clusterConfig in allClusterConfigs)
+        {
+            var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
+            var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
+            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate());
+            var collectionName = clusterConfig.GetCollectionPrefix() + RavenDbMasterJobsRepository.Collection;
+            await RavenDbJobIndexDefinitions.DeployAsync(store, collectionName);
+        }
+
+        var expirationEnabledClusterConfigs = allClusterConfigs.Where(c => c.IsDocumentExpirationEnabled()).ToList();
+
+        foreach (var clusterConfig in expirationEnabledClusterConfigs)
+        {
+            var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
+            var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
+            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate());
+
+            await store.Maintenance.SendAsync(new ConfigureExpirationOperation(new ExpirationConfiguration
+            {
+                Disabled = false,
+                DeleteFrequencyInSec = DeleteFrequencyInSec,
+            }));
+        }
     }
 }

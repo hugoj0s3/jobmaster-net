@@ -187,6 +187,9 @@ public static class JobMasterTopologyBuilder
     // upsert logic.
     private static string BuildConnectionString(DbEngine dbEngine, string databaseName) => dbEngine switch
     {
+        DbEngine.RavenDB =>
+            $"Urls=http://{BenchmarkContainerEnvironment.DbNetworkAlias}:8080;Database={databaseName}",
+
         DbEngine.SqlServer =>
             $"Server={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Database={databaseName};" +

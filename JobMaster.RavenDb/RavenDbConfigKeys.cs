@@ -10,4 +10,8 @@ internal static class RavenDbConfigKeys
     public static string CollectionPrefixKey => "CollectionPrefix";
 
     public const string DefaultCollectionPrefix = "JM_";
+
+    public static string EnableDocumentExpirationKey => "EnableDocumentExpiration";
+
+    public static string CertificateKey => "Certificate";
 }

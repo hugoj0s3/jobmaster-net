@@ -21,7 +21,7 @@ internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareReposit
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IRavenDbDocumentStoreManager storeManager) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
     }
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;

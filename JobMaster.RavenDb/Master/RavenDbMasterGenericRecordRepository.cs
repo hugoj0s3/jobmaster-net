@@ -3,6 +3,7 @@ using JobMaster.RavenDb.Connections;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
+using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Ioc.Markups;
 using Raven.Client;
 using Raven.Client.Documents;
@@ -40,7 +41,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IRavenDbDocumentStoreManager storeManager) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
     }
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
@@ -404,6 +405,19 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
                     break;
                 case decimal dec:
                     doc.DecimalValues[kv.Key] = dec;
+                    break;
+                // GenericRecordEntry.ToStorageObject's JobMasterConfigDictionary case returns the raw
+                // IDictionary<string, object> itself (not pre-JSON-encoded), unlike its generic
+                // "complex type" fallback which does encode to a JSON string. Storing this dictionary
+                // as-is would let RavenDB nest it natively as a JSON object, but GenericRecordEntry.
+                // FromStorageObject's matching read-side branch unconditionally calls stored.ToString()
+                // expecting JSON text -- against a real Dictionary object that just returns its .NET
+                // type name (e.g. "System.Collections.Generic.Dictionary`2[...]"), not JSON, breaking
+                // deserialization. JSON-encode it here so the stored value round-trips as the string
+                // FromStorageObject actually expects -- matches the SQL providers' own EAV storage,
+                // which always persists this as flat text in a value_text column.
+                case IDictionary<string, object> dict:
+                    doc.Values[kv.Key] = InternalJobMasterSerializer.Serialize(dict);
                     break;
                 default:
                     doc.Values[kv.Key] = kv.Value;

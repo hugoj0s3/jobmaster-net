@@ -15,7 +15,17 @@ namespace JobMaster.RavenDb.Agents;
 
 internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
 {
-    private const string Collection = "Message";
+    // Exposed (not private) so RavenDbMessageIndexDefinitions/RavenDbJobMasterRuntimeSetup can build the
+    // same prefix-qualified collection name for static-index deployment without duplicating this string.
+    internal const string Collection = "Message";
+
+    // AllowStale = false alone doesn't wait for the index to catch up -- it evaluates staleness the
+    // instant the operation is dispatched and fails outright (RavenException: "Index is stale") if it
+    // isn't caught up yet, which a bucket torn down right after its last message was pushed can easily
+    // hit. StaleTimeout makes RavenDB wait (up to this bound) for the index to become current before
+    // running the delete, instead of erroring immediately -- still fails past the bound rather than
+    // silently under-deleting, preserving DestroyBucketAsync's no-orphaned-messages guarantee.
+    private static readonly TimeSpan DestroyBucketStaleTimeout = TimeSpan.FromSeconds(15);
 
     private readonly IRavenDbDocumentStoreManager storeManager;
     private IDocumentStore store = null!;
@@ -36,7 +46,7 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
 
     public void Initialize(JobMasterAgentConnectionConfig config)
     {
-        store = storeManager.GetOrCreateStore(config.ConnectionString);
+        store = storeManager.GetOrCreateStore(config.ConnectionString, config.GetCertificate());
         prefix = config.GetCollectionPrefix();
     }
 
@@ -104,7 +114,11 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
         // already). LoadAsync below is a point lookup that always reads the live document store
         // regardless of index staleness, so returned content is never stale even though candidate
         // selection can be momentarily incomplete.
-        var rql = $"from '{CollectionName}' as e where {where} order by e.ReferenceTime asc select id() as Id limit 0, $limit";
+        // Targets the deployed static index by name (RavenDbMessageIndexDefinitions) instead of
+        // `from '{CollectionName}'` -- consolidates what would otherwise be RavenDB's own dynamic
+        // auto-index for this exact field combination into one index shared with DestroyBucketAsync,
+        // rather than paying indexing overhead for two overlapping indexes on every message write.
+        var rql = $"from index '{RavenDbMessageIndexDefinitions.ByBucketAndReferenceTimeName}' as e where {where} order by e.ReferenceTime asc select id() as Id limit 0, $limit";
         var query = session.Advanced.AsyncRawQuery<IdProjection>(rql)
             .AddParameter("bucket", fullBucketAddressId)
             .AddParameter("limit", numberOfJobs);
@@ -160,12 +174,18 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
     public async Task DestroyBucketAsync(string fullBucketAddressId)
     {
         // Server-side bulk delete -- no round trip streaming every id to the client first, unlike the
-        // previous stream-then-batch-delete approach. AllowStale = false (the default, spelled out here
-        // for clarity) is deliberate: unlike the retention-sweep deletes elsewhere (Logs/GenericRecords,
-        // safe to under-delete since a missed row is just as eligible next tick), this is a one-shot
-        // bucket teardown with no follow-up sweep -- a message missed here due to index lag would be
-        // orphaned forever, not just delayed.
-        var rql = $"from '{CollectionName}' as e where e.BucketAddressId = $bucket";
+        // previous stream-then-batch-delete approach. AllowStale = false is deliberate: unlike the
+        // retention-sweep deletes elsewhere (Logs/GenericRecords, safe to under-delete since a missed row
+        // is just as eligible next tick), this is a one-shot bucket teardown with no follow-up sweep -- a
+        // message missed here due to index lag would be orphaned forever, not just delayed. StaleTimeout
+        // pairs with that: it makes the operation wait for the index to catch up rather than failing the
+        // instant it's dispatched, which a bucket torn down right after its last message was pushed can
+        // easily hit otherwise.
+        // Same static index as PullMessagesAsync -- see RavenDbMessageIndexDefinitions. The composite
+        // {BucketAddressId, ReferenceTime} index serves this pure-equality-on-BucketAddressId query just
+        // as well as a narrower single-field index would, so one shared index covers both queries
+        // instead of two.
+        var rql = $"from index '{RavenDbMessageIndexDefinitions.ByBucketAndReferenceTimeName}' as e where e.BucketAddressId = $bucket";
         var operation = await store.Operations.SendAsync(new DeleteByQueryOperation(new IndexQuery
         {
             Query = rql,
@@ -173,7 +193,7 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
             {
                 ["bucket"] = fullBucketAddressId,
             }
-        }, new QueryOperationOptions { AllowStale = false }));
+        }, new QueryOperationOptions { AllowStale = false, StaleTimeout = DestroyBucketStaleTimeout }));
 
         await operation.WaitForCompletionAsync();
     }

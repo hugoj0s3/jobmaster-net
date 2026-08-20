@@ -19,6 +19,7 @@
         <ProjectReference Include="..\..\Sql\JobMaster.MySql\JobMaster.MySql.csproj" />
         <ProjectReference Include="..\..\Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
         <ProjectReference Include="..\..\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
+        <ProjectReference Include="..\..\JobMaster.RavenDb\JobMaster.RavenDb.csproj" />
     </ItemGroup>
 
 </Project>

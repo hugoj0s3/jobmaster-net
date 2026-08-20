@@ -10,7 +10,7 @@ namespace JobMaster.IntegrationTests.RepoConformance.RavenDb;
 // No shared "AgentFingerprintResolver" RepoConformance category exists for any provider (SQL/NATS
 // included), so this is a standalone RavenDB-only test class, same reasoning as
 // RavenDbLogsRepositoryConformanceTests. Constructs RavenDbAgentFingerprintResolver directly rather than
-// resolving it through DI -- this fixture only registers UseRavenDbForMaster, so RegisterForAgent never
+// resolving it through DI -- this fixture only registers the master side of UseRavenDb, so RegisterForAgent never
 // runs and there's no agent-connection DI graph to resolve it from.
 [Collection("RavenDbRepoConformance")]
 [Trait("DB", "RavenDb")]

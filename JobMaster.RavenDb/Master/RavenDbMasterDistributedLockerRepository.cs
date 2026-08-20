@@ -13,13 +13,16 @@ namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterClusterAwareRepository, IMasterDistributedLockerRepository
 {
-    // Grace window added on top of the lease's own ExpiresAt before RavenDB's native expiration feature
-    // (enabled at the database level by RavenDbJobMasterRuntimeSetup) actually deletes the compare-exchange
-    // entry. Lock *validity* never depends on this -- TryLock/IsLocked always
-    // compare ExpiresAt client-side and can steal/report-unlocked immediately once a lease is past due,
-    // regardless of whether RavenDB's expiration sweep (DeleteFrequencyInSec, not real-time) has caught up
-    // yet. @expires is purely a housekeeping backstop for entries nobody ever explicitly released or stole,
-    // matching the role the old hand-rolled Timer-based sweep played -- just server-managed now instead.
+    // Grace window added on top of the lease's own ExpiresAt before RavenDB's native expiration feature,
+    // if enabled on the database, would actually delete the compare-exchange entry. Not enabled by
+    // default -- RavenDB's Community license caps its sweep frequency at a 36-hour minimum, a
+    // database-wide setting not scoped to this one collection, so forcing it on would mean overriding a
+    // setting the operator may already be managing for their own data in this database. Opt in via
+    // ConfigExtensions.UseRavenDb's enableDocumentExpiration parameter. Lock *validity* never depends on whether
+    // it's enabled -- TryLock/IsLocked always compare ExpiresAt client-side and can steal/report-unlocked
+    // immediately once a lease is past due, regardless of RavenDB's own expiration sweep. @expires is
+    // purely an optional housekeeping backstop for entries nobody ever explicitly released or stole,
+    // matching the role the old hand-rolled Timer-based sweep played.
     private static readonly TimeSpan ZombieLockGracePeriod = TimeSpan.FromDays(2);
 
     private readonly IDocumentStore store;
@@ -28,7 +31,7 @@ internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterCluste
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IRavenDbDocumentStoreManager storeManager) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
     }
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;

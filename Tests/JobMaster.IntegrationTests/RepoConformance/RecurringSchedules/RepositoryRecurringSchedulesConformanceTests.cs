@@ -1335,6 +1335,7 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(2, first.Count);
         Assert.All(first, s => Assert.Equal(lockId1, s.PartitionLockId));
 
+        await SettleAsync();
         var second = await Fixture.MasterRecurringSchedules.AcquireAndFetchAsync(criteria, lockId2, now.AddMinutes(30));
         Assert.Equal(2, second.Count);
         Assert.All(second, s => Assert.Equal(lockId2, s.PartitionLockId));

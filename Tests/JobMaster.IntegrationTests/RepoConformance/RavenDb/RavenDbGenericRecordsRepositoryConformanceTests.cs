@@ -1,5 +1,8 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using JobMaster.IntegrationTests.RepoConformance.GenericRecords;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Utils;
 using Xunit;
@@ -13,6 +16,34 @@ public sealed class RavenDbGenericRecordsRepositoryConformanceTests
 {
     public RavenDbGenericRecordsRepositoryConformanceTests(RavenDbRepositoryFixture fixture) : base(fixture)
     {
+    }
+
+    // Regression test: GenericRecordEntry.ToStorageObject's JobMasterConfigDictionary case returns the
+    // raw IDictionary<string, object> itself, not pre-JSON-encoded -- unlike the SQL providers' own EAV
+    // storage, which always flattens any non-scalar value to JSON text before persisting, RavenDB's
+    // Values field would otherwise store this dictionary as a natively-nested JSON object. On read,
+    // GenericRecordEntry.FromStorageObject's matching branch unconditionally calls stored.ToString(),
+    // expecting JSON text back -- against a real Dictionary object this just returns its .NET type name,
+    // not JSON, so deserialization threw. ClusterConfigurationModel.AdditionalConfig is the one
+    // real-world caller of this path (every cluster persists one on startup), so a fresh instance
+    // round-tripping cleanly through Upsert/Get proves the fix rather than exercising it in isolation.
+    [Fact]
+    public async Task Upsert_ShouldRoundTrip_RecordWithNestedDictionaryValue()
+    {
+        var namespaceKey = new JobMasterNamespaceUniqueKey("diagnostic-group", Guid.NewGuid());
+        var model = new ClusterConfigurationModel(Fixture.ClusterId) { IanaTimeZoneId = "America/Sao_Paulo" };
+        model.AdditionalConfig.SetValue(namespaceKey, "key", "value");
+        var entry = GenericRecordEntry.Create(Fixture.ClusterId, MasterGenericRecordGroupIds.ClusterConfiguration, Fixture.ClusterId, model);
+
+        await Fixture.MasterGenericRecords.UpsertAsync(entry);
+
+        var fromDb = await Fixture.MasterGenericRecords.GetAsync(MasterGenericRecordGroupIds.ClusterConfiguration, Fixture.ClusterId);
+        Assert.NotNull(fromDb);
+
+        var restored = fromDb!.ToObject<ClusterConfigurationModel>();
+        Assert.Equal(model.IanaTimeZoneId, restored.IanaTimeZoneId);
+        Assert.Equal(model.ClusterMode, restored.ClusterMode);
+        Assert.Equal("value", restored.AdditionalConfig.TryGetValue<string>(namespaceKey, "key"));
     }
 
     // RavenDB-specific: verifies an UPDATE to an EXISTING document's field (not a brand-new insert) is

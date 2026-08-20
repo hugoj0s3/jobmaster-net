@@ -16,6 +16,7 @@ Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
+Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDb.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 

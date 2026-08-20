@@ -145,7 +145,8 @@ public sealed class CliOptions
                         "postgres" => DbEngine.Postgres,
                         "mysql" => DbEngine.MySql,
                         "sqlserver" => DbEngine.SqlServer,
-                        var other => throw new ArgumentException($"Unknown --db value '{other}'. Expected postgres, mysql, or sqlserver."),
+                        "ravendb" => DbEngine.RavenDB,
+                        var other => throw new ArgumentException($"Unknown --db value '{other}'. Expected postgres, mysql, sqlserver, or ravendb."),
                     };
                     break;
                 case "--nats":

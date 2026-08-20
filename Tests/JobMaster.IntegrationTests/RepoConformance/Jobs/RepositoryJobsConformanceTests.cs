@@ -974,6 +974,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.All(acquired, j => Assert.Equal(partitionLockId1, j.PartitionLockId));
 
         // Remaining 3 should still be acquirable
+        await SettleAsync();
         var second = await Fixture.MasterJobs.AcquireAndFetchAsync(criteria, partitionLockId2, now.AddMinutes(30));
         Assert.Equal(2, second.Count);
         Assert.All(second, j => Assert.Equal(partitionLockId2, j.PartitionLockId));

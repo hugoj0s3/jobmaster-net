@@ -13,6 +13,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils.Extensions;
 using Raven.Client;
 using Raven.Client.Documents;
 using Raven.Client.Documents.Operations;
@@ -25,14 +26,13 @@ internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClust
 {
     private const string Collection = "RecurringSchedule";
 
-    // Same reasoning as RavenDbMasterJobsRepository -- bounds concurrent sessions for the per-row
-    // fallback paths, deliberately separate from JobMasterConstants.MaxBatchSizeForBulkOperation (which
-    // bounds server-side batch/patch size, not concurrent session count).
     private const int PerRowSessionMaxDegreeOfParallelism = 10;
 
-    // Same reasoning as RavenDbMasterJobsRepository.AcquireConfirmationNonStaleTimeout -- the one read
-    // where staleness would silently strand a schedule the caller actually won.
-    private static readonly TimeSpan AcquireConfirmationNonStaleTimeout = TimeSpan.FromSeconds(10);
+    // Tier-2 fallback granularity -- see BulkInsertFallbackPerPartitionAsync.
+    private const int FallbackPartitionSize = 5;
+
+    // Used by GetByStaticId -- the one read here that needs to see a very recent write.
+    private static readonly TimeSpan NonStaleResultsTimeout = TimeSpan.FromSeconds(2);
 
     private static readonly RecurringScheduleStatus[] TerminatedStatuses =
     {
@@ -47,7 +47,7 @@ internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClust
         IRavenDbDocumentStoreManager storeManager,
         IJobMasterLogger logger) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString);
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
         this.logger = logger;
     }
 
@@ -188,20 +188,15 @@ internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClust
     public RecurringScheduleRawModel? GetByStaticId(string staticId)
     {
         using var session = store.OpenSession();
-        // Query only for the candidate document id -- an index-backed lookup can lag right after a write,
-        // same as every other query in this repository, but the actual document content below is fetched
-        // via Load, a point lookup that reads the document store directly and is always current.
-        var rql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.StaticDefinitionId = $staticId and e.RecurringScheduleType = $staticType select id() as Id limit 0, 1";
-        var candidateId = session.Advanced.RawQuery<IdProjection>(rql)
+        var rql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.StaticDefinitionId = $staticId and e.RecurringScheduleType = $staticType limit 0, 1";
+        var doc = session.Advanced.RawQuery<RavenDbRecurringScheduleDocument>(rql)
+            .WaitForNonStaleResults(NonStaleResultsTimeout)
             .AddParameter("clusterId", ClusterConnConfig.ClusterId)
             .AddParameter("staticId", staticId)
             .AddParameter("staticType", RecurringScheduleType.Static)
             .ToList()
-            .FirstOrDefault()?.Id;
+            .FirstOrDefault();
 
-        if (candidateId == null) return null;
-
-        var doc = session.Load<RavenDbRecurringScheduleDocument>(candidateId);
         return doc == null ? null : ToDomain(doc, session.Advanced.GetChangeVectorFor(doc));
     }
 
@@ -263,9 +258,8 @@ internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClust
             throw new NotSupportedException("MetadataFilters are not supported by ProbeCountForAcquireAsync.");
         }
 
-        // Simpler than Jobs' ProbeForAcquireAsync -- only a count is needed here (no "earliest" value),
-        // so a single payload-free query suffices: Statistics().TotalResults reports the full matching
-        // count regardless of the limit clause.
+        // Simpler than Jobs' ProbeForAcquireAsync -- only a count is needed, so Statistics().TotalResults
+        // on a payload-free query is enough.
         using var session = store.OpenAsyncSession();
         var (where, parameters) = BuildWhereRql(queryCriteria, isLocked: false);
         var rql = $"from '{CollectionName}' as e where {where} limit 0, 0";
@@ -334,26 +328,20 @@ update {{
         }, new QueryOperationOptions { AllowStale = true }));
         await patchOperation.WaitForCompletionAsync();
 
-        // Step 3: confirmatory read, by lock ownership + not-expired -- same reasoning as Jobs (matches
-        // SQL's QueryLockedSchedulesAsync, which has the identical guard).
+        // Step 3: confirm via bulk point lookup (Load) -- see RavenDbMasterJobsRepository.AcquireAndFetchAsync.
         using var confirmSession = store.OpenAsyncSession();
-        var confirmRql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.PartitionLockId = $partitionLockId and e.PartitionLockExpiresAt > $lockNow";
-        var confirmed = await confirmSession.Advanced.AsyncRawQuery<RavenDbRecurringScheduleDocument>(confirmRql)
-            .WaitForNonStaleResults(AcquireConfirmationNonStaleTimeout)
-            .AddParameter("clusterId", ClusterConnConfig.ClusterId)
-            .AddParameter("partitionLockId", partitionLockId)
-            .AddParameter("lockNow", lockNow)
-            .ToListAsync();
+        var candidateDocs = await confirmSession.LoadAsync<RavenDbRecurringScheduleDocument>(candidateIds);
+        var confirmed = candidateDocs.Values
+            .Where(doc => doc != null && doc.PartitionLockId == partitionLockId && doc.PartitionLockExpiresAt > lockNow)
+            .ToList();
 
-        return confirmed.Select(doc => ToDomain(doc, confirmSession.Advanced.GetChangeVectorFor(doc))).ToList();
+        return confirmed.Select(doc => ToDomain(doc!, confirmSession.Advanced.GetChangeVectorFor(doc!))).ToList();
     }
 
     // ==================== Static-definition bulk helpers ====================
 
-    // Sync (matches interface), server-side patch. Live-state re-check inside the update script -- the
-    // "null or older" guard is what's authoritative, so a stale-index outer WHERE (on StaticDefinitionId
-    // set + RecurringScheduleType) can only under-select, never wrongly touch a row that was already
-    // re-ensured more recently.
+    // Live-state re-check inside the update script -- a stale outer WHERE can only under-select, never
+    // wrongly touch a row already re-ensured more recently.
     public void BulkUpdateStaticDefinitionLastEnsuredByStaticIds(IList<string> staticDefinitionIds, DateTime ensuredAt)
     {
         if (staticDefinitionIds.Count == 0) return;
@@ -477,6 +465,28 @@ update {{
     {
         if (schedules.Count == 0) return;
 
+        try
+        {
+            await InternalBulkInsertIfNotExistsAsync(schedules);
+        }
+        catch (ConcurrencyException ex)
+        {
+            logger.Warn(
+                $"BulkInsertIfNotExistsAsync batch of {schedules.Count} recurring schedule(s) hit a change-vector conflict and fell back to partitions of {FallbackPartitionSize}.",
+                JobMasterLogCategory.RecurringSchedule,
+                exception: ex);
+
+            var (_, failedSchedules) = await BulkInsertFallbackPerPartitionAsync(schedules);
+            if (failedSchedules.Count > 0)
+            {
+                await BulkInsertFallbackPerRowAsync(failedSchedules);
+            }
+        }
+    }
+
+    // Pure "insert if not present" unit, no exception handling -- reused at every fallback granularity.
+    private async Task<IList<RecurringScheduleRawModel>> InternalBulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    {
         using var session = store.OpenAsyncSession();
         var ids = schedules.Select(s => DocumentId(s.Id)).ToArray();
         var existingDocs = await session.LoadAsync<RavenDbRecurringScheduleDocument>(ids);
@@ -492,48 +502,59 @@ update {{
             pendingInserts.Add((schedule, doc));
         }
 
-        if (pendingInserts.Count == 0) return;
+        if (pendingInserts.Count == 0) return new List<RecurringScheduleRawModel>();
 
-        try
-        {
-            await session.SaveChangesAsync();
-        }
-        catch (ConcurrencyException ex)
-        {
-            logger.Warn(
-                $"BulkInsertIfNotExistsAsync batch of {pendingInserts.Count} recurring schedule(s) hit a change-vector conflict and fell back to per-row retry.",
-                JobMasterLogCategory.RecurringSchedule,
-                exception: ex);
-            await BulkInsertFallbackPerRowAsync(pendingInserts);
-            return;
-        }
+        await session.SaveChangesAsync();
 
         foreach (var (schedule, doc) in pendingInserts)
         {
             schedule.SetVersion(session.Advanced.GetChangeVectorFor(doc) ?? string.Empty);
         }
+
+        return pendingInserts.Select(x => x.Model).ToList();
     }
 
-    private async Task BulkInsertFallbackPerRowAsync(List<(RecurringScheduleRawModel Model, RavenDbRecurringScheduleDocument Document)> pendingInserts)
+    private async Task<(IList<RecurringScheduleRawModel> SucceededSchedules, IList<RecurringScheduleRawModel> FailedSchedules)> BulkInsertFallbackPerPartitionAsync(
+        IList<RecurringScheduleRawModel> schedules)
+    {
+        var failedSchedules = new List<RecurringScheduleRawModel>();
+        var succeededSchedules = new List<RecurringScheduleRawModel>();
+
+        foreach (var partition in schedules.Partition(FallbackPartitionSize))
+        {
+            try
+            {
+                var saved = await InternalBulkInsertIfNotExistsAsync(partition.ToList());
+                succeededSchedules.AddRange(saved);
+            }
+            catch (Exception ex)
+            {
+                logger.Error(
+                    $"BulkInsertIfNotExistsAsync partition of {partition.Count} recurring schedule(s) failed and fell back to per-row retry.",
+                    JobMasterLogCategory.RecurringSchedule,
+                    exception: ex);
+                failedSchedules.AddRange(partition);
+            }
+        }
+
+        return (succeededSchedules, failedSchedules);
+    }
+
+    private async Task BulkInsertFallbackPerRowAsync(IList<RecurringScheduleRawModel> schedules)
     {
         await JobMasterParallelUtil.ForEachAsync(
-            pendingInserts,
+            schedules,
             new ParallelOptions { MaxDegreeOfParallelism = PerRowSessionMaxDegreeOfParallelism },
-            async (pending, ct) =>
+            async (schedule, _) =>
             {
-                using var session = store.OpenAsyncSession();
                 try
                 {
-                    await session.StoreAsync(pending.Document, changeVector: string.Empty, id: DocumentId(pending.Model.Id), token: ct);
-                    ApplyCollectionMetadata(session.Advanced.GetMetadataFor(pending.Document));
-                    await session.SaveChangesAsync(ct);
+                    await InternalBulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
                 }
                 catch (ConcurrencyException)
                 {
-                    return; // Already exists now -- leave untouched, matches "insert if not exists" semantics.
+                    // Already exists now -- leave untouched, matches "insert if not exists" semantics.
                 }
-
-                pending.Model.SetVersion(session.Advanced.GetChangeVectorFor(pending.Document) ?? string.Empty);
             });
     }
 
