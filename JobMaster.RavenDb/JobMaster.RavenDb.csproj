@@ -14,12 +14,14 @@
         <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
+        <PackageReadmeFile>JobMaster.RavenDb.NuGet.README.md</PackageReadmeFile>
 
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
     </PropertyGroup>
 
     <ItemGroup>
       <PackageReference Include="RavenDB.Client" Version="7.2.5" />
+      <None Include="JobMaster.RavenDb.NuGet.README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
     <ItemGroup Condition="'$(UseProjectRefs)' == 'true'">
