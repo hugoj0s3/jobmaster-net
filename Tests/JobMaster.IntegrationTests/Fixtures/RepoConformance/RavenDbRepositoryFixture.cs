@@ -24,7 +24,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 /// shared bootstrap would require <c>StartJobMasterRuntimeAsync()</c>, which starts background runners for
 /// every registered cluster -- this fixture doesn't need those, and avoiding the call also means it must
 /// separately mirror the one-time setup steps <c>RavenDbJobMasterRuntimeSetup</c> would otherwise perform
-/// (currently: the Message collection's static index, see the <c>RavenDbMessageIndexDefinitions.DeployAsync</c>
+/// (currently: the Message collection's static index, see the <c>RavenDbMessageIndexes.DeployAsync</c>
 /// call below -- database provisioning is still handled manually here too). This fixture instead builds
 /// its own cluster and resolves repositories directly via
 /// <see cref="JobMasterClusterAwareComponentFactories.GetFactory"/>, which is plain DI
@@ -123,13 +123,13 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         // Normally deployed by RavenDbJobMasterRuntimeSetup.OnBeforeStartAsync, which this fixture
         // deliberately never invokes (see the class doc above) -- without it, RavenDbRawMessagesDispatcherRepository's
         // queries (which target this index by name) throw IndexDoesNotExistException.
-        var messageCollectionName = agentConfig.GetCollectionPrefix() + RavenDbRawMessagesDispatcherRepository.Collection;
-        await RavenDbMessageIndexDefinitions.DeployAsync(DocumentStoreManager.GetOrCreateStore(connectionString), messageCollectionName);
+        var messageCollectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
+        await RavenDbMessageIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(connectionString), messageCollectionName);
 
         // Same reasoning, for AcquireAndFetchAsync's static index -- lives in the master database.
         var clusterConfig = JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true);
-        var jobCollectionName = clusterConfig.GetCollectionPrefix() + RavenDbMasterJobsRepository.Collection;
-        await RavenDbJobIndexDefinitions.DeployAsync(DocumentStoreManager.GetOrCreateStore(connectionString), jobCollectionName);
+        var jobCollectionName = clusterConfig.GetCollectionPrefix() + RavenDbCollectionNames.Job;
+        await RavenDbJobIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(connectionString), jobCollectionName);
 
         AgentConnectionId = new AgentConnectionId(ClusterId, AgentConnectionName);
     }

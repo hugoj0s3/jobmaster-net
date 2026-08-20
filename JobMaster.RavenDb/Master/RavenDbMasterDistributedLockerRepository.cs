@@ -52,7 +52,7 @@ internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterCluste
     // Compare-exchange keys aren't RavenDB collections, but reusing the same {Prefix}{Name}/{ClusterId}/{Key}
     // scheme as every document ID anyway gives locks the same collision protection (avoid colliding with
     // an unrelated app/deployment sharing this RavenDB database) as everything else this provider stores.
-    private string CompareExchangeKey(string key) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, "lock", key);
+    private string CompareExchangeKey(string key) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.Lock, key);
 
     private static IMetadataDictionary ExpiresMetadata(DateTime expiresAt) =>
         new MetadataAsDictionary { [Constants.Documents.Metadata.Expires] = expiresAt.Add(ZombieLockGracePeriod) };
@@ -130,7 +130,7 @@ internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterCluste
             if (lockToken == null) return;
 
             var cutoff = DateTime.UtcNow.Subtract(ZombieLockGracePeriod);
-            var keyPrefix = RavenDbDocumentNaming.DocumentId(ClusterConnConfig, "lock", string.Empty);
+            var keyPrefix = RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.Lock, string.Empty);
             var deletedCount = 0;
             var start = 0;
 

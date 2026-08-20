@@ -79,7 +79,7 @@ Raised 2026-08-19 while benchmarking the RavenDB provider (`JobMaster.RavenDb/Ra
 These values were carried over from Postgres/SqlServer's own defaults on the reasoning that RavenDB is
 also a remote HTTP-accessed database server, not because they were actually tuned for RavenDB's specific
 concurrency/throughput profile. A benchmark comparison at burst-1000/3-workers scale (with RavenDB's
-Message and Job static indexes both in place, see `RavenDbMessageIndexDefinitions`/`RavenDbJobIndexDefinitions`)
+Message and Job static indexes both in place, see `RavenDbMessageIndexes`/`RavenDbJobIndexes`)
 found no measurable difference between 10/5 and 50/25 — meaning that comparison didn't actually validate
 50/25 as correct, only that neither value was the bottleneck at that specific scale. Whether 50/25 holds
 up at higher concurrency (larger worker counts, sustained paced load rather than a single burst) is still

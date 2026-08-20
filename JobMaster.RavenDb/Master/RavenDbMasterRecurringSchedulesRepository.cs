@@ -24,8 +24,6 @@ namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClusterAwareRepository, IMasterRecurringSchedulesRepository
 {
-    private const string Collection = "RecurringSchedule";
-
     private const int PerRowSessionMaxDegreeOfParallelism = 10;
 
     // Tier-2 fallback granularity -- see BulkInsertFallbackPerPartitionAsync.
@@ -53,8 +51,8 @@ internal sealed class RavenDbMasterRecurringSchedulesRepository : JobMasterClust
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
-    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, Collection);
-    private string DocumentId(Guid scheduleId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, Collection, scheduleId.ToString("N"));
+    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, RavenDbCollectionNames.RecurringSchedule);
+    private string DocumentId(Guid scheduleId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.RecurringSchedule, scheduleId.ToString("N"));
 
     // ==================== Add ====================
 

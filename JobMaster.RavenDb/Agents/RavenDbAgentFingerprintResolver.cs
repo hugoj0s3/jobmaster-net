@@ -9,8 +9,6 @@ namespace JobMaster.RavenDb.Agents;
 
 internal sealed class RavenDbAgentFingerprintResolver : IAgentFingerprintResolver
 {
-    private const string Collection = "fingerprint";
-
     private readonly IRavenDbDocumentStoreManager storeManager;
     private IDocumentStore store = null!;
     private string prefix = RavenDbConfigKeys.DefaultCollectionPrefix;
@@ -30,7 +28,7 @@ internal sealed class RavenDbAgentFingerprintResolver : IAgentFingerprintResolve
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
-        var cxKey = RavenDbDocumentNaming.DocumentId(prefix, clusterId, Collection, agentConnectionId);
+        var cxKey = RavenDbDocumentNaming.DocumentId(prefix, clusterId, RavenDbCollectionNames.Fingerprint, agentConnectionId);
         var fingerprint = JobMasterRandomUtil.NewGuid4().ToString("N");
 
         // Create-if-absent: index 0 means "nothing should currently exist for this key". Unlike SQL's

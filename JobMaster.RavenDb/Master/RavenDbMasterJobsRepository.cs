@@ -26,11 +26,6 @@ namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareRepository, IMasterJobsRepository
 {
-    // Exposed (not private) so RavenDbJobIndexDefinitions/RavenDbJobMasterRuntimeSetup can build the
-    // same prefix-qualified collection name for static-index deployment without duplicating this string.
-    internal const string Collection = "Job";
-    private const string ExecutionCollection = "JobExecution";
-
     private const int PerRowSessionMaxDegreeOfParallelism = 10;
 
     // Tier-2 fallback granularity -- see SaveWithPartitionedFallbackAsync.
@@ -57,10 +52,10 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
-    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, Collection);
-    private string ExecutionCollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, ExecutionCollection);
-    private string DocumentId(Guid jobId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, Collection, jobId.ToString("N"));
-    private string ExecutionDocumentId(Guid executionId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, ExecutionCollection, executionId.ToString("N"));
+    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, RavenDbCollectionNames.Job);
+    private string ExecutionCollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, RavenDbCollectionNames.JobExecution);
+    private string DocumentId(Guid jobId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.Job, jobId.ToString("N"));
+    private string ExecutionDocumentId(Guid executionId) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.JobExecution, executionId.ToString("N"));
 
     // ==================== Add ====================
 
@@ -295,7 +290,7 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         using var session = store.OpenAsyncSession();
         var (where, parameters) = BuildWhereRql(queryCriteria, isLocked: false);
 
-        var indexName = TryGetApplicableIndexName(queryCriteria, RavenDbJobIndexDefinitions.NextPlanExecutionAtField);
+        var indexName = TryGetApplicableIndexName(queryCriteria, RavenDbJobIndexes.NextPlanExecutionAtField);
         var from = indexName != null ? $"index '{indexName}'" : $"'{CollectionName}'";
 
         var rql = $"from {from} as e where {where} order by e.NextPlanExecutionAt asc limit 0, 1";
@@ -350,7 +345,7 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         // Step 1: Select candidates to acquire
         using var candidateSession = store.OpenAsyncSession();
         var (where, parameters) = BuildWhereRql(queryCriteria, isLocked: false);
-        var orderByField = queryCriteria.SortBy != null ? MapSortProperty(queryCriteria.SortBy.Property) : RavenDbJobIndexDefinitions.NextPlanExecutionAtField;
+        var orderByField = queryCriteria.SortBy != null ? MapSortProperty(queryCriteria.SortBy.Property) : RavenDbJobIndexes.NextPlanExecutionAtField;
         var orderBy = queryCriteria.SortBy != null
             ? $"order by e.{orderByField} {(queryCriteria.SortBy.Ascending ? "asc" : "desc")}"
             : $"order by e.{orderByField} asc";
@@ -936,18 +931,18 @@ update {{
         if (criteria.JobIds.Count > 0) return null;
         if (criteria.ExcludeJobIds.Count > 0) return null;
         if (criteria.MetadataFilters.Count > 0) return null;
-        if (!string.Equals(orderByField, RavenDbJobIndexDefinitions.NextPlanExecutionAtField, StringComparison.Ordinal)) return null;
+        if (!string.Equals(orderByField, RavenDbJobIndexes.NextPlanExecutionAtField, StringComparison.Ordinal)) return null;
 
         // PartitionLockId/PartitionLockExpiresAt are always included -- every caller (AcquireAndFetchAsync,
         // ProbeForAcquireAsync) only ever queries isLocked: false candidates.
-        var tokens = new List<string> { RavenDbJobIndexDefinitions.ClusterIdField };
-        if (criteria.Status.HasValue) tokens.Add(RavenDbJobIndexDefinitions.StatusField);
-        tokens.Add(RavenDbJobIndexDefinitions.PartitionLockIdField);
-        tokens.Add(RavenDbJobIndexDefinitions.PartitionLockExpiresAtField);
-        tokens.Add(RavenDbJobIndexDefinitions.NextPlanExecutionAtField);
+        var tokens = new List<string> { RavenDbJobIndexes.ClusterIdField };
+        if (criteria.Status.HasValue) tokens.Add(RavenDbJobIndexes.StatusField);
+        tokens.Add(RavenDbJobIndexes.PartitionLockIdField);
+        tokens.Add(RavenDbJobIndexes.PartitionLockExpiresAtField);
+        tokens.Add(RavenDbJobIndexes.NextPlanExecutionAtField);
 
         var requiredPrefix = "RavenDbJobs/" + string.Join("_", tokens);
-        return RavenDbJobIndexDefinitions.DeployedIndexNames.FirstOrDefault(name => name.StartsWith(requiredPrefix, StringComparison.Ordinal));
+        return RavenDbJobIndexes.DeployedIndexNames.FirstOrDefault(name => name.StartsWith(requiredPrefix, StringComparison.Ordinal));
     }
 
     // ==================== Mapping ====================

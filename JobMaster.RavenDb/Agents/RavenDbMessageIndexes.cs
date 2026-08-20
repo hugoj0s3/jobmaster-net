@@ -9,7 +9,7 @@ namespace JobMaster.RavenDb.Agents;
 // auto-index per query shape. Not a compile-time AbstractIndexCreationTask<T>: that infers its collection
 // from .NET type conventions, but collection names here are prefix-configurable per connection, so the
 // name is only known at deployment time.
-internal static class RavenDbMessageIndexDefinitions
+internal static class RavenDbMessageIndexes
 {
     public const string ByBucketAndReferenceTimeName = "RavenDbMessages/ByBucketAndReferenceTime";
 

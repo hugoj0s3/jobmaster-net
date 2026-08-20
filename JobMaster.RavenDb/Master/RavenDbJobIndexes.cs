@@ -12,7 +12,7 @@ namespace JobMaster.RavenDb.Master;
 // RavenDbMasterJobsRepository.TryGetApplicableIndexName builds the same kind of string for a call's
 // actual criteria and matches it as a StartsWith prefix -- extra fields an index maps beyond what's
 // needed are harmless, so a shorter required prefix safely matches a longer index name.
-internal static class RavenDbJobIndexDefinitions
+internal static class RavenDbJobIndexes
 {
     public const string ClusterIdField = "ClusterId";
     public const string StatusField = "Status";

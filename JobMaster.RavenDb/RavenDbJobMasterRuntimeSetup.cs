@@ -56,8 +56,8 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(agentConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
             var store = storeManager.GetOrCreateStore(agentConfig.ConnectionString, agentConfig.GetCertificate());
-            var collectionName = agentConfig.GetCollectionPrefix() + RavenDbRawMessagesDispatcherRepository.Collection;
-            await RavenDbMessageIndexDefinitions.DeployAsync(store, collectionName);
+            var collectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
+            await RavenDbMessageIndexes.DeployAsync(store, collectionName);
         }
 
         // The Job collection lives in the master database -- one deployment per cluster is enough,
@@ -68,8 +68,8 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
             var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate());
-            var collectionName = clusterConfig.GetCollectionPrefix() + RavenDbMasterJobsRepository.Collection;
-            await RavenDbJobIndexDefinitions.DeployAsync(store, collectionName);
+            var collectionName = clusterConfig.GetCollectionPrefix() + RavenDbCollectionNames.Job;
+            await RavenDbJobIndexes.DeployAsync(store, collectionName);
         }
 
         var expirationEnabledClusterConfigs = allClusterConfigs.Where(c => c.IsDocumentExpirationEnabled()).ToList();

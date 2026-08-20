@@ -13,8 +13,6 @@ namespace JobMaster.RavenDb.Master;
 
 internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareRepository, IMasterLogsRepository
 {
-    private const string Collection = "Logs";
-
     private readonly IDocumentStore store;
 
     public RavenDbMasterLogsRepository(
@@ -26,9 +24,9 @@ internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareReposit
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
-    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, Collection);
+    private string CollectionName => RavenDbDocumentNaming.CollectionName(ClusterConnConfig, RavenDbCollectionNames.Logs);
 
-    private string DocumentId(Guid id) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, Collection, id.ToString("N"));
+    private string DocumentId(Guid id) => RavenDbDocumentNaming.DocumentId(ClusterConnConfig, RavenDbCollectionNames.Logs, id.ToString("N"));
 
     public async Task BulkInsertAsync(IList<LogItem> items)
     {
