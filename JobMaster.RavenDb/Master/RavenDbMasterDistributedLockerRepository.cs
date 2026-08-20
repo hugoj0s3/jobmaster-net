@@ -37,10 +37,8 @@ internal sealed class RavenDbMasterDistributedLockerRepository : JobMasterCluste
         this.logger = logger;
         lockKeys = new JobMasterLockKeys(clusterConnectionConfig.ClusterId);
 
-        // Same cadence as SqlMasterDistributedLockerRepository's CleanupTimers -- a periodic backstop for
-        // locks whose holder crashed without releasing them, independent of RavenDB's own (opt-in,
-        // Community-license-gated) document-expiration sweep. @expires metadata below is still set as a
-        // secondary backstop, but cleanup no longer depends on it being enabled.
+        // Same cadence as SqlMasterDistributedLockerRepository's CleanupTimers -- periodic backstop for
+        // locks whose holder crashed without releasing them, independent of the @expires metadata below.
         cleanupTimer = new Timer(_ => SafeCleanupExpiredLocks(), null, TimeSpan.FromHours(2), TimeSpan.FromHours(2));
     }
 

@@ -17,14 +17,10 @@ internal static class RavenDbFilterClauseBuilder
     public static (string Clause, string? ParamName, object? ParamValue) Build(
         GenericRecordValueFilter filter, int index, string paramPrefix, string fieldPrefix = "")
     {
-        // RQL has no bracket-index syntax for nested-object field access (`Values['key']` is a parse
-        // error -- RQL only understands dot-path field access), so this only works for keys that are
-        // valid identifiers; caller-supplied keys with spaces/hyphens/leading digits aren't queryable
-        // this way -- a known limitation, not attempted here.
-        //
-        // Which bucket dictionary a key lives in (Values vs DateTimeValues/GuidValues/DecimalValues) is
-        // determined by the FILTER's own value type, mirroring exactly how each write path dispatches by
-        // the stored value's runtime type -- the two must always agree.
+        // RQL has no bracket-index syntax (`Values['key']` is a parse error, dot-path only), so keys with
+        // spaces/hyphens/leading digits aren't queryable this way -- known limitation, not handled here.
+        // Which bucket a key lives in (Values vs DateTimeValues/GuidValues/DecimalValues) is picked from
+        // the filter's own value type, matching how each write path dispatches on the same type.
         var sampleValue = filter.Operation == GenericFilterOperation.In
             ? filter.Values?.FirstOrDefault(v => v != null)
             : filter.Value;

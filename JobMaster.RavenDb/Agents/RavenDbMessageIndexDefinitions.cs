@@ -4,16 +4,11 @@ using Raven.Client.Documents.Operations.Indexes;
 
 namespace JobMaster.RavenDb.Agents;
 
-// Static index deployment for the Message collection -- one index covering both PullMessagesAsync's
-// (BucketAddressId + ReferenceTime, filter+sort) and DestroyBucketAsync's (BucketAddressId alone) needs,
-// so every message write pays indexing cost once instead of RavenDB creating and maintaining its own
-// separate dynamic auto-index per distinct query shape it observes.
-//
-// Not a compile-time AbstractIndexCreationTask<RavenDbMessageDocument>: that base class infers its
-// target collection from .NET type conventions, but this provider's collection names are
-// prefix-configurable per connection (ConfigExtensions.UseRavenDb's collectionPrefix parameter), so the
-// actual collection name is only known at deployment time, per connection -- the index definition is
-// built with that resolved name instead.
+// One static index covering both PullMessagesAsync (BucketAddressId + ReferenceTime) and
+// DestroyBucketAsync (BucketAddressId alone), instead of RavenDB maintaining a separate dynamic
+// auto-index per query shape. Not a compile-time AbstractIndexCreationTask<T>: that infers its collection
+// from .NET type conventions, but collection names here are prefix-configurable per connection, so the
+// name is only known at deployment time.
 internal static class RavenDbMessageIndexDefinitions
 {
     public const string ByBucketAndReferenceTimeName = "RavenDbMessages/ByBucketAndReferenceTime";

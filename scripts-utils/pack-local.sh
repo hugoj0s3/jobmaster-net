@@ -15,6 +15,7 @@ dotnet pack Sql/JobMaster.SqlBase/JobMaster.SqlBase.csproj               -c Rele
 dotnet pack Sql/JobMaster.Postgres/JobMaster.Postgres.csproj             -c Release -p:UseProjectRefs=false -o "$OUTPUT_DIR"
 dotnet pack Sql/JobMaster.MySql/JobMaster.MySql.csproj                   -c Release -p:UseProjectRefs=false -o "$OUTPUT_DIR"
 dotnet pack Sql/JobMaster.SqlServer/JobMaster.SqlServer.csproj           -c Release -p:UseProjectRefs=false -o "$OUTPUT_DIR"
+dotnet pack JobMaster.RavenDb/JobMaster.RavenDb.csproj                   -c Release -p:UseProjectRefs=false -o "$OUTPUT_DIR"
 
 echo ""
 echo "Packages generated in $OUTPUT_DIR:"

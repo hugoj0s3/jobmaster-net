@@ -21,11 +21,9 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
     // lag, not on every call.
     private static readonly TimeSpan NonStaleResultsTimeout = TimeSpan.FromSeconds(2);
 
-    // Only these groups feed SentinelCachedReader's refresh factories (see MasterHostService,
-    // MasterAgentWorkersService, MasterAgentConnectionService, MasterBucketService) -- a stale Query result
-    // there gets cached and trusted for up to JobMasterConstants.DefaultCacheEntryExpiry. Every other group
-    // (heartbeats, Sentinel itself) is read directly, uncached, and already established as fine with a
-    // slightly-behind snapshot -- no reason to pay the wait there.
+    // Only these groups feed SentinelCachedReader's refresh factories -- a stale Query result there gets
+    // cached and trusted for a while. Every other group (heartbeats, Sentinel itself) is read uncached,
+    // so a slightly-behind snapshot is already fine there.
     private static readonly HashSet<string> GroupsRequiringFreshRead = new(StringComparer.Ordinal)
     {
         MasterGenericRecordGroupIds.Bucket,
@@ -177,13 +175,9 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         }
     }
 
-    // @expires is a pure storage-reclamation backstop here, not a correctness dependency the way it had
-    // to be handled carefully for the distributed locker -- Get/Query already hide expired records via
-    // the ExpiresAt field filter regardless of whether RavenDB's async expiration sweep has physically
-    // deleted the document yet, so there's no "presence implies still valid" risk to guard against. No
-    // grace buffer either (unlike the locker's 2-day zombie-lock buffer): an expired GenericRecord isn't
-    // a sign something's wrong the way an expired-but-unclaimed lock is, so there's no forensic window
-    // worth preserving -- reclaim the storage as soon as RavenDB's expiration sweep gets to it.
+    // @expires is a pure storage-reclamation backstop -- Get/Query already hide expired records via the
+    // ExpiresAt filter regardless of whether the sweep has physically deleted them yet, so no grace
+    // buffer is needed (unlike the locker's zombie-lock case).
     private void ApplyMetadata(IMetadataDictionary metadata, GenericRecordEntry recordEntry)
     {
         metadata[Constants.Documents.Metadata.Collection] = CollectionName(recordEntry.GroupId);
@@ -406,16 +400,9 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
                 case decimal dec:
                     doc.DecimalValues[kv.Key] = dec;
                     break;
-                // GenericRecordEntry.ToStorageObject's JobMasterConfigDictionary case returns the raw
-                // IDictionary<string, object> itself (not pre-JSON-encoded), unlike its generic
-                // "complex type" fallback which does encode to a JSON string. Storing this dictionary
-                // as-is would let RavenDB nest it natively as a JSON object, but GenericRecordEntry.
-                // FromStorageObject's matching read-side branch unconditionally calls stored.ToString()
-                // expecting JSON text -- against a real Dictionary object that just returns its .NET
-                // type name (e.g. "System.Collections.Generic.Dictionary`2[...]"), not JSON, breaking
-                // deserialization. JSON-encode it here so the stored value round-trips as the string
-                // FromStorageObject actually expects -- matches the SQL providers' own EAV storage,
-                // which always persists this as flat text in a value_text column.
+                // FromStorageObject's read side expects JSON text back for this case (calls
+                // stored.ToString()), so it must be JSON-encoded here rather than stored as a native
+                // nested object -- matches how the SQL providers persist it as flat text too.
                 case IDictionary<string, object> dict:
                     doc.Values[kv.Key] = InternalJobMasterSerializer.Serialize(dict);
                     break;

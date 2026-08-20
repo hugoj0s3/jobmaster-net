@@ -28,12 +28,9 @@ internal sealed class RavenDbJobDocument
     public DateTime? NextPlanExecutionAt { get; set; }
     public string MsgData { get; set; } = "{}";
 
-    // MetadataJson is the verbatim JobRawModel.Metadata string -- stored and returned as-is, never
-    // decomposed/reconstructed, so it carries zero round-trip risk regardless of which scalar types it
-    // encodes (int/long/short/byte/char/bool/double/decimal/datetime/guid/string -- KeyValueBagUtil's own
-    // JSON encoding already handles all of these correctly, same as SQL's MetadataJson column relies on).
-    // The typed buckets below are a SEPARATE, purely query-side projection built from the same data, used
-    // only by MetadataFilters -- same dispatch/merge pattern as RavenDbGenericRecordDocument's Values.
+    // MetadataJson is the verbatim JobRawModel.Metadata string, stored/returned as-is. The typed buckets
+    // below are a separate, query-side-only projection of the same data, used only by MetadataFilters --
+    // same dispatch/merge pattern as RavenDbGenericRecordDocument's Values.
     public string? MetadataJson { get; set; }
     public IDictionary<string, object?> MetadataValues { get; set; } = new Dictionary<string, object?>();
     public IDictionary<string, DateTime> MetadataDateTimeValues { get; set; } = new Dictionary<string, DateTime>();

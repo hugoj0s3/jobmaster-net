@@ -3,13 +3,10 @@ using JobMaster.Sdk.Abstractions.Config;
 namespace JobMaster.RavenDb;
 
 /// <summary>
-/// Shared naming scheme for every RavenDB domain (Jobs, RecurringSchedules, GenericRecords, Logs, ...):
-/// one RavenDB collection per logical domain (<paramref name="collection"/>), prefixed to avoid
-/// colliding with unrelated data in a shared/reused database, with document IDs compounded by
-/// <c>ClusterId</c> -- mirrors <c>RavenDbMasterDistributedLockerRepository</c>'s
-/// <c>lock/{ClusterId}/{key}</c> compare-exchange key exactly, for the same two reasons: every
-/// repository already has <c>ClusterId</c> in scope at every call site, and it makes cluster-scoped
-/// bulk operations a cheap ID-prefix stream instead of a collection scan + field filter.
+/// Shared naming scheme for every RavenDB domain: one collection per logical domain
+/// (<paramref name="collection"/>), prefixed to avoid colliding with unrelated data in a shared
+/// database, with document IDs compounded by <c>ClusterId</c> so cluster-scoped bulk operations are a
+/// cheap ID-prefix stream instead of a collection scan + field filter.
 /// </summary>
 internal static class RavenDbDocumentNaming
 {
