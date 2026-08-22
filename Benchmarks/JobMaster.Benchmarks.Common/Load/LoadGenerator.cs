@@ -10,10 +10,15 @@ namespace JobMaster.Benchmarks.Common.Load;
 /// higher target rates get finer, more frequent ticks instead of one giant burst every few seconds
 /// -- at a fixed 5s tick, the 100k-jobs/min tier would fire ~8,333 jobs as a single mega-burst,
 /// which doesn't resemble real traffic. Jobs within a tick fire as bounded-concurrency parallel
-/// requests, not a sequential loop, to simulate real concurrent client load.
+/// requests, not a sequential loop, to simulate real concurrent client load. The paced path above
+/// uses the shared (typically round-robin-across-workers) client; <see
+/// cref="LoadGeneratorOptions.BurstTotalJobs"/> mode instead dispatches directly against each
+/// worker's own client, one at a time, so burst load explicitly fans out across every node -- see
+/// <c>RunBurstAsync</c>.
 /// </summary>
 public sealed class LoadGenerator(
     IScheduleClient client,
+    IReadOnlyList<IScheduleClient> workerClients,
     ILatencyRecorder latencyRecorder,
     LoadGeneratorOptions options,
     ScheduleCallLatencyRecorder scheduleCallLatencyRecorder)
@@ -64,13 +69,13 @@ public sealed class LoadGenerator(
 
             foreach (var batch in ChunksOf(immediateCount, options.JobsPerRequest))
             {
-                inFlight.Add(FireImmediateAsync(batch, semaphore, ct));
+                inFlight.Add(FireImmediateAsync(client, batch, semaphore, ct));
             }
 
             foreach (var batch in ChunksOf(delayedCount, options.JobsPerRequest))
             {
                 var delay = RandomDelay(random);
-                inFlight.Add(FireDelayedAsync(batch, delay, semaphore, ct));
+                inFlight.Add(FireDelayedAsync(client, batch, delay, semaphore, ct));
             }
 
             inFlight.RemoveAll(t => t.IsCompleted);
@@ -79,20 +84,45 @@ public sealed class LoadGenerator(
         await Task.WhenAll(inFlight);
     }
 
-    // No pacing at all -- every job is fired in batches of BurstBatchSize as fast as
-    // MaxConcurrentRequests allows. Immediate by default; when BurstDelay is set, every batch is
-    // scheduled with that same fixed delay instead, so the whole burst becomes due at roughly the
-    // same time rather than being already-due. The caller (Program.cs) is responsible for polling
-    // completions afterward and measuring the actual drain time; this method's job is only to get
-    // every batch fired as quickly as possible.
+    // No pacing at all -- fires exactly workerClients.Count * BurstRequestsPerWorker parallel
+    // requests, each hitting one specific worker's own endpoint directly (not round-robin), so load
+    // fans out across every node the way a real burst of independent clients would rather than
+    // funneling through one shared dispatch order. totalJobs is split as evenly as possible across
+    // those requests. E.g. 900 jobs across 3 workers at the default of 3 requests/worker means 9
+    // parallel requests of 100 jobs each, 3 per worker. The request count IS the deliberate degree
+    // of parallelism here, so there's no additional MaxConcurrentRequests throttling on top of it.
+    // Immediate by default; when BurstDelay is set, every request is scheduled with that same fixed
+    // delay instead, so the whole burst becomes due at roughly the same time rather than being
+    // already-due. The caller (Program.cs) is responsible for polling completions afterward and
+    // measuring the actual drain time; this method's job is only to get every request fired as
+    // quickly as possible.
     private async Task RunBurstAsync(int totalJobs, CancellationToken ct)
     {
-        using var semaphore = new SemaphoreSlim(options.MaxConcurrentRequests);
-        var batchSize = Math.Max(1, options.BurstBatchSize);
-        var tasks = options.BurstDelay is { } delay
-            ? ChunksOf(totalJobs, batchSize).Select(batch => FireDelayedAsync(batch, delay, semaphore, ct))
-            : ChunksOf(totalJobs, batchSize).Select(batch => FireImmediateAsync(batch, semaphore, ct));
+        var requestsPerWorker = Math.Max(1, options.BurstRequestsPerWorker);
+        var totalRequests = workerClients.Count * requestsPerWorker;
+        using var semaphore = new SemaphoreSlim(totalRequests);
+
+        var tasks = new List<Task>(totalRequests);
+        for (var i = 0; i < totalRequests; i++)
+        {
+            var targetClient = workerClients[i % workerClients.Count];
+            var count = SplitShare(totalJobs, totalRequests, i);
+            tasks.Add(options.BurstDelay is { } delay
+                ? FireDelayedAsync(targetClient, count, delay, semaphore, ct)
+                : FireImmediateAsync(targetClient, count, semaphore, ct));
+        }
+
         await Task.WhenAll(tasks);
+    }
+
+    // Splits `total` into `parts` shares as evenly as possible -- the first `total % parts` shares
+    // get one extra item, so shares differ by at most 1 rather than dumping the whole remainder onto
+    // the last request.
+    private static int SplitShare(int total, int parts, int index)
+    {
+        var baseShare = total / parts;
+        var remainder = total % parts;
+        return baseShare + (index < remainder ? 1 : 0);
     }
 
     private TimeSpan RandomDelay(Random random)
@@ -116,7 +146,7 @@ public sealed class LoadGenerator(
         return TimeSpan.FromSeconds(clamped);
     }
 
-    private async Task FireImmediateAsync(int count, SemaphoreSlim semaphore, CancellationToken ct)
+    private async Task FireImmediateAsync(IScheduleClient targetClient, int count, SemaphoreSlim semaphore, CancellationToken ct)
     {
         if (count < 1) return;
 
@@ -125,7 +155,7 @@ public sealed class LoadGenerator(
         {
             var expectedAtUtc = DateTime.UtcNow;
             var sw = Stopwatch.StartNew();
-            var jobIds = await client.ScheduleNowAsync(count, ct);
+            var jobIds = await targetClient.ScheduleNowAsync(count, ct);
             sw.Stop();
             scheduleCallLatencyRecorder.RecordImmediate(sw.Elapsed.TotalMilliseconds);
             foreach (var jobId in jobIds)
@@ -148,7 +178,7 @@ public sealed class LoadGenerator(
         }
     }
 
-    private async Task FireDelayedAsync(int count, TimeSpan delay, SemaphoreSlim semaphore, CancellationToken ct)
+    private async Task FireDelayedAsync(IScheduleClient targetClient, int count, TimeSpan delay, SemaphoreSlim semaphore, CancellationToken ct)
     {
         if (count < 1) return;
 
@@ -157,7 +187,7 @@ public sealed class LoadGenerator(
         {
             var expectedAtUtc = DateTime.UtcNow + delay;
             var sw = Stopwatch.StartNew();
-            var jobIds = await client.ScheduleAfterAsync(count, delay, ct);
+            var jobIds = await targetClient.ScheduleAfterAsync(count, delay, ct);
             sw.Stop();
             scheduleCallLatencyRecorder.RecordDelayed(sw.Elapsed.TotalMilliseconds);
             foreach (var jobId in jobIds)

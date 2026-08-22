@@ -23,7 +23,10 @@ public sealed class CliOptions
     /// <summary>When set, this run is a "burst" capacity test (flood this many immediate jobs with
     /// no rate pacing, then measure drain time) instead of the default paced steady-arrival test.</summary>
     public int? BurstTotalJobs { get; init; }
-    public int BurstBatchSize { get; init; } = 100;
+
+    /// <summary>Number of parallel requests fired per worker during a burst -- see
+    /// <see cref="JobMaster.Benchmarks.Common.Load.LoadGeneratorOptions.BurstRequestsPerWorker"/>.</summary>
+    public int BurstRequestsPerWorker { get; init; } = 3;
     public TimeSpan BurstMaxWait { get; init; } = TimeSpan.FromMinutes(60);
 
     /// <summary>DB container resource limits -- defaults match the original fixed 2 CPU / 2GB spec.
@@ -44,7 +47,7 @@ public sealed class CliOptions
         int? maxConcurrentRequests = null;
         var warmupDelaySeconds = 0.0;
         int? burstTotalJobs = null;
-        var burstBatchSize = 100;
+        var burstRequestsPerWorker = 3;
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
         var dbMemoryGb = 2.0;
@@ -56,8 +59,8 @@ public sealed class CliOptions
                 case "--burst-total":
                     burstTotalJobs = int.Parse(args[++i]);
                     break;
-                case "--burst-batch-size":
-                    burstBatchSize = int.Parse(args[++i]);
+                case "--burst-requests-per-worker":
+                    burstRequestsPerWorker = int.Parse(args[++i]);
                     break;
                 case "--burst-max-wait-minutes":
                     burstMaxWaitMinutes = double.Parse(args[++i]);
@@ -131,7 +134,7 @@ public sealed class CliOptions
             MaxConcurrentRequests = maxConcurrentRequests,
             WarmupDelay = TimeSpan.FromSeconds(warmupDelaySeconds),
             BurstTotalJobs = burstTotalJobs,
-            BurstBatchSize = burstBatchSize,
+            BurstRequestsPerWorker = burstRequestsPerWorker,
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,
             DbMemoryGb = dbMemoryGb

@@ -208,8 +208,13 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             .WithPassword(DbPassword)
             // Default max_connections (100) is too low once every worker container opens pooled
             // connections to every agent database plus the master database under heavy concurrent
-            // load; 500 gives enough headroom. Raising it further doesn't help -- Postgres's own
-            // backend-forking rate becomes the bottleneck before the connection count ceiling does.
+            // load. 500 was tried first and confirmed insufficient (real "sorry, too many clients
+            // already" failures in Postgres-Pure mode with ~15-20 executors, each holding a separate
+            // Maximum Pool Size=25 pool to both its own agent database and the master database --
+            // e.g. 20 executors alone can demand up to 20*25*2=1000 connections at peak, well past
+            // 500, even before counting the coordinator/drainer containers). 2000 is a generous fixed
+            // ceiling to avoid tuning this per executor count -- Postgres-NATS mode never gets close
+            // to it (no per-executor agent-database pool at all), so this only matters for Pure mode.
             // Set via the create parameter modifier rather than .WithCommand(...): .WithCommand(...)
             // breaks PostgreSqlBuilder's own readiness-wait strategy (container reports "not running"
             // on every attempt), even though the same command/env/resource-limits combination works
@@ -219,7 +224,7 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
                 p.HostConfig.NanoCPUs = dbNanoCpus;
                 p.HostConfig.Memory = dbMemoryBytes;
                 var cmd = p.Cmd?.ToList() ?? [];
-                cmd.AddRange(["-c", "max_connections=500"]);
+                cmd.AddRange(["-c", "max_connections=2000"]);
                 p.Cmd = cmd;
             })
             .Build();

@@ -18,15 +18,17 @@ var dbLabel = (options.DbEngine, options.UseNats) switch
     (DbEngine.SqlServer, true) => "sqlservernats",
     (DbEngine.MySql, true) => "mysqlnats",
     (DbEngine.Postgres, true) => "postgresnats",
+    (DbEngine.RavenDB, true) => "ravendbnats",
     (DbEngine.SqlServer, false) => "sqlserverpure",
     (DbEngine.MySql, false) => "mysqlpure",
     (DbEngine.RavenDB, false) => "ravendbpure",
     _ => "postgrespure",
 };
 Console.WriteLine($"Framework=jobmaster Db={dbLabel} Rate={options.TargetJobsPerMinute}/min " +
-                   $"Workers={options.WorkerCount} BucketsPerWorker={options.BucketsPerWorker} " +
+                   $"Executors={options.ExecutorCount} BucketsPerWorker={options.BucketsPerWorker} " +
                    $"BucketBufferSize={options.BucketBufferSize?.ToString() ?? "default"} SkipWarmUpTime={options.SkipWarmUpTime} " +
-                   $"CoordinatorCount={options.CoordinatorCount} TransferBatchSize={options.TransferBatchSize?.ToString() ?? "default"} " +
+                   $"CoordinatorCount={options.CoordinatorCount} CoordinatorContainerCount={options.CoordinatorContainerCount} " +
+                   $"TransferBatchSize={options.TransferBatchSize?.ToString() ?? "default"} " +
                    $"Duration={options.Duration} Smoke={options.Smoke}");
 if (options.StepDownJobsPerMinute.HasValue)
 {
@@ -36,8 +38,8 @@ if (options.StepDownJobsPerMinute.HasValue)
 var runId = Guid.NewGuid().ToString("N")[..8];
 Console.WriteLine($"RunId={runId}");
 
-var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.WorkerCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection, options.CoordinatorCount, options.TransferBatchSize, options.EnableDebugJsonl);
-var databaseNames = JobMasterTopologyBuilder.AllDatabaseNames(options.UseNats, options.WorkerCount, options.SharedAgentConnection);
+var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.ExecutorCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection, options.CoordinatorCount, options.CoordinatorContainerCount, options.TransferBatchSize, options.EnableDebugJsonl, options.ParallelismFactor);
+var databaseNames = JobMasterTopologyBuilder.AllDatabaseNames(options.UseNats, options.ExecutorCount, options.SharedAgentConnection);
 
 await using var environment = new BenchmarkContainerEnvironment();
 
@@ -125,15 +127,15 @@ var loadGeneratorOptions = new LoadGeneratorOptions
     StepDownAt = options.StepDownAt,
     MaxConcurrentRequests = options.MaxConcurrentRequests ?? 200,
     BurstTotalJobs = options.BurstTotalJobs,
-    BurstBatchSize = options.BurstBatchSize,
+    BurstRequestsPerWorker = options.BurstRequestsPerWorker,
     BurstDelay = options.BurstDelay
 };
-var loadGenerator = new LoadGenerator(roundRobinClient, latencyRecorder, loadGeneratorOptions, scheduleCallLatencyRecorder);
+var loadGenerator = new LoadGenerator(roundRobinClient, scheduleClients, latencyRecorder, loadGeneratorOptions, scheduleCallLatencyRecorder);
 var isBurst = options.BurstTotalJobs.HasValue;
 
 var startedAtUtc = DateTime.UtcNow;
 Console.WriteLine(isBurst
-    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs in batches of {options.BurstBatchSize}" +
+    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs across {workerSpecs.Count} workers x {options.BurstRequestsPerWorker} requests/worker" +
       (options.BurstDelay is { } burstDelay ? $" (all delayed by {burstDelay})..." : " (immediate)...")
     : $"Load generation starting for {options.Duration}...");
 try
@@ -193,6 +195,7 @@ var dbConfigLabel = (options.DbEngine, options.UseNats) switch
     (DbEngine.SqlServer, true) => "SqlServerNats",
     (DbEngine.MySql, true) => "MySqlNats",
     (DbEngine.Postgres, true) => "PostgresNats",
+    (DbEngine.RavenDB, true) => "RavenDbNats",
     (DbEngine.SqlServer, false) => "SqlServerPure",
     (DbEngine.MySql, false) => "MySqlPure",
     (DbEngine.RavenDB, false) => "RavenDbPure",
@@ -203,7 +206,7 @@ var metadata = new BenchmarkRunMetadata(
     Framework: "JobMaster",
     DbConfig: dbConfigLabel,
     TargetJobsPerMinute: options.TargetJobsPerMinute,
-    WorkerCount: options.WorkerCount,
+    WorkerCount: workerSpecs.Count,
     Duration: options.Duration,
     StartedAtUtc: startedAtUtc,
     CompletedAtUtc: completedAtUtc,
@@ -293,35 +296,37 @@ foreach (var (container, spec) in environment.WorkerContainers.Zip(workerSpecs))
 
 if (options.EnableDebugJsonl)
 {
-    // Only worker-0 (the coordinator+drainer container) is configured with a DebugJsonlFilePath --
-    // see JobMasterTopologyBuilder.BuildWorkerSpecs. Debug-level logs (e.g. runner tick timing) are
-    // never persisted to jm_log, so this file is the only way to recover them after the run.
-    // JsonlFileLogger doesn't write to the literal path -- it chunks output into 4-hour buckets named
-    // "{baseName}_{yyyyMMdd_HH}.jsonl", so a run spanning a chunk boundary produces multiple files.
-    var coordinatorContainer = environment.WorkerContainers.Zip(workerSpecs)
-        .FirstOrDefault(x => x.Second.Name == "worker-0").First;
-    if (coordinatorContainer != null)
+    // Every coordinator container plus the drainer is configured with a DebugJsonlFilePath -- see
+    // JobMasterTopologyBuilder.BuildWorkerSpecs (executors are not). Debug-level logs (e.g. runner
+    // tick timing) are never persisted to jm_log, so this file is the only way to recover them after
+    // the run. JsonlFileLogger doesn't write to the literal path -- it chunks output into 4-hour
+    // buckets named "{baseName}_{yyyyMMdd_HH}.jsonl", so a run spanning a chunk boundary produces
+    // multiple files, and now that coordinators can span multiple containers, each one gets its own
+    // set of chunk files (disambiguated by prefixing the container name below).
+    var debugJsonlContainers = environment.WorkerContainers.Zip(workerSpecs)
+        .Where(x => x.Second.Name.StartsWith("coordinator-") || x.Second.Name == "drainer");
+    foreach (var (container, spec) in debugJsonlContainers)
     {
         try
         {
             var containerDir = Path.GetDirectoryName(JobMasterTopologyBuilder.DebugJsonlContainerPath)!.Replace('\\', '/');
             var baseName = Path.GetFileNameWithoutExtension(JobMasterTopologyBuilder.DebugJsonlContainerPath);
-            var listResult = await coordinatorContainer.ExecAsync(["sh", "-c", $"ls {containerDir}/{baseName}_*.jsonl 2>/dev/null"]);
+            var listResult = await container.ExecAsync(["sh", "-c", $"ls {containerDir}/{baseName}_*.jsonl 2>/dev/null"]);
             var chunkPaths = listResult.Stdout.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
             foreach (var chunkPath in chunkPaths)
             {
-                var chunkBytes = await coordinatorContainer.ReadFileAsync(chunkPath);
-                await File.WriteAllBytesAsync(Path.Combine(logsDirectory, Path.GetFileName(chunkPath)), chunkBytes);
+                var chunkBytes = await container.ReadFileAsync(chunkPath);
+                await File.WriteAllBytesAsync(Path.Combine(logsDirectory, $"{spec.Name}_{Path.GetFileName(chunkPath)}"), chunkBytes);
             }
 
             if (chunkPaths.Length == 0)
             {
-                Console.WriteLine("No debug JSONL chunk files found on coordinator container.");
+                Console.WriteLine($"No debug JSONL chunk files found on {spec.Name} container.");
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Could not read debug JSONL from coordinator container: {ex.Message}");
+            Console.WriteLine($"Could not read debug JSONL from {spec.Name} container: {ex.Message}");
         }
     }
 }

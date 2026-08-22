@@ -42,15 +42,20 @@ public sealed class LoadGeneratorOptions
     public int JobsPerRequest { get; init; } = 1;
 
     /// <summary>When set, switches the whole run from the paced steady-arrival model above to a
-    /// "burst" capacity test: fire this many immediate jobs in batches of <see cref="BurstBatchSize"/>
-    /// with no rate pacing at all (as fast as <see cref="MaxConcurrentRequests"/> allows), then the
-    /// caller measures how long it takes every job to actually finish. Simulates a direct flood of
-    /// load rather than a steady real-world arrival rate -- answers "what's the max throughput this
-    /// framework can drain," which the paced test above never stresses since it always keeps up with
-    /// its (modest) configured rate.</summary>
+    /// "burst" capacity test: fire this many immediate jobs as <see cref="BurstRequestsPerWorker"/>
+    /// parallel requests per worker, hitting each worker's own endpoint directly, with no rate
+    /// pacing at all, then the caller measures how long it takes every job to actually finish.
+    /// Simulates a direct flood of load rather than a steady real-world arrival rate -- answers
+    /// "what's the max throughput this framework can drain," which the paced test above never
+    /// stresses since it always keeps up with its (modest) configured rate.</summary>
     public int? BurstTotalJobs { get; init; }
 
-    public int BurstBatchSize { get; init; } = 100;
+    /// <summary>Number of parallel requests fired per worker during a burst -- total parallel
+    /// requests is <c>workerCount * BurstRequestsPerWorker</c>, and <see cref="BurstTotalJobs"/> is
+    /// split as evenly as possible across them. E.g. 900 jobs across 3 workers at the default of 3
+    /// requests/worker means 9 parallel requests of 100 jobs each, 3 landing on each worker's own
+    /// endpoint -- a real client load fans out across every node, not just one.</summary>
+    public int BurstRequestsPerWorker { get; init; } = 3;
 
     /// <summary>When set alongside <see cref="BurstTotalJobs"/>, every burst job is scheduled with
     /// this fixed delay instead of immediately -- fires a burst of jobs that all become due at

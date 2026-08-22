@@ -3,6 +3,7 @@ using JobMaster.IntegrationTests.RepoConformance.Jobs;
 using JobMaster.Sdk.Utils;
 using Raven.Client.Exceptions;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace JobMaster.IntegrationTests.RepoConformance.RavenDb;
 
@@ -11,7 +12,7 @@ namespace JobMaster.IntegrationTests.RepoConformance.RavenDb;
 public sealed class RavenDbJobsRepositoryConformanceTests
     : RepositoryJobsConformanceTests<RavenDbRepositoryFixture>
 {
-    public RavenDbJobsRepositoryConformanceTests(RavenDbRepositoryFixture fixture) : base(fixture)
+    public RavenDbJobsRepositoryConformanceTests(RavenDbRepositoryFixture fixture, ITestOutputHelper output) : base(fixture, output)
     {
     }
 

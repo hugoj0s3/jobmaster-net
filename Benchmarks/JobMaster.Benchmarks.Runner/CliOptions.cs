@@ -5,19 +5,33 @@ namespace JobMaster.Benchmarks.Runner;
 public sealed class CliOptions
 {
     public required int TargetJobsPerMinute { get; init; }
-    public required int WorkerCount { get; init; }
+
+    /// <summary>Number of dedicated Execution-only containers. Does not include the drainer or any
+    /// coordinator container -- see <see cref="CoordinatorContainerCount"/>.</summary>
+    public required int ExecutorCount { get; init; }
     public required int BucketsPerWorker { get; init; }
     public int? BucketBufferSize { get; init; }
 
-    /// <summary>Coordinator instances packed into the dedicated coordinator+drainer container.</summary>
+    /// <summary>Overrides every executor's ParallelismFactor (SDK default 1.0) -- multiplies the base
+    /// per-priority concurrent-execution-slot count for each bucket (Medium=4 base). Null leaves the
+    /// SDK default in place.</summary>
+    public double? ParallelismFactor { get; init; }
+
+    /// <summary>Total Coordinator instances, split as evenly as possible across
+    /// <see cref="CoordinatorContainerCount"/> dedicated containers.</summary>
     public required int CoordinatorCount { get; init; }
+
+    /// <summary>Number of dedicated coordinator containers <see cref="CoordinatorCount"/> instances
+    /// are split across. The drainer always gets its own separate container regardless of this
+    /// value.</summary>
+    public required int CoordinatorContainerCount { get; init; }
 
     /// <summary>Overrides <c>JobMasterDefaults.Worker.TransferBatchSize</c> (1000) on every coordinator
     /// instance. Null leaves the SDK default in place.</summary>
     public int? TransferBatchSize { get; init; }
 
-    /// <summary>When true, the coordinator+drainer container mirrors every log entry (including
-    /// Debug-level tick-timing logs, which are never persisted to the DB) to a JSONL file, copied out
+    /// <summary>When true, every coordinator container and the drainer mirror every log entry
+    /// (including Debug-level tick-timing logs, which are never persisted to the DB) to a JSONL file, copied out
     /// into container-logs/ after the run.</summary>
     public required bool EnableDebugJsonl { get; init; }
     public required bool SkipWarmUpTime { get; init; }
@@ -62,7 +76,10 @@ public sealed class CliOptions
     /// no rate pacing, then measure drain time) instead of the default paced steady-arrival test --
     /// see <see cref="Common.Load.LoadGeneratorOptions.BurstTotalJobs"/>.</summary>
     public int? BurstTotalJobs { get; init; }
-    public int BurstBatchSize { get; init; } = 100;
+
+    /// <summary>Number of parallel requests fired per worker during a burst -- see
+    /// <see cref="Common.Load.LoadGeneratorOptions.BurstRequestsPerWorker"/>.</summary>
+    public int BurstRequestsPerWorker { get; init; } = 3;
 
     /// <summary>When set alongside <see cref="BurstTotalJobs"/>, every burst job is scheduled with
     /// this fixed delay instead of immediately -- fires a burst of jobs that all become due at
@@ -83,7 +100,9 @@ public sealed class CliOptions
     public static CliOptions Parse(string[] args)
     {
         var rate = 1000;
-        var workers = 3;
+        var executors = 2;
+        var coordinatorContainerCount = 1;
+        double? parallelismFactor = null;
         var bucketsPerWorker = 1;
         int? bucketBufferSize = null;
         var skipWarmUpTime = false;
@@ -99,7 +118,7 @@ public sealed class CliOptions
         var useNats = false;
         var sharedAgentConnection = false;
         int? burstTotalJobs = null;
-        var burstBatchSize = 100;
+        var burstRequestsPerWorker = 3;
         double? burstDelayMinutes = null;
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
@@ -115,8 +134,8 @@ public sealed class CliOptions
                 case "--burst-total":
                     burstTotalJobs = int.Parse(args[++i]);
                     break;
-                case "--burst-batch-size":
-                    burstBatchSize = int.Parse(args[++i]);
+                case "--burst-requests-per-worker":
+                    burstRequestsPerWorker = int.Parse(args[++i]);
                     break;
                 case "--burst-delay-minutes":
                     burstDelayMinutes = double.Parse(args[++i]);
@@ -132,6 +151,12 @@ public sealed class CliOptions
                     break;
                 case "--coordinators":
                     coordinatorCount = int.Parse(args[++i]);
+                    break;
+                case "--coordinator-containers":
+                    coordinatorContainerCount = int.Parse(args[++i]);
+                    break;
+                case "--parallelism-factor":
+                    parallelismFactor = double.Parse(args[++i]);
                     break;
                 case "--transfer-batch-size":
                     transferBatchSize = int.Parse(args[++i]);
@@ -164,8 +189,8 @@ public sealed class CliOptions
                 case "--step-down-at-minutes":
                     stepDownAtMinutes = double.Parse(args[++i]);
                     break;
-                case "--workers":
-                    workers = int.Parse(args[++i]);
+                case "--executors":
+                    executors = int.Parse(args[++i]);
                     break;
                 case "--buckets":
                     bucketsPerWorker = int.Parse(args[++i]);
@@ -225,10 +250,12 @@ public sealed class CliOptions
         return new CliOptions
         {
             TargetJobsPerMinute = rate,
-            WorkerCount = workers,
+            ExecutorCount = executors,
             BucketsPerWorker = bucketsPerWorker,
             BucketBufferSize = bucketBufferSize,
             CoordinatorCount = coordinatorCount,
+            CoordinatorContainerCount = coordinatorContainerCount,
+            ParallelismFactor = parallelismFactor,
             TransferBatchSize = transferBatchSize,
             EnableDebugJsonl = enableDebugJsonl,
             SkipWarmUpTime = skipWarmUpTime,
@@ -246,7 +273,7 @@ public sealed class CliOptions
             UseNats = useNats,
             SharedAgentConnection = sharedAgentConnection,
             BurstTotalJobs = burstTotalJobs,
-            BurstBatchSize = burstBatchSize,
+            BurstRequestsPerWorker = burstRequestsPerWorker,
             BurstDelay = burstDelayMinutes.HasValue ? TimeSpan.FromMinutes(burstDelayMinutes.Value) : null,
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,

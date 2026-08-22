@@ -6,7 +6,10 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
+using System.Diagnostics;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
@@ -21,10 +24,12 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     where TFixture : RepositoryFixtureBase
 {
     protected TFixture Fixture { get; }
+    protected ITestOutputHelper Output { get; }
 
-    protected RepositoryJobsConformanceTests(TFixture fixture)
+    protected RepositoryJobsConformanceTests(TFixture fixture, ITestOutputHelper output)
     {
         Fixture = fixture;
+        Output = output;
     }
 
     protected virtual Task SettleAsync() => Task.CompletedTask;
@@ -1759,5 +1764,246 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             Version = job.Version,
             HostId = job.HostId
         };
+    }
+
+    // Diagnostic, not a correctness assertion beyond "did it actually claim what we seeded" -- measures
+    // AcquireAndFetchAsync's own round-trip latency in isolation (single caller, no RuntimeDbOperationLimit
+    // contention, no AssignJobsToBucketsRunner cadence gate), so results are comparable across providers
+    // by reading each one's own test output rather than via any shared assertion.
+    [Theory(Skip = MeasureTestsSkipReason)]
+    [InlineData(100)]
+    [InlineData(1000)]
+    [InlineData(5000)]
+    public async Task Measure_AcquireAndFetchAsync_Latency(int jobCount)
+    {
+        var elapsedMs = await MeasureAcquireOnceAsync(jobCount);
+        Output.WriteLine($"jobCount={jobCount} elapsedMs={elapsedMs:F1}");
+    }
+
+    // Repeated (see `iterations` below), not a single sample -- the first few samples include connection/JIT warmup (and,
+    // observed for Postgres, a stale-planner-statistics cliff right after a large bulk insert), later
+    // ones reflect steady-state cost. 1000 is the realistic TransferBatchSize default; 5000 shows how
+    // the acquire cost scales beyond it. Each iteration seeds a fresh, uniquely-JobDefinitionId-scoped
+    // pool of jobCount*poolMultiplier jobs (see MeasureAcquireOnceAsync) and only acquires jobCount of
+    // them, so the underlying table/collection keeps growing across iterations -- this measures acquire
+    // cost as accumulated data volume grows, not against a size held constant across iterations.
+    [Theory(Skip = MeasureTestsSkipReason)]
+    [InlineData(1000)]
+    [InlineData(5000)]
+    public async Task Measure_AcquireAndFetchAsync_Latency_Repeated(int jobCount)
+    {
+        const int iterations = 5;
+        var samples = new List<double>(iterations);
+        for (var i = 0; i < iterations; i++)
+        {
+            samples.Add(await MeasureAcquireOnceAsync(jobCount));
+        }
+
+        var sorted = samples.OrderBy(s => s).ToList();
+        double Percentile(double p) => sorted[(int)Math.Clamp(Math.Ceiling(p * sorted.Count) - 1, 0, sorted.Count - 1)];
+
+        Output.WriteLine($"{jobCount}-job acquire latency, {iterations} samples (ms): {string.Join(", ", samples.Select(s => s.ToString("F1")))}");
+        Output.WriteLine($"min={sorted[0]:F1} p50={Percentile(0.50):F1} p90={Percentile(0.90):F1} p99={Percentile(0.99):F1} mean={samples.Average():F1} max={sorted[^1]:F1}");
+    }
+
+    // TODO: these Measure_* diagnostic/benchmark methods don't belong in a conformance test class --
+    // move them (and MeasureAcquireOnceAsync/ReportLatencySamples) into their own dedicated
+    // benchmark-style class, not run as part of the regular conformance suite. Skipped for now.
+    private const string MeasureTestsSkipReason = "Diagnostic/benchmark, not a conformance test -- run manually. TODO: move to a dedicated class.";
+
+    private async Task<double> MeasureAcquireOnceAsync(int jobCount)
+    {
+        var def = "acquire-timing-" + JobMasterRandomUtil.NewGuid4();
+        var now = DateTime.UtcNow;
+
+        // Pool is PoolMultiplier times larger than what's actually being claimed -- simulates a realistic
+        // backlog where AcquireAndFetchAsync has to select N out of a much larger candidate set, not just
+        // grab everything that happens to exist. CountLimit below stays at jobCount; only the seed size
+        // and poll target scale with PoolMultiplier.
+        const int poolMultiplier = 10;
+        var poolSize = jobCount * poolMultiplier;
+
+        var jobs = new List<JobRawModel>(poolSize);
+        for (var i = 0; i < poolSize; i++)
+        {
+            jobs.Add(new JobRawModel(Fixture.ClusterId)
+            {
+                Id = JobMasterRandomUtil.NewGuid4(),
+                JobDefinitionId = def,
+                TriggerSourceType = JobMasterTriggerSourceType.Once,
+                Priority = JobMasterPriority.Medium,
+                ScheduledAt = now,
+                NextPlanExecutionAt = now.AddTicks(i), // stable, distinct ordering
+                Status = JobMasterJobStatus.OnMaster,
+                Timeout = TimeSpan.FromSeconds(10),
+                MaxNumberOfRetries = 0,
+                MsgData = "{}",
+                CreatedAt = now,
+            });
+        }
+
+        // Seed in bounded partitions, each its own BulkInsertIfNotExistsAsync call/transaction, instead
+        // of one call for the whole pool. SqlMasterJobsRepository.BulkInsertIfNotExistsAsync already
+        // batches its round-trips internally, but wraps the ENTIRE input list in a single transaction --
+        // for a 500,000-row pool that's one transaction spanning thousands of sequential round-trips,
+        // pathologically slow on SQL (long-running-transaction lock/WAL pressure, blocks autovacuum).
+        // 50 is a fixed literal here, deliberately not JobMasterConstants.MaxBatchSizeForBulkOperation --
+        // that constant may become per-database-configurable later, and this seed's partition size is an
+        // independent test concern, not tied to whatever the production batch size ends up being.
+        // Partitions are inserted concurrently (bounded) -- each partition is an independent
+        // insert-if-not-exists against disjoint, freshly-generated ids, so there's no cross-partition
+        // ordering/consistency requirement forcing this to be sequential, and running them one at a time
+        // was the actual bottleneck at this seed volume (thousands of round-trips, each paying full
+        // network/connection latency with nothing else happening concurrently).
+        const int seedPartitionSize = 50;
+        const int seedMaxDegreeOfParallelism = 10;
+        await Parallel.ForEachAsync(
+            jobs.Partition(seedPartitionSize),
+            new ParallelOptions { MaxDegreeOfParallelism = seedMaxDegreeOfParallelism },
+            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList()));
+
+        var probeCriteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = poolSize };
+        var acquireCriteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = jobCount };
+
+        // Poll for the FULL pool (not just jobCount) via ProbeForAcquireAsync (read-only, same
+        // isLocked:false WHERE-building and index selection as AcquireAndFetchAsync's own candidate
+        // query) instead of a fixed SettleAsync() wait or Count() -- Count() builds its WHERE without the
+        // lock filter, so it can hit a completely different (dynamic auto-)index than the one the real
+        // acquire call below will use, making it an unreliable freshness proxy. This wait happens before
+        // the stopwatch starts, so it doesn't pollute the measured acquire latency below.
+        var deadline = DateTime.UtcNow.AddSeconds(120);
+        while ((await Fixture.MasterJobs.ProbeForAcquireAsync(probeCriteria)).Count < poolSize)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"Seeded {poolSize} jobs never became fully visible within 120s.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+        }
+
+        var sw = Stopwatch.StartNew();
+        var acquired = await Fixture.MasterJobs.AcquireAndFetchAsync(acquireCriteria, JobMasterRandomUtil.NewGuid4(), now.AddMinutes(30));
+        sw.Stop();
+
+        Assert.Equal(jobCount, acquired.Count);
+        return sw.Elapsed.TotalMilliseconds;
+    }
+
+    // Diagnostic, not a correctness assertion -- measures the 3 core bulk-write paths' latency against a
+    // 100K-row backlog. Step 1 (insert) is timed once as a whole partitioned/parallel batch; steps 2/3
+    // are repeated on disjoint 50-row partitions so each sample reflects a similarly-sized, previously-
+    // untouched slice of the pool rather than the same 50 rows updated over and over.
+    [Fact(Skip = MeasureTestsSkipReason)]
+    public async Task Measure_BulkOperations_Latency()
+    {
+        var def = "bulk-metrics-" + JobMasterRandomUtil.NewGuid4();
+        const int totalRecords = 100_000;
+        const int partitionSize = 50;
+        const int sampleIterations = 5;
+        var now = DateTime.UtcNow;
+
+        var jobs = new List<JobRawModel>(totalRecords);
+        for (var i = 0; i < totalRecords; i++)
+        {
+            jobs.Add(new JobRawModel(Fixture.ClusterId)
+            {
+                Id = JobMasterRandomUtil.NewGuid4(),
+                JobDefinitionId = def,
+                TriggerSourceType = JobMasterTriggerSourceType.Once,
+                Priority = JobMasterPriority.Medium,
+                ScheduledAt = now,
+                NextPlanExecutionAt = now.AddTicks(i),
+                Status = JobMasterJobStatus.OnMaster,
+                Timeout = TimeSpan.FromSeconds(10),
+                MaxNumberOfRetries = 0,
+                MsgData = "{}",
+                CreatedAt = now,
+            });
+        }
+
+        // Step 1: bulk insert, partitioned by 50 and run with bounded concurrency -- same rationale as
+        // MeasureAcquireOnceAsync's seeding above: a single sequential/one-giant-transaction insert at
+        // this volume is the actual bottleneck on SQL providers, not the database itself (see
+        // SqlMasterJobsRepository.BulkInsertIfNotExistsAsync's single-transaction-per-call behavior).
+        var insertSw = Stopwatch.StartNew();
+        await Parallel.ForEachAsync(
+            jobs.Partition(partitionSize),
+            new ParallelOptions { MaxDegreeOfParallelism = 10 },
+            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList()));
+        insertSw.Stop();
+        Output.WriteLine($"BulkInsertIfNotExistsAsync: {totalRecords} jobs via {totalRecords / partitionSize} partitions of {partitionSize}, {insertSw.Elapsed.TotalMilliseconds:F1}ms total");
+
+        var poolCriteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = totalRecords };
+        var deadline = DateTime.UtcNow.AddSeconds(120);
+        while ((await Fixture.MasterJobs.ProbeForAcquireAsync(poolCriteria)).Count < totalRecords)
+        {
+            if (DateTime.UtcNow > deadline)
+            {
+                throw new TimeoutException($"Seeded {totalRecords} jobs never became fully visible within 120s.");
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100));
+        }
+
+        // Fetch a disjoint working set once, up front, so the timed calls below only pay for the
+        // bulk-update round trip itself -- 2*sampleIterations*partitionSize rows, request-based
+        // partitions first, then list-based ones, all disjoint so no sample updates rows a previous
+        // sample already touched.
+        var workingSetSize = sampleIterations * partitionSize * 2;
+        var workingSet = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
+        {
+            JobDefinitionId = def,
+            Status = JobMasterJobStatus.OnMaster,
+            CountLimit = workingSetSize,
+        });
+        Assert.Equal(workingSetSize, workingSet.Count);
+
+        // Step 2: BulkUpdateAsync(request) -- set-based, no CAS/version needed, only the target ids
+        // matter.
+        var requestSamples = new List<double>(sampleIterations);
+        for (var i = 0; i < sampleIterations; i++)
+        {
+            var idsPartition = workingSet.Skip(i * partitionSize).Take(partitionSize).Select(j => j.Id).ToList();
+            var request = BulkJobUpdateRequest.For(idsPartition, BulkJobUpdateProperty.For(j => j.Priority, JobMasterPriority.High));
+
+            var sw = Stopwatch.StartNew();
+            await Fixture.MasterJobs.BulkUpdateAsync(request);
+            sw.Stop();
+            requestSamples.Add(sw.Elapsed.TotalMilliseconds);
+        }
+
+        ReportLatencySamples($"BulkUpdateAsync(request), partitions of {partitionSize}", requestSamples);
+
+        // Step 3: BulkUpdateAsync(list) -- per-row CAS, needs each model's current Version (already
+        // populated on the workingSet instances fetched above, not re-fetched here) so every row's
+        // optimistic-concurrency check succeeds.
+        var listSamples = new List<double>(sampleIterations);
+        for (var i = 0; i < sampleIterations; i++)
+        {
+            var offset = sampleIterations * partitionSize + i * partitionSize;
+            var modelsPartition = workingSet.Skip(offset).Take(partitionSize).ToList();
+            foreach (var model in modelsPartition)
+            {
+                model.WorkerLane = "BULK_METRICS_LANE";
+            }
+
+            var sw = Stopwatch.StartNew();
+            var updated = await Fixture.MasterJobs.BulkUpdateAsync(modelsPartition);
+            sw.Stop();
+            Assert.Equal(partitionSize, updated.Count);
+            listSamples.Add(sw.Elapsed.TotalMilliseconds);
+        }
+
+        ReportLatencySamples($"BulkUpdateAsync(list), partitions of {partitionSize}", listSamples);
+    }
+
+    private void ReportLatencySamples(string label, IReadOnlyList<double> samples)
+    {
+        var sorted = samples.OrderBy(s => s).ToList();
+        double Percentile(double p) => sorted[(int)Math.Clamp(Math.Ceiling(p * sorted.Count) - 1, 0, sorted.Count - 1)];
+
+        Output.WriteLine($"{label}, {samples.Count} samples (ms): {string.Join(", ", samples.Select(s => s.ToString("F1")))}");
+        Output.WriteLine($"min={sorted[0]:F1} p50={Percentile(0.50):F1} p90={Percentile(0.90):F1} p99={Percentile(0.99):F1} mean={samples.Average():F1} max={sorted[^1]:F1}");
     }
 }

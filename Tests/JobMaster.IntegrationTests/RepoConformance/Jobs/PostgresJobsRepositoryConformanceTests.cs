@@ -1,5 +1,6 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 
@@ -8,7 +9,7 @@ namespace JobMaster.IntegrationTests.RepoConformance.Jobs;
 public sealed class PostgresJobsRepositoryConformanceTests
     : RepositoryJobsConformanceTests<PostgresRepositoryFixture>
 {
-    public PostgresJobsRepositoryConformanceTests(PostgresRepositoryFixture fixture) : base(fixture)
+    public PostgresJobsRepositoryConformanceTests(PostgresRepositoryFixture fixture, ITestOutputHelper output) : base(fixture, output)
     {
     }
 }

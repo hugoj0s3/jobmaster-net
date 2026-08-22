@@ -112,14 +112,14 @@ var loadGeneratorOptions = new LoadGeneratorOptions
     StepDownAt = options.StepDownAt,
     MaxConcurrentRequests = options.MaxConcurrentRequests ?? 200,
     BurstTotalJobs = options.BurstTotalJobs,
-    BurstBatchSize = options.BurstBatchSize
+    BurstRequestsPerWorker = options.BurstRequestsPerWorker
 };
-var loadGenerator = new LoadGenerator(roundRobinClient, latencyRecorder, loadGeneratorOptions, scheduleCallLatencyRecorder);
+var loadGenerator = new LoadGenerator(roundRobinClient, scheduleClients, latencyRecorder, loadGeneratorOptions, scheduleCallLatencyRecorder);
 var isBurst = options.BurstTotalJobs.HasValue;
 
 var startedAtUtc = DateTime.UtcNow;
 Console.WriteLine(isBurst
-    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs in batches of {options.BurstBatchSize}..."
+    ? $"Burst load generation starting: {options.BurstTotalJobs} jobs across {workerSpecs.Count} workers x {options.BurstRequestsPerWorker} requests/worker..."
     : $"Load generation starting for {options.Duration}...");
 try
 {
