@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
@@ -62,7 +63,10 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
         // request/ack round trip -- so the win here is firing them concurrently instead of
         // awaiting each ack before starting the next, not batching in the SQL sense.
         var results = new string[messages.Count];
-        var parallelOptions = new ParallelOptions { MaxDegreeOfParallelism = JobMasterConstants.MaxBatchSizeForBulkOperation };
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(NatsJetStreamConstants.RepositoryTypeId),
+        };
         await JobMasterParallelUtil.ForEachAsync(messages.Select((message, index) => (message, index)), parallelOptions,
             async (item, _) =>
             {

@@ -28,10 +28,6 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         return Task.FromResult<IList<string>>(new List<string>());
     }
     
-    protected abstract int DefaultDbOperationThrottleLimitForCluster { get; }
-    protected abstract int DefaultDbOperationThrottleLimitForAgent { get; }
-    
-
     /// <summary>
     /// Applies provider defaults (table prefix, throttle limits) and provisions the schema on first startup
     /// if auto-provisioning is enabled.
@@ -50,12 +46,7 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         // Set default options
         foreach (var clusterConfig in configs)
         {
-            if (!clusterConfig.RuntimeDbOperationLimit.HasValue)
-            {
-                clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
-            }
-            
-            var clusterTablePrefix = 
+            var clusterTablePrefix =
                 clusterConfig.AdditionalConnConfig.TryGetValue<string>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey);
 
             if (clusterTablePrefix == null)
@@ -163,11 +154,6 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             if (agentTablePrefix == null)
             {
                 agentConfig.AdditionalConnConfig.SetValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey, "JM_");
-            }
-            
-            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
-            {
-                agentConfig.SetRuntimeDbOperationLimit(this.DefaultDbOperationThrottleLimitForAgent);
             }
         }
 

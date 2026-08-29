@@ -605,65 +605,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
     }
 
-    private IDictionary<string, OperationThrottler> OperationLimiterPerCluster { get; } =
-        new ConcurrentDictionary<string, OperationThrottler>();
-
-    private OperationThrottler? notStartedClusterOperationThrottler;
-
-    public OperationThrottler GetOperationLimiterForCluster(string clusterId)
-    {
-        if (!Started)
-        {
-            if (notStartedClusterOperationThrottler == null)
-            {
-                notStartedClusterOperationThrottler = new OperationThrottler(50);
-            }
-
-            return notStartedClusterOperationThrottler;
-        }
-
-        if (!OperationLimiterPerCluster.TryGetValue(clusterId, out var throttler))
-        {
-            var jobMasterClusterConnectionConfig =
-                JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
-            throttler = new OperationThrottler(jobMasterClusterConnectionConfig.RuntimeDbOperationLimit);
-            OperationLimiterPerCluster[clusterId] = throttler;
-        }
-
-        return throttler;
-    }
-
-
-    private IDictionary<string, OperationThrottler> OperationLimiterPerAgent { get; } =
-        new ConcurrentDictionary<string, OperationThrottler>();
-
-    private OperationThrottler? notStartedAgentOperationLimiter;
-
-    public OperationThrottler GetOperationLimiterForAgent(string clusterId, string agentConnectionIdOrName)
-    {
-        if (!Started)
-        {
-            if (notStartedAgentOperationLimiter == null)
-            {
-                notStartedAgentOperationLimiter = new OperationThrottler(50);
-            }
-
-            return notStartedAgentOperationLimiter;
-        }
-
-        var key = clusterId + "||" + agentConnectionIdOrName;
-        if (!OperationLimiterPerAgent.TryGetValue(key, out var throttler))
-        {
-            var runtimeDbOperationLimit = JobMasterClusterConnectionConfig
-                .Get(clusterId, includeNotReady: true)
-                .GetAgentConnectionConfig(agentConnectionIdOrName).RuntimeDbOperationLimit;
-            throttler = new OperationThrottler(runtimeDbOperationLimit);
-            OperationLimiterPerAgent[key] = throttler;
-        }
-
-        return throttler;
-    }
-
     public int CountWorkersForCluster(string clusterId)
     {
         if (string.IsNullOrEmpty(clusterId))

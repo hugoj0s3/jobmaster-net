@@ -23,8 +23,15 @@ public sealed class CliOptions
 
     /// <summary>Number of dedicated coordinator containers <see cref="CoordinatorCount"/> instances
     /// are split across. The drainer always gets its own separate container regardless of this
-    /// value.</summary>
+    /// value, unless <see cref="FullModeCount"/> is greater than 0.</summary>
     public required int CoordinatorContainerCount { get; init; }
+
+    /// <summary>Number of AgentWorkerMode.Full containers -- each one self-contained (Coordinator +
+    /// Drain + Execution all combined, scoped to its own agent connection). When greater than 0, no
+    /// dedicated drainer container is built (each Full container drains its own connection already),
+    /// and <see cref="CoordinatorCount"/>/<see cref="CoordinatorContainerCount"/> don't apply to these
+    /// containers -- Full mode is implicitly 1 coordinator instance per Full container.</summary>
+    public int FullModeCount { get; init; }
 
     /// <summary>Overrides <c>JobMasterDefaults.Worker.TransferBatchSize</c> (1000) on every coordinator
     /// instance. Null leaves the SDK default in place.</summary>
@@ -97,11 +104,18 @@ public sealed class CliOptions
     public double DbCpu { get; init; } = 2;
     public double DbMemoryGb { get; init; } = 2;
 
+    /// <summary>Per-worker-container resource limits -- defaults match the original fixed 0.5 CPU /
+    /// 512MB spec. Overridable to test whether worker containers actually need that much (e.g. lower
+    /// per-worker CPU while raising worker count to see how total cluster capacity behaves).</summary>
+    public double WorkerCpu { get; init; } = 0.5;
+    public double WorkerMemoryGb { get; init; } = 0.5;
+
     public static CliOptions Parse(string[] args)
     {
         var rate = 1000;
         var executors = 2;
         var coordinatorContainerCount = 1;
+        var fullModeCount = 0;
         double? parallelismFactor = null;
         var bucketsPerWorker = 1;
         int? bucketBufferSize = null;
@@ -123,6 +137,8 @@ public sealed class CliOptions
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
         var dbMemoryGb = 2.0;
+        var workerCpu = 0.5;
+        var workerMemoryGb = 0.5;
         var coordinatorCount = 4;
         int? transferBatchSize = null;
         var enableDebugJsonl = false;
@@ -149,11 +165,20 @@ public sealed class CliOptions
                 case "--db-memory-gb":
                     dbMemoryGb = double.Parse(args[++i]);
                     break;
+                case "--worker-cpu":
+                    workerCpu = double.Parse(args[++i]);
+                    break;
+                case "--worker-memory-gb":
+                    workerMemoryGb = double.Parse(args[++i]);
+                    break;
                 case "--coordinators":
                     coordinatorCount = int.Parse(args[++i]);
                     break;
                 case "--coordinator-containers":
                     coordinatorContainerCount = int.Parse(args[++i]);
+                    break;
+                case "--full-mode-count":
+                    fullModeCount = int.Parse(args[++i]);
                     break;
                 case "--parallelism-factor":
                     parallelismFactor = double.Parse(args[++i]);
@@ -255,6 +280,7 @@ public sealed class CliOptions
             BucketBufferSize = bucketBufferSize,
             CoordinatorCount = coordinatorCount,
             CoordinatorContainerCount = coordinatorContainerCount,
+            FullModeCount = fullModeCount,
             ParallelismFactor = parallelismFactor,
             TransferBatchSize = transferBatchSize,
             EnableDebugJsonl = enableDebugJsonl,
@@ -277,7 +303,9 @@ public sealed class CliOptions
             BurstDelay = burstDelayMinutes.HasValue ? TimeSpan.FromMinutes(burstDelayMinutes.Value) : null,
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,
-            DbMemoryGb = dbMemoryGb
+            DbMemoryGb = dbMemoryGb,
+            WorkerCpu = workerCpu,
+            WorkerMemoryGb = workerMemoryGb
         };
     }
 }

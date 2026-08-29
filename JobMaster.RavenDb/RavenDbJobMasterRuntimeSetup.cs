@@ -4,6 +4,7 @@ using JobMaster.RavenDb.Master;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Repositories;
 using Microsoft.Extensions.DependencyInjection;
 using Raven.Client.Documents.Operations.Expiration;
 using JobMasterConstants = JobMaster.Sdk.Abstractions.JobMasterConstants;
@@ -12,9 +13,6 @@ namespace JobMaster.RavenDb;
 
 internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
-    private const int DefaultDbOperationThrottleLimitForCluster = 50;
-    private const int DefaultDbOperationThrottleLimitForAgent = 25;
-
     public Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
         return Task.FromResult<IList<string>>(new List<string>());
@@ -22,17 +20,23 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 
     public async Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
+        OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
+            RavenDbRepositoryConstants.RepositoryTypeId,
+            maxBatchSize: 50,
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 2000));
+
+        OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
+            RavenDbRepositoryConstants.RepositoryTypeId,
+            maxBatchSize: 50,
+            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 1000),
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 250));
+
         var allClusterConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
             .Where(c => c.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
             .ToList();
 
         foreach (var clusterConfig in allClusterConfigs)
         {
-            if (!clusterConfig.RuntimeDbOperationLimit.HasValue)
-            {
-                clusterConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForCluster);
-            }
-
             // Forces the lazy fallback-connection registration now, before allAgentConfigs is built below.
             // JobMasterRuntime.StartAsync only creates it later (after OnBeforeStartAsync already ran), so
             // without this the fallback connection's Message collection would never get its static index
@@ -46,14 +50,6 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             .SelectMany(c => c.GetAllAgentConnectionConfigs())
             .Where(a => a.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
             .ToList();
-
-        foreach (var agentConfig in allAgentConfigs)
-        {
-            if (!agentConfig.RuntimeDbOperationLimit.HasValue)
-            {
-                agentConfig.SetRuntimeDbOperationLimit(DefaultDbOperationThrottleLimitForAgent);
-            }
-        }
 
         // The Message collection lives in each agent connection's own database (never the master's,
         // except for a fallback/standalone connection reusing the master's own connection string --

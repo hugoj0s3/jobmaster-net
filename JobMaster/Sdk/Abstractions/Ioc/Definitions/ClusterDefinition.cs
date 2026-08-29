@@ -25,8 +25,6 @@ internal sealed class ClusterDefinition
     public string? TargetArchivedClusterId { get; set; }
     public string? TargetActiveClusterId { get; set; }
 
-    public int? RuntimeDbOperationLimit { get; set; }
-    
     public ClusterMode? ClusterMode { get; set; }
     
     public bool IsDefault { get; set; }

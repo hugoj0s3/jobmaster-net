@@ -24,7 +24,7 @@ public class AgentJobsDispatcherServiceTests
         clusterConfig.MarkAsReady();
 
         var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
-        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
+        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new Mock<IJobMasterLogger>().Object);
 
         var job = new JobRawModel(clusterId)
         {
@@ -68,7 +68,7 @@ public class AgentJobsDispatcherServiceTests
         var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
-        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
+        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new Mock<IJobMasterLogger>().Object);
 
         var job = new JobRawModel(clusterId)
         {
@@ -115,7 +115,7 @@ public class AgentJobsDispatcherServiceTests
         var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
-        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
+        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new Mock<IJobMasterLogger>().Object);
 
         var job = new JobRawModel(clusterId)
         {
@@ -165,9 +165,12 @@ public class AgentJobsDispatcherServiceTests
         var factory = new Mock<IAgentComponentFactory>(MockBehavior.Strict);
         factory.Setup(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue))).Returns(repo.Object);
 
-        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object);
+        var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new Mock<IJobMasterLogger>().Object);
 
-        var jobs = Enumerable.Range(0, JobMasterConstants.MaxBatchSizeForBulkOperation + 1)
+        // 51 is just "bigger than any typical batch size" -- proves BulkAddSavePendingJobAsync
+        // never partitions internally, regardless of what MaxBatchSize a repository type is
+        // configured with (partitioning is the caller's responsibility, e.g. JobMasterSchedulerClusterAware).
+        var jobs = Enumerable.Range(0, 51)
             .Select(_ => new JobRawModel(clusterId)
             {
                 Id = JobMasterRandomUtil.NewGuid4(),

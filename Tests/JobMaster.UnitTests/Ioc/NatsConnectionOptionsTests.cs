@@ -29,7 +29,6 @@ public class NatsConnectionOptionsTests
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentAdditionalConnConfig(JobMasterConfigDictionary _) => this;
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentRepoType(string _) => this;
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentConnString(string _) => this;
-        IAgentConnectionConfigSelector IAgentConnectionConfigSelector.RuntimeDbOperationLimit(int _) => this;
 
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AppendAdditionalConnConfigValue(
             JobMasterNamespaceUniqueKey namespaceKey, string key, object value)

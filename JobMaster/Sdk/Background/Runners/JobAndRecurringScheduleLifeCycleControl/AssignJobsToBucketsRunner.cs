@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
@@ -300,9 +301,10 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         // Batched instead of one release call per job -- this path can fire for many jobs in a
         // single tick when buckets are unavailable/at capacity, and each release now also
         // contends for the same acquire throttler as AcquireAndFetchAsync/BulkUpdateAsync.
-        foreach (var partition in jobIdsNeedingLockRelease.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        var masterMaxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobIdsNeedingLockRelease.Partition(masterMaxBatchSize))
         {
-            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.ReleasePartitionLock(partition.ToList()), useAcquireThrottler: true);
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.ReleasePartitionLock(partition.ToList()), masterJobsService.AcquireThrottler);
         }
 
         return (assignedJobs, bucketAssignments);
@@ -314,7 +316,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         List<JobRawModel> assignedJobs, DateTime cutOffTime, TimeSpan durationToLock, CancellationToken ct)
     {
         var updatedJobs = new List<JobRawModel>();
-        foreach (var partition in assignedJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        var masterMaxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in assignedJobs.Partition(masterMaxBatchSize))
         {
             if (DateTime.UtcNow >= cutOffTime)
             {
@@ -325,11 +328,11 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 break;
             }
 
-            // useAcquireThrottler: true routes this through the same 1-at-a-time, per-cluster
+            // Passing AcquireThrottler routes this through the same 1-at-a-time, per-cluster
             // (all coordinators) throttler as AcquireAndFetchAsync -- otherwise this used the
             // general, much-higher-capacity throttler, letting two coordinators' bulk updates
             // and acquires run fully concurrently against each other.
-            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList(), useAcquireThrottler: true);
+            var updated = await masterJobsService.BulkUpdateAsync(partition.ToList(), masterJobsService.AcquireThrottler);
             updatedJobs.AddRange(updated);
 
             // Small per-partition jitter so this coordinator's back-to-back UPDATEs don't stay
@@ -393,7 +396,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                     async (entry, __) =>
                     {
                         var (bucket, bucketJobs) = entry;
-                        foreach (var partition in bucketJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+                        var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(bucket.AgentConnectionId.IdValue);
+                        foreach (var partition in bucketJobs.Partition(agentMaxBatchSize))
                         {
                             try
                             {

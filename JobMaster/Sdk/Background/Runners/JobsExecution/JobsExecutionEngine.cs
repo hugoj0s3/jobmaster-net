@@ -17,6 +17,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
@@ -94,6 +95,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     
     private readonly SemaphoreSlim engineLock = new(1, 1);
     private static readonly OperationThrottler singleJobUpdateThrottler = new(5, 500);
+
+    private int MasterMaxBatchSize => OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(backgroundAgentWorker.ClusterConnConfig.ClusterId);
 
     public IOnBoardingControl<JobRawModel> OnBoardingControl { get; }
     public ITaskQueueControl<JobRawModel> TaskQueueControl { get; }
@@ -324,7 +327,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 job.MarkAsHeldOnMaster();
             }
 
-            var partitions = bufferedJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+            var partitions = bufferedJobs.Select(j => j.Id).ToList().Partition(MasterMaxBatchSize);
             foreach (var partition in partitions)
             {
                 try
@@ -385,7 +388,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 job.Onboard();
             }
 
-            foreach (var partition in batch.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+            foreach (var partition in batch.Partition(MasterMaxBatchSize))
             {
                 var updated = await backgroundAgentWorker.WorkerClusterOperations
                     .ExecWithRetryAsync(o => o.BulkUpdateAsync(partition.ToList()));
@@ -399,7 +402,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
         else
         {
-            foreach (var partition in batch.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+            foreach (var partition in batch.Partition(MasterMaxBatchSize))
             {
                 var idsToHeld = partition.Select(x => x.Id).ToList();
                 var heldOnMasterReq = BulkJobUpdateRequest.HeldOnMaster(idsToHeld);
@@ -583,7 +586,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
 
         foreach (var partition
-                 in postponedJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+                 in postponedJobs.Partition(MasterMaxBatchSize))
         {
             await backgroundAgentWorker.WorkerClusterOperations
                 .ExecWithRetryAsync(o => o.BulkUpdateAsync(partition.ToList()));
@@ -600,7 +603,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
 
         foreach (var partition in toHoldOnMaster.ToList()
-                     .Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+                     .Partition(MasterMaxBatchSize))
         {
             var partitionIds =  partition.Select(j => j.Id).ToList();
             await backgroundAgentWorker.WorkerClusterOperations
@@ -1001,15 +1004,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
     private async Task UpdateSingleJobAsync(JobRawModel jobRawModel, JobExecution? execution = null)
     {
-        await singleJobUpdateThrottler.ExecAsync(() =>
-            this.backgroundAgentWorker.WorkerClusterOperations
-                .ExecWithRetryAsync(async o => await o.UpdateAsync(jobRawModel, execution), millisecondsToDelay: 50));
+        await this.backgroundAgentWorker.WorkerClusterOperations
+            .ExecWithRetryAsync(async o => await o.UpdateAsync(jobRawModel, execution, singleJobUpdateThrottler), millisecondsToDelay: 50);
     }
 
     private void UpdateSingleJob(JobRawModel jobRawModel)
     {
-        singleJobUpdateThrottler.Exec(() =>
-            this.backgroundAgentWorker.WorkerClusterOperations.Update(jobRawModel));
+        this.backgroundAgentWorker.WorkerClusterOperations.Update(jobRawModel, throttler: singleJobUpdateThrottler);
     }
 
     private class RecentlyHeldOnMaster

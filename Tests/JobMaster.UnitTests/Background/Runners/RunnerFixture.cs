@@ -46,6 +46,7 @@ internal sealed record RunnerFixture(
         var agentConnectionId = new AgentConnectionId(clusterId, "fake-agent");
         var hostId = new HostId(clusterId, "fake-host");
         var clusterConnConfig = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "conn", isDefault: true);
+        clusterConnConfig.AddAgentConnectionString("fake-agent", "conn", "repo");
         clusterConnConfig.MarkAsReady();
 
         // â”€â”€ fakes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

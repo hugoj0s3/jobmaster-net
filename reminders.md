@@ -265,3 +265,83 @@ in the test, not because the provisioning path actually covers agent connections
 Worth adding at least one conformance/scenario configuration per provider with master and agent on
 distinct database instances, to close this blind spot -- broader than any single provider's PR, so not
 attempted here.
+
+## RavenDB provider has no configurable request timeout
+
+Raised 2026-08-22 while benchmarking RavenDB under a 25k-job burst (13 executors, Pure mode).
+`RavenDbDocumentStoreManager.GetOrCreateStore` constructs the `DocumentStore` with only
+`Urls`/`Database`/`Certificate` set -- no `Conventions.RequestTimeout` override, so every RavenDB
+operation uses RavenDB.Client's own defaults with no way for a JobMaster user to raise or lower it via
+`UseRavenDb(...)`'s connection string, unlike Postgres/SqlServer/MySql which all expose a timeout knob
+in their connection strings already.
+
+Real failures observed under load: all 18 executor-side exceptions in that run were
+`Raven.Client.Exceptions.RavenException: An exception occurred while contacting
+http://db:8080/databases/.../bulk_docs?` wrapping `SocketException (104): Connection reset by peer` --
+notably a socket-level connection reset, not a `TimeoutException`, so it's not certain a
+`RequestTimeout` increase alone would have prevented these specifically (a reset means the *server* tore
+down the connection; the client being more patient doesn't change that). RavenDB's own server logs
+showed no crash/restart/throttling message at the time.
+
+**Leading explanation, confirmed via RavenDB's official pricing page (ravendb.net/buy)**: the Community
+license caps a cluster to **3 CPU cores and 6GB RAM total, regardless of what the host/container
+actually has available**. Our benchmark's RavenDB container was given 8 CPU/8GB for tier 2/3 -- RavenDB
+itself can never use more than 3 cores/6GB of that no matter the allocation, so under a 13-18-executor
+concurrent burst it's running with far less real headroom than every other engine in the same benchmark.
+This lines up with two other observations from the same benchmarking session: (1) bumping the container
+to 8/8 didn't meaningfully help RavenDB the way it helped SqlServer, since the extra resources were
+simply unusable under Community licensing; (2) RavenDB Pure's job-loss count got progressively worse
+across tiers (2,579 -> 7,432 -> 10,495 at 25k/50k/100k jobs) even as container resources grew, consistent
+with a fixed real ceiling that the growing job volume increasingly outpaces. Not proven as *the* root
+cause of the specific connection resets (no direct server-side confirmation), but a real, documented
+constraint that would plausibly produce exactly this symptom under sustained concurrent load -- worth
+keeping in mind for any future RavenDB benchmark/capacity comparison against the other (unlicensed,
+uncapped) providers, since it isn't an apples-to-apples resource comparison as configured.
+
+Regardless of whether it fixes this specific failure, a configurable request timeout is something the
+RavenDB provider should support anyway (parity with the other providers, and useful for tuning
+regardless of this bug) -- add a `requestTimeout` parameter to `ConfigExtensions.UseRavenDb`, threaded
+through to `DocumentConventions.RequestTimeout` in `RavenDbDocumentStoreManager`. Not implemented here;
+this was a benchmarking session, not a provider-feature PR.
+
+## MasterJobsService.AcquireAndFetchAsync: on an unrecoverable deadlock, consider returning empty instead of throwing
+
+Raised 2026-08-22 while benchmarking JobMaster SqlServer Pure under a 100k-job burst, 40 full-mode
+workers sharing one DB. That run hit 28 real SQL Server deadlocks (`SqlException 1205`), all inside
+`SqlServerMasterJobsRepository.BulkUpdateAsync`, all recovered by retry (none exhausted their retry
+budget) -- so this specific run never actually needed the change below. But investigating it surfaced a
+real asymmetry worth fixing regardless:
+
+`MasterJobsService.AcquireAndFetchAsync` (`JobMaster/Sdk/Services/Master/MasterJobsService.cs:130-133`)
+wraps its repository call in `retryDeadlockPolicy.ExecAsync(...)` -- the purpose-built policy in
+`RetryDeadlockPolicy.cs` (3 retries, always-jittered 250-375ms backoff, specifically designed so
+concurrent deadlock victims don't re-collide on the same rows). Both `BulkUpdateAsync` overloads on the
+same service (lines 198-203, 205-210) have no such wrapping at all -- they rely entirely on whatever
+generic retry the *caller* happens to apply (in practice `WorkerClusterOperations.ExecWithRetryAsync`,
+5 retries, coarser/less consistently jittered, not deadlock-aware). Worth closing that gap on its own
+(see the still-open question from that same review: whether to add `retryDeadlockPolicy` to both
+`BulkUpdateAsync` overloads too, matching `AcquireAndFetchAsync`).
+
+Separately, once `AcquireAndFetchAsync` does exhaust `retryDeadlockPolicy`'s retry budget on a genuine
+deadlock, consider having it simply return an empty list instead of letting the exception propagate.
+A claim call finding zero jobs is already a normal, expected outcome every tick (nothing eligible right
+now) -- the caller's polling loop treats it identically to "nothing to claim this tick" either way, so
+collapsing "deadlocked after exhausting retries" into that same empty-result path avoids an exception
+bubbling up through `WorkerClusterOperations` for a condition the system already knows how to shrug off
+and retry on the next tick, without changing any caller behavior. Not implemented here; flagged during a
+benchmarking session, not a provider-feature PR.
+
+## Hybrid worker concept: independent transport configuration per connection role
+
+Raised 2026-08-25 during a benchmarking session. Idea: let a worker's save/dispatch path and its execution
+path be configured against different connections independently, rather than assuming both roles share one
+implicit configuration. Just a concept at this point, not designed or scoped -- worth revisiting later.
+
+Rough shape sketched at the time, for reference only (not an actual API, naming/structure not settled):
+
+```csharp
+AddWorker("worker-1")
+    .ConfigHybridConnection()
+    .SaveTransport([nats-connection])
+    .Execution([raven-db]);
+```

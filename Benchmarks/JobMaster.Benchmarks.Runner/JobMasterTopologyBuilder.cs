@@ -58,38 +58,51 @@ public static class JobMasterTopologyBuilder
         int coordinatorContainerCount = 1,
         int? transferBatchSize = null,
         bool enableDebugJsonl = false,
-        double? parallelismFactor = null)
+        double? parallelismFactor = null,
+        int fullModeCount = 0)
     {
-        if (executorCount < 1)
+        if (executorCount < 0)
         {
-            throw new ArgumentException("executorCount must be at least 1.", nameof(executorCount));
+            throw new ArgumentException("executorCount cannot be negative.", nameof(executorCount));
         }
 
-        if (coordinatorContainerCount < 1)
+        if (fullModeCount + executorCount < 1)
         {
-            throw new ArgumentException("coordinatorContainerCount must be at least 1.", nameof(coordinatorContainerCount));
+            throw new ArgumentException("At least one Full-mode or Execution container is required.", nameof(executorCount));
         }
 
-        if (coordinatorCount < coordinatorContainerCount)
+        if (coordinatorContainerCount < 0)
+        {
+            throw new ArgumentException("coordinatorContainerCount cannot be negative.", nameof(coordinatorContainerCount));
+        }
+
+        if (coordinatorContainerCount > 0 && coordinatorCount < coordinatorContainerCount)
         {
             throw new ArgumentException(
                 "coordinatorCount must be at least coordinatorContainerCount (each coordinator container needs at least 1 coordinator instance).",
                 nameof(coordinatorCount));
         }
 
-        var specs = new List<WorkerContainerSpec>(coordinatorContainerCount + 1 + executorCount);
+        // A dedicated drainer container only exists when there's no AgentWorkerMode.Full worker to
+        // self-drain instead -- see the Full-mode block below for why one drainer per Full container
+        // would just be redundant duplicate work against the same agent connection.
+        var hasDedicatedDrainer = fullModeCount == 0;
+
+        var specs = new List<WorkerContainerSpec>(fullModeCount + coordinatorContainerCount + (hasDedicatedDrainer ? 1 : 0) + executorCount);
 
         var masterConnectionString = BuildConnectionString(dbEngine, BenchmarkContainerEnvironment.DbDatabaseName);
 
+        var fullModeAgentConnectionNames = Enumerable.Range(0, fullModeCount).Select(i => $"agent-full-{i}").ToArray();
         var executorAgentConnectionNames = Enumerable.Range(0, executorCount).Select(i => $"agent-exec-{i}").ToArray();
+        var drainerNames = hasDedicatedDrainer ? new[] { DrainerAgentConnectionName } : Array.Empty<string>();
 
         // Every container's config gets this same full list -- see the class remarks on why a
         // coordinator that only knows its own connection can never select an executor's bucket, and
         // on why coordinator-only containers don't need one of their own. sharedAgentConnection
-        // collapses this down to exactly one entry, used by the drainer and every executor -- buckets
-        // (not separate databases) are the real partition unit between workers, so this is
-        // architecturally valid; it exists to isolate "database count" as its own benchmark variable,
-        // separate from bucket count.
+        // collapses this down to exactly one entry, used by the drainer, every Full-mode worker, and
+        // every executor -- buckets (not separate databases) are the real partition unit between
+        // workers, so this is architecturally valid; it exists to isolate "database count" as its own
+        // benchmark variable, separate from bucket count.
         var allAgentConnections = sharedAgentConnection
             ? new object[]
             {
@@ -97,17 +110,34 @@ public static class JobMasterTopologyBuilder
                     ? new { Name = SharedAgentConnectionName, RepositoryType = "NatsJetStream", ConnectionString = NatsConnectionString() }
                     : new { Name = SharedAgentConnectionName, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, "benchmark_agent") },
             }
-            : new[] { DrainerAgentConnectionName }.Concat(executorAgentConnectionNames)
+            : drainerNames.Concat(fullModeAgentConnectionNames).Concat(executorAgentConnectionNames)
                 .Select(name => useNats
                     ? (object)new { Name = name, RepositoryType = "NatsJetStream", ConnectionString = NatsConnectionString() }
                     : new { Name = name, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, DatabaseNameFor(name)) })
                 .ToArray();
 
+        // Full mode -- AgentWorkerMode.Full, the SDK's built-in "everything in one process" role:
+        // Execution + Coordinator + Drain runners all combined, all scoped to this one worker's own
+        // agent connection (LoadFullRunnersAsync in JobMasterBackgroundAgentWorker). Each Full
+        // container is a fully self-contained mini-cluster -- one Coordinator instance, one Drain
+        // instance servicing its own agent connection, one Execution bucket -- so coordinatorCount/
+        // coordinatorContainerCount don't apply here at all; Full-mode coordinator count is implicitly
+        // 1 per Full container. A dedicated drainer would be redundant against a non-shared Full
+        // connection (nothing else ever writes to it) and duplicate work against a shared one (Full's
+        // own drain runner already services it), so none is built while any Full containers exist.
+        for (var f = 0; f < fullModeCount; f++)
+        {
+            var agentConnectionName = sharedAgentConnection ? SharedAgentConnectionName : fullModeAgentConnectionNames[f];
+            var bucketQtyConfig = new Dictionary<string, int> { ["Medium"] = bucketsPerWorker };
+            List<object> fullWorkers = [new { WorkerName = "full", AgentConnectionName = agentConnectionName, WorkerMode = "Full", BucketQtyConfig = bucketQtyConfig, BucketBufferSize = bucketBufferSize, SkipWarmUpTime = skipWarmUpTime, TransferBatchSize = transferBatchSize, ParallelismFactor = parallelismFactor }];
+            specs.Add(BuildSpec($"full-{f}", dbEngine, masterConnectionString, allAgentConnections, fullWorkers, enableDebugJsonl, runId));
+        }
+
         // Split coordinatorCount as evenly as possible across coordinatorContainerCount dedicated
         // containers -- the first (coordinatorCount % coordinatorContainerCount) containers get one
         // extra instance, so no single container ends up with a disproportionate share.
-        var baseCoordinatorsPerContainer = coordinatorCount / coordinatorContainerCount;
-        var coordinatorRemainder = coordinatorCount % coordinatorContainerCount;
+        var baseCoordinatorsPerContainer = coordinatorContainerCount > 0 ? coordinatorCount / coordinatorContainerCount : 0;
+        var coordinatorRemainder = coordinatorContainerCount > 0 ? coordinatorCount % coordinatorContainerCount : 0;
         var coordinatorInstanceNumber = 0;
         for (var c = 0; c < coordinatorContainerCount; c++)
         {
@@ -129,10 +159,14 @@ public static class JobMasterTopologyBuilder
             specs.Add(BuildSpec($"coordinator-{c}", dbEngine, masterConnectionString, allAgentConnections, coordinatorWorkers, enableDebugJsonl, runId));
         }
 
-        // Drainer -- always its own dedicated container, never bundled with coordinators.
-        var drainerAgentConnectionName = sharedAgentConnection ? SharedAgentConnectionName : DrainerAgentConnectionName;
-        List<object> drainerWorkers = [new { WorkerName = "drainer", AgentConnectionName = drainerAgentConnectionName, WorkerMode = "Drain", SkipWarmUpTime = skipWarmUpTime }];
-        specs.Add(BuildSpec("drainer", dbEngine, masterConnectionString, allAgentConnections, drainerWorkers, enableDebugJsonl, runId));
+        // Drainer -- always its own dedicated container, never bundled with coordinators. Skipped
+        // entirely when any Full-mode containers exist (see the Full-mode block above).
+        if (hasDedicatedDrainer)
+        {
+            var drainerAgentConnectionName = sharedAgentConnection ? SharedAgentConnectionName : DrainerAgentConnectionName;
+            List<object> drainerWorkers = [new { WorkerName = "drainer", AgentConnectionName = drainerAgentConnectionName, WorkerMode = "Drain", SkipWarmUpTime = skipWarmUpTime }];
+            specs.Add(BuildSpec("drainer", dbEngine, masterConnectionString, allAgentConnections, drainerWorkers, enableDebugJsonl, runId));
+        }
 
         // Executors -- one container each, execution-only.
         for (var i = 0; i < executorCount; i++)
@@ -188,14 +222,16 @@ public static class JobMasterTopologyBuilder
     private static string DatabaseNameFor(string agentConnectionName) => $"benchmark_{agentConnectionName.Replace('-', '_')}";
 
     /// <summary>Every distinct database name across the cluster -- the master database plus a
-    /// dedicated agent-connection database for the drainer and each executor (coordinator-only
-    /// containers need none of their own, see the class remarks) -- so the caller can create them
-    /// all up front (each SQL engine requires the database to exist before the app connects). When
-    /// <paramref name="useNats"/> is true, only the master database needs provisioning: NATS
-    /// JetStream has no CREATE DATABASE-equivalent, it self-provisions streams at startup. When
-    /// <paramref name="sharedAgentConnection"/> is true, only one agent database is needed regardless
-    /// of executor count.</summary>
-    public static IReadOnlyList<string> AllDatabaseNames(bool useNats, int executorCount, bool sharedAgentConnection = false)
+    /// dedicated agent-connection database for the drainer, each Full-mode worker, and each executor
+    /// (coordinator-only containers need none of their own, see the class remarks) -- so the caller
+    /// can create them all up front (each SQL engine requires the database to exist before the app
+    /// connects). When <paramref name="useNats"/> is true, only the master database needs
+    /// provisioning: NATS JetStream has no CREATE DATABASE-equivalent, it self-provisions streams at
+    /// startup. When <paramref name="sharedAgentConnection"/> is true, only one agent database is
+    /// needed regardless of executor/full-mode count. No drainer database is needed when
+    /// <paramref name="fullModeCount"/> is greater than 0 -- see BuildWorkerSpecs' remarks on why a
+    /// dedicated drainer isn't built in that case.</summary>
+    public static IReadOnlyList<string> AllDatabaseNames(bool useNats, int executorCount, bool sharedAgentConnection = false, int fullModeCount = 0)
     {
         var names = new List<string> { BenchmarkContainerEnvironment.DbDatabaseName };
         if (useNats)
@@ -209,7 +245,16 @@ public static class JobMasterTopologyBuilder
             return names;
         }
 
-        names.Add(DatabaseNameFor(DrainerAgentConnectionName));
+        if (fullModeCount == 0)
+        {
+            names.Add(DatabaseNameFor(DrainerAgentConnectionName));
+        }
+
+        for (var f = 0; f < fullModeCount; f++)
+        {
+            names.Add(DatabaseNameFor($"agent-full-{f}"));
+        }
+
         for (var i = 0; i < executorCount; i++)
         {
             names.Add(DatabaseNameFor($"agent-exec-{i}"));

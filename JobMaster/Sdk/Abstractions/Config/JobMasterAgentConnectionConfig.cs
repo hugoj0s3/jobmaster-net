@@ -6,11 +6,10 @@ internal class JobMasterAgentConnectionConfig
 {
     public JobMasterAgentConnectionConfig(
         string clusterId,
-        string name, 
-        string connectionString, 
-        string repositoryTypeId, 
-        JobMasterConfigDictionary? additionalConnConfig = null,
-        int? runtimeDbOperationThrottleLimit = null)
+        string name,
+        string connectionString,
+        string repositoryTypeId,
+        JobMasterConfigDictionary? additionalConnConfig = null)
     {
         AdditionalConnConfig = additionalConnConfig ?? new JobMasterConfigDictionary();
         ClusterId = clusterId;
@@ -18,9 +17,8 @@ internal class JobMasterAgentConnectionConfig
         ConnectionString = connectionString;
         RepositoryTypeId = repositoryTypeId;
         Id = new AgentConnectionId(clusterId, name).IdValue;
-        RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
     }
-    
+
     public JobMasterConfigDictionary AdditionalConnConfig { get; set; } = new();
 
     public string Id { get; private set; }
@@ -28,11 +26,4 @@ internal class JobMasterAgentConnectionConfig
     public string Name { get; private set; }
     public string ConnectionString { get; private set; }
     public string RepositoryTypeId { get; private set; }
-    
-    public int? RuntimeDbOperationLimit { get; private set; }
-
-    public void SetRuntimeDbOperationLimit(int? value)
-    {
-        this.RuntimeDbOperationLimit = value;
-    }
 }

@@ -38,7 +38,7 @@ public class JobMasterSchedulerTests
             .Returns(new ClusterConfigurationModel(clusterId));
 
         schedulerMock
-            .Setup(x => x.Schedule(It.Is<JobRawModel>(m => m.ClusterId == clusterId), It.IsAny<bool>()))
+            .Setup(x => x.Schedule(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -80,7 +80,7 @@ public class JobMasterSchedulerTests
             .Returns(new ClusterConfigurationModel(clusterId));
 
         schedulerMock
-            .Setup(x => x.ScheduleAsync(It.Is<JobRawModel>(m => m.ClusterId == clusterId), It.IsAny<bool>()))
+            .Setup(x => x.ScheduleAsync(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
             .Returns(Task.CompletedTask)
             .Verifiable();
 
@@ -200,7 +200,7 @@ public class JobMasterSchedulerTests
 
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
         schedulerMock
-            .Setup(x => x.Schedule(It.IsAny<JobRawModel>(), It.IsAny<bool>()))
+            .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);

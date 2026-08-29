@@ -33,7 +33,7 @@ public class MasterRecurringSchedulesServiceTests
 
         repo.Setup(x => x.AddAsync(raw)).Returns(Task.CompletedTask);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         await sut.AddAsync(raw);
 
@@ -62,7 +62,7 @@ public class MasterRecurringSchedulesServiceTests
 
         repo.Setup(x => x.Add(raw));
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.Add(raw);
 
@@ -79,7 +79,7 @@ public class MasterRecurringSchedulesServiceTests
         var locker = new Mock<IMasterDistributedLockerService>(MockBehavior.Loose);
         var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
 
-        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new FakeRuntime(true), new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
+        var sut = new MasterRecurringSchedulesService(locker.Object, clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
 
         sut.BulkUpdateStaticDefinitionLastEnsured(new List<string>(), DateTime.UtcNow);
 

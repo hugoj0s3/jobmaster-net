@@ -1767,8 +1767,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     // Diagnostic, not a correctness assertion beyond "did it actually claim what we seeded" -- measures
-    // AcquireAndFetchAsync's own round-trip latency in isolation (single caller, no RuntimeDbOperationLimit
-    // contention, no AssignJobsToBucketsRunner cadence gate), so results are comparable across providers
+    // AcquireAndFetchAsync's own round-trip latency in isolation (single caller, no repository-type
+    // throttler contention, no AssignJobsToBucketsRunner cadence gate), so results are comparable across providers
     // by reading each one's own test output rather than via any shared assertion.
     [Theory(Skip = MeasureTestsSkipReason)]
     [InlineData(100)]
@@ -1847,9 +1847,10 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         // batches its round-trips internally, but wraps the ENTIRE input list in a single transaction --
         // for a 500,000-row pool that's one transaction spanning thousands of sequential round-trips,
         // pathologically slow on SQL (long-running-transaction lock/WAL pressure, blocks autovacuum).
-        // 50 is a fixed literal here, deliberately not JobMasterConstants.MaxBatchSizeForBulkOperation --
-        // that constant may become per-database-configurable later, and this seed's partition size is an
-        // independent test concern, not tied to whatever the production batch size ends up being.
+        // 50 is a fixed literal here, deliberately not the repository type's own MaxBatchSize
+        // (OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize) -- that's now
+        // per-repository-type configurable, and this seed's partition size is an independent test
+        // concern, not tied to whatever the production batch size ends up being for a given provider.
         // Partitions are inserted concurrently (bounded) -- each partition is an independent
         // insert-if-not-exists against disjoint, freshly-generated ids, so there's no cross-partition
         // ordering/consistency requirement forcing this to be sequential, and running them one at a time

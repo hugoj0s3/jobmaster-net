@@ -15,6 +15,7 @@ using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
@@ -560,7 +561,8 @@ FROM jobs_page j
         try
         {
             var affected = 0;
-            foreach (var idsPartition in ids.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation).ToList())
+            var maxBatchSize = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+            foreach (var idsPartition in ids.Partition(maxBatchSize).ToList())
             {
                 // Delete Jobs
                 var inClause = sql.InClauseFor(cId, "@Ids");
@@ -598,7 +600,7 @@ FROM jobs_page j
         if (jobs.Count == 0) return;
 
         var t = TableName();
-        const int maxBatch = JobMasterConstants.MaxBatchSizeForBulkOperation;
+        var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);

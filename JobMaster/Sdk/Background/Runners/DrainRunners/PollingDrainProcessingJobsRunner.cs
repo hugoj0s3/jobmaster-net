@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils.Extensions;
 
@@ -46,7 +47,8 @@ internal class PollingDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainPro
         var jobIds = processingJobs.Select(j => j.Id).ToList();
 
         bool hasFailed = false;
-        foreach (var partition in jobIds.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobIds.Partition(maxBatchSize))
         {
             try
             {

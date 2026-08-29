@@ -35,7 +35,9 @@ await environment.StartAsync(
     databaseNamesToProvision: [HangfireTopologyBuilder.DatabaseName],
     dbEngine: DbEngine.SqlServer,
     dbNanoCpus: (long)(options.DbCpu * 1_000_000_000),
-    dbMemoryBytes: (long)(options.DbMemoryGb * 1024 * 1024 * 1024));
+    dbMemoryBytes: (long)(options.DbMemoryGb * 1024 * 1024 * 1024),
+    workerNanoCpus: (long)(options.WorkerCpu * 1_000_000_000),
+    workerMemoryBytes: (long)(options.WorkerMemoryGb * 1024 * 1024 * 1024));
 Console.WriteLine("Containers ready.");
 
 if (options.WarmupDelay > TimeSpan.Zero)
@@ -137,7 +139,7 @@ IReadOnlyList<CompletionSample> completionTimeline;
 if (isBurst)
 {
     var totalActuallyScheduled = (int)await mux.GetDatabase().HashLengthAsync($"bench:{runId}:expected");
-    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2));
+    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2), startedAtUtc: startedAtUtc);
     completionTimeline = timeline;
     Console.WriteLine($"Burst drain wait finished after {waited} (cap was {options.BurstMaxWait}).");
 }

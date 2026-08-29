@@ -2,6 +2,7 @@ using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,13 +11,21 @@ namespace JobMaster.Postgres;
 
 internal class PostgresJobMasterRuntimeSetup : SqlJobMasterRuntimeSetup
 {
-    protected override int DefaultDbOperationThrottleLimitForCluster => 50;
-    protected override int DefaultDbOperationThrottleLimitForAgent => 25;
-    
     public override string RepositoryTypeId => PostgresRepositoryConstants.RepositoryTypeId;
 
     public override async Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
+        OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
+            RepositoryTypeId,
+            maxBatchSize: 50,
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(50));
+
+        OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
+            RepositoryTypeId,
+            maxBatchSize: 50,
+            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25),
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 500));
+
         await CreateCaseInsensitiveCollationAsync();
         await base.OnBeforeStartAsync(mainServiceProvider);
     }

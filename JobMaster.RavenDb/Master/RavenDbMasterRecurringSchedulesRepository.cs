@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
@@ -442,9 +443,10 @@ update {{
         if (ids.Count == 0) return 0;
 
         var totalDeleted = 0;
-        for (var i = 0; i < ids.Count; i += JobMasterConstants.MaxBatchSizeForBulkOperation)
+        var maxBatchSize = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        for (var i = 0; i < ids.Count; i += maxBatchSize)
         {
-            var batch = ids.Skip(i).Take(JobMasterConstants.MaxBatchSizeForBulkOperation).ToArray();
+            var batch = ids.Skip(i).Take(maxBatchSize).ToArray();
 
             using var session = store.OpenAsyncSession();
             foreach (var id in batch)

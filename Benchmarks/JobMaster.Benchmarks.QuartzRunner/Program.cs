@@ -156,7 +156,7 @@ IReadOnlyList<CompletionSample> completionTimeline;
 if (isBurst)
 {
     var totalActuallyScheduled = (int)await mux.GetDatabase().HashLengthAsync($"bench:{runId}:expected");
-    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2));
+    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2), startedAtUtc: startedAtUtc);
     completionTimeline = timeline;
     Console.WriteLine($"Burst drain wait finished after {waited} (cap was {options.BurstMaxWait}).");
 }

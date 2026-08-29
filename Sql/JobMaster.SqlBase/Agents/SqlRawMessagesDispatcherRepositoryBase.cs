@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Connections;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
@@ -125,7 +126,7 @@ WHERE {colBucket} = @Bucket";
         try
         {
             var ids = new List<string>(messages.Count);
-            var partitions = messages.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+            var partitions = messages.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId));
             foreach (var partition in partitions)
             {
                 var parameters = new Dictionary<string, object>

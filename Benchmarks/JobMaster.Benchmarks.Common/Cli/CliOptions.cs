@@ -34,6 +34,11 @@ public sealed class CliOptions
     public double DbCpu { get; init; } = 2;
     public double DbMemoryGb { get; init; } = 2;
 
+    /// <summary>Per-worker-container resource limits -- defaults match the original fixed 0.5 CPU /
+    /// 512MB spec, mirroring <c>JobMaster.Benchmarks.Runner</c>'s own <c>CliOptions</c>.</summary>
+    public double WorkerCpu { get; init; } = 0.5;
+    public double WorkerMemoryGb { get; init; } = 0.5;
+
     public static CliOptions Parse(string[] args)
     {
         var rate = 1000;
@@ -51,6 +56,8 @@ public sealed class CliOptions
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
         var dbMemoryGb = 2.0;
+        var workerCpu = 0.5;
+        var workerMemoryGb = 0.5;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -70,6 +77,12 @@ public sealed class CliOptions
                     break;
                 case "--db-memory-gb":
                     dbMemoryGb = double.Parse(args[++i]);
+                    break;
+                case "--worker-cpu":
+                    workerCpu = double.Parse(args[++i]);
+                    break;
+                case "--worker-memory-gb":
+                    workerMemoryGb = double.Parse(args[++i]);
                     break;
                 case "--rate":
                     rate = int.Parse(args[++i]);
@@ -137,7 +150,9 @@ public sealed class CliOptions
             BurstRequestsPerWorker = burstRequestsPerWorker,
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,
-            DbMemoryGb = dbMemoryGb
+            DbMemoryGb = dbMemoryGb,
+            WorkerCpu = workerCpu,
+            WorkerMemoryGb = workerMemoryGb
         };
     }
 }

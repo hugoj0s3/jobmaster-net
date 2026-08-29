@@ -100,7 +100,7 @@ public class MasterBucketsServiceTests
         act.Should().ThrowAsync<ArgumentException>().WithParameterName("Id");
 
         repo.Verify(x => x.Insert(It.IsAny<GenericRecordEntry>()), Times.Never);
-        dispatcher.Verify(x => x.CreateBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+        dispatcher.Verify(x => x.CreateBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>(), It.IsAny<OperationThrottler>()), Times.Never);
         sentinel.Verify(x => x.NotifyChanges(It.IsAny<string>()), Times.Never);
     }
 
@@ -163,7 +163,7 @@ public class MasterBucketsServiceTests
         inserted!.GroupId.Should().Be(MasterGenericRecordGroupIds.Bucket);
         inserted.EntryId.Should().Be(created.Id);
 
-        dispatcher.Verify(x => x.CreateBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == $"{clusterId}:agent"), created.Id), Times.Once);
+        dispatcher.Verify(x => x.CreateBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == $"{clusterId}:agent"), created.Id, It.IsAny<OperationThrottler>()), Times.Once);
 
         var keys = new JobMasterSentinelKeys(clusterId);
         sentinel.Verify(x => x.NotifyChanges(keys.AllBuckets()), Times.Once);
@@ -204,7 +204,7 @@ public class MasterBucketsServiceTests
         await sut.DestroyAsync("missing");
 
         repo.Verify(x => x.Delete(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-        dispatcher.Verify(x => x.DestroyBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>(), It.IsAny<OperationThrottler>()), Times.Never);
         sentinel.Verify(x => x.NotifyChanges(It.IsAny<string>()), Times.Never);
     }
 
@@ -257,7 +257,7 @@ public class MasterBucketsServiceTests
         await sut.DestroyAsync(bucket.Id);
 
         repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Once);
-        dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == agent.IdValue), bucket.Id), Times.Once);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == agent.IdValue), bucket.Id, It.IsAny<OperationThrottler>()), Times.Once);
 
         var keys = new JobMasterSentinelKeys(clusterId);
         sentinel.Verify(x => x.NotifyChanges(keys.Bucket(bucket.Id)), Times.Once);
@@ -296,7 +296,7 @@ public class MasterBucketsServiceTests
 
         var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
         repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
-        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id)).ReturnsAsync(true);
+        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id, It.IsAny<OperationThrottler>())).ReturnsAsync(true);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -314,7 +314,7 @@ public class MasterBucketsServiceTests
         await sut.DestroyAsync(bucket.Id);
 
         repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Never);
-        dispatcher.Verify(x => x.DestroyBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -350,7 +350,7 @@ public class MasterBucketsServiceTests
         var entry = GenericRecordEntry.Create(clusterId, MasterGenericRecordGroupIds.Bucket, bucket.Id, bucket);
         repo.Setup(x => x.GetAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id, false)).ReturnsAsync(entry);
         // Even though jobs are still present, a fallback bucket must be destroyed anyway.
-        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id)).ReturnsAsync(true);
+        dispatcher.Setup(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), bucket.Id, It.IsAny<OperationThrottler>())).ReturnsAsync(true);
 
         var sut = new MasterBucketsService(
             clusterConfig,
@@ -368,8 +368,8 @@ public class MasterBucketsServiceTests
         await sut.DestroyAsync(bucket.Id);
 
         repo.Verify(x => x.DeleteAsync(MasterGenericRecordGroupIds.Bucket, bucket.Id), Times.Once);
-        dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == fallbackAgent.IdValue), bucket.Id), Times.Once);
-        dispatcher.Verify(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>()), Times.Never);
+        dispatcher.Verify(x => x.DestroyBucketAsync(It.Is<AgentConnectionId>(a => a.IdValue == fallbackAgent.IdValue), bucket.Id, It.IsAny<OperationThrottler>()), Times.Once);
+        dispatcher.Verify(x => x.HasJobsAsync(It.IsAny<AgentConnectionId>(), It.IsAny<string>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]

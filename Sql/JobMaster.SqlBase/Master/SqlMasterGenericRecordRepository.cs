@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.SqlBase;
@@ -228,7 +229,7 @@ ORDER BY {cCreatedAt} ASC, {cRecordId} ASC");
         }
     }
 
-    private const int MaxBatchSize = JobMasterConstants.MaxBatchSizeForBulkOperation;
+    private int MaxBatchSize => OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
     public virtual async Task BulkInsertAsync(IList<GenericRecordEntry> records)
     {
         if (records.Count == 0) return;

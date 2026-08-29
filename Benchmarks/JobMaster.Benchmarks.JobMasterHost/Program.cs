@@ -49,7 +49,25 @@ builder.Services.AddSingleton<ICompletionRecorder>(sp =>
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// Deliberately exercises the Redis connection (not just a bare 200) -- IConnectionMultiplexer is
+// registered as a lazy singleton above, so without this a container can report healthy before it has
+// ever actually connected to Redis. Under a burst of many workers starting at once, that let some
+// workers' first real job execution race Redis's own startup and fail with a RedisConnectionException,
+// which (via JobsExecutionEngine's retry path) delayed that job by 10+ minutes -- a benchmark-harness
+// race, not a framework defect, but one that silently corrupted every high-worker-count benchmark run
+// that hit it.
+app.MapGet("/health", (IServiceProvider sp) =>
+{
+    try
+    {
+        var redis = sp.GetRequiredService<IConnectionMultiplexer>();
+        return redis.IsConnected ? Results.Ok(new { status = "ok" }) : Results.StatusCode(503);
+    }
+    catch
+    {
+        return Results.StatusCode(503);
+    }
+});
 
 app.MapPost("/schedule-now", async (ScheduleNowRequest req, IJobMasterScheduler scheduler) =>
 {

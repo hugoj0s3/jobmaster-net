@@ -8,7 +8,6 @@ internal sealed class AgentConnectionDefinition
     public string AgentConnectionName { get; set; } = string.Empty;
     public string? AgentRepoType { get; set; }
     public string? AgentConnString { get; set; }
-    public int? RuntimeDbOperationLimit { get; set; }
     public JobMasterConfigDictionary? AgentAdditionalConnConfig { get; set; }
     public bool ProtectConnectionChanges { get; set; } = true;
 }

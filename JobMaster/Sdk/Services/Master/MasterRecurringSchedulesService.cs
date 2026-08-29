@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils.Extensions;
@@ -32,7 +33,6 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         IMasterDistributedLockerService masterDistributedLockerService,
         JobMasterClusterConnectionConfig clusterConnConfig,
         IMasterRecurringSchedulesRepository masterRecurringSchedulesRepository,
-        IJobMasterRuntime runtime,
         IJobMasterLogger logger,
         IKnownExceptionIdentifier exceptionIdentifier)
         : base(clusterConnConfig)
@@ -43,7 +43,7 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         this.exceptionIdentifier = exceptionIdentifier;
 
         jobMasterLockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
-        operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnConfig.ClusterId);
+        operationThrottler = OperationThrottlerSettingsFactory.GetMasterThrottler(clusterConnConfig.ClusterId);
         retryDeadlockPolicy = new RetryDeadlockPolicy(this.exceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
     }
 

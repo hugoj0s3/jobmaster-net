@@ -99,6 +99,11 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         // worker count, without changing behavior for every existing paced-suite call site.
         long? dbNanoCpus = null,
         long? dbMemoryBytes = null,
+        // Defaults preserve the original fixed 0.5 CPU / 512MB per-worker-container spec --
+        // overridable per run to test whether worker containers actually need that much (e.g. lower
+        // per-worker CPU while raising worker *count* to see how total cluster capacity behaves).
+        long? workerNanoCpus = null,
+        long? workerMemoryBytes = null,
         CancellationToken ct = default)
     {
         network = new NetworkBuilder().Build();
@@ -106,6 +111,8 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
 
         var effectiveDbNanoCpus = dbNanoCpus ?? DbNanoCpus;
         var effectiveDbMemoryBytes = dbMemoryBytes ?? DbMemoryBytes;
+        var effectiveWorkerNanoCpus = workerNanoCpus ?? WorkerNanoCpus;
+        var effectiveWorkerMemoryBytes = workerMemoryBytes ?? WorkerMemoryBytes;
 
         if (dbEngine == DbEngine.RavenDB)
         {
@@ -176,8 +183,8 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
                     .ForPort((ushort)spec.HttpPort)))
                 .WithCreateParameterModifier(p =>
                 {
-                    p.HostConfig.NanoCPUs = WorkerNanoCpus;
-                    p.HostConfig.Memory = WorkerMemoryBytes;
+                    p.HostConfig.NanoCPUs = effectiveWorkerNanoCpus;
+                    p.HostConfig.Memory = effectiveWorkerMemoryBytes;
                 });
 
             foreach (var (key, value) in spec.EnvironmentVariables)

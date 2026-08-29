@@ -8,16 +8,26 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
 {
     Task AddAsync(JobRawModel jobRaw);
     void Add(JobRawModel jobRaw);
-    Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null);
-    void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null);
+
+    /// <summary>
+    /// When <paramref name="throttler"/> is omitted, routes through the general per-cluster
+    /// operation throttler. Pass an explicit throttler (e.g. <see cref="AcquireThrottler"/>, or a
+    /// caller-owned instance) to isolate this update from unrelated operations competing for the
+    /// same limiter -- e.g. an execution worker persisting completion status shouldn't have to
+    /// queue behind whatever else is using the shared general throttler at that moment.
+    /// </summary>
+    Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null);
+
+    /// <inheritdoc cref="UpdateAsync"/>
+    void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null);
     Task AddJobExecutionAsync(JobExecution jobExecution);
     Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
-    
+
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc);
-    
+
     long Count(JobQueryCriteria queryCriteria);
     /// <summary>
     /// Cheap probe: returns the count of unacquired <c>OnMaster</c> jobs and the earliest
@@ -29,23 +39,26 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     Task<bool> CheckVersionAsync(Guid jobId, string? version);
     JobRawModel? Get(Guid jobId);
     Task<JobRawModel?> GetAsync(Guid jobId);
-    
-    /// <summary>
-    /// When <paramref name="useAcquireThrottler"/> is true, routes through the same 1-at-a-time,
-    /// per-cluster throttler as <see cref="AcquireAndFetchAsync"/> instead of the general
-    /// operation throttler -- use this so a caller can't run concurrently with another
-    /// coordinator's acquire/bulk update. Leave false for callers (e.g. execution workers
-    /// persisting completion status) that shouldn't be serialized with the acquire pipeline.
-    /// </summary>
-    Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false);
 
     /// <summary>
-    /// When <paramref name="useAcquireThrottler"/> is true, routes through the same 1-at-a-time,
-    /// per-cluster throttler as <see cref="AcquireAndFetchAsync"/> instead of the general
-    /// operation throttler -- use this from <c>AssignJobsToBucketsRunner</c>'s OnMaster-to-InBucket
-    /// bulk update so it can't run concurrently with another coordinator's acquire/bulk update.
-    /// Leave false for other callers (e.g. execution workers persisting completion status) that
-    /// shouldn't be serialized with the acquire pipeline.
+    /// The same 1-at-a-time, per-cluster throttler used internally by
+    /// <see cref="AcquireAndFetchAsync"/> -- exposed so a caller (e.g.
+    /// <c>AssignJobsToBucketsRunner</c>'s OnMaster-to-InBucket bulk update, or
+    /// <c>WorkerClusterOperations</c>'s dispatch-failure rollback) can explicitly pass it into
+    /// <see cref="BulkUpdateAsync(BulkJobUpdateRequest,OperationThrottler)"/> /
+    /// <see cref="BulkUpdateAsync(IList{JobRawModel},OperationThrottler)"/> when that call must not
+    /// run concurrently with another coordinator's acquire/bulk update.
     /// </summary>
-    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false);
+    OperationThrottler AcquireThrottler { get; }
+
+    /// <summary>
+    /// When <paramref name="throttler"/> is omitted, routes through the general per-cluster
+    /// operation throttler. Pass <see cref="AcquireThrottler"/> so this call can't run
+    /// concurrently with another coordinator's acquire/bulk update, or any other explicit
+    /// throttler instance the caller wants this isolated to.
+    /// </summary>
+    Task BulkUpdateAsync(BulkJobUpdateRequest request, OperationThrottler? throttler = null);
+
+    /// <inheritdoc cref="BulkUpdateAsync(BulkJobUpdateRequest,OperationThrottler)"/>
+    Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, OperationThrottler? throttler = null);
 }

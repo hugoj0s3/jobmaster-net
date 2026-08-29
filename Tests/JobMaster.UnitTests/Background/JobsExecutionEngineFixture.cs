@@ -79,19 +79,19 @@ internal static class JobsExecutionEngineFixture
         jobs.Setup(x => x.QueryAsync(It.IsAny<JobQueryCriteria>()))
             .ReturnsAsync(new List<JobRawModel>());
 
-        jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<IList<JobRawModel>>(), It.IsAny<bool>()))
-            .Callback<IList<JobRawModel>, bool>((list, _) =>
+        jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<IList<JobRawModel>>(), It.IsAny<OperationThrottler>()))
+            .Callback<IList<JobRawModel>, OperationThrottler>((list, _) =>
             {
                 foreach (var job in list)
                     bulkUpdateWatcher.Add(Clone(job));
             })
-            .ReturnsAsync((IList<JobRawModel> list, bool _) => list.ToList());
+            .ReturnsAsync((IList<JobRawModel> list, OperationThrottler _) => list.ToList());
 
-        ops.Setup(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
-            .Callback<JobRawModel, JobExecution?>((job, _) => singleUpdateWatcher.Add(Clone(job)));
+        ops.Setup(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler>()))
+            .Callback<JobRawModel, JobExecution?, OperationThrottler>((job, _, __) => singleUpdateWatcher.Add(Clone(job)));
 
-        ops.Setup(x => x.Update(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>()))
-            .Callback<JobRawModel, JobExecution?>((job, _) => singleUpdateWatcher.Add(Clone(job)));
+        ops.Setup(x => x.Update(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler>()))
+            .Callback<JobRawModel, JobExecution?, OperationThrottler>((job, _, __) => singleUpdateWatcher.Add(Clone(job)));
 
         ops.Setup(x => x.ExecWithRetryAsync(
                 It.IsAny<Action<IWorkerClusterOperations>>(),
@@ -164,8 +164,9 @@ internal static class JobsExecutionEngineFixture
     }
 
     /// <summary>
-    /// Creates multiple InBucket jobs. Defaults to 50 — enough to cross the
-    /// <c>MaxBatchSizeForBulkOperation</c> (50) partition boundary.
+    /// Creates multiple InBucket jobs. Defaults to 50 — enough to cross the default
+    /// repository-type MaxBatchSize (50, see <c>OperationThrottlerSettingsTemplateFactory</c>)
+    /// partition boundary.
     /// </summary>
     public static IList<JobRawModel> CreateInBucketJobMany(
         DateTime? nextPlanExecutionAt = null,

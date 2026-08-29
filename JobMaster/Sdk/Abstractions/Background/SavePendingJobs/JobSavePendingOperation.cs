@@ -236,6 +236,7 @@ internal class JobSavePendingOperation
         var engine = backgroundAgentWorker.GetEngine(bucketId);
         
         logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
+                     $"BucketId={bucketId} " +
                      $"IsOnBoarding={jobRaw.IsWithinOnboardingWindow()} " +
                      $"EngineAvailable={engine is not null} " +
                      $"BucketStatus={currentBucket?.Status} " +

@@ -56,8 +56,6 @@ internal class JobMasterClusterConnectionConfig
     public Action<LogItem>? MirrorLog { get; private set; }
     
     public bool IsReady { get; private set; }
-    
-    public int? RuntimeDbOperationLimit { get; private set; }
 
     private readonly HashSet<JobMasterPriority> _disabledPriorities = new HashSet<JobMasterPriority>();
 
@@ -65,22 +63,16 @@ internal class JobMasterClusterConnectionConfig
 
     public void SetDisabledPriorities(ISet<JobMasterPriority> priorities) => _disabledPriorities.UnionWith(priorities);
 
-    public void SetRuntimeDbOperationLimit(int? value)
-    {
-        RuntimeDbOperationLimit = value;
-    }
-
     public void SetMirrorLog(Action<LogItem>? mirrorLog)
     {
         MirrorLog = mirrorLog;
     }
 
     public void AddAgentConnectionString(
-        string name, 
-        string connectionString, 
-        string repositoryTypeId, 
-        JobMasterConfigDictionary? additionalConnConfig = null,
-        int? runtimeDbOperationThrottleLimit = null)
+        string name,
+        string connectionString,
+        string repositoryTypeId,
+        JobMasterConfigDictionary? additionalConnConfig = null)
     {
         lock (InstanceLock)
         {
@@ -99,7 +91,7 @@ internal class JobMasterClusterConnectionConfig
                 throw new ArgumentException($"Agent connection string '{name}' already exists.", nameof(name));
             }
             
-            var agentConnConfig = new JobMasterAgentConnectionConfig(this.ClusterId, name, connectionString, repositoryTypeId, additionalConnConfig, runtimeDbOperationThrottleLimit);
+            var agentConnConfig = new JobMasterAgentConnectionConfig(this.ClusterId, name, connectionString, repositoryTypeId, additionalConnConfig);
             var id = agentConnConfig.Id;
             AgentConnectionConfigs[id] = agentConnConfig;
         }
@@ -114,8 +106,7 @@ internal class JobMasterClusterConnectionConfig
                 JobMasterConstants.StandaloneAgentConnName,
                 this.ConnectionString,
                 this.RepositoryTypeId,
-                this.AdditionalConnConfig,
-                this.RuntimeDbOperationLimit);
+                this.AdditionalConnConfig);
 
             AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
 
@@ -132,8 +123,7 @@ internal class JobMasterClusterConnectionConfig
                 JobMasterConstants.MasterFallbackAgentConnName,
                 this.ConnectionString,
                 this.RepositoryTypeId,
-                this.AdditionalConnConfig,
-                this.RuntimeDbOperationLimit);
+                this.AdditionalConnConfig);
 
             AgentConnectionConfigs[agentConnConfig.Id] = agentConnConfig;
 
@@ -230,7 +220,7 @@ internal class JobMasterClusterConnectionConfig
     }
     
     
-    public static JobMasterClusterConnectionConfig Create(string clusterId, string repositoryTypeId, string connectionString, bool isDefault = false, int? runtimeDbOperationThrottleLimit = null)
+    public static JobMasterClusterConnectionConfig Create(string clusterId, string repositoryTypeId, string connectionString, bool isDefault = false)
     {
         if (!JobMasterStringUtils.IsValidForId(clusterId))
             throw new ArgumentException($"Invalid cluster ID format. Only letters, numbers, underscore (_), hyphen (-), and dot (.) are allowed. Received: '{clusterId}'", nameof(clusterId));
@@ -241,18 +231,16 @@ internal class JobMasterClusterConnectionConfig
             {
                 throw new ArgumentException($"Cluster ID '{clusterId}' already exists.", nameof(clusterId));
             }
-            
+
             var config = new JobMasterClusterConnectionConfig(clusterId, repositoryTypeId, connectionString);
-            
+
             ClusterConfigs.Add(config);
-            
+
             if (isDefault)
             {
                 DefaultConfig = config;
             }
-            
-            config.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
-            
+
             return config;
         }
     }

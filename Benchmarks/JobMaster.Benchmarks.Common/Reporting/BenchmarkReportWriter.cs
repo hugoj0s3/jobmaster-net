@@ -26,7 +26,7 @@ public sealed class BenchmarkReportWriter
         await WriteHealthCsvAsync(Path.Combine(outputDirectory, "container-health.csv"), healthSamples, ct);
         await WriteLostDuplicatedCsvAsync(Path.Combine(outputDirectory, "lost-duplicated-jobs.csv"), latency, ct);
         await WriteCompletionTimelineCsvAsync(Path.Combine(outputDirectory, "completion-timeline.csv"), completionTimeline ?? [], ct);
-        await WriteSummaryMarkdownAsync(Path.Combine(outputDirectory, "summary.md"), metadata, latency, scheduleCallLatency, statsSamples, ct);
+        await WriteSummaryMarkdownAsync(Path.Combine(outputDirectory, "summary.md"), metadata, latency, scheduleCallLatency, statsSamples, completionTimeline ?? [], ct);
     }
 
     // Completed-count-over-time curve, sampled during the post-load-generation drain wait (both
@@ -106,6 +106,7 @@ public sealed class BenchmarkReportWriter
         LatencyReport latency,
         ScheduleCallLatencyReport scheduleCallLatency,
         IReadOnlyList<ContainerStatsSample> statsSamples,
+        IReadOnlyList<CompletionSample> completionTimeline,
         CancellationToken ct)
     {
         var sb = new StringBuilder();
@@ -154,7 +155,7 @@ public sealed class BenchmarkReportWriter
             if (schedulingDurationMs > 0)
             {
                 var schedulingThroughputPerSecond = latency.TotalScheduled / (schedulingDurationMs / 1000.0);
-                sb.AppendLine($"- Scheduling throughput: {schedulingThroughputPerSecond:F0} jobs/sec (all {latency.TotalScheduled} jobs scheduled in parallel, done in {TimeSpan.FromMilliseconds(schedulingDurationMs)})");
+                sb.AppendLine($"- Scheduling throughput: **{schedulingThroughputPerSecond:F0} jobs/sec** (all {latency.TotalScheduled} jobs scheduled in parallel, done in {TimeSpan.FromMilliseconds(schedulingDurationMs)})");
             }
         }
         else
@@ -174,11 +175,25 @@ public sealed class BenchmarkReportWriter
         {
             var actualSpanSeconds = (lastCompletion - metadata.StartedAtUtc).TotalSeconds;
             var completedPerSecond = actualSpanSeconds > 0 ? latency.TotalCompletedJobs / actualSpanSeconds : 0;
-            sb.AppendLine($"- Total completed (distinct jobs): {latency.TotalCompletedJobs} ({completedPerSecond:F2} jobs/sec, measured over the actual {TimeSpan.FromSeconds(actualSpanSeconds)} span from run start to the last real completion)");
+            sb.AppendLine($"- Total completed (distinct jobs): {latency.TotalCompletedJobs} (**{completedPerSecond:F2} jobs/sec**, measured over the actual {TimeSpan.FromSeconds(actualSpanSeconds)} span from run start to the last real completion)");
         }
         else
         {
             sb.AppendLine($"- Total completed (distinct jobs): {latency.TotalCompletedJobs}");
+        }
+
+        // A handful of stragglers (a job stuck in a bucket, a retried claim, etc.) can drag the
+        // whole-run completion throughput above down arbitrarily far without reflecting the
+        // steady-state rate the system actually sustained -- e.g. 99.9% of a run finishing in 90
+        // seconds and the last job trickling in 5 minutes later reports as a "slow" run overall,
+        // even though only one job was ever actually slow. Report throughput to the point where
+        // 99% of completed jobs were done as a second, trim-resistant number alongside the raw one,
+        // using completion-timeline.csv's periodic samples (already collected during the drain
+        // wait) rather than needing per-job timestamps.
+        var trimmedThroughputLine = TryFormatTrimmedThroughputLine(latency.TotalCompletedJobs, completionTimeline);
+        if (trimmedThroughputLine is not null)
+        {
+            sb.AppendLine(trimmedThroughputLine);
         }
 
         sb.AppendLine($"- **Lost**: {latency.LostCount}");
@@ -201,7 +216,13 @@ public sealed class BenchmarkReportWriter
         sb.AppendLine("| | mean (ms) | p50 (ms) | p90 (ms) | p99 (ms) | max (ms) | samples |");
         sb.AppendLine("|---|---|---|---|---|---|---|");
         sb.AppendLine(FormatPercentileRow("Immediate", latency.Immediate));
-        sb.AppendLine(FormatPercentileRow("Delayed", latency.Delayed));
+        // Burst mode is always all-immediate (no delayed jobs requested at all) -- omit a row that
+        // would otherwise always read as a meaningless all-zero line, same as the schedule-call
+        // table's "schedule-after call" row above.
+        if (latency.Delayed.SampleCount > 0)
+        {
+            sb.AppendLine(FormatPercentileRow("Delayed", latency.Delayed));
+        }
         sb.AppendLine();
         sb.AppendLine("## Container resource usage (summary across the run)");
         sb.AppendLine();
@@ -227,6 +248,25 @@ public sealed class BenchmarkReportWriter
         }
 
         await File.WriteAllTextAsync(path, sb.ToString(), ct);
+    }
+
+    // Finds the earliest timeline sample where at least 99% of totalCompleted jobs were done, and
+    // reports throughput up to that point -- trims exactly the slowest 1% of jobs out of the
+    // denominator, whatever caused them to lag. Returns null when there's not enough data to trim
+    // anything meaningful (fewer than 100 completions, since 1% of under 100 rounds to 0 excluded
+    // jobs and the number would just equal the untrimmed one).
+    private static string? TryFormatTrimmedThroughputLine(int totalCompleted, IReadOnlyList<CompletionSample> timeline)
+    {
+        if (totalCompleted < 100 || timeline.Count == 0) return null;
+
+        var trimmedTargetCount = (int)Math.Ceiling(totalCompleted * 0.99);
+        var sample = timeline.FirstOrDefault(s => s.CompletedCount >= trimmedTargetCount);
+        if (sample is null || sample.Elapsed <= TimeSpan.Zero) return null;
+
+        var excludedCount = totalCompleted - trimmedTargetCount;
+        var trimmedThroughputPerSecond = trimmedTargetCount / sample.Elapsed.TotalSeconds;
+        return $"- Trimmed throughput (excludes slowest 1%): **{trimmedThroughputPerSecond:F2} jobs/sec** " +
+               $"({trimmedTargetCount}/{totalCompleted} jobs completed within {sample.Elapsed}, excluding the {excludedCount} slowest)";
     }
 
     private static string FormatPercentileRow(string label, LatencyPercentiles p) =>

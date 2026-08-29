@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -338,7 +339,7 @@ public class JobsExecutionEngineTests
         var f = JobsExecutionEngineFixture.Create();
         await f.Engine.TryOnBoardingJobAsync(JobsExecutionEngineFixture.CreateInBucketJob());
 
-        f.Jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<BulkJobUpdateRequest>(), It.IsAny<bool>()))
+        f.Jobs.Setup(x => x.BulkUpdateAsync(It.IsAny<BulkJobUpdateRequest>(), It.IsAny<OperationThrottler>()))
             .ThrowsAsync(new Exception("db unavailable"));
 
         var act = async () => await f.Engine.FlushToMasterAsync();

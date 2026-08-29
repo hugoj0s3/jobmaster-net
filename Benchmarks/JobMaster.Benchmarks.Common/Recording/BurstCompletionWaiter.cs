@@ -22,17 +22,25 @@ public static class BurstCompletionWaiter
         int totalExpected,
         TimeSpan maxWait,
         TimeSpan pollInterval,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        DateTime? startedAtUtc = null)
     {
         var db = mux.GetDatabase();
-        var startedAtUtc = DateTime.UtcNow;
-        var deadline = startedAtUtc + maxWait;
+        // Burst mode anchors this to the timestamp captured before scheduling began (not "now"),
+        // so a job that finishes executing while the scheduling burst is still being fired -- which
+        // is normal, since jobs are immediate and execution doesn't wait for the whole burst to
+        // finish -- is attributed to the elapsed time it actually took, not folded invisibly into
+        // "elapsed 0". Without this, raw/trimmed throughput comparisons are unfair across runs (or
+        // frameworks) whose scheduling phase takes a different amount of time, since a slower
+        // scheduling phase silently hides more completed-during-scheduling work from the timeline.
+        startedAtUtc ??= DateTime.UtcNow;
+        var deadline = startedAtUtc.Value + maxWait;
         var timeline = new List<CompletionSample>();
 
         while (DateTime.UtcNow < deadline)
         {
             var completedCount = (int)await db.ListLengthAsync($"bench:{runId}:completions");
-            var elapsed = DateTime.UtcNow - startedAtUtc;
+            var elapsed = DateTime.UtcNow - startedAtUtc.Value;
             timeline.Add(new CompletionSample(elapsed, completedCount));
 
             if (completedCount >= totalExpected)
@@ -43,6 +51,6 @@ public static class BurstCompletionWaiter
             await Task.Delay(pollInterval, ct);
         }
 
-        return (DateTime.UtcNow - startedAtUtc, timeline);
+        return (DateTime.UtcNow - startedAtUtc.Value, timeline);
     }
 }

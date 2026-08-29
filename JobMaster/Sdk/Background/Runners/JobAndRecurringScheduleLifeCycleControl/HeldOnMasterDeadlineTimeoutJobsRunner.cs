@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.ScanPlans;
 using JobMaster.Sdk.Utils;
@@ -125,7 +126,8 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
 
             logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
-            var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(JobMasterConstants.MaxBatchSizeForBulkOperation);
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(maxBatchSize);
             foreach (var partition in partitions)
             {
                 if (ct.IsCancellationRequested || cutOffTime <= DateTime.UtcNow)

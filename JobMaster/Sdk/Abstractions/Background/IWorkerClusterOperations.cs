@@ -13,8 +13,8 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     void Upsert(JobRawModel jobRawModel);
     Task UpsertAsync(JobRawModel jobRawModel);
     
-    void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null);
-    Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null);
+    void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null);
+    Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null);
     
     Task AddJobExecutionAsync(JobExecution jobExecution);
     

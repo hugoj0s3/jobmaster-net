@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -56,7 +57,7 @@ public class JobMasterSchedulerClusterAwareTests
                 m.BucketId == bucket.Id &&
                 m.AgentWorkerId == bucket.AgentWorkerId &&
                 m.AgentConnectionId != null &&
-                m.AgentConnectionId.IdValue == agentConnId.IdValue), It.IsAny<bool>()))
+                m.AgentConnectionId.IdValue == agentConnId.IdValue), It.IsAny<OperationThrottler>()))
             .Returns("job-id-1")
             .Verifiable();
 
@@ -121,7 +122,7 @@ public class JobMasterSchedulerClusterAwareTests
         sut.Schedule(job);
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -207,7 +208,7 @@ public class JobMasterSchedulerClusterAwareTests
         await sut.ScheduleAsync(NewJob(clusterId));
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -377,7 +378,7 @@ public class JobMasterSchedulerClusterAwareTests
         sut.Schedule(NewJob(clusterId));
 
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<bool>()), Times.Never);
+        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     private static JobRawModel NewJob(string clusterId)

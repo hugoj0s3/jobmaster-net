@@ -1,5 +1,6 @@
 ﻿using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.StaticRecurringSchedules;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -194,13 +195,15 @@ internal static class RunnerFakes
             return Task.FromResult<IList<JobRawModel>>(fetched);
         }
 
-        public Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false)
+        public OperationThrottler AcquireThrottler { get; } = new(1);
+
+        public Task BulkUpdateAsync(BulkJobUpdateRequest request, OperationThrottler? throttler = null)
         {
             BulkUpdateRequests.Add(request);
             return Task.CompletedTask;
         }
 
-        public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false)
+        public Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, OperationThrottler? throttler = null)
         {
             foreach (var updated in jobs)
             {
@@ -215,14 +218,14 @@ internal static class RunnerFakes
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
 
-        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+        public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
         {
             var idx = Jobs.FindIndex(j => j.Id == jobRaw.Id);
             if (idx >= 0) Jobs[idx] = jobRaw;
             if (addJobExecution != null) JobExecutions.Add(addJobExecution);
         }
 
-        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+        public Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
         {
             Update(jobRaw, addJobExecution);
             return Task.CompletedTask;
@@ -599,7 +602,7 @@ internal static class RunnerFakes
         public bool HasJobsResult { get; set; } = false;
 
         public Task<IList<JobRawModel>> PullSavePendingJobsAsync(
-            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs)
+            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
         {
             var pulled = PendingQueue
                 .Where(j => j.BucketId == bucketId)
@@ -610,51 +613,51 @@ internal static class RunnerFakes
             return Task.FromResult<IList<JobRawModel>>(pulled);
         }
 
-        public string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true) { PendingQueue.Add(jobRaw); return "ok"; }
+        public string AddSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null) { PendingQueue.Add(jobRaw); return "ok"; }
 
-        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true)
+        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
         {
             RequeuedJobs.Add(jobRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
+        public Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
+        public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw)
+        public Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
         {
             RequeuedRecurSchedules.Add(recurringScheduleRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<string> AddForProcessingAsync(JobRawModel jobRaw)
+        public Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
+        public Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
         public Task<IList<JobRawModel>> PullForProcessingAsync(
-            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo)
+            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
         public Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(
-            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs)
+            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
         {
             var pulled = PendingRecurQueue.Take(numberOfJobs).ToList();
             foreach (var s in pulled) PendingRecurQueue.Remove(s);
             return Task.FromResult<IList<RecurringScheduleRawModel>>(pulled);
         }
 
-        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
+        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
             => Task.FromResult(HasJobsResult);
 
-        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
+        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
+        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
     }
 

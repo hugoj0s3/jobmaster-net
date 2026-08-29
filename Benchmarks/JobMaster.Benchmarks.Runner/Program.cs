@@ -28,6 +28,7 @@ Console.WriteLine($"Framework=jobmaster Db={dbLabel} Rate={options.TargetJobsPer
                    $"Executors={options.ExecutorCount} BucketsPerWorker={options.BucketsPerWorker} " +
                    $"BucketBufferSize={options.BucketBufferSize?.ToString() ?? "default"} SkipWarmUpTime={options.SkipWarmUpTime} " +
                    $"CoordinatorCount={options.CoordinatorCount} CoordinatorContainerCount={options.CoordinatorContainerCount} " +
+                   $"FullModeCount={options.FullModeCount} " +
                    $"TransferBatchSize={options.TransferBatchSize?.ToString() ?? "default"} " +
                    $"Duration={options.Duration} Smoke={options.Smoke}");
 if (options.StepDownJobsPerMinute.HasValue)
@@ -38,8 +39,8 @@ if (options.StepDownJobsPerMinute.HasValue)
 var runId = Guid.NewGuid().ToString("N")[..8];
 Console.WriteLine($"RunId={runId}");
 
-var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.ExecutorCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection, options.CoordinatorCount, options.CoordinatorContainerCount, options.TransferBatchSize, options.EnableDebugJsonl, options.ParallelismFactor);
-var databaseNames = JobMasterTopologyBuilder.AllDatabaseNames(options.UseNats, options.ExecutorCount, options.SharedAgentConnection);
+var workerSpecs = JobMasterTopologyBuilder.BuildWorkerSpecs(options.DbEngine, options.UseNats, options.ExecutorCount, runId, options.BucketsPerWorker, options.BucketBufferSize, options.SkipWarmUpTime, options.SharedAgentConnection, options.CoordinatorCount, options.CoordinatorContainerCount, options.TransferBatchSize, options.EnableDebugJsonl, options.ParallelismFactor, options.FullModeCount);
+var databaseNames = JobMasterTopologyBuilder.AllDatabaseNames(options.UseNats, options.ExecutorCount, options.SharedAgentConnection, options.FullModeCount);
 
 await using var environment = new BenchmarkContainerEnvironment();
 
@@ -50,7 +51,9 @@ await environment.StartAsync(
     dbEngine: options.DbEngine,
     includeNats: options.UseNats,
     dbNanoCpus: (long)(options.DbCpu * 1_000_000_000),
-    dbMemoryBytes: (long)(options.DbMemoryGb * 1024 * 1024 * 1024));
+    dbMemoryBytes: (long)(options.DbMemoryGb * 1024 * 1024 * 1024),
+    workerNanoCpus: (long)(options.WorkerCpu * 1_000_000_000),
+    workerMemoryBytes: (long)(options.WorkerMemoryGb * 1024 * 1024 * 1024));
 Console.WriteLine("Containers ready.");
 
 if (options.WarmupDelay > TimeSpan.Zero)
@@ -76,6 +79,10 @@ using var dockerClient = new DockerClientConfiguration().CreateClient();
 var statsSampler = new ContainerStatsSampler(dockerClient);
 
 var allContainers = new List<(string Name, string Id)> { (BenchmarkContainerEnvironment.DbNetworkAlias, environment.DbContainerForOps.Id) };
+if (environment.NatsContainer is not null)
+{
+    allContainers.Add((BenchmarkContainerEnvironment.NatsNetworkAlias, environment.NatsContainer.Id));
+}
 allContainers.AddRange(environment.WorkerContainers.Select((c, i) => (workerSpecs[i].Name, c.Id)));
 
 var statsSamples = new List<ContainerStatsSample>();
@@ -163,7 +170,7 @@ if (isBurst)
     // originally-requested total would spin until BurstMaxWait every time, even though everything
     // that could complete already did.
     var totalActuallyScheduled = (int)await mux.GetDatabase().HashLengthAsync($"bench:{runId}:expected");
-    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2));
+    var (waited, timeline) = await BurstCompletionWaiter.WaitAsync(mux, runId, totalActuallyScheduled, options.BurstMaxWait, TimeSpan.FromSeconds(2), startedAtUtc: startedAtUtc);
     completionTimeline = timeline;
     Console.WriteLine($"Burst drain wait finished after {waited} (cap was {options.BurstMaxWait}).");
 }
@@ -304,7 +311,7 @@ if (options.EnableDebugJsonl)
     // multiple files, and now that coordinators can span multiple containers, each one gets its own
     // set of chunk files (disambiguated by prefixing the container name below).
     var debugJsonlContainers = environment.WorkerContainers.Zip(workerSpecs)
-        .Where(x => x.Second.Name.StartsWith("coordinator-") || x.Second.Name == "drainer");
+        .Where(x => x.Second.Name.StartsWith("coordinator-") || x.Second.Name == "drainer" || x.Second.Name.StartsWith("full-"));
     foreach (var (container, spec) in debugJsonlContainers)
     {
         try

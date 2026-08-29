@@ -7,10 +7,10 @@ namespace JobMaster.Sdk.Abstractions.Services;
 internal interface IJobMasterSchedulerClusterAware : IJobMasterClusterAwareService
 {
     void Schedule(RecurringScheduleRawModel rawModel);
-    void Schedule(JobRawModel job, bool notifyAgent = true);
+    void Schedule(JobRawModel job);
 
     Task ScheduleAsync(RecurringScheduleRawModel rawModel);
-    Task ScheduleAsync(JobRawModel job, bool notifyAgent = true);
+    Task ScheduleAsync(JobRawModel job);
     Task BulkScheduleAsync(List<JobRawModel> jobs);
     Task<bool> CancelJobAsync(Guid jobId);
     bool CancelJob(Guid id);

@@ -88,11 +88,10 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         // Create or get ClusterConnectionConfig
         var clusterCnnConfig = JobMasterClusterConnectionConfig.Create(
-            finalClusterId, 
-            finalClusterRepoType, 
-            finalClusterConnString, 
-            isDefault: clusterDefinition.IsDefault, 
-            runtimeDbOperationThrottleLimit: clusterDefinition.RuntimeDbOperationLimit);
+            finalClusterId,
+            finalClusterRepoType,
+            finalClusterConnString,
+            isDefault: clusterDefinition.IsDefault);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
 
@@ -151,11 +150,10 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             }
             
             clusterCnnConfig.AddAgentConnectionString(
-                agentConnDefinition.AgentConnectionName, 
-                agentConnDefinition.AgentConnString ?? string.Empty, 
-                agentConnDefinition.AgentRepoType!, 
-                agentConnDefinition.AgentAdditionalConnConfig, 
-                agentConnDefinition.RuntimeDbOperationLimit);
+                agentConnDefinition.AgentConnectionName,
+                agentConnDefinition.AgentConnString ?? string.Empty,
+                agentConnDefinition.AgentRepoType!,
+                agentConnDefinition.AgentAdditionalConnConfig);
         }
         
         if (clusterDefinition.IsStandalone == true)
@@ -328,12 +326,6 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     public IClusterConfigSelector DisablePriority(JobMasterPriority priority)
     {
         clusterDefinition.DisablePriority(priority);
-        return this;
-    }
-
-    public IClusterConfigSelector ClusterRuntimeDbOperationLimit(int runtimeDbOperationThrottleLimit)
-    {
-        this.clusterDefinition.RuntimeDbOperationLimit = runtimeDbOperationThrottleLimit;
         return this;
     }
 

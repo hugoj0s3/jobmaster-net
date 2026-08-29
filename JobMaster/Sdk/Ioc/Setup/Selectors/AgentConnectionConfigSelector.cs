@@ -38,12 +38,6 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         return this;
     }
 
-    public IAgentConnectionConfigSelector RuntimeDbOperationLimit(int limit)
-    {
-        def.RuntimeDbOperationLimit = limit;
-        return this;
-    }
-
     public IAgentConnectionConfigSelector AgentAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig)
     {
         def.AgentAdditionalConnConfig = additionalConnConfig;

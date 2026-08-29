@@ -62,7 +62,6 @@ internal static class JobMasterConstants
     
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(10);
 
-    public const int MaxBatchSizeForBulkOperation = 50;
     public const int MaxAllowedRetries = 10;
 
     /// <summary>Max distinct agent connections dispatched to concurrently -- each is a separate DB/broker.</summary>

@@ -6,7 +6,6 @@ namespace JobMaster.NatsJetStream;
 internal class NatsJetStreamConstants
 {
     public const string RepositoryTypeId = "NatsJetStream";
-    public const int DefaultDbOperationThrottleLimitForAgent = 250;
     
     public const string Prefix = $"jobmaster.";
     

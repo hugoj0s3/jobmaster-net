@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -16,37 +17,34 @@ namespace JobMaster.Sdk.Services.Agents;
 internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
 {
     private IAgentComponentFactory agentComponentFactory = null!;
-    private readonly IJobMasterRuntime jobMasterRuntime;
     private readonly IJobMasterLogger logger;
 
     public AgentJobsDispatcherService(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IAgentComponentFactory agentComponentFactory,
-        IJobMasterRuntime jobMasterRuntime,
         IJobMasterLogger logger) : base(clusterConnectionConfig)
     {
         this.agentComponentFactory = agentComponentFactory;
-        this.jobMasterRuntime = jobMasterRuntime;
         this.logger = logger;
     }
 
-    public string AddSavePendingJob(JobRawModel jobRaw, bool notifyAgent = true)
+    public string AddSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        return repository.PushSavePendingJob(jobRaw);
+        return ResolveThrottler(throttler, jobRaw.AgentConnectionId!).Exec(() => repository.PushSavePendingJob(jobRaw));
     }
 
-    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, bool notifyAgent = true)
+    public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        return await repository.PushSavePendingJobAsync(jobRaw);
+        return await ResolveThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushSavePendingJobAsync(jobRaw));
     }
 
-    public async Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
+    public async Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
     {
         if (jobRawModels.Count == 0)
         {
@@ -59,42 +57,37 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         }
 
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
 
         logger.Debug($"Bulk scheduling jobs. partition size: {jobRawModels.Count} for bucket {bucketId}",
             JobMasterLogCategory.Job, jobRawModels[0].Id);
-        return await throttler.ExecAsync(() => repository.BulkPushSavePendingJobAsync(bucketId, jobRawModels));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushSavePendingJobAsync(bucketId, jobRawModels));
     }
 
-    public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
+    public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
     {
         ValidateRecurringScheduleAssignedToBucket(recurringScheduleRaw);
 
         var repository = GetJobDispatcherRepository(recurringScheduleRaw.AgentConnectionId!);
-        var throttler = GetOperationLimiter(recurringScheduleRaw.AgentConnectionId!);
-        return throttler.Exec(() => repository.PushForSaving(recurringScheduleRaw));
+        return ResolveThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).Exec(() => repository.PushForSaving(recurringScheduleRaw));
     }
 
-    public async Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw)
+    public async Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
     {
         ValidateRecurringScheduleAssignedToBucket(recurringScheduleRaw);
 
         var repository = GetJobDispatcherRepository(recurringScheduleRaw.AgentConnectionId!);
-        var throttler = GetOperationLimiter(recurringScheduleRaw.AgentConnectionId!);
-        return await throttler.ExecAsync(() => repository.PushForSavingAsync(recurringScheduleRaw));
+        return await ResolveThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).ExecAsync(() => repository.PushForSavingAsync(recurringScheduleRaw));
     }
 
-    public async Task<string> AddForProcessingAsync(JobRawModel jobRaw)
+    public async Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
     {
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-
-        var throttler = GetOperationLimiter(jobRaw.AgentConnectionId!);
-        return await throttler.ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
+        return await ResolveThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
     }
 
-    public async Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels)
+    public async Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
     {
         if (jobRawModels.Count == 0)
         {
@@ -107,56 +100,49 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         }
 
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
 
         logger.Debug($"Bulk dispatching jobs for processing. partition size: {jobRawModels.Count} for bucket {bucketId}",
             JobMasterLogCategory.Job, jobRawModels[0].Id);
-        return await throttler.ExecAsync(() => repository.BulkPushForProcessingAsync(bucketId, jobRawModels));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushForProcessingAsync(bucketId, jobRawModels));
     }
 
     public async Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId,
-        int numberOfJobs, DateTime? scheduleTo)
+        int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.PullForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
     }
 
     public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(AgentConnectionId agentConnectionId,
-        string bucketId, int numberOfJobs)
+        string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.PullSavePendingJobsAsync(bucketId, numberOfJobs));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingJobsAsync(bucketId, numberOfJobs));
     }
 
     public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(
-        AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs)
+        AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.PullSavePendingRecurAsync(bucketId, numberOfJobs));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingRecurAsync(bucketId, numberOfJobs));
     }
 
-    public async Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
+    public async Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        var throttler = GetOperationLimiter(agentConnectionId);
-        return await throttler.ExecAsync(() => repository.HasJobsAsync(bucketId!));
+        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.HasJobsAsync(bucketId!));
     }
 
-    public async Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
+    public async Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId!);
-        var throttler = GetOperationLimiter(agentConnectionId!);
-        await throttler.ExecAsync(() => repository.CreateBucketAsync(bucketId!));
+        await ResolveThrottler(throttler, agentConnectionId!).ExecAsync(() => repository.CreateBucketAsync(bucketId!));
     }
 
-    public async Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
+    public async Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId!);
-        var throttler = GetOperationLimiter(agentConnectionId!);
-        await throttler.ExecAsync(() => repository.DestroyBucketAsync(bucketId!));
+        await ResolveThrottler(throttler, agentConnectionId!).ExecAsync(() => repository.DestroyBucketAsync(bucketId!));
     }
 
     private IAgentJobsDispatcherRepository GetJobDispatcherRepository(AgentConnectionId agentConnectionId)
@@ -164,9 +150,13 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         return agentComponentFactory.GetRepository(agentConnectionId);
     }
 
-    private OperationThrottler GetOperationLimiter(AgentConnectionId agentConnectionId)
+    // Every dispatcher call (scheduling and internal-process alike) defaults to this same
+    // internal-process, per-agent-connection throttler unless a caller passes its own -- e.g.
+    // JobMasterSchedulerClusterAware passes an unbounded throttler explicitly, since it's always
+    // external-facing and shouldn't be artificially gated by app-level throttling.
+    private OperationThrottler ResolveThrottler(OperationThrottler? throttler, AgentConnectionId agentConnectionId)
     {
-        return jobMasterRuntime.GetOperationLimiterForAgent(ClusterConnConfig.ClusterId, agentConnectionId.IdValue);
+        return throttler ?? OperationThrottlerSettingsFactory.GetInternalAgentThrottler(agentConnectionId.IdValue);
     }
 
     private void ValidateJobAssignedToBucket(JobRawModel jobRaw)

@@ -125,7 +125,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         {
             logger.Error($"Failed to bulk dispatch {toBulkDispatch.Count} jobs to bucket {bucket.Id}.", JobMasterLogCategory.Job, toBulkDispatch[0].Id, exception: ex);
             var idsToHeldOnMaster = toBulkDispatch.Select(x => x.Id).ToList();
-            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), useAcquireThrottler: true);
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), masterJobsService.AcquireThrottler);
             throw;
         }
     }
@@ -199,14 +199,14 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
-    public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null)
+    public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null)
     {
-        masterJobsService.Update(jobRawModel, jobExecution);
+        masterJobsService.Update(jobRawModel, jobExecution, throttler);
     }
 
-    public async Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null)
+    public async Task UpdateAsync(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null)
     {
-        await masterJobsService.UpdateAsync(jobRawModel, jobExecution);
+        await masterJobsService.UpdateAsync(jobRawModel, jobExecution, throttler);
     }
 
     public Task AddJobExecutionAsync(JobExecution jobExecution)

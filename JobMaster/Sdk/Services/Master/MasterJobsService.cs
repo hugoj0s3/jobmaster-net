@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
@@ -26,20 +27,17 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     // coordinator's bulk-update phase from overlapping with another's acquire; the general,
     // much-higher-capacity operationThrottler would otherwise let those run fully concurrently.
     private OperationThrottler acquireOperationThrottler = new (1, 5000);
-    private RetryDeadlockPolicy retryDeadlockPolicy;
 
     public MasterJobsService(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IMasterJobsRepository masterJobsRepository,
         IJobMasterLogger logger,
-        IJobMasterRuntime runtime,
         IKnownExceptionIdentifier exceptionIdentifier) : base(clusterConnectionConfig)
     {
         this.masterJobsRepository = masterJobsRepository;
         this.logger = logger;
         this.exceptionIdentifier = exceptionIdentifier;
-        this.operationThrottler = runtime.GetOperationLimiterForCluster(clusterConnectionConfig.ClusterId);
-        this.retryDeadlockPolicy = new RetryDeadlockPolicy(this.exceptionIdentifier, TimeSpan.FromMilliseconds(250), 3);
+        this.operationThrottler = OperationThrottlerSettingsFactory.GetMasterThrottler(clusterConnectionConfig.ClusterId);
     }
 
     public async Task AddAsync(JobRawModel jobRaw)
@@ -86,13 +84,13 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         });
     }
 
-    public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
     {
         ValidateJobExecutionOutcome(jobRaw, addJobExecution);
 
         try
         {
-            await operationThrottler.ExecAsync(() => masterJobsRepository.UpdateAsync(jobRaw, addJobExecution));
+            await (throttler ?? operationThrottler).ExecAsync(() => masterJobsRepository.UpdateAsync(jobRaw, addJobExecution));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -101,13 +99,13 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         }
     }
 
-    public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null)
+    public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
     {
         ValidateJobExecutionOutcome(jobRaw, addJobExecution);
-        
+
         try
         {
-            operationThrottler.Exec(() => masterJobsRepository.Update(jobRaw, addJobExecution));
+            (throttler ?? operationThrottler).Exec(() => masterJobsRepository.Update(jobRaw, addJobExecution));
         }
         catch (JobMasterVersionConflictException e)
         {
@@ -130,7 +128,19 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
     public async Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, DateTime expiresAtUtc)
     {
         var partitionLockId = JobMasterRandomUtil.NewGuid7();
-        return await retryDeadlockPolicy.ExecAsync(() => acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc)));
+        try
+        {
+            return await acquireOperationThrottler.ExecAsync(() => masterJobsRepository.AcquireAndFetchAsync(queryCriteria, partitionLockId, expiresAtUtc));
+        }
+        catch (Exception ex) when (exceptionIdentifier.Identify(ex) == JobMasterKnownExceptionId.Deadlock)
+        {
+            // A deadlock here means the claim transaction was rolled back before it committed any
+            // row locks, so no job was actually acquired under partitionLockId -- functionally
+            // identical to a tick that simply found nothing to claim. Returning empty instead of
+            // propagating lets the caller's normal poll-and-retry-next-tick behavior handle it,
+            // rather than surfacing an exception for an outcome the system already treats as routine.
+            return Array.Empty<JobRawModel>();
+        }
     }
 
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
@@ -195,18 +205,18 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         return job.Version == expectedVersion;
     }
 
-    public async Task BulkUpdateAsync(BulkJobUpdateRequest request, bool useAcquireThrottler = false)
+    public OperationThrottler AcquireThrottler => acquireOperationThrottler;
+
+    public async Task BulkUpdateAsync(BulkJobUpdateRequest request, OperationThrottler? throttler = null)
     {
         if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
-        var throttler = useAcquireThrottler ? acquireOperationThrottler : operationThrottler;
-        await throttler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
+        await (throttler ?? operationThrottler).ExecAsync(() => masterJobsRepository.BulkUpdateAsync(request));
     }
 
-    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, bool useAcquireThrottler = false)
+    public async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs, OperationThrottler? throttler = null)
     {
         if (jobs.Count == 0) return Array.Empty<JobRawModel>();
-        var throttler = useAcquireThrottler ? acquireOperationThrottler : operationThrottler;
-        return await throttler.ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
+        return await (throttler ?? operationThrottler).ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
     }
     
     
@@ -227,11 +237,18 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             throw new ArgumentException("Job execution outcome must be failed when job status is failed.");
         }
         
-        if (addJobExecution != null && 
-            addJobExecution.Outcome != JobExecutionOutcomeStatus.Succeeded 
-            && jobRaw.Status != JobMasterJobStatus.Failed)
+        // A Failed execution outcome is valid alongside two job statuses, not just Failed:
+        // TryRetry() (JobRawModel.cs) intentionally sets Status back to OnMaster -- not
+        // Failed -- when retries remain, so the job is picked up fresh from the master queue.
+        // That's a per-attempt failure on a job that isn't done retrying yet, not a
+        // contradiction; only a Failed outcome paired with some other, genuinely inconsistent
+        // status (e.g. Succeeded, InBucket) should be rejected here.
+        if (addJobExecution != null &&
+            addJobExecution.Outcome != JobExecutionOutcomeStatus.Succeeded
+            && jobRaw.Status != JobMasterJobStatus.Failed
+            && jobRaw.Status != JobMasterJobStatus.OnMaster)
         {
-            throw new ArgumentException("Job execution outcome must be succeeded or failed when job status is not failed.");
+            throw new ArgumentException("Job execution outcome must be succeeded, or the job must be Failed or OnMaster (retry pending), when the execution outcome is not succeeded.");
         }
         
         addJobExecution?.EnsureFinalized();

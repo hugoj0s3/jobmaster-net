@@ -7,11 +7,13 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -53,7 +55,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
     
-    public async Task ScheduleAsync(JobRawModel rawModel, bool notifyAgent = true)
+    public async Task ScheduleAsync(JobRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -73,7 +75,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, notifyAgent);
+        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
     }
 
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
@@ -112,12 +114,14 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             var bucketId = bucketGroup.Key;
             var bucketJobs = bucketGroup.ToList();
             var agentConnectionId = bucketJobs[0].AgentConnectionId!;
-            foreach (var partition in bucketJobs.Partition(JobMasterConstants.MaxBatchSizeForBulkOperation))
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(agentConnectionId.IdValue);
+            foreach (var partition in bucketJobs.Partition(maxBatchSize))
             {
                 var partitionJobs = partition.ToList();
                 logger.Debug($"Bulk scheduling jobs. partition size: {partitionJobs.Count} for bucket {bucketId}",
                     JobMasterLogCategory.Job, partitionJobs.First().Id);
-                await agentJobsDispatcherService.BulkAddSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs);
+                await agentJobsDispatcherService.BulkAddSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs,
+                    SchedulingThrottlerFor(agentConnectionId));
             }
         }
     }
@@ -142,10 +146,10 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingRecur(rawModel);
+        agentJobsDispatcherService.AddSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
     }
 
-    public void Schedule(JobRawModel job, bool notifyAgent = true)
+    public void Schedule(JobRawModel job)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -165,7 +169,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         job.AssignSavePendingJobToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingJob(job, notifyAgent);
+        agentJobsDispatcherService.AddSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
     }
 
     public async Task ScheduleAsync(RecurringScheduleRawModel rawModel)
@@ -187,7 +191,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel);
+        await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
     }
 
     public async Task<bool> CancelJobAsync(Guid jobId)
@@ -307,6 +311,9 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         
         return true;
     }
+
+    private OperationThrottler SchedulingThrottlerFor(AgentConnectionId agentConnectionId) =>
+        OperationThrottlerSettingsFactory.GetSchedulingAgentThrottler(agentConnectionId.IdValue);
 
     private void EnforceSizeLimit(JobRawModel job)
     {
