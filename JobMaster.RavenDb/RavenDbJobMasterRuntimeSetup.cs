@@ -22,14 +22,14 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
     {
         OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
             RavenDbRepositoryConstants.RepositoryTypeId,
-            maxBatchSize: 50,
-            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 2000));
+            maxBatchSize: 250,
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 5000));
 
         OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
             RavenDbRepositoryConstants.RepositoryTypeId,
-            maxBatchSize: 50,
-            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 1000),
-            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25, 250));
+            maxBatchSize: 250,
+            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(5, 2500),
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(50, 250));
 
         var allClusterConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
             .Where(c => c.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
@@ -60,7 +60,7 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         {
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(agentConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
-            var store = storeManager.GetOrCreateStore(agentConfig.ConnectionString, agentConfig.GetCertificate());
+            var store = storeManager.GetOrCreateStore(agentConfig.ConnectionString, agentConfig.GetCertificate(), agentConfig.GetRequestTimeout(), agentConfig.GetPooledConnectionLifetime(), agentConfig.GetPooledConnectionIdleTimeout());
             var collectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
             await RavenDbMessageIndexes.DeployAsync(store, collectionName);
         }
@@ -72,7 +72,7 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         {
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
-            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate());
+            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate(), clusterConfig.GetRequestTimeout(), clusterConfig.GetPooledConnectionLifetime(), clusterConfig.GetPooledConnectionIdleTimeout());
             var collectionName = clusterConfig.GetCollectionPrefix() + RavenDbCollectionNames.Job;
             await RavenDbJobIndexes.DeployAsync(store, collectionName);
         }
@@ -83,7 +83,7 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         {
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
-            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate());
+            var store = storeManager.GetOrCreateStore(clusterConfig.ConnectionString, clusterConfig.GetCertificate(), clusterConfig.GetRequestTimeout(), clusterConfig.GetPooledConnectionLifetime(), clusterConfig.GetPooledConnectionIdleTimeout());
 
             await store.Maintenance.SendAsync(new ConfigureExpirationOperation(new ExpirationConfiguration
             {

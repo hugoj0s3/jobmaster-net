@@ -47,7 +47,7 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         IRavenDbDocumentStoreManager storeManager,
         IJobMasterLogger logger) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate(), clusterConnectionConfig.GetRequestTimeout(), clusterConnectionConfig.GetPooledConnectionLifetime(), clusterConnectionConfig.GetPooledConnectionIdleTimeout());
         this.logger = logger;
     }
 

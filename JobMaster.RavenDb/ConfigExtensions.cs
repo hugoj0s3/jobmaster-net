@@ -15,6 +15,17 @@ public static class ConfigExtensions
     /// </summary>
     /// <param name="connectionString">Format: "Urls=url1,url2;Database=name".</param>
     /// <param name="certificate">Client certificate for RavenDB's X.509 authentication, if the server requires one.</param>
+    /// <param name="requestTimeout">Overrides RavenDB.Client's own default HTTP request timeout for every
+    /// operation against this connection. Left unset, RavenDB.Client's own default applies (a very
+    /// generous 12-hour ceiling -- not a meaningful per-request timeout in practice).</param>
+    /// <param name="pooledConnectionLifetime">Forces RavenDB.Client's underlying HTTP connection pool to
+    /// proactively recycle a connection after this long, regardless of activity. Left unset, .NET's own
+    /// <c>SocketsHttpHandler</c> default applies (<see cref="Timeout.InfiniteTimeSpan"/> -- connections are
+    /// never proactively recycled), which can leave a pooled connection alive long enough for the server
+    /// to have already silently closed its end, surfacing as a client-side "Connection reset by peer" on
+    /// next use.</param>
+    /// <param name="pooledConnectionIdleTimeout">Closes a pooled connection that's been idle this long.
+    /// Left unset, .NET's own <c>SocketsHttpHandler</c> default applies.</param>
     /// <param name="collectionPrefix">Custom collection-name prefix for all JobMaster collections. Defaults to <c>JM_</c>.</param>
     /// <param name="enableDocumentExpiration">Opts the master database into RavenDB's native
     /// document-expiration background job. Disabled by default; purely a housekeeping extra, not required
@@ -25,6 +36,9 @@ public static class ConfigExtensions
         this T clusterConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null,
         string? collectionPrefix = null,
         bool enableDocumentExpiration = false,
         TimeSpan? documentExpirationFrequency = null)
@@ -36,6 +50,21 @@ public static class ConfigExtensions
         if (certificate != null)
         {
             clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey, certificate);
+        }
+
+        if (requestTimeout.HasValue)
+        {
+            clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey, (long)requestTimeout.Value.TotalMilliseconds);
+        }
+
+        if (pooledConnectionLifetime.HasValue)
+        {
+            clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey, (long)pooledConnectionLifetime.Value.TotalMilliseconds);
+        }
+
+        if (pooledConnectionIdleTimeout.HasValue)
+        {
+            clusterConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey, (long)pooledConnectionIdleTimeout.Value.TotalMilliseconds);
         }
 
         if (collectionPrefix != null)
@@ -65,6 +94,9 @@ public static class ConfigExtensions
         this IAgentConnectionConfigSelector agentConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null,
         string? collectionPrefix = null)
     {
         agentConfigSelector.AgentConnString(connectionString);
@@ -73,6 +105,21 @@ public static class ConfigExtensions
         if (certificate != null)
         {
             agentConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey, certificate);
+        }
+
+        if (requestTimeout.HasValue)
+        {
+            agentConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey, (long)requestTimeout.Value.TotalMilliseconds);
+        }
+
+        if (pooledConnectionLifetime.HasValue)
+        {
+            agentConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey, (long)pooledConnectionLifetime.Value.TotalMilliseconds);
+        }
+
+        if (pooledConnectionIdleTimeout.HasValue)
+        {
+            agentConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey, (long)pooledConnectionIdleTimeout.Value.TotalMilliseconds);
         }
 
         if (collectionPrefix != null)
@@ -106,6 +153,24 @@ public static class ConfigExtensions
         return clusterConnectionConfig.AdditionalConnConfig.TryGetValue<X509Certificate2>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey);
     }
 
+    internal static TimeSpan? GetRequestTimeout(this JobMasterClusterConnectionConfig clusterConnectionConfig)
+    {
+        var ms = clusterConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
+    }
+
+    internal static TimeSpan? GetPooledConnectionLifetime(this JobMasterClusterConnectionConfig clusterConnectionConfig)
+    {
+        var ms = clusterConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
+    }
+
+    internal static TimeSpan? GetPooledConnectionIdleTimeout(this JobMasterClusterConnectionConfig clusterConnectionConfig)
+    {
+        var ms = clusterConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
+    }
+
     // Agent-side counterparts -- RavenDbAgentFingerprintResolver/RavenDbRawMessagesDispatcherRepository
     // only ever have a JobMasterAgentConnectionConfig in scope (via Initialize), never a
     // JobMasterClusterConnectionConfig.
@@ -118,5 +183,23 @@ public static class ConfigExtensions
     internal static X509Certificate2? GetCertificate(this JobMasterAgentConnectionConfig agentConnectionConfig)
     {
         return agentConnectionConfig.AdditionalConnConfig.TryGetValue<X509Certificate2>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey);
+    }
+
+    internal static TimeSpan? GetRequestTimeout(this JobMasterAgentConnectionConfig agentConnectionConfig)
+    {
+        var ms = agentConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
+    }
+
+    internal static TimeSpan? GetPooledConnectionLifetime(this JobMasterAgentConnectionConfig agentConnectionConfig)
+    {
+        var ms = agentConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
+    }
+
+    internal static TimeSpan? GetPooledConnectionIdleTimeout(this JobMasterAgentConnectionConfig agentConnectionConfig)
+    {
+        var ms = agentConnectionConfig.AdditionalConnConfig.TryGetValue<long?>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey);
+        return ms.HasValue ? TimeSpan.FromMilliseconds(ms.Value) : null;
     }
 }

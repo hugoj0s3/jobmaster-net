@@ -37,7 +37,7 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
 
     public void Initialize(JobMasterAgentConnectionConfig config)
     {
-        store = storeManager.GetOrCreateStore(config.ConnectionString, config.GetCertificate());
+        store = storeManager.GetOrCreateStore(config.ConnectionString, config.GetCertificate(), config.GetRequestTimeout(), config.GetPooledConnectionLifetime(), config.GetPooledConnectionIdleTimeout());
         prefix = config.GetCollectionPrefix();
     }
 

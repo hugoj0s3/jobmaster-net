@@ -103,17 +103,25 @@ public static class JobMasterTopologyBuilder
         // every executor -- buckets (not separate databases) are the real partition unit between
         // workers, so this is architecturally valid; it exists to isolate "database count" as its own
         // benchmark variable, separate from bucket count.
+        var ravenDbAgentConnectionOptions = dbEngine == DbEngine.RavenDB
+            ? new Dictionary<string, object>
+            {
+                ["pooledConnectionLifetimeMs"] = 120000,
+                ["pooledConnectionIdleTimeoutMs"] = 60000,
+            }
+            : null;
+
         var allAgentConnections = sharedAgentConnection
             ? new object[]
             {
                 useNats
                     ? new { Name = SharedAgentConnectionName, RepositoryType = "NatsJetStream", ConnectionString = NatsConnectionString() }
-                    : new { Name = SharedAgentConnectionName, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, "benchmark_agent") },
+                    : new { Name = SharedAgentConnectionName, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, "benchmark_agent"), ConnectionOptions = ravenDbAgentConnectionOptions },
             }
             : drainerNames.Concat(fullModeAgentConnectionNames).Concat(executorAgentConnectionNames)
                 .Select(name => useNats
                     ? (object)new { Name = name, RepositoryType = "NatsJetStream", ConnectionString = NatsConnectionString() }
-                    : new { Name = name, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, DatabaseNameFor(name)) })
+                    : new { Name = name, RepositoryType = dbEngine.ToString(), ConnectionString = BuildConnectionString(dbEngine, DatabaseNameFor(name)), ConnectionOptions = ravenDbAgentConnectionOptions })
                 .ToArray();
 
         // Full mode -- AgentWorkerMode.Full, the SDK's built-in "everything in one process" role:
@@ -199,7 +207,14 @@ public static class JobMasterTopologyBuilder
             DisabledPriorities,
             DebugJsonlFilePath = enableDebugJsonl ? DebugJsonlContainerPath : null,
             AgentConnections = allAgentConnections,
-            Workers = workers
+            Workers = workers,
+            ConnectionOptions = dbEngine == DbEngine.RavenDB
+                ? new Dictionary<string, object>
+                {
+                    ["pooledConnectionLifetimeMs"] = 120000,
+                    ["pooledConnectionIdleTimeoutMs"] = 60000,
+                }
+                : null
         };
 
         var clusterConfigsJson = JsonSerializer.Serialize(new[] { clusterConfig });

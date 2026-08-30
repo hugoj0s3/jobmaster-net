@@ -12,7 +12,8 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
 {
     private static readonly HashSet<string> ClusterKnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "certificateFile", "certificatePassword", "collectionPrefix", "enableDocumentExpiration",
+        "certificateFile", "certificatePassword", "requestTimeoutMs", "pooledConnectionLifetimeMs",
+        "pooledConnectionIdleTimeoutMs", "collectionPrefix", "enableDocumentExpiration",
         "documentExpirationFrequencySeconds",
     };
 
@@ -20,7 +21,8 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
     // agent-side overload not exposing that parameter either.
     private static readonly HashSet<string> AgentKnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {
-        "certificateFile", "certificatePassword", "collectionPrefix",
+        "certificateFile", "certificatePassword", "requestTimeoutMs", "pooledConnectionLifetimeMs",
+        "pooledConnectionIdleTimeoutMs", "collectionPrefix",
     };
 
     public string RepoType => RavenDbRepositoryConstants.RepositoryTypeId;
@@ -33,6 +35,24 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
         if (certificate != null)
         {
             selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey, certificate);
+        }
+
+        var requestTimeoutMs = TryParseMsOption(options, "requestTimeoutMs");
+        if (requestTimeoutMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey, requestTimeoutMs.Value);
+        }
+
+        var pooledConnectionLifetimeMs = TryParseMsOption(options, "pooledConnectionLifetimeMs");
+        if (pooledConnectionLifetimeMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey, pooledConnectionLifetimeMs.Value);
+        }
+
+        var pooledConnectionIdleTimeoutMs = TryParseMsOption(options, "pooledConnectionIdleTimeoutMs");
+        if (pooledConnectionIdleTimeoutMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey, pooledConnectionIdleTimeoutMs.Value);
         }
 
         var collectionPrefix = GetString(options, "collectionPrefix");
@@ -72,6 +92,24 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
             selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CertificateKey, certificate);
         }
 
+        var requestTimeoutMs = TryParseMsOption(options, "requestTimeoutMs");
+        if (requestTimeoutMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.RequestTimeoutKey, requestTimeoutMs.Value);
+        }
+
+        var pooledConnectionLifetimeMs = TryParseMsOption(options, "pooledConnectionLifetimeMs");
+        if (pooledConnectionLifetimeMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionLifetimeKey, pooledConnectionLifetimeMs.Value);
+        }
+
+        var pooledConnectionIdleTimeoutMs = TryParseMsOption(options, "pooledConnectionIdleTimeoutMs");
+        if (pooledConnectionIdleTimeoutMs.HasValue)
+        {
+            selector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.PooledConnectionIdleTimeoutKey, pooledConnectionIdleTimeoutMs.Value);
+        }
+
         var collectionPrefix = GetString(options, "collectionPrefix");
         if (collectionPrefix != null)
         {
@@ -104,4 +142,20 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
 
     private static string? GetString(IDictionary<string, object> options, string key)
         => options.TryGetValue(key, out var value) ? value?.ToString() : null;
+
+    private static long? TryParseMsOption(IDictionary<string, object> options, string key)
+    {
+        var raw = GetString(options, key);
+        if (raw == null)
+        {
+            return null;
+        }
+
+        if (!long.TryParse(raw, out var ms))
+        {
+            throw new ArgumentException($"{key} must be an integer number of milliseconds. Received: '{raw}'.");
+        }
+
+        return ms;
+    }
 }

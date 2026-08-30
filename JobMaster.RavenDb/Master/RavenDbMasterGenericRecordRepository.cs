@@ -39,7 +39,7 @@ internal sealed class RavenDbMasterGenericRecordRepository : JobMasterClusterAwa
         JobMasterClusterConnectionConfig clusterConnectionConfig,
         IRavenDbDocumentStoreManager storeManager) : base(clusterConnectionConfig)
     {
-        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate());
+        store = storeManager.GetOrCreateStore(clusterConnectionConfig.ConnectionString, clusterConnectionConfig.GetCertificate(), clusterConnectionConfig.GetRequestTimeout(), clusterConnectionConfig.GetPooledConnectionLifetime(), clusterConnectionConfig.GetPooledConnectionIdleTimeout());
     }
 
     public override string MasterRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;

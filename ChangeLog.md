@@ -6,6 +6,12 @@
 
 ---
 
+## JobMaster 0.11.0-alpha
+
+### Changed
+
+- **DB operation concurrency limits and bulk-batch sizes are now tuned per database technology** — Each provider (Postgres, SqlServer, MySql, RavenDB, NatsJetStream) now applies its own concurrency and batch-size settings, tuned to that technology, instead of every provider sharing the same defaults. You may notice different throughput/latency characteristics after upgrading, especially for RavenDB (larger batch sizes) and NatsJetStream (retuned concurrency) — no configuration changes are required, this is an internal default-tuning improvement.
+
 ## JobMaster 0.0.10-alpha.2
 
 ### Added

@@ -18,4 +18,10 @@ internal static class RavenDbConfigKeys
     public static readonly TimeSpan DefaultDocumentExpirationFrequency = TimeSpan.FromHours(1);
 
     public static string CertificateKey => "Certificate";
+
+    public static string RequestTimeoutKey => "RequestTimeout";
+
+    public static string PooledConnectionLifetimeKey => "PooledConnectionLifetime";
+
+    public static string PooledConnectionIdleTimeoutKey => "PooledConnectionIdleTimeout";
 }

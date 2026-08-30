@@ -11,9 +11,24 @@ namespace JobMaster.RavenDb.Connections;
 /// </summary>
 internal interface IRavenDbDocumentStoreManager
 {
-    IDocumentStore GetOrCreateStore(string connectionString, X509Certificate2? certificate = null);
+    IDocumentStore GetOrCreateStore(
+        string connectionString,
+        X509Certificate2? certificate = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null);
 
-    IDocumentSession OpenSession(string connectionString, X509Certificate2? certificate = null);
+    IDocumentSession OpenSession(
+        string connectionString,
+        X509Certificate2? certificate = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null);
 
-    IAsyncDocumentSession OpenAsyncSession(string connectionString, X509Certificate2? certificate = null);
+    IAsyncDocumentSession OpenAsyncSession(
+        string connectionString,
+        X509Certificate2? certificate = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null);
 }
