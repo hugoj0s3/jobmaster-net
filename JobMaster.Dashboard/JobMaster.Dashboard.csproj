@@ -11,7 +11,7 @@
     <Company>Hugo Silva</Company>
     <Copyright>Copyright 2026 Hugo Silva</Copyright>
     <Description>Browser-based dashboard SPA for monitoring and managing JobMaster clusters. Served as embedded static assets from your ASP.NET Core application — no separate deployment required.</Description>
-    <PackageProjectUrl>https://github.com/hugoj0s3/jobmaster-net</PackageProjectUrl>
+    <PackageProjectUrl>https://docs.jobmaster.hugoj0s3.dev/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>background-jobs, distributed-systems, scheduler, dashboard, dotnet, aspnetcore</PackageTags>

@@ -11,7 +11,7 @@
         <Copyright>Copyright 2026 Hugo Silva</Copyright>
 
         <Description>JobMaster is a framework designed to manage and execute background tasks across a distributed cluster.</Description>
-        <PackageProjectUrl>https://github.com/hugoj0s3/jobmaster-net</PackageProjectUrl>
+        <PackageProjectUrl>https://docs.jobmaster.hugoj0s3.dev/</PackageProjectUrl>
         <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
         <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
@@ -27,7 +27,7 @@
         <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" Version="9.0.2" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.2" />
         <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.10" />
-        <PackageReference Include="NaturalCron" Version="1.0.0" />
+        <PackageReference Include="NaturalCron" Version="1.0.1" />
           <PackageReference Include="TimeZoneConverter" Version="7.1.0" />
         <PackageReference Include="System.Text.Json" Version="9.0.2" />
     </ItemGroup>
