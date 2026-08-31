@@ -194,9 +194,9 @@ public class JobUtilTests
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
-    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute
+    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
             "config-defid",
             priority: JobMasterPriority.Critical,
             timeout: TimeSpan.FromSeconds(21),

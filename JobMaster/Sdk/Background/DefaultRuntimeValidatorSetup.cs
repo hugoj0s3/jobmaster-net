@@ -25,6 +25,28 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
             .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
             .ToList();
 
+        // IStaticJobDefinitionConfig.Config is compile-time enforced via `static abstract` on net8.0, but
+        // not on netstandard2.0 (no static abstract interface members there) -- this is the only thing
+        // that catches a missing Config on that target framework. Checked (and returned on, if violated)
+        // before handlerTypes below, which resolves JobDefinitionId via JobMasterDefinitionIdAttribute ->
+        // JobDefinitionConfigAttribute.GetConfig and would otherwise throw uncaught partway through
+        // discovery instead of reporting a clean, aggregated error like every other check here.
+        var staticJobDefinitionConfigTypesMissingConfig = assemblies
+            .SelectMany(a => a.GetTypes())
+            .Where(t => typeof(IStaticJobDefinitionConfig).IsAssignableFrom(t) &&
+                        !t.IsInterface &&
+                        !t.IsAbstract &&
+                        !JobDefinitionConfigAttribute.TryGetConfig(t, out _))
+            .ToList();
+
+        if (staticJobDefinitionConfigTypesMissingConfig.Any())
+        {
+            result.Add("The following IStaticJobDefinitionConfig implementations do not declare a valid " +
+                       "`public static JobDefinitionConfig Config { get; }` member: " +
+                       $"{string.Join(", ", staticJobDefinitionConfigTypesMissingConfig.Select(t => t.FullName))}");
+            return Task.FromResult<IList<string>>(result);
+        }
+
         var handlerTypes = assemblies
             .SelectMany(a => a.GetTypes())
             .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) &&

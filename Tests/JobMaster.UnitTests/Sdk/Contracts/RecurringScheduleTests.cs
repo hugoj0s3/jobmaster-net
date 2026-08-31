@@ -55,9 +55,9 @@ public class RecurringScheduleTests
         rec.WorkerLane.Should().Be("orders");
     }
 
-    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute
+    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("recurring-config-defid");
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("recurring-config-defid");
     }
 
     [FakeDefinitionAttribute]

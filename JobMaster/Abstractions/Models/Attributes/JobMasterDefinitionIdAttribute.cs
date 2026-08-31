@@ -43,7 +43,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
             .ToList();
 
         result = types.FirstOrDefault(x =>
-                     x.GetCustomAttributes<JobDefinitionConfigAttribute>().FirstOrDefault()?.Config.JobDefinitionId == jobdefinitionId) ??
+                     JobDefinitionConfigAttribute.TryGetAppliedConfig(x)?.JobDefinitionId == jobdefinitionId) ??
                  types.FirstOrDefault(x =>
                      x.GetCustomAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId) ??
                  types.FirstOrDefault(x => x.FullName == jobdefinitionId);
@@ -63,7 +63,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
     /// </summary>
     public static string GetJobDefinitionId(Type type)
     {
-        return type.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.JobDefinitionId
+        return JobDefinitionConfigAttribute.TryGetAppliedConfig(type)?.JobDefinitionId
                ?? type.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId
                ?? type.FullName!;
     }

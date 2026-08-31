@@ -25,7 +25,7 @@ internal static class JobUtil
     {
         if (timeout is null)
         {
-            timeout = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.Timeout;
+            timeout = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.Timeout;
 
             if (timeout is null)
             {
@@ -48,7 +48,7 @@ internal static class JobUtil
     public static string? GetWorkerLane(Type jobHandlerType, string? workerLane)
     {
         return workerLane
-               ?? jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.WorkerLane
+               ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.WorkerLane
                ?? jobHandlerType.GetCustomAttributes(false)
                    .OfType<JobMasterWorkerLaneAttribute>()
                    .FirstOrDefault()?.WorkerLane;
@@ -59,7 +59,7 @@ internal static class JobUtil
         var result = 3;
         if (maxNumberOfRetries is null)
         {
-            result = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.MaxNumberOfRetries
+            result = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.MaxNumberOfRetries
                      ?? jobHandlerType.GetCustomAttributes(false)
                          .OfType<JobMasterMaxNumberOfRetriesAttribute>()
                          .FirstOrDefault()?.MaxNumberOfRetries
@@ -82,7 +82,7 @@ internal static class JobUtil
     {
         if (priority is null)
         {
-            priority = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.Priority
+            priority = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.Priority
                         ?? jobHandlerType.GetCustomAttributes(false)
                             .OfType<JobMasterPriorityAttribute>()
                             .FirstOrDefault()?.Priority

@@ -7,7 +7,7 @@ namespace JobMaster.Abstractions;
 /// handler type. Use with <see cref="IJobMasterSchedulerAdvanced"/> to schedule a job from a publisher
 /// that only knows the definition, not the handler that will eventually process it.
 /// </summary>
-public sealed class JobDefinitionConfig
+public class JobDefinitionConfig
 {
     /// <param name="jobDefinitionId">
     /// Stable, human-readable ID identifying the job definition. Required — unlike

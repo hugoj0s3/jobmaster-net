@@ -28,14 +28,14 @@ public class JobMasterDefinitionIdAttributeTests
             .Should().Be(typeof(HandlerWithConfigAttribute));
     }
 
-    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute
+    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("config-defid");
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("config-defid");
     }
 
-    private class FakeDefinitionAttribute2 : JobDefinitionConfigAttribute
+    private class FakeDefinitionAttribute2 : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("config-defid-2");
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("config-defid-2");
     }
 
     [FakeDefinitionAttribute]

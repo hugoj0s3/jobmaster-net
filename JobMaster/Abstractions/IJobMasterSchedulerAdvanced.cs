@@ -22,7 +22,11 @@ public interface IJobMasterSchedulerAdvanced
     /// <summary>
     /// Schedules a job for the definition carried by <typeparamref name="TDefinition"/> to run immediately.
     /// </summary>
-    /// <typeparam name="TDefinition">A <see cref="JobDefinitionConfigAttribute"/> subclass identifying the job definition.</typeparam>
+    /// <typeparam name="TDefinition">
+    /// A type implementing <see cref="IStaticJobDefinitionConfig"/> that identifies the job definition —
+    /// typically a <see cref="JobDefinitionConfigAttribute"/> subclass, so the same type can also be
+    /// applied to the consumer's handler.
+    /// </typeparam>
     /// <param name="msgData">Optional payload passed to the handler.</param>
     /// <param name="priority">Execution priority. Falls back to <c>TDefinition</c>'s config, then <see cref="JobMasterPriority.Medium"/>.</param>
     /// <param name="workerLane">Routes the job to a dedicated worker lane. Falls back to <c>TDefinition</c>'s config, then null (default lane).</param>
@@ -37,7 +41,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Schedules a job for <paramref name="config"/> to run immediately.</summary>
     /// <param name="config">The job definition's identity and scheduling configuration.</param>
@@ -56,7 +60,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Async version of <see cref="OnceNow(JobDefinitionConfig, IWriteableMessageData, string)"/>.</summary>
     Task<JobContext> OnceNowAsync(
@@ -77,7 +81,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Schedules a job for <paramref name="config"/> to run at the specified UTC date and time.</summary>
     /// <param name="dateTime">UTC date and time when the job should execute.</param>
@@ -97,7 +101,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Async version of <see cref="OnceAt(JobDefinitionConfig, DateTime, IWriteableMessageData, string)"/>.</summary>
     Task<JobContext> OnceAtAsync(
@@ -119,7 +123,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Schedules a job for <paramref name="config"/> to run after the specified delay from now.</summary>
     /// <param name="after">How long to wait before executing the job.</param>
@@ -139,7 +143,7 @@ public interface IJobMasterSchedulerAdvanced
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Async version of <see cref="OnceAfter(JobDefinitionConfig, TimeSpan, IWriteableMessageData, string)"/>.</summary>
     Task<JobContext> OnceAfterAsync(
@@ -153,7 +157,11 @@ public interface IJobMasterSchedulerAdvanced
     /// firing according to <paramref name="expression"/>. If a schedule for this definition already exists on
     /// the cluster it is updated in place.
     /// </summary>
-    /// <typeparam name="TDefinition">A <see cref="JobDefinitionConfigAttribute"/> subclass identifying the job definition.</typeparam>
+    /// <typeparam name="TDefinition">
+    /// A type implementing <see cref="IStaticJobDefinitionConfig"/> that identifies the job definition —
+    /// typically a <see cref="JobDefinitionConfigAttribute"/> subclass, so the same type can also be
+    /// applied to the consumer's handler.
+    /// </typeparam>
     /// <param name="expression">Compiled recurrence expression controlling the firing cadence.</param>
     /// <param name="data">Optional payload passed to the handler on each firing.</param>
     /// <param name="priority">Execution priority for each fired job. Falls back to <c>TDefinition</c>'s config, then <see cref="JobMasterPriority.Medium"/>.</param>
@@ -174,7 +182,7 @@ public interface IJobMasterSchedulerAdvanced
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>
     /// Creates or updates a recurring schedule for <paramref name="config"/>, firing according to
@@ -206,7 +214,7 @@ public interface IJobMasterSchedulerAdvanced
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Async version of <see cref="Recurring(JobDefinitionConfig, IRecurrenceCompiledExpr, IWriteableMessageData, DateTime?, DateTime?, string)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync(
@@ -237,7 +245,7 @@ public interface IJobMasterSchedulerAdvanced
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>
     /// Creates or updates a recurring schedule for <paramref name="config"/>, using a raw expression type ID
@@ -268,7 +276,7 @@ public interface IJobMasterSchedulerAdvanced
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
         DateTime? endBefore = null,
-        string? clusterId = null) where TDefinition : JobDefinitionConfigAttribute, new();
+        string? clusterId = null) where TDefinition : IStaticJobDefinitionConfig;
 
     /// <summary>Async version of <see cref="Recurring(JobDefinitionConfig, string, string, IWriteableMessageData, DateTime?, DateTime?, string)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync(

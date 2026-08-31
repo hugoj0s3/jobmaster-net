@@ -4,9 +4,9 @@ using TargetTestRecurringApp.Redis;
 
 namespace TargetTestRecurringApp.Handlers;
 
-public sealed class AdvancedTickDefinitionAttribute : JobDefinitionConfigAttribute
+public sealed class AdvancedTickDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
 {
-    public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("RecurringApp.AdvancedTick");
+    public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("RecurringApp.AdvancedTick");
 }
 
 [AdvancedTickDefinitionAttribute]

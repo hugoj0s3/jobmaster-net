@@ -227,7 +227,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => OnceNow(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
+        => OnceNow(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
 
     public JobContext OnceNow(
         JobDefinitionConfig config,
@@ -251,7 +251,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => await OnceNowAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
+        => await OnceNowAsync(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
 
     public async Task<JobContext> OnceNowAsync(
         JobDefinitionConfig config,
@@ -276,7 +276,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => OnceAt(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
+        => OnceAt(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
 
     public JobContext OnceAt(
         JobDefinitionConfig config,
@@ -301,7 +301,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => await OnceAtAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
+        => await OnceAtAsync(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
 
     public async Task<JobContext> OnceAtAsync(
         JobDefinitionConfig config,
@@ -326,7 +326,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => OnceAfter(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
+        => OnceAfter(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
 
     public JobContext OnceAfter(
         JobDefinitionConfig config,
@@ -352,7 +352,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         int? maxNumberOfRetries,
         IWritableMetadata? metadata,
         string? clusterId)
-        => await OnceAfterAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
+        => await OnceAfterAsync(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
 
     public async Task<JobContext> OnceAfterAsync(
         JobDefinitionConfig config,
@@ -380,7 +380,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore,
         string? clusterId)
-        => Recurring(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
+        => Recurring(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
 
     public RecurringScheduleContext Recurring(
         JobDefinitionConfig config,
@@ -408,7 +408,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore,
         string? clusterId)
-        => await RecurringAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
+        => await RecurringAsync(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
 
     public async Task<RecurringScheduleContext> RecurringAsync(
         JobDefinitionConfig config,
@@ -437,7 +437,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore,
         string? clusterId)
-        => Recurring(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
+        => Recurring(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
 
     public RecurringScheduleContext Recurring(
         JobDefinitionConfig config,
@@ -468,7 +468,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore,
         string? clusterId)
-        => await RecurringAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
+        => await RecurringAsync(ApplyOverrides(JobDefinitionConfigAttribute.GetConfig(typeof(TDefinition)), priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
 
     public async Task<RecurringScheduleContext> RecurringAsync(
         JobDefinitionConfig config,
@@ -492,8 +492,8 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     /// <see cref="JobDefinitionConfig"/> with the same <see cref="JobDefinitionConfig.JobDefinitionId"/>
     /// and each override applied on top of <paramref name="config"/>'s own values. Used only by the
     /// <typeparamref name="TDefinition"/>-generic Advanced overloads, since <paramref name="config"/> there
-    /// comes from a fixed, shared <see cref="JobDefinitionConfigAttribute"/> instance rather than being
-    /// built fresh per call.
+    /// comes from <typeparamref name="TDefinition"/>'s fixed, static <see cref="JobDefinitionConfig"/>
+    /// rather than being built fresh per call.
     /// </summary>
     private static JobDefinitionConfig ApplyOverrides(
         JobDefinitionConfig config,

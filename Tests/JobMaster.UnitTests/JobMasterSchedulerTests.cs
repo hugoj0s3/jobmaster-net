@@ -490,9 +490,9 @@ public class JobMasterSchedulerTests
         scheduled.MaxNumberOfRetries.Should().BeNull();
     }
 
-    private sealed class TestDefinitionAttribute : JobDefinitionConfigAttribute
+    private sealed class TestDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
             "advanced-defid",
             priority: JobMasterPriority.High,
             timeout: TimeSpan.FromSeconds(42),

@@ -4,9 +4,9 @@ using TargetTestScheduleApp.Redis;
 
 namespace TargetTestScheduleApp.Handlers;
 
-public sealed class TestAppAdvancedFastDefinitionAttribute : JobDefinitionConfigAttribute
+public sealed class TestAppAdvancedFastDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
 {
-    public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("TestApp.AdvancedFast");
+    public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("TestApp.AdvancedFast");
 }
 
 [TestAppAdvancedFastDefinitionAttribute]

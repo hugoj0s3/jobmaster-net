@@ -58,9 +58,9 @@ public class RecurringScheduleDefinitionCollectionTests
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
-    private sealed class FakeDefinitionAttribute : JobDefinitionConfigAttribute
+    private sealed class FakeDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig("advanced-defid");
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("advanced-defid");
     }
 
     [FakeDefinitionAttribute]
