@@ -16,6 +16,8 @@
 
 ### Changed
 
+- **SQL table prefix is now a parameter on each provider's connection method** — `UsePostgresForMaster`/`UseMySqlForMaster`/`UseSqlServerForMaster` (and the `ForAgent`/standalone equivalents) now accept an optional `tablePrefix` parameter, e.g. `UsePostgresForMaster(connectionString, tablePrefix: "jm_")`. It's also available through `ConfigFromJson`'s `ConnectionOptions` (`{"tablePrefix": "jm_"}`). `UseSqlTablePrefixForMaster`/`UseSqlTablePrefixForAgent` are now obsolete — they applied regardless of which provider a cluster or agent connection actually used, which didn't make sense (e.g. a Postgres agent connection on a RavenDB-master cluster). Old calls still compile and behave the same; migrate to the `tablePrefix` parameter at your convenience. `DisableAutoProvisionSqlSchema` is unaffected by this change — it remains cluster-wide.
+
 - **DB operation concurrency limits and bulk-batch sizes are now tuned per database technology** — Each provider (Postgres, SqlServer, MySql, RavenDB, NatsJetStream) now applies its own concurrency and batch-size settings, tuned to that technology, instead of every provider sharing the same defaults. You may notice different throughput/latency characteristics after upgrading, especially for RavenDB (larger batch sizes) and NatsJetStream (retuned concurrency) — no configuration changes are required, this is an internal default-tuning improvement.
 
 ### Fixed

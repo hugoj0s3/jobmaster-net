@@ -107,12 +107,10 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
 
             services.AddJobMasterCluster(PostgresClusterId, cfg =>
             {
-                cfg.UsePostgresForMaster(postgres.GetConnectionString());
-                cfg.UseSqlTablePrefixForMaster(PostgresTablePrefix);
+                cfg.UsePostgresForMaster(postgres.GetConnectionString(), tablePrefix: PostgresTablePrefix);
 
                 cfg.AddAgentConnectionConfig(PostgresAgentConnectionName)
-                    .UsePostgresForAgent(postgres.GetConnectionString())
-                    .UseSqlTablePrefixForAgent(PostgresTablePrefix);
+                    .UsePostgresForAgent(postgres.GetConnectionString(), tablePrefix: PostgresTablePrefix);
 
                 cfg.Mode(ClusterMode.Active);
                 // Registering 3 clusters on one ServiceCollection requires exactly one default --
@@ -123,24 +121,20 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
 
             services.AddJobMasterCluster(MySqlClusterId, cfg =>
             {
-                cfg.UseMySqlForMaster(mySql.GetConnectionString());
-                cfg.UseSqlTablePrefixForMaster(MySqlTablePrefix);
+                cfg.UseMySqlForMaster(mySql.GetConnectionString(), tablePrefix: MySqlTablePrefix);
 
                 cfg.AddAgentConnectionConfig(MySqlAgentConnectionName)
-                    .UseMySqlForAgent(mySql.GetConnectionString())
-                    .UseSqlTablePrefixForAgent(MySqlTablePrefix);
+                    .UseMySqlForAgent(mySql.GetConnectionString(), tablePrefix: MySqlTablePrefix);
 
                 cfg.Mode(ClusterMode.Active);
             });
 
             services.AddJobMasterCluster(SqlServerClusterId, cfg =>
             {
-                cfg.UseSqlServerForMaster(sqlServerConnectionString);
-                cfg.UseSqlTablePrefixForMaster(SqlServerTablePrefix);
+                cfg.UseSqlServerForMaster(sqlServerConnectionString, tablePrefix: SqlServerTablePrefix);
 
                 cfg.AddAgentConnectionConfig(SqlServerAgentConnectionName)
-                    .UseSqlServerForAgent(sqlServerConnectionString)
-                    .UseSqlTablePrefixForAgent(SqlServerTablePrefix);
+                    .UseSqlServerForAgent(sqlServerConnectionString, tablePrefix: SqlServerTablePrefix);
 
                 cfg.Mode(ClusterMode.Active);
             });
