@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Keys;
 
 namespace JobMaster.Abstractions.Ioc.Selectors;
 
@@ -120,4 +121,11 @@ public interface IClusterStandaloneConfigSelector
     internal IClusterStandaloneConfigSelector ClusterRepoType(string repoType);
 
     internal IClusterStandaloneConfigSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig);
+
+    /// <summary>
+    /// Stores a provider-specific configuration value (e.g. a SQL table prefix), namespaced so different
+    /// providers can't collide with each other. Mirrors <see cref="IBaseClusterConfigSelector{TSelector}.AppendAdditionalConnConfigValue"/>
+    /// for standalone clusters, which don't go through that interface.
+    /// </summary>
+    internal IClusterStandaloneConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
 }

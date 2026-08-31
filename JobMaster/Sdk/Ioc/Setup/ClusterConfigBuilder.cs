@@ -699,4 +699,12 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         clusterDefinition.AdditionalConfig = additionalConfig;
         return this;
     }
+
+    public IClusterStandaloneConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
+    {
+        if (this.clusterDefinition.AdditionalConnConfig is null)
+            this.clusterDefinition.AdditionalConnConfig = new JobMasterConfigDictionary();
+        this.clusterDefinition.AdditionalConnConfig!.SetValue(namespaceKey, key, value);
+        return this;
+    }
 }

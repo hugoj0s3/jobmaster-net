@@ -14,6 +14,10 @@ public static class ConfigExtensions
     /// Sets a custom table prefix for all JobMaster tables created in the master database.
     /// Defaults to <c>JM_</c> when not specified.
     /// </summary>
+    [Obsolete("Use the tablePrefix parameter on UsePostgresForMaster/UseMySqlForMaster/UseSqlServerForMaster " +
+              "(or UsePostgres/UseMySql/UseSqlServer for standalone clusters) instead — a single provider-scoped " +
+              "setting is clearer than one that applies regardless of which provider is actually in use. " +
+              "This method will be removed in a future release.")]
     public static T UseSqlTablePrefixForMaster<T>(this T clusterConfigSelector, string tablePrefix)
         where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
@@ -25,6 +29,8 @@ public static class ConfigExtensions
     /// Sets a custom table prefix for all JobMaster tables created in the agent database.
     /// Defaults to <c>JM_</c> when not specified.
     /// </summary>
+    [Obsolete("Use the tablePrefix parameter on UsePostgresForAgent/UseMySqlForAgent/UseSqlServerForAgent instead. " +
+              "This method will be removed in a future release.")]
     public static IAgentConnectionConfigSelector UseSqlTablePrefixForAgent(this IAgentConnectionConfigSelector agentConfigSelector, string tablePrefix)
     {
         agentConfigSelector.AppendAdditionalConnConfigValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey, tablePrefix);

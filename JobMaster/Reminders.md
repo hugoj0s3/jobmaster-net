@@ -6,6 +6,7 @@
 
 ## Repository / Persistence
 - **`BulkUpdateAsync` — single SQL round-trip**: The current implementation issues one SQL statement per job. Replace with a single batched statement (e.g. a `VALUES` list joined to the target table) that atomically checks the row version, applies the update, and returns only the rows that were actually changed. This will likely require DB-specific SQL (e.g. PostgreSQL `UPDATE … FROM (VALUES …)` or SQL Server `MERGE`), so abstract behind the existing db-provider pattern.
+- **`DisableAutoProvisionSqlSchema` still global, not per-connection**: The `tablePrefix` SQL setting was moved off the generic `UseSqlTablePrefixForMaster`/`UseSqlTablePrefixForAgent` methods (now obsolete) onto each provider's own `UsePostgresForMaster(..., tablePrefix:)`/etc. parameter, because it's genuinely per-connection. `DisableAutoProvisionSqlSchema` was deliberately left out of that pass — `SqlJobMasterRuntimeSetup.ConfigAgentsAsync` reads the *cluster's own* flag even when deciding whether to provision *agent* tables, so today it applies uniformly to the master DB and every agent connection in that cluster, with no independent per-connection switch. Revisit if a real use case for per-connection granularity comes up (e.g. auto-provision the master DB but manage one particular agent DB's schema manually) — at that point it could follow the same per-provider-parameter + JSON-binder pattern `tablePrefix` now uses.
 
 ## Runners
 - **Graceful stop**: Review and refine the shutdown sequence—the current implementation is unreliable.
