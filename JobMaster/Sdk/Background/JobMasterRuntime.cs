@@ -696,6 +696,45 @@ internal class JobMasterRuntime : IJobMasterRuntime
             profileInfos.Add((info, collection));
         }
 
+        // 1b) Discover handler classes decorated with a RecurringScheduleAttribute (the lighter,
+        // profile-free alternative) and synthesize an equivalent (info, collection) pair for each so
+        // everything below (priority validation, upsert, locking, keep-alive) is reused unchanged.
+        var handlerTypesWithScheduleAttributes = AppDomain.CurrentDomain.GetAssemblies()
+            .SelectMany(a =>
+            {
+                try
+                {
+                    return a.GetTypes();
+                }
+                catch
+                {
+                    return Array.Empty<Type>();
+                }
+            })
+            .Where(t => !t.IsAbstract && t.GetCustomAttributes<RecurringScheduleAttribute>().Any())
+            .ToList();
+
+        foreach (var handlerType in handlerTypesWithScheduleAttributes)
+        {
+            if (!typeof(IJobMasterHandler).IsAssignableFrom(handlerType))
+            {
+                throw new InvalidOperationException(
+                    $"{handlerType.FullName} has a RecurringScheduleAttribute but does not implement IJobMasterHandler.");
+            }
+
+            var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
+            var info = new StaticRecurringSchedulesProfileInfo($"attr:{jobDefinitionId}", defaultClusterId, workerLane: null);
+            if (!info.IsValid)
+                throw new InvalidOperationException($"Invalid synthesized ProfileId for {handlerType.FullName}.");
+
+            var collection = new RecurringScheduleDefinitionCollection(info, defaultClusterId);
+            foreach (var attr in handlerType.GetCustomAttributes<RecurringScheduleAttribute>())
+            {
+                collection.Add(handlerType, attr.ExpressionTypeId, attr.Expression);
+            }
+
+            profileInfos.Add((info, collection));
+        }
 
         // Validate schedule priorities against disabled priorities before upserting
         foreach (var cfg in profileInfos)

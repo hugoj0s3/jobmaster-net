@@ -50,6 +50,11 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
     private const string StaticTimeSpanIntervalTestIdentifier = "static-timespan-interval";
     private const string StaticNaturalCronTestIdentifier = "static-natural-cron";
 
+    // Must match TargetTestRecurringApp/Handlers/AttributeStaticTickHandler.cs's TestIdentifier --
+    // registered purely via [TimeSpanIntervalSchedule], no profile, proving RecurringScheduleAttribute
+    // auto-registration end-to-end.
+    private const string AttributeStaticTickTestIdentifier = "attribute-static-tick";
+
     private static readonly TimeSpan ImmediateCheckDelay = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan SettleWindowAfterCancel = TimeSpan.FromSeconds(90);
 
@@ -98,6 +103,7 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
         // they don't need clearing.
         await Runner.Tracker.ClearAsync(StaticTimeSpanIntervalTestIdentifier);
         await Runner.Tracker.ClearAsync(StaticNaturalCronTestIdentifier);
+        await Runner.Tracker.ClearAsync(AttributeStaticTickTestIdentifier);
 
         // Captured right after the container's health check passed (StartPhaseAsync already
         // returned by the time RunAsync runs) -- a reasonably tight upper bound on when the static
@@ -128,6 +134,7 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
         {
             new Combo(StaticTimeSpanIntervalTestIdentifier, staticCreatedAtUtc),
             new Combo(StaticNaturalCronTestIdentifier, staticCreatedAtUtc),
+            new Combo(AttributeStaticTickTestIdentifier, staticCreatedAtUtc),
             new Combo(dynamicTimeSpanId, dynamicTimeSpanCreatedAtUtc),
             new Combo(dynamicNaturalCronId, dynamicNaturalCronCreatedAtUtc),
             new Combo(dynamicAdvancedId, dynamicAdvancedCreatedAtUtc),
