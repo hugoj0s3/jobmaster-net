@@ -517,22 +517,28 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
             metadata: metadata ?? config.Metadata);
     }
 
+    private static string ResolveClusterId(string? clusterId)
+    {
+        if (clusterId != null)
+        {
+            return clusterId;
+        }
+
+        if (JobMasterClusterConnectionConfig.Default == null)
+        {
+            throw new KeyNotFoundException("Default cluster config not found");
+        }
+
+        return JobMasterClusterConnectionConfig.Default.ClusterId;
+    }
+
     private Job NewJob(
         string? clusterId,
         JobDefinitionConfig config,
         IWriteableMessageData? data,
         DateTime? scheduledAt)
     {
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-
+        clusterId = ResolveClusterId(clusterId);
         var clusterConfiguration = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         return Job.New(
             clusterId,
@@ -551,16 +557,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore)
     {
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-
+        clusterId = ResolveClusterId(clusterId);
         return RecurringSchedule.New(
             clusterId,
             config,
@@ -584,16 +581,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? endBefore,
         string? workerLane) where T : IJobMasterHandler
     {
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-            
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-        
+        clusterId = ResolveClusterId(clusterId);
         var rec = RecurringSchedule.New<T>(
             clusterId,
             values,
@@ -620,16 +608,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? scheduledAt,
         string? workerLane) where T : IJobMasterHandler
     {
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-            
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-        
+        clusterId = ResolveClusterId(clusterId);
         var clusterConfiguration = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         return Job.New<T>(
             clusterId,
@@ -690,17 +669,8 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         if (JobMasterRuntime == null || !JobMasterRuntime.Started)
             throw new InvalidOperationException("JobMasterRuntime is not initialized");
-        
-        if (cluserId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-            
-            cluserId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-        
+
+        cluserId = ResolveClusterId(cluserId);
         var config = EnsureGetMasterClusterConfigurationService(cluserId).Get();
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
@@ -712,34 +682,16 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         if (JobMasterRuntime == null || !JobMasterRuntime.Started)
             throw new InvalidOperationException("JobMasterRuntime is not initialized");
-        
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-            
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
 
+        clusterId = ResolveClusterId(clusterId);
         var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
 
         return factory.GetComponent<IJobMasterSchedulerClusterAware>();
     }
-    
+
     private IMasterClusterConfigurationService EnsureGetMasterClusterConfigurationService(string? clusterId)
     {
-        if (clusterId == null)
-        {
-            if (JobMasterClusterConnectionConfig.Default == null)
-            {
-                throw new KeyNotFoundException("Default cluster config not found");
-            }
-            
-            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
-        }
-        
+        clusterId = ResolveClusterId(clusterId);
         var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
         return factory.GetComponent<IMasterClusterConfigurationService>();
     }

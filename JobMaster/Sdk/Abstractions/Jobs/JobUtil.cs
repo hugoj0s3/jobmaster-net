@@ -70,12 +70,7 @@ internal static class JobUtil
             result = maxNumberOfRetries.Value;
         }
 
-        if (result > 10)
-        {
-            throw new ArgumentException("MaxNumberOfRetries must be less than or equal to 10.");
-        }
-
-        return result;
+        return ValidateMaxNumberOfRetries(result);
     }
 
     public static JobMasterPriority GetJobMasterPriority(Type jobHandlerType, JobMasterPriority? priority)
@@ -93,4 +88,14 @@ internal static class JobUtil
     }
 
     private static readonly IDictionary<string, Type> JobHandlerTypeMap = new Dictionary<string, Type>();
+
+    public static int ValidateMaxNumberOfRetries(int maxNumberOfRetries)
+    {
+        if (maxNumberOfRetries > 10)
+        {
+            throw new ArgumentException("MaxNumberOfRetries must be less than or equal to 10.");
+        }
+
+        return maxNumberOfRetries;
+    }
 }

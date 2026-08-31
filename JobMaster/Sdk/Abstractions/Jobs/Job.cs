@@ -47,23 +47,15 @@ internal class Job : JobMasterBaseModel
             .ToDictionary(x => x.Key, x => x.Value);
 
         var finalMetadataAttribute = JobMasterDictionaryUtils.Merge(jobHandlerTypeAttributes, metadataDictionary);
-        
-        var job = new Job(clusterId)
-        {
-            JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType),
-            TriggerSourceType = triggerSourceType,
-            ScheduledAt = scheduledAt ?? DateTime.UtcNow,
-            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
-            Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority),
-            Timeout = JobUtil.GetTimeout(jobHandlerType, timeout, masterConfig),
-            MaxNumberOfRetries = JobUtil.GetMaxNumberOfRetries(jobHandlerType, maxNumberOfRetries, masterConfig),
-            MsgData = data ?? MessageData.Empty,
-            Metadata = new Metadata(finalMetadataAttribute),
-            CreatedAt = DateTime.UtcNow,
-            SourceId = sourceId,
-            WorkerLane = JobUtil.GetWorkerLane(jobHandlerType, workerLane)
-        };
-        
+
+        var job = NewBase(clusterId, data, scheduledAt, triggerSourceType, sourceId);
+        job.JobDefinitionId = JobUtil.GetJobDefinitionId(jobHandlerType);
+        job.Priority = JobUtil.GetJobMasterPriority(jobHandlerType, priority);
+        job.Timeout = JobUtil.GetTimeout(jobHandlerType, timeout, masterConfig);
+        job.MaxNumberOfRetries = JobUtil.GetMaxNumberOfRetries(jobHandlerType, maxNumberOfRetries, masterConfig);
+        job.Metadata = new Metadata(finalMetadataAttribute);
+        job.WorkerLane = JobUtil.GetWorkerLane(jobHandlerType, workerLane);
+
         return job;
     }
     
@@ -132,21 +124,13 @@ internal class Job : JobMasterBaseModel
         ClusterConfigurationModel? masterConfig = null,
         Guid? sourceId = null)
     {
-        var job = new Job(clusterId)
-        {
-            JobDefinitionId = config.JobDefinitionId,
-            TriggerSourceType = triggerSourceType,
-            ScheduledAt = scheduledAt ?? DateTime.UtcNow,
-            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
-            Priority = config.Priority ?? JobMasterPriority.Medium,
-            Timeout = config.Timeout ?? masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5),
-            MaxNumberOfRetries = config.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? 3,
-            MsgData = data ?? MessageData.Empty,
-            Metadata = config.Metadata ?? new Metadata(),
-            CreatedAt = DateTime.UtcNow,
-            SourceId = sourceId,
-            WorkerLane = config.WorkerLane
-        };
+        var job = NewBase(clusterId, data, scheduledAt, triggerSourceType, sourceId);
+        job.JobDefinitionId = config.JobDefinitionId;
+        job.Priority = config.Priority ?? JobMasterPriority.Medium;
+        job.Timeout = config.Timeout ?? masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5);
+        job.MaxNumberOfRetries = JobUtil.ValidateMaxNumberOfRetries(config.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? 3);
+        job.Metadata = config.Metadata ?? new Metadata();
+        job.WorkerLane = config.WorkerLane;
 
         return job;
     }
@@ -179,6 +163,24 @@ internal class Job : JobMasterBaseModel
     public Guid? SourceId { get; internal set; }
     
     public string? WorkerLane { get; internal set; }
-    
+
     public string? Version { get; internal set; }
+
+    private static Job NewBase(
+        string clusterId,
+        IWriteableMessageData? data,
+        DateTime? scheduledAt,
+        JobMasterTriggerSourceType triggerSourceType,
+        Guid? sourceId)
+    {
+        return new Job(clusterId)
+        {
+            TriggerSourceType = triggerSourceType,
+            ScheduledAt = scheduledAt ?? DateTime.UtcNow,
+            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
+            MsgData = data ?? MessageData.Empty,
+            CreatedAt = DateTime.UtcNow,
+            SourceId = sourceId
+        };
+    }
 }
