@@ -1,3 +1,5 @@
+using System.Reflection;
+using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Models;
@@ -8,10 +10,8 @@ internal static class JobUtil
 {
     public static string GetJobDefinitionId(Type jobHandlerType)
     {
-        var jobDefinitionId =
-            jobHandlerType.GetCustomAttributes(false).OfType<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId ??
-            jobHandlerType.FullName;
-        
+        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(jobHandlerType);
+
         if (string.IsNullOrEmpty(jobDefinitionId))
         {
             throw new InvalidOperationException($"JobDefinitionId was not resolved. " +
@@ -25,13 +25,18 @@ internal static class JobUtil
     {
         if (timeout is null)
         {
-            var timeoutInSeconds = jobHandlerType.GetCustomAttributes(false)
-                .OfType<JobMasterTimeoutAttribute>()
-                .FirstOrDefault()?.TimeoutInSeconds;
+            timeout = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.Timeout;
 
-            timeout = timeoutInSeconds.HasValue ? 
-                System.TimeSpan.FromSeconds(timeoutInSeconds.Value) : 
-                masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5);
+            if (timeout is null)
+            {
+                var timeoutInSeconds = jobHandlerType.GetCustomAttributes(false)
+                    .OfType<JobMasterTimeoutAttribute>()
+                    .FirstOrDefault()?.TimeoutInSeconds;
+
+                timeout = timeoutInSeconds.HasValue ?
+                    System.TimeSpan.FromSeconds(timeoutInSeconds.Value) :
+                    masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5);
+            }
         }
         else
         {
@@ -42,20 +47,24 @@ internal static class JobUtil
 
     public static string? GetWorkerLane(Type jobHandlerType, string? workerLane)
     {
-        return workerLane ?? jobHandlerType.GetCustomAttributes(false)
-            .OfType<JobMasterWorkerLaneAttribute>()
-            .FirstOrDefault()?.WorkerLane;
+        return workerLane
+               ?? jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.WorkerLane
+               ?? jobHandlerType.GetCustomAttributes(false)
+                   .OfType<JobMasterWorkerLaneAttribute>()
+                   .FirstOrDefault()?.WorkerLane;
     }
-    
+
     public static int GetMaxNumberOfRetries(Type jobHandlerType, int? maxNumberOfRetries, ClusterConfigurationModel? masterConfig)
     {
         var result = 3;
         if (maxNumberOfRetries is null)
         {
-            result = jobHandlerType.GetCustomAttributes(false)
-                .OfType<JobMasterMaxNumberOfRetriesAttribute>()
-                .FirstOrDefault()?.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? 3;
-        } 
+            result = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.MaxNumberOfRetries
+                     ?? jobHandlerType.GetCustomAttributes(false)
+                         .OfType<JobMasterMaxNumberOfRetriesAttribute>()
+                         .FirstOrDefault()?.MaxNumberOfRetries
+                     ?? masterConfig?.DefaultMaxOfRetryCount ?? 3;
+        }
         else
         {
             result = maxNumberOfRetries.Value;
@@ -65,21 +74,23 @@ internal static class JobUtil
         {
             throw new ArgumentException("MaxNumberOfRetries must be less than or equal to 10.");
         }
-        
+
         return result;
     }
-    
+
     public static JobMasterPriority GetJobMasterPriority(Type jobHandlerType, JobMasterPriority? priority)
     {
         if (priority is null)
         {
-            priority = jobHandlerType.GetCustomAttributes(false)
-                .OfType<JobMasterPriorityAttribute>()
-                .FirstOrDefault()?.Priority ?? JobMasterPriority.Medium;
+            priority = jobHandlerType.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.Priority
+                        ?? jobHandlerType.GetCustomAttributes(false)
+                            .OfType<JobMasterPriorityAttribute>()
+                            .FirstOrDefault()?.Priority
+                        ?? JobMasterPriority.Medium;
         }
-        
+
         return priority.Value;
     }
-    
+
     private static readonly IDictionary<string, Type> JobHandlerTypeMap = new Dictionary<string, Type>();
 }

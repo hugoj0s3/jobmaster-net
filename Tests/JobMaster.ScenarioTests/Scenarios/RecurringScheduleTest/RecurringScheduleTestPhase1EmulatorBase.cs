@@ -115,12 +115,22 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             "tick", NaturalCronExpressionTypeId, NaturalCronExpression, dynamicNaturalCronId, ClusterId);
         var dynamicNaturalCronCreatedAtUtc = DateTime.UtcNow;
 
+        // Scheduled via IJobMasterScheduler.Advanced.RecurringAsync<TDefinition>() instead of the classic
+        // handler-typed overload -- proves the JobDefinitionConfigAttribute path end-to-end for recurring
+        // schedules too. One expression style is enough here: TimeSpanInterval/NaturalCron correctness is
+        // already proven by the two combos above, this is only proving the Advanced path fires/replans.
+        var dynamicAdvancedId = Guid.NewGuid().ToString("N");
+        var dynamicAdvanced = await recurring.CreateRecurringAsync(
+            "advanced-tick", TimeSpanIntervalExpressionTypeId, IntervalExpression, dynamicAdvancedId, ClusterId);
+        var dynamicAdvancedCreatedAtUtc = DateTime.UtcNow;
+
         var combos = new[]
         {
             new Combo(StaticTimeSpanIntervalTestIdentifier, staticCreatedAtUtc),
             new Combo(StaticNaturalCronTestIdentifier, staticCreatedAtUtc),
             new Combo(dynamicTimeSpanId, dynamicTimeSpanCreatedAtUtc),
             new Combo(dynamicNaturalCronId, dynamicNaturalCronCreatedAtUtc),
+            new Combo(dynamicAdvancedId, dynamicAdvancedCreatedAtUtc),
         };
 
         // Nothing should have fired yet -- catches an accidental "fires immediately" bug (e.g. the
@@ -168,15 +178,18 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
 
         // Cross-check via the API -- proves the schedule is visible/correct there too, not just
         // that jobs happened to execute.
-        await AssertApiAsync(api, ClusterId, dynamicTimeSpanId, dynamicTimeSpan.RecurringScheduleId, TimeSpanIntervalExpressionTypeId, IntervalExpression);
-        await AssertApiAsync(api, ClusterId, dynamicNaturalCronId, dynamicNaturalCron.RecurringScheduleId, NaturalCronExpressionTypeId, NaturalCronExpression);
+        await AssertApiAsync(api, ClusterId, dynamicTimeSpanId, dynamicTimeSpan.RecurringScheduleId, TimeSpanIntervalExpressionTypeId, IntervalExpression, "RecurringApp.Tick");
+        await AssertApiAsync(api, ClusterId, dynamicNaturalCronId, dynamicNaturalCron.RecurringScheduleId, NaturalCronExpressionTypeId, NaturalCronExpression, "RecurringApp.Tick");
+        await AssertApiAsync(api, ClusterId, dynamicAdvancedId, dynamicAdvanced.RecurringScheduleId, TimeSpanIntervalExpressionTypeId, IntervalExpression, "RecurringApp.AdvancedTick");
 
         // Cancel only the dynamic schedules -- static ones aren't cancellable the same way and are
         // simply left running until the container stops.
         var countAtCancelTimeSpan = (await Runner.Tracker.GetAllAsync(dynamicTimeSpanId)).Count;
         var countAtCancelNaturalCron = (await Runner.Tracker.GetAllAsync(dynamicNaturalCronId)).Count;
+        var countAtCancelAdvanced = (await Runner.Tracker.GetAllAsync(dynamicAdvancedId)).Count;
         await recurring.CancelRecurringAsync(dynamicTimeSpan.RecurringScheduleId, ClusterId);
         await recurring.CancelRecurringAsync(dynamicNaturalCron.RecurringScheduleId, ClusterId);
+        await recurring.CancelRecurringAsync(dynamicAdvanced.RecurringScheduleId, ClusterId);
 
         // CancelJobsFromRecurScheduleInactiveOrCanceledRunner ticks every 30s; give it margin to
         // actually process the cancellation before checking nothing further fired.
@@ -184,6 +197,7 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
 
         var afterCancelTimeSpan = await Runner.Tracker.GetAllAsync(dynamicTimeSpanId);
         var afterCancelNaturalCron = await Runner.Tracker.GetAllAsync(dynamicNaturalCronId);
+        var afterCancelAdvanced = await Runner.Tracker.GetAllAsync(dynamicAdvancedId);
 
         // At most one more execution is tolerated: a job already in-flight at cancellation time
         // isn't retroactively killed, only future occurrences are prevented.
@@ -191,16 +205,18 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             "cancelling the dynamic TimeSpanInterval schedule should stop further firings (at most one in-flight execution tolerated)");
         afterCancelNaturalCron.Count.Should().BeLessThanOrEqualTo(countAtCancelNaturalCron + 1,
             "cancelling the dynamic NaturalCron schedule should stop further firings (at most one in-flight execution tolerated)");
+        afterCancelAdvanced.Count.Should().BeLessThanOrEqualTo(countAtCancelAdvanced + 1,
+            "cancelling the dynamic Advanced (JobDefinitionConfigAttribute) schedule should stop further firings (at most one in-flight execution tolerated)");
     }
 
-    private static async Task AssertApiAsync(IScenarioApiClient api, string clusterId, string testIdentifier, Guid recurringScheduleId, string expectedExpressionTypeId, string expectedExpression)
+    private static async Task AssertApiAsync(IScenarioApiClient api, string clusterId, string testIdentifier, Guid recurringScheduleId, string expectedExpressionTypeId, string expectedExpression, string expectedJobDefinitionId)
     {
         var schedules = await api.GetRecurringSchedulesAsync(clusterId, testIdentifier: testIdentifier);
         schedules.Should().ContainSingle(s => GuidBase64.Parse(s.Id) == recurringScheduleId)
             .Which.Should().Match<ApiRecurringSchedule>(s =>
                 s.ExpressionTypeId == expectedExpressionTypeId &&
                 s.Expression == expectedExpression &&
-                s.JobDefinitionId == "RecurringApp.Tick");
+                s.JobDefinitionId == expectedJobDefinitionId);
     }
 
     private sealed record Combo(string TestIdentifier, DateTime CreatedAtUtc);

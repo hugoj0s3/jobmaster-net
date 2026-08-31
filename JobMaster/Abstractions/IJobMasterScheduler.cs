@@ -14,6 +14,13 @@ namespace JobMaster.Abstractions;
 public interface IJobMasterScheduler
 {
     /// <summary>
+    /// Advanced scheduling surface for true publisher/consumer separation — schedules against a
+    /// <see cref="JobDefinitionConfig"/> instead of a concrete <see cref="IJobMasterHandler"/> type.
+    /// See <see cref="IJobMasterSchedulerAdvanced"/>.
+    /// </summary>
+    IJobMasterSchedulerAdvanced Advanced { get; }
+
+    /// <summary>
     /// Schedules <typeparamref name="T"/> to run immediately.
     /// </summary>
     /// <param name="msgData">Optional payload passed to the handler.</param>

@@ -122,7 +122,35 @@ internal class Job : JobMasterBaseModel
             masterConfig,
             workerLane: workerLane);
     }
-    
+
+    public static Job New(
+        string clusterId,
+        JobDefinitionConfig config,
+        IWriteableMessageData? data = null,
+        DateTime? scheduledAt = null,
+        JobMasterTriggerSourceType triggerSourceType = JobMasterTriggerSourceType.Once,
+        ClusterConfigurationModel? masterConfig = null,
+        Guid? sourceId = null)
+    {
+        var job = new Job(clusterId)
+        {
+            JobDefinitionId = config.JobDefinitionId,
+            TriggerSourceType = triggerSourceType,
+            ScheduledAt = scheduledAt ?? DateTime.UtcNow,
+            NextPlanExecutionAt = scheduledAt ?? DateTime.UtcNow,
+            Priority = config.Priority ?? JobMasterPriority.Medium,
+            Timeout = config.Timeout ?? masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5),
+            MaxNumberOfRetries = config.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? 3,
+            MsgData = data ?? MessageData.Empty,
+            Metadata = config.Metadata ?? new Metadata(),
+            CreatedAt = DateTime.UtcNow,
+            SourceId = sourceId,
+            WorkerLane = config.WorkerLane
+        };
+
+        return job;
+    }
+
     public Guid Id { get; internal set; }
     public DateTime CreatedAt { get; internal set; }
     public DateTime ScheduledAt { get; internal set; }

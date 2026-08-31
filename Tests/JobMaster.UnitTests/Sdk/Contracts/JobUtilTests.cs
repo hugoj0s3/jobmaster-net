@@ -22,6 +22,34 @@ public class JobUtilTests
     }
 
     [Fact]
+    public void GetTimeout_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetTimeout(typeof(MasterHandlerWithConfigAndIndividualAttributes), timeout: null, masterConfig: null)
+            .Should().Be(TimeSpan.FromSeconds(21));
+    }
+
+    [Fact]
+    public void GetWorkerLane_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetWorkerLane(typeof(MasterHandlerWithConfigAndIndividualAttributes), workerLane: null)
+            .Should().Be("config-lane");
+    }
+
+    [Fact]
+    public void GetMaxNumberOfRetries_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetMaxNumberOfRetries(typeof(MasterHandlerWithConfigAndIndividualAttributes), maxNumberOfRetries: null, masterConfig: null)
+            .Should().Be(6);
+    }
+
+    [Fact]
+    public void GetJobMasterPriority_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetJobMasterPriority(typeof(MasterHandlerWithConfigAndIndividualAttributes), priority: null)
+            .Should().Be(JobMasterPriority.Critical);
+    }
+
+    [Fact]
     public void GetTimeout_WhenExplicitTimeoutProvided_UsesProvidedValue()
     {
         var timeout = TimeSpan.FromSeconds(12);
@@ -162,6 +190,26 @@ public class JobUtilTests
     }
 
     private class MasterHandlerNoAttributes : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private class FakeDefinitionAttribute : JobDefinitionConfigAttribute
+    {
+        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
+            "config-defid",
+            priority: JobMasterPriority.Critical,
+            timeout: TimeSpan.FromSeconds(21),
+            maxNumberOfRetries: 6,
+            workerLane: "config-lane");
+    }
+
+    [FakeDefinitionAttribute]
+    [JobMasterTimeout(99)]
+    [JobMasterWorkerLane("individual-lane")]
+    [JobMasterMaxNumberOfRetries(9)]
+    [JobMasterPriority(JobMasterPriority.Low)]
+    private class MasterHandlerWithConfigAndIndividualAttributes : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }

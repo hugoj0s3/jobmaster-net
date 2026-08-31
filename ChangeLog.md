@@ -8,9 +8,17 @@
 
 ## JobMaster 0.11.0-alpha
 
+### Added
+
+- **`IJobMasterScheduler.Advanced` — schedule a job without referencing the handler's assembly** — For scenarios where the publisher and the consumer/worker are meant to be fully separate deployables, `Advanced.OnceNow`/`OnceAt`/`OnceAfter`/`Recurring` (+ `*Async`) let you schedule against a `JobDefinitionConfig` (an id plus optional priority/timeout/retries/worker-lane/metadata) instead of a concrete handler type. Define a `JobDefinitionConfigAttribute` subclass carrying that config in a shared "contracts" project — the publisher references only that (`Advanced.OnceNow<TDefinition>(...)`, or build a `JobDefinitionConfig` inline with `Advanced.OnceNow(config, ...)`), and the consumer applies the same attribute to its `IJobMasterHandler` implementation. The classic `OnceNow<THandler>()`/`Recurring<THandler>()` direct-handler methods are unchanged. Recurring schedules created this way still defer Priority/Timeout/MaxNumberOfRetries/WorkerLane resolution to each occurrence (same as classic recurring schedules always have), so a long-lived schedule picks up a definition's config changes on its next firing rather than freezing them in at creation.
+
 ### Changed
 
 - **DB operation concurrency limits and bulk-batch sizes are now tuned per database technology** — Each provider (Postgres, SqlServer, MySql, RavenDB, NatsJetStream) now applies its own concurrency and batch-size settings, tuned to that technology, instead of every provider sharing the same defaults. You may notice different throughput/latency characteristics after upgrading, especially for RavenDB (larger batch sizes) and NatsJetStream (retuned concurrency) — no configuration changes are required, this is an internal default-tuning improvement.
+
+### Fixed
+
+- ⚠️ **Startup validation errors (duplicate `JobDefinitionId`s, workers missing `AgentConnectionName`, and similar) now actually stop startup** — Previously these checks ran and produced real error messages, but the result was silently discarded, so a misconfigured cluster would start anyway. If your cluster has one of these pre-existing issues, upgrading will surface it as a startup failure for the first time — fix the reported issue rather than treating this as a regression. A handler decorated with both a `JobDefinitionConfigAttribute` (see Added, above) and any classic individual attribute (`JobMasterDefinitionId`/`JobMasterTimeout`/`JobMasterPriority`/`JobMasterWorkerLane`/`JobMasterMaxNumberOfRetries`) is now also rejected at startup, since mixing the two usually means a stale attribute left over from switching modes.
 
 ## JobMaster 0.0.10-alpha.2
 

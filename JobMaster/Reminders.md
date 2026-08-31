@@ -32,13 +32,11 @@ The goal is to introduce a durable buffering layer that batches schedule writes 
 
 > ⚠️ This feature introduces a write-ahead style buffer. The failure window shrinks to the flush interval rather than being eliminated entirely — operators should configure the flush interval based on their durability tolerance.
 
-### JobDefinition-based scheduling
-Goal: support advanced scenarios where publishers and consumers are fully separated.
-
-Approach:
-1. Introduce a `JobDefinition` class that encapsulates timeouts and configuration.
-2. Allow handlers such as `JobHandlerA : IJobHandler<DefinitionJobA>` so consumers can bind to definitions directly.
-3. Keep the current “direct handler” option for simple scenarios, and consider releasing the definitional model as a v2 feature.
+### JobDefinition-based scheduling — static recurring schedules still open
+One-time and dynamic-recurring scheduling via `IJobMasterScheduler.Advanced` (`JobDefinitionConfig`/
+`JobDefinitionConfigAttribute`/`IJobMasterSchedulerAdvanced`) shipped in 0.11.0-alpha — see ChangeLog.md.
+Still open: `RecurringScheduleDefinitionCollection.Add<Th>()` (static recurring schedules) has the same
+handler-type coupling and hasn't been given the same treatment yet.
 
 ## Tests
 - **Exact-text `WithMessage` assertions**: A handful of tests assert on exact or substring exception message text (e.g. `JobMasterSchedulerClusterAwareTests.cs` asserts the full string `"Cluster mode is archived"`; several others assert `"*keyword*"` substrings). Prefer asserting exception type (and, where the specific culprit matters, a targeted property) instead — message text is easy to reword incidentally and breaks these tests for no functional reason. Left as-is for now (out of scope for the 0.0.10-alpha PR); worth a pass to check every `WithMessage`/`.Message.Should()` usage across the suite and loosen or remove where the wording isn't the actual thing under test.

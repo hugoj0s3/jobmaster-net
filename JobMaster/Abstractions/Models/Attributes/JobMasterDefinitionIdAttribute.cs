@@ -43,6 +43,8 @@ public class JobMasterDefinitionIdAttribute : Attribute
             .ToList();
 
         result = types.FirstOrDefault(x =>
+                     x.GetCustomAttributes<JobDefinitionConfigAttribute>().FirstOrDefault()?.Config.JobDefinitionId == jobdefinitionId) ??
+                 types.FirstOrDefault(x =>
                      x.GetCustomAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId) ??
                  types.FirstOrDefault(x => x.FullName == jobdefinitionId);
 
@@ -55,11 +57,14 @@ public class JobMasterDefinitionIdAttribute : Attribute
     }
 
     /// <summary>
-    /// Returns the definition ID for <paramref name="type"/>: the value from
+    /// Returns the definition ID for <paramref name="type"/>: the value from a
+    /// <see cref="JobDefinitionConfigAttribute"/> if present, otherwise from
     /// <see cref="JobMasterDefinitionIdAttribute"/> if present, otherwise <see cref="Type.FullName"/>.
     /// </summary>
     public static string GetJobDefinitionId(Type type)
     {
-        return type.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? type.FullName!;
+        return type.GetCustomAttribute<JobDefinitionConfigAttribute>()?.Config.JobDefinitionId
+               ?? type.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId
+               ?? type.FullName!;
     }
 }

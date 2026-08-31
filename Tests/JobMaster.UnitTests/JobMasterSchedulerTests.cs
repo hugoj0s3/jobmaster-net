@@ -3,11 +3,13 @@ using FluentAssertions;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
+using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Moq;
@@ -220,6 +222,281 @@ public class JobMasterSchedulerTests
             .Should().NotThrow();
 
         schedulerMock.Verify();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttribute_SchedulesUsingConfigValues()
+    {
+        var clusterId = "c-advanced-attr";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        JobRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow<TestDefinitionAttribute>(clusterId: clusterId);
+
+        ctx.ClusterId.Should().Be(clusterId);
+        scheduled.Should().NotBeNull();
+        scheduled!.JobDefinitionId.Should().Be("advanced-defid");
+        scheduled.Priority.Should().Be(JobMasterPriority.High);
+        scheduled.Timeout.Should().Be(TimeSpan.FromSeconds(42));
+        scheduled.WorkerLane.Should().Be("advanced-lane");
+        schedulerMock.Verify();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithConfigObject_SchedulesUsingConfigValues()
+    {
+        var clusterId = "c-advanced-config";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        JobRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        var config = new JobDefinitionConfig(
+            "orders.process",
+            priority: JobMasterPriority.Low,
+            timeout: TimeSpan.FromSeconds(10),
+            workerLane: "orders");
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow(config, clusterId: clusterId);
+
+        ctx.ClusterId.Should().Be(clusterId);
+        scheduled.Should().NotBeNull();
+        scheduled!.JobDefinitionId.Should().Be("orders.process");
+        scheduled.Priority.Should().Be(JobMasterPriority.Low);
+        scheduled.Timeout.Should().Be(TimeSpan.FromSeconds(10));
+        scheduled.WorkerLane.Should().Be("orders");
+        schedulerMock.Verify();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttribute_PerCallOverrideTakesPrecedenceOverAttributeConfig()
+    {
+        // Only the TDefinition-generic overload accepts per-call overrides — the JobDefinitionConfig
+        // overload does not, since the caller already builds that object with the values they want.
+        var clusterId = "c-advanced-override";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        JobRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        // TestDefinitionAttribute.Config declares Priority = High, Timeout = 42s.
+        JobMasterScheduler.Instance.Advanced.OnceNow<TestDefinitionAttribute>(
+            priority: JobMasterPriority.Critical,
+            timeout: TimeSpan.FromSeconds(99),
+            clusterId: clusterId);
+
+        scheduled.Should().NotBeNull();
+        scheduled!.JobDefinitionId.Should().Be("advanced-defid");
+        scheduled.Priority.Should().Be(JobMasterPriority.Critical);
+        scheduled.Timeout.Should().Be(TimeSpan.FromSeconds(99));
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithDefinitionAttribute_SchedulesUsingConfigValues()
+    {
+        var clusterId = "c-advanced-recurring-attr";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        RecurringScheduleRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.Recurring<TestDefinitionAttribute>(
+            new NeverRecursCompiledExpr(),
+            clusterId: clusterId);
+
+        ctx.ClusterId.Should().Be(clusterId);
+        scheduled.Should().NotBeNull();
+        scheduled!.JobDefinitionId.Should().Be("advanced-defid");
+        scheduled.Priority.Should().Be(JobMasterPriority.High);
+        scheduled.Timeout.Should().Be(TimeSpan.FromSeconds(42));
+        scheduled.WorkerLane.Should().Be("advanced-lane");
+        schedulerMock.Verify();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithConfigObject_SchedulesUsingConfigValues()
+    {
+        var clusterId = "c-advanced-recurring-config";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        RecurringScheduleRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        var config = new JobDefinitionConfig(
+            "orders.recur",
+            priority: JobMasterPriority.Low,
+            timeout: TimeSpan.FromSeconds(15),
+            workerLane: "orders");
+
+        var ctx = JobMasterScheduler.Instance.Advanced.Recurring(config, new NeverRecursCompiledExpr(), clusterId: clusterId);
+
+        ctx.ClusterId.Should().Be(clusterId);
+        scheduled.Should().NotBeNull();
+        scheduled!.JobDefinitionId.Should().Be("orders.recur");
+        scheduled.Priority.Should().Be(JobMasterPriority.Low);
+        scheduled.Timeout.Should().Be(TimeSpan.FromSeconds(15));
+        scheduled.WorkerLane.Should().Be("orders");
+        schedulerMock.Verify();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithConfigObject_WhenNoValuesSet_LeavesThemNullForReplanTimeResolution()
+    {
+        // Recurring schedules defer Priority/Timeout/MaxNumberOfRetries resolution to replan time
+        // (RecurringSchedulePlanner), unlike one-time jobs which resolve eagerly — this is intentional so a
+        // long-lived recurring schedule picks up config/attribute/cluster-default changes on its next
+        // occurrence rather than freezing them in at creation time.
+        var clusterId = "c-advanced-recurring-deferred";
+
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+
+        JobMasterClusterConnectionConfig.Create(
+            clusterId: clusterId,
+            repositoryTypeId: "repo",
+            connectionString: "cnn",
+            isDefault: true);
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        RecurringScheduleRawModel? scheduled = null;
+        schedulerMock
+            .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Verifiable();
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+
+        var config = new JobDefinitionConfig("orders.recur.bare");
+
+        JobMasterScheduler.Instance.Advanced.Recurring(config, new NeverRecursCompiledExpr(), clusterId: clusterId);
+
+        scheduled.Should().NotBeNull();
+        scheduled!.Priority.Should().BeNull();
+        scheduled.Timeout.Should().BeNull();
+        scheduled.MaxNumberOfRetries.Should().BeNull();
+    }
+
+    private sealed class TestDefinitionAttribute : JobDefinitionConfigAttribute
+    {
+        public override JobDefinitionConfig Config { get; } = new JobDefinitionConfig(
+            "advanced-defid",
+            priority: JobMasterPriority.High,
+            timeout: TimeSpan.FromSeconds(42),
+            workerLane: "advanced-lane");
     }
 
     private sealed class TestJobMasterHandler : IJobMasterHandler

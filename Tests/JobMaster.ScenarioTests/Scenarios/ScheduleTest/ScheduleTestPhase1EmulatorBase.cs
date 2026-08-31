@@ -37,16 +37,21 @@ public abstract class ScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalE
     {
         ["fast"] = "TestApp.Fast",
         ["normal"] = "TestApp.Normal",
-        ["slow"] = "TestApp.Slow"
+        ["slow"] = "TestApp.Slow",
+        // Scheduled via IJobMasterScheduler.Advanced.OnceNow/OnceAfter<TDefinition>() instead of the
+        // classic handler-typed overload -- proves the JobDefinitionConfigAttribute path end-to-end
+        // (scheduling *and* execution-time handler resolution), not just in-process/mocked.
+        ["advanced-fast"] = "TestApp.AdvancedFast"
     };
 
-    // Raw JobMasterPriority underlying int values (VeryLow=1 .. Critical=5) -- gives the plan 3
+    // Raw JobMasterPriority underlying int values (VeryLow=1 .. Critical=5) -- gives the plan 4
     // distinct priorities to filter by, one per handler type.
     private static readonly Dictionary<string, int> HandlerTypeToPriority = new()
     {
-        ["fast"] = 3,   // Medium
-        ["normal"] = 4, // High
-        ["slow"] = 2    // Low
+        ["fast"] = 3,          // Medium
+        ["normal"] = 4,        // High
+        ["slow"] = 2,          // Low
+        ["advanced-fast"] = 5  // Critical
     };
 
     protected abstract IReadOnlyList<string> ClusterIds { get; }
@@ -147,9 +152,12 @@ public abstract class ScheduleTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalE
             plan.Add(CreateQty(clusterId, "normal", Scale(50, scale)));
             plan.Add(CreateQty(clusterId, "slow", Scale(3, scale)));
 
+            plan.Add(CreateQty(clusterId, "advanced-fast", Scale(20, scale)));
+
             // Delayed by 5 minutes.
             plan.Add(CreateQty(clusterId, "fast", Scale(100, scale), delaySeconds));
             plan.Add(CreateQty(clusterId, "normal", Scale(30, scale), delaySeconds));
+            plan.Add(CreateQty(clusterId, "advanced-fast", Scale(10, scale), delaySeconds));
         }
 
         return plan;

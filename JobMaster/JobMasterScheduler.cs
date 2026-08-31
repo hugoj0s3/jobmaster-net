@@ -15,7 +15,7 @@ namespace JobMaster;
 /// Singleton implementation of <see cref="IJobMasterScheduler"/>.
 /// Prefer injecting <see cref="IJobMasterScheduler"/> from the DI container over using <see cref="Instance"/> directly.
 /// </summary>
-public class JobMasterScheduler : IJobMasterScheduler
+public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanced
 {
     private static IJobMasterRuntime JobMasterRuntime => JobMasterRuntimeSingleton.Instance;
 
@@ -25,7 +25,9 @@ public class JobMasterScheduler : IJobMasterScheduler
 
     /// <summary>The global singleton instance of the scheduler.</summary>
     public static IJobMasterScheduler Instance { get; } = new JobMasterScheduler();
-    
+
+    public IJobMasterSchedulerAdvanced Advanced => this;
+
     public JobContext OnceNow<T>(
         IWriteableMessageData? msgData = null, 
         JobMasterPriority? priority = null,
@@ -209,6 +211,367 @@ public class JobMasterScheduler : IJobMasterScheduler
         return schedulerClusterAware.ReSchedule(jobId, scheduledAt);
     }
     
+    // The generic Advanced.OnceNow<TDefinition>/OnceAt<TDefinition>/OnceAfter<TDefinition> (+ Async) methods
+    // are implemented explicitly below: a single class cannot implicitly implement both this interface's
+    // OnceNow<T>() (constrained to IJobMasterHandler) and IJobMasterSchedulerAdvanced's OnceNow<TDefinition>()
+    // (constrained to JobDefinitionConfigAttribute) under the same public member name — C# requires matching
+    // constraints for implicit implementations (CS0425/CS0111). Explicit implementation sidesteps this since
+    // they're only reachable through IJobMasterSchedulerAdvanced (i.e. via the Advanced property), which is
+    // the only intended access path anyway.
+
+    JobContext IJobMasterSchedulerAdvanced.OnceNow<TDefinition>(
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => OnceNow(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
+
+    public JobContext OnceNow(
+        JobDefinitionConfig config,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var job = NewJob(clusterId, config, msgData, DateTime.UtcNow);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+
+        SaveJob(jobRawModel);
+
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    async Task<JobContext> IJobMasterSchedulerAdvanced.OnceNowAsync<TDefinition>(
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => await OnceNowAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), msgData, clusterId);
+
+    public async Task<JobContext> OnceNowAsync(
+        JobDefinitionConfig config,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var job = NewJob(clusterId, config, msgData, DateTime.UtcNow);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+
+        await SaveJobAsync(jobRawModel);
+
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    JobContext IJobMasterSchedulerAdvanced.OnceAt<TDefinition>(
+        DateTime dateTime,
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => OnceAt(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
+
+    public JobContext OnceAt(
+        JobDefinitionConfig config,
+        DateTime dateTime,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var job = NewJob(clusterId, config, msgData, dateTime);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+        SaveJob(jobRawModel);
+
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    async Task<JobContext> IJobMasterSchedulerAdvanced.OnceAtAsync<TDefinition>(
+        DateTime dateTime,
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => await OnceAtAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), dateTime, msgData, clusterId);
+
+    public async Task<JobContext> OnceAtAsync(
+        JobDefinitionConfig config,
+        DateTime dateTime,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var job = NewJob(clusterId, config, msgData, dateTime);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+
+        await SaveJobAsync(jobRawModel);
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    JobContext IJobMasterSchedulerAdvanced.OnceAfter<TDefinition>(
+        TimeSpan after,
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => OnceAfter(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
+
+    public JobContext OnceAfter(
+        JobDefinitionConfig config,
+        TimeSpan after,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var scheduledAt = DateTime.UtcNow.Add(after);
+        var job = NewJob(clusterId, config, msgData, scheduledAt);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+        SaveJob(jobRawModel);
+
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    async Task<JobContext> IJobMasterSchedulerAdvanced.OnceAfterAsync<TDefinition>(
+        TimeSpan after,
+        IWriteableMessageData? msgData,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        string? clusterId)
+        => await OnceAfterAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), after, msgData, clusterId);
+
+    public async Task<JobContext> OnceAfterAsync(
+        JobDefinitionConfig config,
+        TimeSpan after,
+        IWriteableMessageData? msgData = null,
+        string? clusterId = null)
+    {
+        var scheduledAt = DateTime.UtcNow.Add(after);
+        var job = NewJob(clusterId, config, msgData, scheduledAt);
+        var jobRawModel = job.ToModel();
+        EnsureCanSave(clusterId, jobRawModel);
+
+        await SaveJobAsync(jobRawModel);
+        return JobConvertUtil.ToJobContext(job);
+    }
+
+    RecurringScheduleContext IJobMasterSchedulerAdvanced.Recurring<TDefinition>(
+        IRecurrenceCompiledExpr expression,
+        IWriteableMessageData? data,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        DateTime? startAfter,
+        DateTime? endBefore,
+        string? clusterId)
+        => Recurring(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
+
+    public RecurringScheduleContext Recurring(
+        JobDefinitionConfig config,
+        IRecurrenceCompiledExpr expression,
+        IWriteableMessageData? data = null,
+        DateTime? startAfter = null,
+        DateTime? endBefore = null,
+        string? clusterId = null)
+    {
+        var recurring = NewRecurSchedule(clusterId, config, data, expression, startAfter, endBefore);
+        var raw = recurring.ToModel();
+        EnsureCanSave(clusterId, raw);
+        SaveRecurringSchedule(raw);
+        return RecurringScheduleConvertUtil.ToContext(recurring);
+    }
+
+    async Task<RecurringScheduleContext> IJobMasterSchedulerAdvanced.RecurringAsync<TDefinition>(
+        IRecurrenceCompiledExpr expression,
+        IWriteableMessageData? data,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        DateTime? startAfter,
+        DateTime? endBefore,
+        string? clusterId)
+        => await RecurringAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expression, data, startAfter, endBefore, clusterId);
+
+    public async Task<RecurringScheduleContext> RecurringAsync(
+        JobDefinitionConfig config,
+        IRecurrenceCompiledExpr expression,
+        IWriteableMessageData? data = null,
+        DateTime? startAfter = null,
+        DateTime? endBefore = null,
+        string? clusterId = null)
+    {
+        var recurring = NewRecurSchedule(clusterId, config, data, expression, startAfter, endBefore);
+        var raw = recurring.ToModel();
+        EnsureCanSave(clusterId, raw);
+        await SaveRecurringScheduleAsync(raw);
+        return RecurringScheduleConvertUtil.ToContext(recurring);
+    }
+
+    RecurringScheduleContext IJobMasterSchedulerAdvanced.Recurring<TDefinition>(
+        string expressionTypeId,
+        string expression,
+        IWriteableMessageData? data,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        DateTime? startAfter,
+        DateTime? endBefore,
+        string? clusterId)
+        => Recurring(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
+
+    public RecurringScheduleContext Recurring(
+        JobDefinitionConfig config,
+        string expressionTypeId,
+        string expression,
+        IWriteableMessageData? data = null,
+        DateTime? startAfter = null,
+        DateTime? endBefore = null,
+        string? clusterId = null)
+    {
+        var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
+        var recurring = NewRecurSchedule(clusterId, config, data, compiled, startAfter, endBefore);
+        var raw = recurring.ToModel();
+        EnsureCanSave(clusterId, raw);
+        SaveRecurringSchedule(raw);
+        return RecurringScheduleConvertUtil.ToContext(recurring);
+    }
+
+    async Task<RecurringScheduleContext> IJobMasterSchedulerAdvanced.RecurringAsync<TDefinition>(
+        string expressionTypeId,
+        string expression,
+        IWriteableMessageData? data,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata,
+        DateTime? startAfter,
+        DateTime? endBefore,
+        string? clusterId)
+        => await RecurringAsync(ApplyOverrides(new TDefinition().Config, priority, workerLane, timeout, maxNumberOfRetries, metadata), expressionTypeId, expression, data, startAfter, endBefore, clusterId);
+
+    public async Task<RecurringScheduleContext> RecurringAsync(
+        JobDefinitionConfig config,
+        string expressionTypeId,
+        string expression,
+        IWriteableMessageData? data = null,
+        DateTime? startAfter = null,
+        DateTime? endBefore = null,
+        string? clusterId = null)
+    {
+        var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
+        var recurring = NewRecurSchedule(clusterId, config, data, compiled, startAfter, endBefore);
+        var raw = recurring.ToModel();
+        EnsureCanSave(clusterId, raw);
+        await SaveRecurringScheduleAsync(raw);
+        return RecurringScheduleConvertUtil.ToContext(recurring);
+    }
+
+    /// <summary>
+    /// Returns <paramref name="config"/> unchanged when no override is set, otherwise a new
+    /// <see cref="JobDefinitionConfig"/> with the same <see cref="JobDefinitionConfig.JobDefinitionId"/>
+    /// and each override applied on top of <paramref name="config"/>'s own values. Used only by the
+    /// <typeparamref name="TDefinition"/>-generic Advanced overloads, since <paramref name="config"/> there
+    /// comes from a fixed, shared <see cref="JobDefinitionConfigAttribute"/> instance rather than being
+    /// built fresh per call.
+    /// </summary>
+    private static JobDefinitionConfig ApplyOverrides(
+        JobDefinitionConfig config,
+        JobMasterPriority? priority,
+        string? workerLane,
+        TimeSpan? timeout,
+        int? maxNumberOfRetries,
+        IWritableMetadata? metadata)
+    {
+        if (priority is null && workerLane is null && timeout is null && maxNumberOfRetries is null && metadata is null)
+        {
+            return config;
+        }
+
+        return new JobDefinitionConfig(
+            config.JobDefinitionId,
+            priority: priority ?? config.Priority,
+            timeout: timeout ?? config.Timeout,
+            maxNumberOfRetries: maxNumberOfRetries ?? config.MaxNumberOfRetries,
+            workerLane: workerLane ?? config.WorkerLane,
+            metadata: metadata ?? config.Metadata);
+    }
+
+    private Job NewJob(
+        string? clusterId,
+        JobDefinitionConfig config,
+        IWriteableMessageData? data,
+        DateTime? scheduledAt)
+    {
+        if (clusterId == null)
+        {
+            if (JobMasterClusterConnectionConfig.Default == null)
+            {
+                throw new KeyNotFoundException("Default cluster config not found");
+            }
+
+            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
+        }
+
+        var clusterConfiguration = EnsureGetMasterClusterConfigurationService(clusterId).Get();
+        return Job.New(
+            clusterId,
+            config,
+            data,
+            scheduledAt,
+            triggerSourceType: JobMasterTriggerSourceType.Once,
+            masterConfig: clusterConfiguration);
+    }
+
+    private RecurringSchedule NewRecurSchedule(
+        string? clusterId,
+        JobDefinitionConfig config,
+        IWriteableMessageData? values,
+        IRecurrenceCompiledExpr expression,
+        DateTime? startAfter,
+        DateTime? endBefore)
+    {
+        if (clusterId == null)
+        {
+            if (JobMasterClusterConnectionConfig.Default == null)
+            {
+                throw new KeyNotFoundException("Default cluster config not found");
+            }
+
+            clusterId = JobMasterClusterConnectionConfig.Default.ClusterId;
+        }
+
+        return RecurringSchedule.New(
+            clusterId,
+            config,
+            values,
+            expression,
+            RecurringScheduleType.Dynamic,
+            staticDefinitionId: null,
+            startAfter,
+            endBefore);
+    }
+
     private RecurringSchedule NewRecurSchedule<T>(
         string? clusterId,
         IWriteableMessageData? values, 

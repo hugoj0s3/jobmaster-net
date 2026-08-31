@@ -72,10 +72,8 @@ internal class RecurringSchedule : JobMasterBaseModel
         DateTime? endBefore,
         string? workerLane) where T : IJobMasterHandler
     {
-        var jobDefinitionId =
-            typeof(T).GetCustomAttributes(false).OfType<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId ??
-            typeof(T).FullName;
-        
+        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(typeof(T));
+
         if (string.IsNullOrEmpty(jobDefinitionId))
         {
             throw new InvalidOperationException($"JobDefinitionId was not resolved. " +
@@ -134,6 +132,32 @@ internal class RecurringSchedule : JobMasterBaseModel
             EndBefore = endBefore,
             WorkerLane = workerLane
         };
+    }
+
+    public static RecurringSchedule New(
+        string clusterId,
+        JobDefinitionConfig config,
+        IWriteableMessageData? values,
+        IRecurrenceCompiledExpr expression,
+        RecurringScheduleType recurringScheduleType,
+        string? staticDefinitionId,
+        DateTime? startAfter,
+        DateTime? endBefore)
+    {
+        return New(
+            clusterId,
+            config.JobDefinitionId,
+            values,
+            expression,
+            config.Priority,
+            config.Timeout,
+            config.MaxNumberOfRetries,
+            config.Metadata,
+            recurringScheduleType,
+            staticDefinitionId,
+            startAfter,
+            endBefore,
+            config.WorkerLane);
     }
 
     public RecurringScheduleRawModel ToModel()

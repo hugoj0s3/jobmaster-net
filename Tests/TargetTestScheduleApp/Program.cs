@@ -108,7 +108,10 @@ static Task<JobContext> ScheduleHandler(
         "verylong" => afterSeconds.HasValue
             ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
             : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
-        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong.")
+        "advanced-fast" => afterSeconds.HasValue
+            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
+            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority),
+        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast.")
     };
 }
 

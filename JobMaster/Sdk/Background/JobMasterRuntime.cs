@@ -60,9 +60,16 @@ internal class JobMasterRuntime : IJobMasterRuntime
         using var scope = serviceProvider.CreateScope();
 
         var runtimeSetups = scope.ServiceProvider.GetServices<IJobMasterRuntimeSetup>().ToList();
+        var validationMessages = new List<string>();
         foreach (var runtimeSetup in runtimeSetups)
         {
-            await runtimeSetup.ValidateAsync(scope.ServiceProvider);
+            validationMessages.AddRange(await runtimeSetup.ValidateAsync(scope.ServiceProvider));
+        }
+
+        if (validationMessages.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"JobMasterRuntime failed validation:{Environment.NewLine}{string.Join(Environment.NewLine, validationMessages)}");
         }
 
         // All validation (both the per-setup ValidateAsync above and the structural checks below)
