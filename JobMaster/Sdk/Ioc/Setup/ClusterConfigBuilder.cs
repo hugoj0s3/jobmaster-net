@@ -162,10 +162,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
 
         services.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        
+        services.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
+
         var clusterServiceRegistration = new ClusterIocRegistration(finalClusterId!, services);
         clusterServiceRegistration.ClusterServices.AddSingleton<IBucketSelectorAlgorithm, RandomBucketSelectorAlgorithm>();
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
+        clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
         clusterServiceRegistration.ClusterServices.AddSingleton<DefaultKnownExceptionIdentifierStrategy>();
         clusterServiceRegistration.AddJobMasterComponent<IKnownExceptionIdentifier, KnownExceptionIdentifier>();

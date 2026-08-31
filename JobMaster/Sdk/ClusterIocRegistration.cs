@@ -27,6 +27,7 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         
         ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true));
         ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
+        ClusterServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
         ClusterServices.AddSingleton<IJobMasterRuntime>(BootstrapBlueprintDefinitions.JobMasterRuntime!);
     }
     
@@ -38,6 +39,7 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         
         mainServices.AddKeyedSingleton<IJobMasterClusterAwareComponentFactory>(ClusterServiceKeys.GetClusterServiceProviderKey(ClusterId), clusterComponentFactory);
         mainServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
+        mainServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
         return clusterComponentFactory;
     }
     
