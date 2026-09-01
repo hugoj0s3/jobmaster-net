@@ -237,20 +237,6 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
             throw new ArgumentException("Job execution outcome must be failed when job status is failed.");
         }
         
-        // A Failed execution outcome is valid alongside two job statuses, not just Failed:
-        // TryRetry() (JobRawModel.cs) intentionally sets Status back to OnMaster -- not
-        // Failed -- when retries remain, so the job is picked up fresh from the master queue.
-        // That's a per-attempt failure on a job that isn't done retrying yet, not a
-        // contradiction; only a Failed outcome paired with some other, genuinely inconsistent
-        // status (e.g. Succeeded, InBucket) should be rejected here.
-        if (addJobExecution != null &&
-            addJobExecution.Outcome != JobExecutionOutcomeStatus.Succeeded
-            && jobRaw.Status != JobMasterJobStatus.Failed
-            && jobRaw.Status != JobMasterJobStatus.OnMaster)
-        {
-            throw new ArgumentException("Job execution outcome must be succeeded, or the job must be Failed or OnMaster (retry pending), when the execution outcome is not succeeded.");
-        }
-        
         addJobExecution?.EnsureFinalized();
     }
 }

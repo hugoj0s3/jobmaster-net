@@ -13,14 +13,16 @@ namespace JobMaster.UnitTests.Services.Master;
 
 public class MasterJobsServiceTests
 {
-    // ── ValidateJobExecutionOutcome: Failed outcome alongside OnMaster status (retry pending) ────────
+    // ── ValidateJobExecutionOutcome: only Succeeded/Failed status are outcome-restricted ─────────────
+    // A Failed execution outcome is valid alongside any status except Succeeded -- e.g. TryRetry()
+    // (JobRawModel.cs) sets Status back to OnMaster, not Failed, when retries remain, so recording
+    // that attempt's Failed execution alongside OnMaster status must be accepted. The only two
+    // invariants actually enforced: Succeeded status requires a Succeeded outcome, and Failed status
+    // requires a Failed outcome.
 
     [Fact]
     public async Task UpdateAsync_WhenJobIsOnMasterWithFailedExecution_ShouldNotThrow()
     {
-        // TryRetry() (JobRawModel.cs) sets Status back to OnMaster -- not Failed -- when retries
-        // remain, so recording that attempt's Failed execution alongside OnMaster status must be
-        // accepted, not rejected as an inconsistent combination.
         var clusterId = NewClusterId();
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
         var job = NewJob(clusterId, JobMasterJobStatus.OnMaster);
@@ -55,21 +57,21 @@ public class MasterJobsServiceTests
     }
 
     [Fact]
-    public async Task UpdateAsync_WhenJobIsInBucketWithFailedExecution_ShouldThrowArgumentException()
+    public async Task UpdateAsync_WhenJobIsInBucketWithFailedExecution_ShouldNotThrow()
     {
-        // Confirms the OnMaster allowance is scoped narrowly -- a Failed execution outcome paired
-        // with a genuinely inconsistent status (job still actively assigned to a bucket) is still
-        // rejected, not silently permitted by the fix above.
         var clusterId = NewClusterId();
         var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
         var job = NewJob(clusterId, JobMasterJobStatus.InBucket);
         var execution = NewFailedExecution(clusterId);
 
+        repo.Setup(x => x.UpdateAsync(job, execution)).Returns(Task.CompletedTask);
+
         var sut = CreateSut(clusterId, repo.Object);
 
         var act = () => sut.UpdateAsync(job, execution);
 
-        await act.Should().ThrowAsync<ArgumentException>();
+        await act.Should().NotThrowAsync();
+        repo.Verify(x => x.UpdateAsync(job, execution), Times.Once);
     }
 
     [Fact]
