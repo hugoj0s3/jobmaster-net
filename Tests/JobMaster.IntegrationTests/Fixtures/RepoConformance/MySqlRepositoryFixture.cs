@@ -19,6 +19,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
     internal override IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; } = null!;
     internal override IMasterGenericRecordRepository MasterGenericRecords { get;  set; } = null!;
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
+    internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
 
     internal override IAgentRawMessagesDispatcherRepository AgentMessages { get; set; } = null!;
 
@@ -35,6 +36,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
         MasterRecurringSchedules = factory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
         MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
+        MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
 
         var agentConfig = JobMasterClusterConnectionConfig
             .Get(ClusterId, includeNotReady: true)

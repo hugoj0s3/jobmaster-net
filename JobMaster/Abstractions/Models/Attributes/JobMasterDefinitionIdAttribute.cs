@@ -42,18 +42,30 @@ public class JobMasterDefinitionIdAttribute : Attribute
             .Where(p => p.IsAbstract == false && p is { IsInterface: false, IsClass: true })
             .ToList();
 
-        result = types.FirstOrDefault(x =>
-                     JobDefinitionConfigAttribute.TryGetAppliedConfig(x)?.JobDefinitionId == jobdefinitionId) ??
-                 types.FirstOrDefault(x =>
-                     x.GetCustomAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId) ??
-                 types.FirstOrDefault(x => x.FullName == jobdefinitionId);
-
-        if (result != null)
+        var byConfigAttribute = types.FirstOrDefault(x =>
+            JobDefinitionConfigAttribute.TryGetAppliedConfig(x)?.JobDefinitionId == jobdefinitionId);
+        if (byConfigAttribute is not null)
         {
-            JobDefinitionIdMap.TryAdd(jobdefinitionId, result);
+            JobDefinitionIdMap.TryAdd(jobdefinitionId, byConfigAttribute);
+            return byConfigAttribute;
         }
-
-        return result;
+        
+        var byDefinitionIdAttribute = types.FirstOrDefault(x =>
+            x.GetCustomAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId);
+        if (byDefinitionIdAttribute is not null)
+        {
+            JobDefinitionIdMap.TryAdd(jobdefinitionId, byDefinitionIdAttribute);
+            return byDefinitionIdAttribute;
+        }
+        
+        var byFullName = types.FirstOrDefault(x => x.FullName == jobdefinitionId);
+        if (byFullName is not null)
+        {
+            JobDefinitionIdMap.TryAdd(jobdefinitionId, byFullName);
+            return byFullName;
+        }
+        
+        return null;
     }
 
     /// <summary>

@@ -13,6 +13,7 @@ public abstract class RepositoryFixtureBase : IAsyncLifetime
     internal abstract IMasterRecurringSchedulesRepository MasterRecurringSchedules { get; set; }
     internal abstract IMasterGenericRecordRepository MasterGenericRecords { get; set; }
     internal abstract IMasterDistributedLockerRepository MasterDistributedLocker { get; set; }
+    internal abstract IMasterLogsRepository MasterLogs { get; set; }
 
     internal abstract IAgentRawMessagesDispatcherRepository AgentMessages { get;set;  }
     public abstract Task InitializeAsync();

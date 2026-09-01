@@ -47,24 +47,6 @@ of `ConfigFromJson`'s design. This was found by spot-checking one specific field
 sweep — worth auditing every other enum-like/identifier string this surface parses to confirm nothing
 else was missed the same way before considering this done.
 
-## No shared `Logs` RepoConformance suite for any provider
-
-Raised 2026-08-15 while implementing `IMasterLogsRepository` for the RavenDB provider. Unlike the other
-4 Master interfaces (Jobs, RecurringSchedules, GenericRecords, DistributedLocker), `RepositoryFixtureBase`
-(`Tests/JobMaster.IntegrationTests/Fixtures/RepoConformance/RepositoryFixtureBase.cs`) has no `MasterLogs`
-slot, and there is no shared `RepositoryLogsConformanceTests<TFixture>` base class the way
-`RepositoryDistributedLockerConformanceTests`/`RepositoryGenericRecordsConformanceTests` exist. This means
-SQL's `SqlMasterLogsRepository`/provider overrides have never had cross-provider conformance coverage —
-a pre-existing gap, not something introduced by the RavenDB work.
-
-Because of this, RavenDB's Logs implementation shipped with its own standalone test class
-(`RavenDbLogsRepositoryConformanceTests`, 6 tests against a concrete `RavenDbRepositoryFixture`, not a
-shared generic base) rather than the reused-shared-base pattern the other 4 interfaces followed. Properly
-fixing this means adding `MasterLogs` to `RepositoryFixtureBase`, writing a shared
-`RepositoryLogsConformanceTests<TFixture>` base class, and wiring it into all 4 provider fixtures
-(Postgres/MySql/SqlServer/RavenDb) — bigger than the RavenDB increment it was found in, and touches SQL
-provider test files outside that scope, so deferred rather than opportunistically bundled in.
-
 ## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
 
 `OnStartingAsync` was renamed to `OnBeforeStartAsync` (interface + all implementers: `SqlJobMasterRuntimeSetup`,
@@ -182,6 +164,17 @@ Two fix directions, neither implemented yet:
 removed (now `workflow_dispatch`-only, matching `schedule-scenario-tests.yml`) so this stops blocking PRs
 with a red badge for a test-infra race, not a real regression. Re-enable those triggers once one of the
 two fixes above lands.
+
+**2026-09-01**: Hit this exact cascade (RavenDB `ServiceUnavailable`/connection-refused + "Cluster ID
+'RT-Postgres-1' already exists") repeatedly on a local dev machine while adding the archive-JobExecutions
+feature, worse than usual -- one run had 426/586 tests fail. Docker on that machine had accumulated
+69.67GB (92%) of reclaimable image/build-cache bloat from a day of repeated container-heavy test runs;
+after `docker image prune -a` + `docker builder prune -a` reclaimed ~74GB, the very next full run (fresh
+image pulls, same test code, same machine) passed clean at 574/586 (12 skipped). Not a controlled
+before/after comparison (only one data point each side, and container startup timing is inherently noisy),
+but consistent with disk I/O contention during RavenDB's container startup as a real contributing/amplifying
+factor on top of the root cause above -- worth a Docker cleanup as a first troubleshooting step if this
+cascade reappears and seems worse than the usual occasional flake.
 
 ## `TryGetApplicableIndexName` (Jobs) treats `Statuses` (plural) and `Status` (singular) inconsistently
 
@@ -304,32 +297,27 @@ regardless of this bug) -- add a `requestTimeout` parameter to `ConfigExtensions
 through to `DocumentConventions.RequestTimeout` in `RavenDbDocumentStoreManager`. Not implemented here;
 this was a benchmarking session, not a provider-feature PR.
 
-## MasterJobsService.AcquireAndFetchAsync: on an unrecoverable deadlock, consider returning empty instead of throwing
+## `MasterJobsService.BulkUpdateAsync` overloads have no deadlock-specific retry, unlike `AcquireAndFetchAsync` used to
 
 Raised 2026-08-22 while benchmarking JobMaster SqlServer Pure under a 100k-job burst, 40 full-mode
 workers sharing one DB. That run hit 28 real SQL Server deadlocks (`SqlException 1205`), all inside
 `SqlServerMasterJobsRepository.BulkUpdateAsync`, all recovered by retry (none exhausted their retry
-budget) -- so this specific run never actually needed the change below. But investigating it surfaced a
-real asymmetry worth fixing regardless:
+budget) -- so this specific run never actually needed a change. But investigating it surfaced a real
+asymmetry: at the time, `AcquireAndFetchAsync` wrapped its repository call in a purpose-built
+`retryDeadlockPolicy` (3 retries, jittered backoff, specifically designed so concurrent deadlock victims
+don't re-collide on the same rows), while both `BulkUpdateAsync` overloads on the same service had no such
+wrapping at all -- relying entirely on the *caller*'s generic retry (`WorkerClusterOperations.ExecWithRetryAsync`,
+coarser, not deadlock-aware).
 
-`MasterJobsService.AcquireAndFetchAsync` (`JobMaster/Sdk/Services/Master/MasterJobsService.cs:130-133`)
-wraps its repository call in `retryDeadlockPolicy.ExecAsync(...)` -- the purpose-built policy in
-`RetryDeadlockPolicy.cs` (3 retries, always-jittered 250-375ms backoff, specifically designed so
-concurrent deadlock victims don't re-collide on the same rows). Both `BulkUpdateAsync` overloads on the
-same service (lines 198-203, 205-210) have no such wrapping at all -- they rely entirely on whatever
-generic retry the *caller* happens to apply (in practice `WorkerClusterOperations.ExecWithRetryAsync`,
-5 retries, coarser/less consistently jittered, not deadlock-aware). Worth closing that gap on its own
-(see the still-open question from that same review: whether to add `retryDeadlockPolicy` to both
-`BulkUpdateAsync` overloads too, matching `AcquireAndFetchAsync`).
-
-Separately, once `AcquireAndFetchAsync` does exhaust `retryDeadlockPolicy`'s retry budget on a genuine
-deadlock, consider having it simply return an empty list instead of letting the exception propagate.
-A claim call finding zero jobs is already a normal, expected outcome every tick (nothing eligible right
-now) -- the caller's polling loop treats it identically to "nothing to claim this tick" either way, so
-collapsing "deadlocked after exhausting retries" into that same empty-result path avoids an exception
-bubbling up through `WorkerClusterOperations` for a condition the system already knows how to shrug off
-and retry on the next tick, without changing any caller behavior. Not implemented here; flagged during a
-benchmarking session, not a provider-feature PR.
+**Partially addressed since**: `AcquireAndFetchAsync` no longer uses `retryDeadlockPolicy` at all -- it now
+catches a deadlock directly and returns an empty list immediately (Hugo confirmed this replacement design
+is correct, not a bug; a deadlocked claim rolls back before acquiring anything, so it's functionally
+identical to a tick that found nothing ready). That closes the original "should return empty instead of
+throwing" half of this reminder, but on a different mechanism than the "match `AcquireAndFetchAsync`'s
+retry wrapping" framing here originally assumed. The `BulkUpdateAsync` asymmetry itself is still open:
+those overloads still have no deadlock-specific handling of their own. Worth revisiting what "match the
+acquire path" should now mean given that path no longer retries deadlocks either -- possibly the same
+catch-and-return-empty-equivalent (an empty/no-op update result) rather than reintroducing a retry policy.
 
 ## Hybrid worker concept: independent transport configuration per connection role
 

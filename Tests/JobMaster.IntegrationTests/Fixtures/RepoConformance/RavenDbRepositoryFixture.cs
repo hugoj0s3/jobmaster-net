@@ -52,10 +52,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
-    // Not part of RepositoryFixtureBase's contract -- no shared "Logs" RepoConformance category exists
-    // for any provider (SQL included), so there's no base-class slot to fill. Exposed as a plain extra
-    // property for RavenDbLogsRepositoryConformanceTests, which is RavenDB-only for the same reason.
-    internal IMasterLogsRepository MasterLogs { get; set; } = null!;
+    internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
 
     // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
     // only registers the master side of UseRavenDb, so RegisterForAgent never runs and there's no

@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Abstractions.Models;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -227,6 +228,103 @@ public class JobTests
         r.GetDecimalValue("decimal").Should().Be(12.34m);
         r.GetDateTimeValue("dt").Should().Be(dt);
         r.GetGuidValue("guid").Should().Be(guid);
+    }
+
+    [Fact]
+    public void New_WhenScheduledAtOmitted_ScheduledAtAndNextPlanExecutionAt_DefaultToNow()
+    {
+        // Exercises NewBase's own defaulting (shared by both New(Type) and New(JobDefinitionConfig)) --
+        // every other test either passes an explicit scheduledAt or doesn't assert these fields.
+        var clusterId = "cluster";
+        var before = DateTime.UtcNow;
+
+        var job = Job.New(clusterId, typeof(JobMasterHandlerForTestNoAttributes));
+
+        var after = DateTime.UtcNow;
+        // ScheduledAt/NextPlanExecutionAt are two separate DateTime.UtcNow calls inside NewBase, not one
+        // shared value -- close-to-now, not exactly equal to each other, is the real contract here.
+        job.ScheduledAt.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+        job.NextPlanExecutionAt.Should().NotBeNull();
+        job.NextPlanExecutionAt!.Value.Should().BeOnOrAfter(before).And.BeOnOrBefore(after);
+    }
+
+    [Fact]
+    public void New_WhenDataOmitted_MsgDataDefaultsToEmpty()
+    {
+        var clusterId = "cluster";
+
+        var job = Job.New(clusterId, typeof(JobMasterHandlerForTestNoAttributes));
+
+        job.MsgData.Should().NotBeNull();
+        job.MsgData.ToDictionary().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void New_ConfigOverload_WhenNoOverrides_UsesFrameworkDefaults()
+    {
+        var clusterId = "cluster";
+        var config = new JobDefinitionConfig("orders.process.bare");
+
+        var job = Job.New(clusterId, config);
+
+        job.ClusterId.Should().Be(clusterId);
+        job.JobDefinitionId.Should().Be("orders.process.bare");
+        job.Priority.Should().Be(JobMasterPriority.Medium);
+        job.Timeout.Should().Be(TimeSpan.FromMinutes(5));
+        job.MaxNumberOfRetries.Should().Be(3);
+        job.WorkerLane.Should().BeNull();
+        job.Metadata.Should().NotBeNull();
+        job.Metadata!.ToDictionary().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void New_ConfigOverload_WhenNoOverrides_FallsBackToMasterConfigDefaults()
+    {
+        var clusterId = "cluster";
+        var config = new JobDefinitionConfig("orders.process.masterdefaults");
+        var masterConfig = new ClusterConfigurationModel(clusterId)
+        {
+            DefaultJobTimeout = TimeSpan.FromSeconds(42),
+            DefaultMaxOfRetryCount = 7,
+        };
+
+        var job = Job.New(clusterId, config, masterConfig: masterConfig);
+
+        job.Timeout.Should().Be(TimeSpan.FromSeconds(42));
+        job.MaxNumberOfRetries.Should().Be(7);
+    }
+
+    [Fact]
+    public void New_ConfigOverload_WhenValuesProvided_UsesConfigValues()
+    {
+        var clusterId = "cluster";
+        var metadata = WritableMetadata.New().SetStringValue("k", "v");
+        var config = new JobDefinitionConfig(
+            "orders.process.overrides",
+            priority: JobMasterPriority.High,
+            timeout: TimeSpan.FromSeconds(9),
+            maxNumberOfRetries: 2,
+            workerLane: "orders",
+            metadata: metadata);
+
+        var job = Job.New(clusterId, config);
+
+        job.JobDefinitionId.Should().Be("orders.process.overrides");
+        job.Priority.Should().Be(JobMasterPriority.High);
+        job.Timeout.Should().Be(TimeSpan.FromSeconds(9));
+        job.MaxNumberOfRetries.Should().Be(2);
+        job.WorkerLane.Should().Be("orders");
+        job.Metadata!.ToReadable().GetStringValue("k").Should().Be("v");
+    }
+
+    [Fact]
+    public void New_ConfigOverload_WhenMaxNumberOfRetriesGreaterThan10_Throws()
+    {
+        var clusterId = "cluster";
+        var config = new JobDefinitionConfig("orders.process.badretries", maxNumberOfRetries: 11);
+
+        var act = () => Job.New(clusterId, config);
+        act.Should().Throw<ArgumentException>().WithMessage("*MaxNumberOfRetries*");
     }
 
     [Fact]
