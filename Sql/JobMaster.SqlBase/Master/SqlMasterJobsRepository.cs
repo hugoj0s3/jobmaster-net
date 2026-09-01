@@ -21,6 +21,7 @@ using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
+using JobMaster.SqlBase.Models.Jobs;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
@@ -55,7 +56,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         try
         {
             var t = TableName();
-            var rec = JobRawModel.ToPersistence(jobRaw);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobRaw);
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -97,7 +98,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         try
         {
             var t = TableName();
-            var rec = JobRawModel.ToPersistence(jobRaw);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobRaw);
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -139,7 +140,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var rec = JobRawModel.ToPersistence(jobRaw);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
@@ -178,7 +179,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var rec = JobRawModel.ToPersistence(jobRaw);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobRaw);
             var expectedVersion = rec.Version;
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
@@ -237,10 +238,10 @@ WHERE cluster_id = @ClusterId AND job_id = @JobId
 ORDER BY started_at DESC";
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        var rows = (await conn.QueryAsync<JobExecutionPersistenceRecord>(sqlText,
+        var rows = (await conn.QueryAsync<SqlJobExecutionPersistenceRecord>(sqlText,
             new { ClusterId = ClusterConnConfig.ClusterId, JobId = jobId })).ToList();
 
-        return rows.Select(JobExecution.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public bool Exists(Guid jobId)
@@ -261,28 +262,28 @@ ORDER BY started_at DESC";
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
-        var linearRows = conn.Query<JobPersistenceRecordLinearDto>(sqlText, args).ToList();
+        var linearRows = conn.Query<SqlJobPersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListRecord(linearRows);
-        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public async Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
-        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlJobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
-        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public JobRawModel? Get(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildGetSql(jobId);
-        var linearRows = conn.Query<JobPersistenceRecordLinearDto>(sqlText, args).ToList();
+        var linearRows = conn.Query<SqlJobPersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListRecord(linearRows);
 
-        return rows.Select(JobRawModel.RecoverFromDb).SingleOrDefault();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).SingleOrDefault();
     }
 
     public async Task<JobRawModel?> GetAsync(Guid jobId)
@@ -290,10 +291,10 @@ ORDER BY started_at DESC";
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildGetSql(jobId);
 
-        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlJobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
 
-        return rows.Select(JobRawModel.RecoverFromDb).SingleOrDefault();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).SingleOrDefault();
     }
 
     public long Count(JobQueryCriteria queryCriteria)
@@ -401,7 +402,7 @@ FROM {t} j
         {
             foreach (var job in jobs)
             {
-                var rec = JobRawModel.ToPersistence(job);
+                var rec = SqlJobPersistenceConvertUtil.ToPersistence(job);
                 var expectedVersion = rec.Version;
                 rec.Version = newVersions[job.Id];
                 var dp = new DynamicParameters(rec);
@@ -434,12 +435,12 @@ FROM {t} j
     /// <paramref name="p"/> using suffixed parameter names (<c>Id_{i}</c>, <c>Status_{i}</c>, ...),
     /// matching the indexed-parameter convention already used by <see cref="BuildBulkInsertIfNotExistsSql"/>.
     /// Shared by the per-provider bulk-UPDATE overrides so the parameter list only needs to be kept in
-    /// sync with <see cref="JobPersistenceRecord"/> once. <paramref name="expectedVersion"/> must be
+    /// sync with <see cref="SqlJobPersistenceRecord"/> once. <paramref name="expectedVersion"/> must be
     /// captured by the caller BEFORE overwriting <paramref name="rec"/>'s <c>Version</c> with the new
     /// one -- it's what enforces optimistic concurrency: a row whose current version doesn't match is
     /// left untouched instead of being silently overwritten.
     /// </summary>
-    protected static void AddBulkUpdateRowParams(DynamicParameters p, int i, JobPersistenceRecord rec, string? expectedVersion)
+    protected static void AddBulkUpdateRowParams(DynamicParameters p, int i, SqlJobPersistenceRecord rec, string? expectedVersion)
     {
         p.Add($"Id_{i}", rec.Id, DbType.Guid);
         p.Add($"JobDefinitionId_{i}", rec.JobDefinitionId, DbType.String);
@@ -543,9 +544,9 @@ FROM jobs_page j
         };
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(queryText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlJobPersistenceRecordLinearDto>(queryText, args)).ToList();
         var rows = LinearListRecord(linearRows);
-        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
@@ -621,7 +622,7 @@ FROM jobs_page j
                 if (newJobs.Count > 0)
                 {
                     var newEntries = newJobs
-                        .Select(j => genericUtil.MapToSqlEntry(JobRawModel.ToPersistence(j).Metadata!))
+                        .Select(j => genericUtil.MapToSqlEntry(SqlJobPersistenceConvertUtil.ToPersistence(j).Metadata!))
                         .ToList();
 
                     var entriesSql = genericUtil.BuildBulkInsertEntriesSql(newEntries);
@@ -662,7 +663,7 @@ FROM jobs_page j
         for (var i = 0; i < count; i++)
         {
             var job = jobs[offset + i];
-            var rec = JobRawModel.ToPersistence(job);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(job);
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @MetadataJson_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
@@ -786,9 +787,9 @@ WHERE j.{cClusterId} = @ClusterId
             { "NowUtcWithSkew", nowUtcWithSkew }
         };
 
-        var linearRows = (await cnn2.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await cnn2.QueryAsync<SqlJobPersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListRecord(linearRows);
-        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
     
     protected virtual string UpdateToLockTableHint => string.Empty;
@@ -1155,7 +1156,7 @@ WHERE {cClusterId} = @ClusterId
     }
 
     // No more generic-record entry/value LEFT JOIN columns here -- Metadata is read straight off
-    // MetadataJson (see JobPersistenceRecord.MetadataJson), so every caller of this projection
+    // MetadataJson (see SqlJobPersistenceRecord.MetadataJson), so every caller of this projection
     // (Get/GetAsync/Query/QueryAsync/QueryLockedJobsAsync/QueryFinalizedToPurgeAsync) is a plain
     // single-table read now, no join, no row multiplication.
     protected string SelectProjection(string jobAlias = "j")
@@ -1206,16 +1207,16 @@ FROM {jobTableName} j
         return (sqlText, new Dictionary<string, object?>());
     }
 
-    protected string Col(Expression<Func<JobPersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
+    protected string Col(Expression<Func<SqlJobPersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
 
     // Named "Linear" from when this flattened a LEFT JOIN's (job, metadata-key) rows back into one
-    // JobPersistenceRecord per job. That join is gone -- Metadata now comes straight off
+    // SqlJobPersistenceRecord per job. That join is gone -- Metadata now comes straight off
     // MetadataJson (no reconstruction needed) -- so every row is already exactly one job, and this
-    // is a 1:1 map. Kept as its own step (rather than casting JobPersistenceRecordLinearDto
-    // directly) since it's still the place callers get a plain JobPersistenceRecord back.
-    protected IList<JobPersistenceRecord> LinearListRecord(IList<JobPersistenceRecordLinearDto> list)
+    // is a 1:1 map. Kept as its own step (rather than casting SqlJobPersistenceRecordLinearDto
+    // directly) since it's still the place callers get a plain SqlJobPersistenceRecord back.
+    protected IList<SqlJobPersistenceRecord> LinearListRecord(IList<SqlJobPersistenceRecordLinearDto> list)
     {
-        return list.Select(row => new JobPersistenceRecord
+        return list.Select(row => new SqlJobPersistenceRecord
         {
             ClusterId = row.ClusterId,
             Id = row.Id,
@@ -1244,7 +1245,7 @@ FROM {jobTableName} j
             Version = row.Version,
             HostId = row.HostId,
             HostDisplayName = row.HostDisplayName,
-        }).ToList<JobPersistenceRecord>();
+        }).ToList<SqlJobPersistenceRecord>();
     }
     
     // Deliberately excludes MetadataJson/Metadata -- see UpdateSetClause's comment; the same
@@ -1278,7 +1279,7 @@ FROM {jobTableName} j
         });
     }
 
-    protected class JobPersistenceRecordLinearDto : JobPersistenceRecord
+    protected class SqlJobPersistenceRecordLinearDto : SqlJobPersistenceRecord
     {
         public string RecordUniqueId { get; set; } = string.Empty;
         public string GroupId { get; set; } = string.Empty;

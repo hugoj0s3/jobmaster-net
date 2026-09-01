@@ -17,6 +17,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Models.RecurringSchedules;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Master;
@@ -105,7 +106,7 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         try
         {
             var t = TableName();
-            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(scheduleRaw);
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -142,7 +143,7 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         try
         {
             var t = TableName();
-            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(scheduleRaw);
             if (rec.Metadata is not null)
             {
                 var sqlEntry = genericUtil.MapToSqlEntry(rec.Metadata);
@@ -192,7 +193,7 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
@@ -226,7 +227,7 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         using var trans = conn.BeginTransaction(IsolationLevel.ReadCommitted);
         try
         {
-            var rec = RecurringScheduleRawModel.ToPersistence(scheduleRaw);
+            var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(scheduleRaw);
             var expectedVersion = rec.Version;
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
@@ -258,45 +259,45 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
-        var linearRows = conn.Query<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
+        var linearRows = conn.Query<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public async Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildQuerySql(queryCriteria);
-        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public RecurringScheduleRawModel? Get(Guid recurringScheduleId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildGetSql(recurringScheduleId);
-        var linearRows = conn.Query<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
+        var linearRows = conn.Query<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).SingleOrDefault();
     }
 
     public async Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId)
     {
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         var (sqlText, args) = BuildGetSql(recurringScheduleId);
-        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).SingleOrDefault();
     }
 
     public RecurringScheduleRawModel? GetByStaticId(string staticId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
         var (sqlText, args) = BuildGetByStaticIdSql(staticId);
-        var linearRows = conn.Query<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
+        var linearRows = conn.Query<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).SingleOrDefault();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).SingleOrDefault();
     }
 
     public async Task<int> InactivateStaticDefinitionsOlderThanAsync(DateTime cutoff)
@@ -471,9 +472,9 @@ FROM schedules_page s
         };
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
-        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(queryText, args)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlRecurringSchedulePersistenceRecordLinearDto>(queryText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).ToList();
     }
 
     public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
@@ -541,7 +542,7 @@ FROM schedules_page s
                 if (newSchedules.Count > 0)
                 {
                     var newEntries = newSchedules
-                        .Select(s => genericUtil.MapToSqlEntry(RecurringScheduleRawModel.ToPersistence(s).Metadata!))
+                        .Select(s => genericUtil.MapToSqlEntry(SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(s).Metadata!))
                         .ToList();
 
                     var entriesSql = genericUtil.BuildBulkInsertEntriesSql(newEntries);
@@ -582,7 +583,7 @@ FROM schedules_page s
         for (var i = 0; i < count; i++)
         {
             var schedule = schedules[offset + i];
-            var rec = RecurringScheduleRawModel.ToPersistence(schedule);
+            var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(schedule);
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
 
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @Expression_{i}, @ExpressionTypeId_{i}, @JobDefinitionId_{i}, @StaticDefinitionId_{i}, @ProfileId_{i}, @Status_{i}, @RecurringScheduleType_{i}, @StaticDefinitionLastEnsured_{i}, @TerminatedAt_{i}, @MsgData_{i}, @MetadataJson_{i}, @Priority_{i}, @MaxNumberOfRetries_{i}, @TimeoutTicks_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @PartitionLockId_{i}, @HostId_{i}, @HostDisplayName_{i}, @PartitionLockExpiresAt_{i}, @CreatedAt_{i}, @StartAfter_{i}, @EndBefore_{i}, @LastPlanCoverageUntil_{i}, @LastExecutedPlan_{i}, @HasFailedOnLastPlanExecution_{i}, @IsJobCancellationPending_{i}, @WorkerLane_{i}, @Version_{i}
@@ -684,9 +685,9 @@ WHERE s.{cClusterId} = @ClusterId
             { "NowUtcWithSkew", nowUtcWithSkew }
         };
 
-        var linearRows = (await conn2.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
+        var linearRows = (await conn2.QueryAsync<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, args)).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).ToList();
     }
 
     // SQL builders
@@ -869,7 +870,7 @@ SELECT {selectCols} FROM {t} s
     }
 
     // No more generic-record entry/value LEFT JOIN columns here -- Metadata is read straight off
-    // MetadataJson (see RecurringSchedulePersistenceRecord.MetadataJson). The entry/value tables
+    // MetadataJson (see SqlRecurringSchedulePersistenceRecord.MetadataJson). The entry/value tables
     // remain the source of truth for MetadataFilters querying only.
     protected string SelectProjection(string scheduleAlias = "s")
     {
@@ -997,15 +998,15 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
         return $"UPDATE {t} SET {UpdateSetClause()} WHERE {cClusterId} = @ClusterId AND {cId} = @Id AND {cVersion} = @ExpectedVersion";
     }
 
-    protected string Col(Expression<Func<RecurringSchedulePersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
+    protected string Col(Expression<Func<SqlRecurringSchedulePersistenceRecordLinearDto, object?>> prop) => sql.ColumnNameFor(prop);
 
     // Renamed in spirit only -- was a GroupBy-based reconstruction of Metadata (rich object) from
     // flattened entry/value join rows, back when every read LEFT JOINed those tables. Reads no
     // longer join them (MetadataJson is read straight off the row), so this is now a plain 1:1
     // mapping; Metadata (rich object) is intentionally left unset here, same as Jobs' LinearListRecord.
-    protected IList<RecurringSchedulePersistenceRecord> LinearListToDomain(IList<RecurringSchedulePersistenceRecordLinearDto> list)
+    protected IList<SqlRecurringSchedulePersistenceRecord> LinearListToDomain(IList<SqlRecurringSchedulePersistenceRecordLinearDto> list)
     {
-        return list.Select(row => new RecurringSchedulePersistenceRecord
+        return list.Select(row => new SqlRecurringSchedulePersistenceRecord
         {
             ClusterId = row.ClusterId,
             Id = row.Id,
@@ -1039,7 +1040,7 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
             IsJobCancellationPending = row.IsJobCancellationPending,
             WorkerLane = row.WorkerLane,
             Version = row.Version,
-        }).ToList<RecurringSchedulePersistenceRecord>();
+        }).ToList<SqlRecurringSchedulePersistenceRecord>();
     }
     
     protected string UpdateSetClauseWithoutVersion()
@@ -1076,7 +1077,7 @@ WHERE s.{Col(x => x.StaticDefinitionId)} = @StaticDefinitionId
         });
     }
 
-    protected class RecurringSchedulePersistenceRecordLinearDto : RecurringSchedulePersistenceRecord
+    protected class SqlRecurringSchedulePersistenceRecordLinearDto : SqlRecurringSchedulePersistenceRecord
     {
         public string RecordUniqueId { get; set; } = string.Empty;
         public string GroupId { get; set; } = string.Empty;

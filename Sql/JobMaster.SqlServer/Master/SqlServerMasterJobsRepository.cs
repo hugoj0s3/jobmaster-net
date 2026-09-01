@@ -11,6 +11,7 @@ using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Models.Jobs;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlServer.Master;
@@ -42,7 +43,7 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
         var valuesRows = new List<string>(jobs.Count);
         for (var i = 0; i < jobs.Count; i++)
         {
-            var rec = JobRawModel.ToPersistence(jobs[i]);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobs[i]);
             var expectedVersion = rec.Version;
             rec.Version = newVersions[jobs[i].Id];
             AddBulkUpdateRowParams(p, i, rec, expectedVersion);

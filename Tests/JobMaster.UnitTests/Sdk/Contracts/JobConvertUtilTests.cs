@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Utils;
+using JobMaster.SqlBase.Models.Jobs;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -95,9 +96,9 @@ public class JobConvertUtilTests
     }
 
     [Fact]
-    public void JobRawModel_And_JobPersistenceRecord_ShouldRoundTripAllPersistenceProperties()
+    public void JobRawModel_And_SqlJobPersistenceRecord_ShouldRoundTripAllPersistenceProperties()
     {
-        var record = new JobPersistenceRecord
+        var record = new SqlJobPersistenceRecord
         {
             ClusterId = "c",
             Id = Guid.Parse("b10c8e9a-0b2f-4c9f-88ea-3d7f7ac6f4d0"),
@@ -130,10 +131,10 @@ public class JobConvertUtilTests
             WorkerLane = "lane"
         };
 
-        var raw = JobConvertUtil.FromPersistence(record);
-        var record2 = JobConvertUtil.ToPersistence(raw);
+        var raw = SqlJobPersistenceConvertUtil.FromPersistence(record);
+        var record2 = SqlJobPersistenceConvertUtil.ToPersistence(raw);
 
-        foreach (var prop in typeof(JobPersistenceRecord).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        foreach (var prop in typeof(SqlJobPersistenceRecord).GetProperties(BindingFlags.Instance | BindingFlags.Public))
         {
             if (prop.GetIndexParameters().Length != 0)
                 continue;
@@ -141,7 +142,7 @@ public class JobConvertUtilTests
             var expected = prop.GetValue(record);
             var actual = prop.GetValue(record2);
 
-            if (prop.Name == nameof(JobPersistenceRecord.Metadata))
+            if (prop.Name == nameof(SqlJobPersistenceRecord.Metadata))
             {
                 var expectedDict = ((GenericRecordEntry?)expected)?.ToReadable().ToDictionary() ?? new Dictionary<string, object?>();
                 var actualDict = ((GenericRecordEntry?)actual)?.ToReadable().ToDictionary() ?? new Dictionary<string, object?>();

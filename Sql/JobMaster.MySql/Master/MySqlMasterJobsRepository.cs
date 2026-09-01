@@ -10,6 +10,7 @@ using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Models.Jobs;
 using JobMaster.SqlBase.Scripts;
 using System.Data;
 using JobMaster.Sdk.Utils;
@@ -142,9 +143,9 @@ WHERE j.{Col(x => x.ClusterId)} = @ClusterId
             { "NowUtcWithSkew", nowUtcWithSkew }
         };
 
-        var linearRows = (await conn.QueryAsync<JobPersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlJobPersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
         var rows = LinearListRecord(linearRows);
-        return rows.Select(JobRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
     // MySQL-specific: one multi-row UPDATE ... JOIN (derived table built from UNION ALL SELECTs)
@@ -164,7 +165,7 @@ WHERE j.{Col(x => x.ClusterId)} = @ClusterId
         var selects = new List<string>(jobs.Count);
         for (var i = 0; i < jobs.Count; i++)
         {
-            var rec = JobRawModel.ToPersistence(jobs[i]);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobs[i]);
             var expectedVersion = rec.Version;
             rec.Version = newVersions[jobs[i].Id];
             AddBulkUpdateRowParams(p, i, rec, expectedVersion);

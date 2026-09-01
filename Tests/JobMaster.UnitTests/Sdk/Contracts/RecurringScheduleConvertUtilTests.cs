@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Serialization;
+using JobMaster.SqlBase.Models.RecurringSchedules;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -27,20 +28,20 @@ public class RecurringScheduleConvertUtilTests
     }
 
     [Fact]
-    public void RecurringScheduleRawModel_And_RecurringSchedulePersistenceRecord_ShouldHaveMatchingPublicPropertyNames_ForConversion()
+    public void RecurringScheduleRawModel_And_SqlRecurringSchedulePersistenceRecord_ShouldHaveMatchingPublicPropertyNames_ForConversion()
     {
         var rawProps = GetRelevantPublicPropertyNames(typeof(RecurringScheduleRawModel), "IsValid");
         // MetadataJson is a persistence-only optimization column (avoids a LEFT JOIN on reads) with
         // no RawModel counterpart -- RawModel's Metadata (string) is what FromPersistence/ToPersistence
         // actually round-trip against it.
-        var recordProps = GetRelevantPublicPropertyNames(typeof(RecurringSchedulePersistenceRecord), "MetadataJson");
+        var recordProps = GetRelevantPublicPropertyNames(typeof(SqlRecurringSchedulePersistenceRecord), "MetadataJson");
 
         static string Normalize(string name)
         {
             return name switch
             {
-                nameof(RecurringScheduleRawModel.Timeout) => nameof(RecurringSchedulePersistenceRecord.TimeoutTicks),
-                nameof(RecurringSchedulePersistenceRecord.HostDisplayName) => nameof(RecurringScheduleRawModel.HostId),
+                nameof(RecurringScheduleRawModel.Timeout) => nameof(SqlRecurringSchedulePersistenceRecord.TimeoutTicks),
+                nameof(SqlRecurringSchedulePersistenceRecord.HostDisplayName) => nameof(RecurringScheduleRawModel.HostId),
                 _ => name
             };
         }
@@ -51,8 +52,8 @@ public class RecurringScheduleConvertUtilTests
         var missingOnRecord = normalizedRaw.Except(normalizedRecord).OrderBy(x => x).ToArray();
         var missingOnRaw = normalizedRecord.Except(normalizedRaw).OrderBy(x => x).ToArray();
 
-        missingOnRecord.Should().BeEmpty("every public property on RecurringScheduleRawModel should exist on RecurringSchedulePersistenceRecord (allowing intentional naming differences)");
-        missingOnRaw.Should().BeEmpty("every public property on RecurringSchedulePersistenceRecord should exist on RecurringScheduleRawModel (allowing intentional naming differences)");
+        missingOnRecord.Should().BeEmpty("every public property on RecurringScheduleRawModel should exist on SqlRecurringSchedulePersistenceRecord (allowing intentional naming differences)");
+        missingOnRaw.Should().BeEmpty("every public property on SqlRecurringSchedulePersistenceRecord should exist on RecurringScheduleRawModel (allowing intentional naming differences)");
     }
 
     [Fact]
@@ -139,9 +140,9 @@ public class RecurringScheduleConvertUtilTests
     }
 
     [Fact]
-    public void RecurringScheduleRawModel_And_RecurringSchedulePersistenceRecord_ShouldRoundTripAllPersistenceProperties()
+    public void RecurringScheduleRawModel_And_SqlRecurringSchedulePersistenceRecord_ShouldRoundTripAllPersistenceProperties()
     {
-        var record = new RecurringSchedulePersistenceRecord
+        var record = new SqlRecurringSchedulePersistenceRecord
         {
             ClusterId = "c",
             Id = Guid.Parse("b10c8e9a-0b2f-4c9f-88ea-3d7f7ac6f4d0"),
@@ -183,10 +184,10 @@ public class RecurringScheduleConvertUtilTests
             WorkerLane = "lane"
         };
 
-        var raw = RecurringScheduleConvertUtil.FromPersistence(record);
-        var record2 = RecurringScheduleConvertUtil.ToPersistence(raw);
+        var raw = SqlRecurringSchedulePersistenceConvertUtil.FromPersistence(record);
+        var record2 = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(raw);
 
-        foreach (var prop in typeof(RecurringSchedulePersistenceRecord).GetProperties(BindingFlags.Instance | BindingFlags.Public))
+        foreach (var prop in typeof(SqlRecurringSchedulePersistenceRecord).GetProperties(BindingFlags.Instance | BindingFlags.Public))
         {
             if (prop.GetIndexParameters().Length != 0)
                 continue;
@@ -194,7 +195,7 @@ public class RecurringScheduleConvertUtilTests
             var expected = prop.GetValue(record);
             var actual = prop.GetValue(record2);
 
-            if (prop.Name == nameof(RecurringSchedulePersistenceRecord.Metadata))
+            if (prop.Name == nameof(SqlRecurringSchedulePersistenceRecord.Metadata))
             {
                 var expectedDict = ((GenericRecordEntry?)expected)?.ToReadable().ToDictionary() ?? new Dictionary<string, object?>();
                 var actualDict = ((GenericRecordEntry?)actual)?.ToReadable().ToDictionary() ?? new Dictionary<string, object?>();

@@ -248,13 +248,6 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         return StaticDefinitionLastEnsured < afterAt;
     }
 
-    // Persistence mappers
-    public static RecurringScheduleRawModel RecoverFromDb(RecurringSchedulePersistenceRecord d)
-        => RecurringScheduleConvertUtil.FromPersistence(d);
-
-    public static RecurringSchedulePersistenceRecord ToPersistence(RecurringScheduleRawModel m)
-        => RecurringScheduleConvertUtil.ToPersistence(m);
-
     public void UpdateStaticFromDefinition(StaticRecurringScheduleDefinition definition)
     {
         if (string.IsNullOrEmpty(StaticDefinitionId))

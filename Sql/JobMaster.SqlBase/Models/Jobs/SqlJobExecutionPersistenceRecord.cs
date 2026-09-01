@@ -1,8 +1,8 @@
-namespace JobMaster.Sdk.Abstractions.Models.Jobs;
+namespace JobMaster.SqlBase.Models.Jobs;
 
 // Flat persistence DTO for the concrete job_execution table.
 // AgentConnectionId and HostId are stored as their IdValue strings.
-internal class JobExecutionPersistenceRecord
+internal class SqlJobExecutionPersistenceRecord
 {
     public string ClusterId { get; set; } = string.Empty;
     public Guid Id { get; set; }

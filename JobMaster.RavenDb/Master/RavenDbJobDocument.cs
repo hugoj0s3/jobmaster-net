@@ -16,7 +16,7 @@ internal sealed class RavenDbJobDocument
     public string? BucketId { get; set; }
 
     // AgentConnectionId/HostId are flattened to their string IdValue (+ HostDisplayName for HostId,
-    // which IdValue alone doesn't carry) -- same flattening SQL's JobPersistenceRecord uses, reconstructed
+    // which IdValue alone doesn't carry) -- same flattening SQL's SqlJobPersistenceRecord uses, reconstructed
     // via AgentConnectionId(string)/HostId.Recover(...) on read.
     public string? AgentConnectionId { get; set; }
     public string? AgentWorkerId { get; set; }

@@ -1,9 +1,9 @@
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
-namespace JobMaster.Sdk.Abstractions.Models.Jobs;
+namespace JobMaster.SqlBase.Models.Jobs;
 
-// Portable persistence DTO for repositories. Public setters for easy mapping.
-internal class JobPersistenceRecord
+// Portable persistence DTO for SQL repositories. Public setters for easy mapping.
+internal class SqlJobPersistenceRecord
 {
     public string ClusterId { get; set; } = string.Empty;
     public Guid Id { get; set; }
@@ -55,8 +55,8 @@ internal class JobPersistenceRecord
     public DateTime? ProcessStartedAt { get; set; }
 
     public DateTime? FinalizedAt { get; set; }
-    
+
     public string? WorkerLane { get; set; }
-    
+
     public string? Version { get; set; }
 }

@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Models.Jobs;
 using JobMaster.SqlBase.Scripts;
 using JobMaster.Sdk.Utils;
 
@@ -114,7 +115,7 @@ WHERE {t}.{Col(x => x.ClusterId)} = @ClusterId
         var valuesRows = new List<string>(jobs.Count);
         for (var i = 0; i < jobs.Count; i++)
         {
-            var rec = JobRawModel.ToPersistence(jobs[i]);
+            var rec = SqlJobPersistenceConvertUtil.ToPersistence(jobs[i]);
             var expectedVersion = rec.Version;
             rec.Version = newVersions[jobs[i].Id];
             AddBulkUpdateRowParams(p, i, rec, expectedVersion);

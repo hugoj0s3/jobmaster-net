@@ -1,9 +1,9 @@
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 
-namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+namespace JobMaster.SqlBase.Models.RecurringSchedules;
 
-// Portable persistence DTO for repositories. Public setters for easy mapping.
-internal class RecurringSchedulePersistenceRecord
+// Portable persistence DTO for SQL repositories. Public setters for easy mapping.
+internal class SqlRecurringSchedulePersistenceRecord
 {
     public string ClusterId { get; set; } = string.Empty;
     public Guid Id { get; set; }
@@ -53,13 +53,13 @@ internal class RecurringSchedulePersistenceRecord
 
     public DateTime? StartAfter { get; set; }
     public DateTime? EndBefore { get; set; }
-    
+
     public DateTime? LastPlanCoverageUntil { get; set; }
     public DateTime? LastExecutedPlan { get; set; }
     public bool? HasFailedOnLastPlanExecution { get; set; }
     public bool? IsJobCancellationPending { get; set; }
-    
+
     public string? WorkerLane { get; set; }
-    
+
     public string? Version { get; set; }
 }

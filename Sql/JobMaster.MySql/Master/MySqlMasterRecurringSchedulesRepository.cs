@@ -11,6 +11,7 @@ using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Master;
+using JobMaster.SqlBase.Models.RecurringSchedules;
 using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.MySql.Master;
@@ -138,9 +139,9 @@ WHERE s.{Col(x => x.ClusterId)} = @ClusterId
             { "NowUtcWithSkew", nowUtcWithSkew }
         };
 
-        var linearRows = (await conn.QueryAsync<RecurringSchedulePersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
+        var linearRows = (await conn.QueryAsync<SqlRecurringSchedulePersistenceRecordLinearDto>(sqlText, fetchArgs, trans)).ToList();
         var rows = LinearListToDomain(linearRows);
-        return rows.Select(RecurringScheduleRawModel.RecoverFromDb).ToList();
+        return rows.Select(SqlRecurringSchedulePersistenceConvertUtil.FromPersistence).ToList();
     }
 
     protected override string BuildQueryIdsToLockSql(

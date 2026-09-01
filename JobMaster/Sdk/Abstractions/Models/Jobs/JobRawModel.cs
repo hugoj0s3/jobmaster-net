@@ -361,12 +361,6 @@ internal class JobRawModel : JobMasterBaseModel
                ProcessDeadline.Value < DateTime.UtcNow.Add(JobMasterConstants.ProcessDeadlineEarlyWarning);
     }
     
-    public static JobRawModel RecoverFromDb(JobPersistenceRecord d)
-        => JobConvertUtil.FromPersistence(d);
-
-    public static JobPersistenceRecord ToPersistence(JobRawModel m)
-        => JobConvertUtil.ToPersistence(m);
-    
     public void RefreshDeadline(TimeSpan processDeadlineDuration)
     {
         var jobProcessDeadline = this.GetSafeNextPlanExecutionAt().Add(processDeadlineDuration);

@@ -1,7 +1,7 @@
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
-using JobMaster.Sdk.Abstractions.Models.Jobs;
-using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.SqlBase.Models.Jobs;
+using JobMaster.SqlBase.Models.RecurringSchedules;
 
 namespace JobMaster.SqlBase.Scripts;
 
@@ -41,102 +41,102 @@ internal static class MasterTableCreatorScripts
     {
         var tableName = sqlGenerator.TableNameFor<RecurringSchedule>(tablePrefix);
         
-        var clusterIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.ClusterId);
-        var clusterIdType = sqlGenerator.ColumnTypeFor<RecurringSchedulePersistenceRecord>(x => x.ClusterId, length: 250, nullable: false);
+        var clusterIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.ClusterId);
+        var clusterIdType = sqlGenerator.ColumnTypeFor<SqlRecurringSchedulePersistenceRecord>(x => x.ClusterId, length: 250, nullable: false);
         
-        var idCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Id);
+        var idCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.Id);
         var idType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: false);
 
-        var expressionCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Expression);
+        var expressionCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.Expression);
         var expressionType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
 
-        var expressionTypeIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.ExpressionTypeId);
+        var expressionTypeIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.ExpressionTypeId);
         var expressionTypeIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
-        var jobDefinitionIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.JobDefinitionId);
+        var jobDefinitionIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.JobDefinitionId);
         var jobDefinitionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
-        var staticDefinitionIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.StaticDefinitionId);
+        var staticDefinitionIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.StaticDefinitionId);
         var staticDefinitionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var staticDefinitionLastEnsuredCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.StaticDefinitionLastEnsured);
+        var staticDefinitionLastEnsuredCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.StaticDefinitionLastEnsured);
         var staticDefinitionLastEnsuredType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var profileIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.ProfileId);
+        var profileIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.ProfileId);
         var profileIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 128, nullable: true);
 
-        var statusCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Status);
+        var statusCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.Status);
         var statusType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var recurringScheduleTypeCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.RecurringScheduleType);
+        var recurringScheduleTypeCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.RecurringScheduleType);
         var recurringScheduleType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var dataCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.MsgData);
+        var dataCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.MsgData);
         var dataType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
 
         // JSON-serialized metadata, read directly instead of LEFT JOINing the generic-record
-        // entry/value tables -- see RecurringSchedulePersistenceRecord.MetadataJson.
-        var metadataJsonCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.MetadataJson);
+        // entry/value tables -- see SqlRecurringSchedulePersistenceRecord.MetadataJson.
+        var metadataJsonCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.MetadataJson);
         var metadataJsonType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: true);
 
-        var priorityCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Priority);
+        var priorityCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.Priority);
         var priorityType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
 
-        var maxNumberOfRetriesCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.MaxNumberOfRetries);
+        var maxNumberOfRetriesCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.MaxNumberOfRetries);
         var maxNumberOfRetriesType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: true);
 
-        var timeoutTicksCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.TimeoutTicks);
+        var timeoutTicksCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.TimeoutTicks);
         var timeoutTicksType = sqlGenerator.ColumnTypeFor(typeof(long), nullable: true);
 
-        var bucketIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.BucketId);
+        var bucketIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.BucketId);
         var bucketIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var agentConnectionIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.AgentConnectionId);
+        var agentConnectionIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.AgentConnectionId);
         var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var agentWorkerIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.AgentWorkerId);
+        var agentWorkerIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.AgentWorkerId);
         var agentWorkerIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var partitionLockIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.PartitionLockId);
+        var partitionLockIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.PartitionLockId);
         var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
-        var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.PartitionLockExpiresAt);
+        var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.PartitionLockExpiresAt);
         var partitionLockExpiresAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var createdAtCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.CreatedAt);
+        var createdAtCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.CreatedAt);
         var createdAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
-        var startAfterCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.StartAfter);
+        var startAfterCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.StartAfter);
         var startAfterType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var endBeforeCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.EndBefore);
+        var endBeforeCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.EndBefore);
         var endBeforeType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var lastPlanCoverageUntilCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.LastPlanCoverageUntil);
+        var lastPlanCoverageUntilCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.LastPlanCoverageUntil);
         var lastPlanCoverageUntilType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var lastExecutedPlanCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.LastExecutedPlan);
+        var lastExecutedPlanCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.LastExecutedPlan);
         var lastExecutedPlanType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var terminatedAtCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.TerminatedAt);
+        var terminatedAtCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.TerminatedAt);
         var terminatedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var hasFailedOnLastPlanExecutionCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HasFailedOnLastPlanExecution);
+        var hasFailedOnLastPlanExecutionCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.HasFailedOnLastPlanExecution);
         var hasFailedOnLastPlanExecutionType = sqlGenerator.ColumnTypeFor(typeof(bool), nullable: true);
 
-        var isJobCancellationPendingCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.IsJobCancellationPending);
+        var isJobCancellationPendingCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.IsJobCancellationPending);
         var isJobCancellationPendingType = sqlGenerator.ColumnTypeFor(typeof(bool), nullable: true);
         
-        var workerLaneCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.WorkerLane);
+        var workerLaneCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.WorkerLane);
         var workerLaneType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var versionCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.Version);
+        var versionCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
 
-        var hostIdCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostId);
+        var hostIdCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.HostId);
         var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<RecurringSchedulePersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<SqlRecurringSchedulePersistenceRecord>(x => x.HostDisplayName);
         var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
         var columns = new List<string>
@@ -214,87 +214,87 @@ internal static class MasterTableCreatorScripts
         var tableName = sqlGenerator.TableNameFor<Job>(tablePrefix);
 
         // Types
-        var clusterIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ClusterId);
-        var clusterIdType = sqlGenerator.ColumnTypeFor<JobPersistenceRecord>(x => x.ClusterId, length: 250, nullable: false);
+        var clusterIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.ClusterId);
+        var clusterIdType = sqlGenerator.ColumnTypeFor<SqlJobPersistenceRecord>(x => x.ClusterId, length: 250, nullable: false);
 
-        var idCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Id);
+        var idCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.Id);
         var idType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: false);
 
-        var jobDefinitionIdIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.JobDefinitionId);
+        var jobDefinitionIdIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.JobDefinitionId);
         var jobDefinitionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
 
-        var triggerSourceTypeCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.TriggerSourceType);
+        var triggerSourceTypeCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.TriggerSourceType);
         var triggerSourceTypeType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var bucketIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.BucketId);
+        var bucketIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.BucketId);
         var bucketIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var agentConnectionIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.AgentConnectionId);
+        var agentConnectionIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.AgentConnectionId);
         var agentConnectionIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var agentWorkerIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.AgentWorkerId);
+        var agentWorkerIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.AgentWorkerId);
         var agentWorkerIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var priorityCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Priority);
+        var priorityCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.Priority);
         var priorityType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var scheduledAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ScheduledAt);
+        var scheduledAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.ScheduledAt);
         var scheduledAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
-        var nextPlanExecutionAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.NextPlanExecutionAt);
+        var nextPlanExecutionAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.NextPlanExecutionAt);
         var nextPlanExecutionAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var dataCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MsgData);
+        var dataCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.MsgData);
         var dataType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: false);
 
         // JSON-serialized metadata, read directly instead of LEFT JOINing the generic-record
-        // entry/value tables -- see JobPersistenceRecord.MetadataJson.
-        var metadataJsonCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MetadataJson);
+        // entry/value tables -- see SqlJobPersistenceRecord.MetadataJson.
+        var metadataJsonCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.MetadataJson);
         var metadataJsonType = sqlGenerator.ColumnTypeFor(typeof(string), isMaxLength: true, nullable: true);
 
-        var statusCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Status);
+        var statusCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.Status);
         var statusType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var numberOfFailuresCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.NumberOfFailures);
+        var numberOfFailuresCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.NumberOfFailures);
         var numberOfFailuresType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var timeoutTicksCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.TimeoutTicks);
+        var timeoutTicksCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.TimeoutTicks);
         var timeoutTicksType = sqlGenerator.ColumnTypeFor(typeof(long), nullable: false);
 
-        var maxRetriesCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.MaxNumberOfRetries);
+        var maxRetriesCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.MaxNumberOfRetries);
         var maxRetriesType = sqlGenerator.ColumnTypeFor(typeof(int), nullable: false);
 
-        var createdAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.CreatedAt);
+        var createdAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.CreatedAt);
         var createdAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
 
-        var sourceIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.SourceId);
+        var sourceIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.SourceId);
         var sourceIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
-        var partitionLockIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockId);
+        var partitionLockIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.PartitionLockId);
         var partitionLockIdType = sqlGenerator.ColumnTypeFor(typeof(Guid), nullable: true);
 
-        var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.PartitionLockExpiresAt);
+        var partitionLockExpiresAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.PartitionLockExpiresAt);
         var partitionLockExpiresAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var processDeadlineCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessDeadline);
+        var processDeadlineCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.ProcessDeadline);
         var processDeadlineType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var processStartedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.ProcessStartedAt);
+        var processStartedAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.ProcessStartedAt);
         var processStartedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
 
-        var finalizedAtCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.FinalizedAt);
+        var finalizedAtCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.FinalizedAt);
         var finalizedAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
         
-        var workerLaneCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.WorkerLane);
+        var workerLaneCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.WorkerLane);
         var workerLaneType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
         
-        var versionCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.Version);
+        var versionCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.Version);
         var versionType = sqlGenerator.ColumnTypeFor(typeof(string), length: 64, nullable: true);
         
-        var hostIdCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostId);
+        var hostIdCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.HostId);
         var hostIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
-        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<JobPersistenceRecord>(x => x.HostDisplayName);
+        var hostDisplayNameCol = sqlGenerator.ColumnNameFor<SqlJobPersistenceRecord>(x => x.HostDisplayName);
         var hostDisplayNameType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: true);
 
         var columns = new List<string>
