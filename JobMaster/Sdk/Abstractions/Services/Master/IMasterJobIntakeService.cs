@@ -1,5 +1,6 @@
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -17,7 +18,9 @@ internal interface IMasterJobIntakeService : IJobMasterClusterAwareService
     /// Inserts each job that doesn't already exist in this cluster, reassigning it here first. The
     /// required incoming status depends on this cluster's own mode: a final status on an Archived
     /// cluster, <c>OnMaster</c> on an Active cluster (receiving a migrated job) — throws otherwise.
-    /// Existing rows are left untouched.
+    /// Existing rows are left untouched. <paramref name="jobExecutions"/> and
+    /// <paramref name="jobExecutionLogs"/> travel alongside their parent job — only copied for jobs that
+    /// were actually newly inserted here, silently dropped for jobs that already existed.
     /// </summary>
-    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
+    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions, IList<LogItem> jobExecutionLogs);
 }

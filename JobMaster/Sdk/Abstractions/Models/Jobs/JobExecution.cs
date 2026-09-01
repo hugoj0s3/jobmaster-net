@@ -38,6 +38,11 @@ internal class JobExecution : JobMasterBaseModel
         OutcomeMessage = "Job execution completed successfully.";
     }
 
+    public void ReassignToCluster(string clusterId)
+    {
+        ClusterId = clusterId;
+    }
+
     /// <summary>
     /// Throws if <see cref="Succeed"/> or <see cref="Fail"/> was never called.
     /// Called by the service layer before persisting the record.

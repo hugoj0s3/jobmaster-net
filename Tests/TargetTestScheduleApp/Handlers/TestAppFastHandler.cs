@@ -12,6 +12,15 @@ public sealed class TestAppFastHandler(IExecutionRecorder recorder) : IJobMaster
     {
         await Task.Delay(TimeSpan.FromMilliseconds(250));
 
+        // Opt-in only (InjectFailure metadata flag): fails the first attempt then succeeds on retry,
+        // so scenarios that need a real JobExecution-category log (only ever written on a failed/retried
+        // attempt -- see JobsExecutionEngine.HandleErrorAsync) can get one without every "fast" job
+        // scenario paying for it.
+        if (job.Metadata.TryGetBoolValue("InjectFailure") == true && job.NumberOfFailures == 0)
+        {
+            throw new InvalidOperationException("Scenario-injected failure (InjectFailure metadata flag) on first attempt.");
+        }
+
         var testIdentifier = job.Metadata.TryGetStringValue("TestIdentifier");
         if (!string.IsNullOrEmpty(testIdentifier))
         {

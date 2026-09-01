@@ -354,7 +354,7 @@ internal static class RunnerFakes
 
         public List<JobRawModel> Jobs { get; } = new();
 
-        public Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
+        public Task<IList<Guid>> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
         {
             var toRemove = Jobs
                 .Where(j => j.Status.IsFinalStatus()
@@ -364,7 +364,7 @@ internal static class RunnerFakes
                 .ToList();
 
             foreach (var j in toRemove) Jobs.Remove(j);
-            return Task.FromResult(toRemove.Count);
+            return Task.FromResult<IList<Guid>>(toRemove.Select(j => j.Id).ToList());
         }
 
         public Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit)
@@ -385,16 +385,24 @@ internal static class RunnerFakes
             return Task.FromResult(toRemove.Count);
         }
 
-        public Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+        public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions)
         {
+            var insertedIds = new List<Guid>();
             foreach (var job in jobs)
             {
-                if (!Jobs.Any(j => j.Id == job.Id)) Jobs.Add(job);
+                if (Jobs.Any(j => j.Id == job.Id)) continue;
+                Jobs.Add(job);
+                insertedIds.Add(job.Id);
             }
-            return Task.CompletedTask;
+
+            JobExecutions.AddRange(jobExecutions.Where(e => insertedIds.Contains(e.JobId)));
+            return Task.FromResult<IList<Guid>>(insertedIds);
         }
 
         public List<JobExecution> JobExecutions { get; } = new();
+
+        public Task<IList<JobExecution>> QueryJobExecutionsForJobsAsync(IList<Guid> jobIds)
+            => Task.FromResult<IList<JobExecution>>(JobExecutions.Where(e => jobIds.Contains(e.JobId)).ToList());
 
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
@@ -489,14 +497,24 @@ internal static class RunnerFakes
             return Task.CompletedTask;
         }
 
-        public Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit)
+        public Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit, JobMasterLogCategory? excludeCategory = null)
         {
             var toRemove = Logs
-                .Where(r => r.TimestampUtc <= timestampTo)
+                .Where(r => r.TimestampUtc <= timestampTo && (excludeCategory == null || r.Category != excludeCategory))
                 .Take(limit)
                 .ToList();
 
             foreach (var r in toRemove) Logs.Remove(r);
+            return Task.FromResult(toRemove.Count);
+        }
+
+        public Task<IList<LogItem>> QueryForReferenceIdsAsync(JobMasterLogCategory category, IList<string> referenceIds)
+            => Task.FromResult<IList<LogItem>>(Logs.Where(l => l.Category == category && l.ReferenceId != null && referenceIds.Contains(l.ReferenceId)).ToList());
+
+        public Task<int> DeleteByIdsAsync(IList<Guid> ids)
+        {
+            var toRemove = Logs.Where(l => ids.Contains(l.Id)).ToList();
+            foreach (var l in toRemove) Logs.Remove(l);
             return Task.FromResult(toRemove.Count);
         }
 

@@ -13,6 +13,9 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     Task AddJobExecutionAsync(JobExecution jobExecution);
     Task<IList<JobExecution>> QueryJobExecutionsAsync(Guid jobId);
 
+    /// <summary>Returns all JobExecutions belonging to any of the given job ids.</summary>
+    Task<IList<JobExecution>> QueryJobExecutionsForJobsAsync(IList<Guid> jobIds);
+
     bool Exists(Guid jobId);
     Task<bool> ExistsAsync(Guid jobId);
 
@@ -34,7 +37,11 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     
     Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobRawModels);
 
-    Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
+    /// <summary>
+    /// Purges finalized jobs older than the cutoff and returns the ids that were deleted (so callers can
+    /// clean up related data, e.g. JobExecution-category logs, without a second full-row query).
+    /// </summary>
+    Task<IList<Guid>> PurgeFinalizedAsync(DateTime cutoffUtc, int limit);
     Task<IList<JobRawModel>> AcquireAndFetchAsync(JobQueryCriteria queryCriteria, Guid partitionLockId, DateTime expiresAtUtc);
 
     /// <summary>
@@ -50,8 +57,14 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     Task<int> DeleteByIdsAsync(IList<Guid> ids);
 
     /// <summary>
-    /// Inserts each job that doesn't already exist (by cluster id + id) in this repository's cluster.
-    /// Existing rows are left untouched. Every job must be in a final status.
+    /// Inserts each job that doesn't already exist (by cluster id + id) in this repository's cluster,
+    /// plus every JobExecution in <paramref name="jobExecutions"/> whose JobId belongs to a job that was
+    /// actually newly inserted (mirrors how JobMetadata is only copied for newly-inserted jobs — if the
+    /// job already existed here, its executions are assumed to already have been archived on a prior run
+    /// and are left untouched). Executions for jobs that were skipped (already existed) are silently
+    /// dropped from the insert, not treated as an error. Every job must be in a final status. Returns the
+    /// ids of the jobs actually newly inserted, so callers can apply the same "only newly-inserted"
+    /// filtering to other data that travels alongside jobs but isn't stored by this repository (e.g. logs).
     /// </summary>
-    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
+    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions);
 }

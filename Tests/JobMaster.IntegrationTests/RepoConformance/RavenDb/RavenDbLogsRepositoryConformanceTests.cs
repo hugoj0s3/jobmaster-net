@@ -184,4 +184,70 @@ public sealed class RavenDbLogsRepositoryConformanceTests
         Assert.Equal(3, remaining.Count); // 4 older - 2 deleted + 1 newer
         Assert.Contains(remaining, x => x.Id == newer.Id);
     }
+
+    [Fact]
+    public async Task DeleteByTimestampAsync_WhenExcludeCategorySet_ShouldSkipThatCategory_RegardlessOfAge()
+    {
+        var groupReferenceId = "del-exclude-" + JobMasterRandomUtil.NewGuid4().ToString("N");
+        // AddHours(-5), not -2: DeleteByTimestampAsync_ShouldDelete_OnlyOlderThanCutoff_RespectingLimit
+        // uses -2 and deliberately leaves 2 items undeleted past its own limit -- a shared window here
+        // would let those leftovers get swept into this test's own (unscoped, matches production) delete,
+        // inflating the returned count.
+        var baseTime = DateTime.UtcNow.AddHours(-5);
+        var cutoff = baseTime.AddMinutes(5);
+
+        var oldJobExecutionLog = NewItem(JobMasterLogLevel.Error, JobMasterLogCategory.JobExecution, "old exec log", referenceId: groupReferenceId, timestamp: baseTime);
+        var oldOtherLog = NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.Job, "old other log", referenceId: groupReferenceId, timestamp: baseTime);
+
+        await fixture.MasterLogs.BulkInsertAsync(new List<LogItem> { oldJobExecutionLog, oldOtherLog });
+        await SettleAsync();
+
+        var deleted = await fixture.MasterLogs.DeleteByTimestampAsync(cutoff, limit: 100, excludeCategory: JobMasterLogCategory.JobExecution);
+        Assert.Equal(1, deleted);
+
+        await SettleAsync();
+        var remaining = await fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 100 });
+        Assert.Equal(oldJobExecutionLog.Id, Assert.Single(remaining).Id);
+    }
+
+    [Fact]
+    public async Task QueryForReferenceIdsAsync_ShouldReturnOnlyMatchingCategoryAndReferenceIds()
+    {
+        var ref1 = "qfr-" + JobMasterRandomUtil.NewGuid4().ToString("N");
+        var ref2 = "qfr-" + JobMasterRandomUtil.NewGuid4().ToString("N");
+        var ref3 = "qfr-" + JobMasterRandomUtil.NewGuid4().ToString("N");
+
+        var log1 = NewItem(JobMasterLogLevel.Error, JobMasterLogCategory.JobExecution, "for ref1", referenceId: ref1);
+        var log2 = NewItem(JobMasterLogLevel.Error, JobMasterLogCategory.JobExecution, "for ref2", referenceId: ref2);
+        var wrongCategory = NewItem(JobMasterLogLevel.Error, JobMasterLogCategory.Job, "wrong category", referenceId: ref1);
+        var unrequestedRef = NewItem(JobMasterLogLevel.Error, JobMasterLogCategory.JobExecution, "for ref3", referenceId: ref3);
+
+        await fixture.MasterLogs.BulkInsertAsync(new List<LogItem> { log1, log2, wrongCategory, unrequestedRef });
+        await SettleAsync();
+
+        var results = await fixture.MasterLogs.QueryForReferenceIdsAsync(JobMasterLogCategory.JobExecution, new List<string> { ref1, ref2 });
+
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, x => x.Id == log1.Id);
+        Assert.Contains(results, x => x.Id == log2.Id);
+        Assert.DoesNotContain(results, x => x.Id == wrongCategory.Id);
+        Assert.DoesNotContain(results, x => x.Id == unrequestedRef.Id);
+    }
+
+    [Fact]
+    public async Task DeleteByIdsAsync_ShouldDeleteOnlyTheGivenIds()
+    {
+        var item1 = NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.JobExecution, "del-by-id-1");
+        var item2 = NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.JobExecution, "del-by-id-2");
+        var untouched = NewItem(JobMasterLogLevel.Info, JobMasterLogCategory.JobExecution, "del-by-id-untouched");
+
+        await fixture.MasterLogs.BulkInsertAsync(new List<LogItem> { item1, item2, untouched });
+
+        var deleted = await fixture.MasterLogs.DeleteByIdsAsync(new List<Guid> { item1.Id, item2.Id });
+        Assert.Equal(2, deleted);
+
+        Assert.Null(await fixture.MasterLogs.GetAsync(item1.Id));
+        Assert.Null(await fixture.MasterLogs.GetAsync(item2.Id));
+        Assert.NotNull(await fixture.MasterLogs.GetAsync(untouched.Id));
+    }
 }

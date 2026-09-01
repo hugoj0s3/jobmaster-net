@@ -60,7 +60,12 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
     for (var i = 0; i < req.QtyJobs; i++)
     {
         var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
-        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority));
+        if (req.InjectFailure == true)
+        {
+            metadata.SetBoolValue("InjectFailure", true);
+        }
+
+        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority, req.MaxNumberOfRetries));
     }
 
     var jobs = await Task.WhenAll(tasks);
@@ -92,25 +97,26 @@ static Task<JobContext> ScheduleHandler(
     IWritableMetadata metadata,
     string? clusterId,
     int? afterSeconds,
-    JobMasterPriority? priority)
+    JobMasterPriority? priority,
+    int? maxNumberOfRetries = null)
 {
     return handlerType.ToLowerInvariant() switch
     {
         "fast" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
-            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
+            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
+            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
         "normal" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
-            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
+            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
+            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
         "slow" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
-            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
+            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
+            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
         "verylong" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
-            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority),
+            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
+            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
         "advanced-fast" => afterSeconds.HasValue
-            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority)
-            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority),
+            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
+            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
         _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast.")
     };
 }

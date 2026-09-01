@@ -25,6 +25,7 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
     private readonly IMasterClusterConfigurationService clusterConfigService;
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterJobsRepository jobsRepo;
+    private readonly IMasterLogsRepository logsRepo;
 
     public MigrateJobsRunner(IJobMasterBackgroundAgentWorker backgroundAgentWorker)
         : base(backgroundAgentWorker, bucketAwareLifeCycle: false, useSemaphore: true)
@@ -32,6 +33,7 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
         clusterConfigService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         jobsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterJobsRepository>();
+        logsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterLogsRepository>();
     }
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
@@ -67,8 +69,19 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
             return OnTickResult.Skipped(this);
 
         var intakeService = targetFactory.GetComponent<IMasterJobIntakeService>();
-        await intakeService.BulkInsertIfNotExistsAsync(jobs);
-        await jobsRepo.DeleteByIdsAsync(jobs.Select(j => j.Id).ToList());
+        var jobIds = jobs.Select(j => j.Id).ToList();
+        var executions = await jobsRepo.QueryJobExecutionsForJobsAsync(jobIds);
+        // "N" format (no dashes) -- matches how JobMasterLoggerExtensions stores ReferenceId for every
+        // JobExecution-category log (referenceId.ToString("N")).
+        var jobLogs = await logsRepo.QueryForReferenceIdsAsync(
+            JobMasterLogCategory.JobExecution, jobIds.Select(id => id.ToString("N")).ToList());
+
+        await intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs);
+        await jobsRepo.DeleteByIdsAsync(jobIds);
+        if (jobLogs.Count > 0)
+        {
+            await logsRepo.DeleteByIdsAsync(jobLogs.Select(l => l.Id).ToList());
+        }
 
         return OnTickResult.Success(this);
     }

@@ -2,6 +2,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
@@ -20,6 +21,7 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 {
     private readonly IMasterClusterConfigurationService clusterConfigService;
     private readonly IMasterJobsRepository jobsRepo;
+    private readonly IMasterLogsRepository logsRepo;
     private readonly IMasterDistributedLockerService locker;
     private readonly JobMasterLockKeys lockKeys;
     private readonly ConsecutiveBurstLimiter burstLimiter;
@@ -29,6 +31,7 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
     {
         clusterConfigService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         jobsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterJobsRepository>();
+        logsRepo = backgroundAgentWorker.GetClusterAwareRepository<IMasterLogsRepository>();
         locker = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         burstLimiter = new ConsecutiveBurstLimiter(10, BackgroundAgentWorker.TransferBatchSize);
@@ -57,7 +60,6 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
 
         try
         {
-            var deleted = 0;
             var hasArchiveTarget = !string.IsNullOrEmpty(cfg.TargetArchivedClusterId);
             var archiveFactory = hasArchiveTarget
                 ? JobMasterClusterAwareComponentFactories.TryGetFactory(cfg.TargetArchivedClusterId!)
@@ -72,22 +74,45 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
                     BackgroundAgentWorker.ClusterConnConfig.ClusterId);
             }
 
+            IList<Guid> purgedIds;
             if (archiveFactory != null)
             {
                 var archiveService = archiveFactory.GetComponent<IMasterJobIntakeService>();
                 var candidates = await jobsRepo.QueryFinalizedToPurgeAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+                purgedIds = candidates.Select(j => j.Id).ToList();
                 if (candidates.Count > 0)
                 {
-                    await archiveService.BulkInsertIfNotExistsAsync(candidates);
-                    deleted = await jobsRepo.DeleteByIdsAsync(candidates.Select(j => j.Id).ToList());
+                    var executions = await jobsRepo.QueryJobExecutionsForJobsAsync(purgedIds);
+                    // "N" format (no dashes) -- matches how JobMasterLoggerExtensions stores ReferenceId
+                    // for every JobExecution-category log (referenceId.ToString("N")).
+                    var jobLogs = await logsRepo.QueryForReferenceIdsAsync(
+                        JobMasterLogCategory.JobExecution, purgedIds.Select(id => id.ToString("N")).ToList());
+
+                    await archiveService.BulkInsertIfNotExistsAsync(candidates, executions, jobLogs);
+                    await jobsRepo.DeleteByIdsAsync(purgedIds);
                 }
             }
             else
             {
-                deleted = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+                purgedIds = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
             }
 
-            var next = burstLimiter.Next(desiredNext, burstNext, deleted);
+            if (purgedIds.Count > 0)
+            {
+                // Unconditional: JobExecution-category logs for a purged job are cleaned up here regardless
+                // of whether archiving happened — DeleteOldLogsRunner deliberately excludes this category
+                // from its own blanket purge, so this is the only place these logs are ever removed. When
+                // there's no archive target, they're simply lost, same as the job/execution rows already
+                // are in that case.
+                var idStrings = purgedIds.Select(id => id.ToString("N")).ToList();
+                var logsToDelete = await logsRepo.QueryForReferenceIdsAsync(JobMasterLogCategory.JobExecution, idStrings);
+                if (logsToDelete.Count > 0)
+                {
+                    await logsRepo.DeleteByIdsAsync(logsToDelete.Select(l => l.Id).ToList());
+                }
+            }
+
+            var next = burstLimiter.Next(desiredNext, burstNext, purgedIds.Count);
             return OnTickResult.Success(next);
         }
         finally

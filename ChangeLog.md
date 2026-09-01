@@ -30,6 +30,8 @@
 
 - **A transient SQL deadlock while acquiring jobs no longer surfaces as an error** — Acquiring jobs to dispatch could hit a database deadlock under concurrent load; this previously retried a few times before giving up and throwing. A deadlock here means the transaction was rolled back before claiming anything, which is functionally the same as a poll that simply found nothing ready to claim — it's now treated that way (no jobs acquired this tick, tried again on the next one) instead of propagating as an exception.
 
+- **Archiving a job silently discarded its execution history and error logs** — `DeleteOldFinalJobsRunner` already archived a finalized job's own row to the target `Archived` cluster before deleting it locally, but never copied that job's `JobExecution` records (one per attempt, carrying start time, outcome, and any error message) or its `JobExecution`-category log entries, so both were permanently lost the moment a job was archived. Both now travel with the job to the archive cluster. This also closes an independent race, when archiving is configured: `DeleteOldLogsRunner`'s own blanket log purge could delete a `JobExecution`-category log before it was ever archived — that category's cleanup is now owned solely by the archiving/purge runner in that case, so the two can no longer race each other (with no archive target configured, `DeleteOldLogsRunner` still purges `JobExecution` logs like any other category, since there's nothing to protect). Cluster migration (`MigrateJobsRunner`) was updated the same way, so a migrated job's execution history and logs are no longer dropped either.
+
 ## JobMaster 0.0.10-alpha.2
 
 ### Added

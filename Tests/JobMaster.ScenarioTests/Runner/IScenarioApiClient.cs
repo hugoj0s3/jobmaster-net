@@ -72,12 +72,27 @@ public interface IScenarioApiClient
     /// countLimit: int.MaxValue to bypass the API's default 25-item page size.
     /// </summary>
     Task<List<ApiRecurringSchedule>> GetRecurringSchedulesAsync(string clusterId, string? testIdentifier = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default);
+
+    /// <summary>
+    /// Log entries for a cluster, filtered to those referencing a specific entity id (e.g. a job id)
+    /// and, optionally, one category (raw int -- JobMasterLogCategory.JobExecution = 2). Pass
+    /// countLimit: int.MaxValue to bypass the API's default 25-item page size.
+    /// </summary>
+    Task<List<ApiLogItem>> GetLogsAsync(string clusterId, Guid referenceId, int? category = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default);
 }
 
 // Status/Priority/Outcome are JsonElement (not typed enums) because JobMaster.Api serializes
 // its enums as raw numbers by default, and this project must not take a JobMaster reference just
 // to share the enum type.
-public sealed record ApiJob(string Id, JsonElement Status, string JobDefinitionId, JsonElement Priority);
+public sealed record ApiJob(
+    string Id,
+    JsonElement Status,
+    string JobDefinitionId,
+    JsonElement Priority,
+    int NumberOfFailures = 0,
+    string? BucketId = null,
+    string? AgentConnectionId = null,
+    DateTime? NextPlanExecutionAt = null);
 
 public sealed record ApiJobExecution(string Id, string JobId, DateTime StartedAt, JsonElement Outcome);
 
@@ -95,6 +110,8 @@ public sealed record ApiAgentWorker(
     DateTime LastHeartbeat,
     JsonElement Mode,
     JsonElement Status);
+
+public sealed record ApiLogItem(string Id, JsonElement? Category, string? ReferenceId, string Message, DateTime TimestampUtc);
 
 public sealed record ApiRecurringSchedule(
     string Id,

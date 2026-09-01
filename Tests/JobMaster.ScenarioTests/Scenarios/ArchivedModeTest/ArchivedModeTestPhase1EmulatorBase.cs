@@ -34,7 +34,14 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
     private const string RecurringInterval = "00:06:00";
     private const int QtyJobs = 200;
     private const int SucceededStatus = 5;
+    private const int FailedStatus = 7;
     private const int CanceledStatus = 3;
+    // Unlike Status/Priority/Category (raw ints), ApiJobExecution.Outcome is serialized as the enum's
+    // string name (ApiJobExecution.FromDto: Outcome = execution.Outcome.ToString()).
+    private const string SucceededOutcome = "Succeeded";
+    private const string FailedOutcome = "Failed";
+    private const int JobExecutionLogCategory = 2;
+    private const int ExecutionSampleSize = 5;
 
     private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(5);
 
@@ -60,9 +67,18 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         var testIdentifier = Guid.NewGuid().ToString("N");
         var recurringTestIdentifier = Guid.NewGuid().ToString("N");
 
+        // One job of the QtyJobs total deliberately fails its only attempt (InjectFailure,
+        // maxNumberOfRetries: 0 -- so it's permanently Failed after one attempt, not stuck in a
+        // multi-minute retry backoff), so this scenario also proves a Failed JobExecution row and its
+        // JobExecution-category log (only ever written on a failed attempt -- see
+        // JobsExecutionEngine.HandleErrorAsync) both survive archiving, not just the happy-path row.
         var scheduled = await Runner.ScheduleFor(ContainerName)
-            .ScheduleAsync("fast", testIdentifier, QtyJobs, clusterId: SourceClusterId);
-        scheduled.JobIds.Should().HaveCount(QtyJobs);
+            .ScheduleAsync("fast", testIdentifier, QtyJobs - 1, clusterId: SourceClusterId);
+        var failureInjected = await Runner.ScheduleFor(ContainerName)
+            .ScheduleAsync("fast", testIdentifier, qtyJobs: 1, clusterId: SourceClusterId, injectFailure: true, maxNumberOfRetries: 0);
+        var allJobIds = scheduled.JobIds.Concat(failureInjected.JobIds).ToList();
+        allJobIds.Should().HaveCount(QtyJobs);
+        var failedJobId = failureInjected.JobIds.Single();
 
         var recurring = await Runner.RecurringScheduleFor(ContainerName)
             .CreateRecurringAsync("fast", TimeSpanIntervalExpressionTypeId, RecurringInterval, recurringTestIdentifier, clusterId: SourceClusterId);
@@ -80,10 +96,19 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         await Runner.RecurringScheduleFor(ContainerName)
             .CancelRecurringAsync(recurring.RecurringScheduleId, clusterId: SourceClusterId);
 
-        // The source cluster is an ordinary Active cluster -- jobs onboard and execute normally.
-        var executions = await Runner.Tracker.WaitForAsync(testIdentifier, QtyJobs, ExecuteWaitTimeout);
+        // The source cluster is an ordinary Active cluster -- jobs onboard and execute normally. Waited
+        // for separately from the failure-injected job below: with maxNumberOfRetries: 0 that job never
+        // reaches Succeeded (never calls recorder.RecordAsync), so it must not count toward QtyJobs here.
+        var executions = await Runner.Tracker.WaitForAsync(testIdentifier, QtyJobs - 1, ExecuteWaitTimeout);
         executions.Select(e => e.JobId).Should().OnlyHaveUniqueItems();
-        (await api.GetJobCountAsync(SourceClusterId, testIdentifier: testIdentifier, status: SucceededStatus)).Should().Be(QtyJobs);
+
+        await PollingWaitUtil.WaitUntilAsync(ExecuteWaitTimeout,
+            async () => (await api.GetJobAsync(SourceClusterId, failedJobId))?.Status.GetInt32() == FailedStatus,
+            $"the failure-injected job {failedJobId} to exhaust its one allowed attempt and reach Failed",
+            pollInterval: TimeSpan.FromMilliseconds(500));
+
+        (await api.GetJobCountAsync(SourceClusterId, testIdentifier: testIdentifier, status: SucceededStatus)).Should().Be(QtyJobs - 1);
+        (await api.GetJobCountAsync(SourceClusterId, testIdentifier: testIdentifier, status: FailedStatus)).Should().Be(1);
 
         // The real archive-then-delete lifecycle: once DataRetentionTtl elapses, DeleteOldFinalJobsRunner
         // archives these finalized jobs into the target cluster then deletes them from the source.
@@ -94,10 +119,33 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
 
         var archivedJobs = await api.GetJobsAsync(TargetClusterId, testIdentifier: testIdentifier, countLimit: int.MaxValue);
         archivedJobs.Should().HaveCount(QtyJobs);
-        archivedJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(scheduled.JobIds,
+        archivedJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(allJobIds,
             "archiving must preserve the exact same job IDs -- the intake service reassigns ClusterId only, it never re-creates the job with a new Id");
-        archivedJobs.Should().OnlyContain(j => j.Status.GetInt32() == SucceededStatus,
+        archivedJobs.Where(j => GuidBase64.Parse(j.Id) != failedJobId).Should().OnlyContain(j => j.Status.GetInt32() == SucceededStatus,
             "the archived copy must keep the Succeeded status it had at purge time");
+        archivedJobs.Single(j => GuidBase64.Parse(j.Id) == failedJobId).Status.GetInt32().Should().Be(FailedStatus,
+            "the archived copy of the failure-injected job must keep the Failed status it had at purge time");
+
+        // JobExecutions are recorded unconditionally for every attempt (unlike JobExecution-category
+        // logs, which only appear on a failed attempt) -- check a bounded sample of ordinary jobs
+        // archived their (single, Succeeded) execution row intact.
+        foreach (var jobId in scheduled.JobIds.Take(ExecutionSampleSize))
+        {
+            var sampleExecutions = await api.GetJobExecutionsAsync(TargetClusterId, jobId);
+            sampleExecutions.Should().ContainSingle(e => e.Outcome.GetString() == SucceededOutcome,
+                $"job {jobId}'s single successful execution attempt must have been archived alongside it");
+        }
+
+        // The failure-injected job's single Failed execution row, and the JobExecution-category log its
+        // one attempt wrote, must have survived archiving.
+        var failedJobExecutions = await api.GetJobExecutionsAsync(TargetClusterId, failedJobId);
+        failedJobExecutions.Should().ContainSingle(e => e.Outcome.GetString() == FailedOutcome,
+            "the failure-injected job's Failed execution must have been archived alongside it");
+
+        var failedJobLogs = await api.GetLogsAsync(TargetClusterId, failedJobId, category: JobExecutionLogCategory);
+        failedJobLogs.Should().NotBeEmpty(
+            "the failed attempt's JobExecution-category log must have been archived alongside the job, " +
+            "not lost the way DeleteOldLogsRunner's blanket purge would otherwise have raced it away");
 
         // Same DataRetentionTtl/TargetArchivedClusterId drive DeleteOldInactiveRecurringSchedulesRunner
         // too -- the cancelled schedule above is a terminated-recurring-schedule candidate from the

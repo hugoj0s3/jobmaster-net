@@ -244,6 +244,31 @@ ORDER BY started_at DESC";
         return rows.Select(SqlJobPersistenceConvertUtil.FromPersistence).ToList();
     }
 
+    public async Task<IList<JobExecution>> QueryJobExecutionsForJobsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<JobExecution>();
+
+        var t = JobExecutionTableName();
+        var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        var results = new List<JobExecution>();
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var idsPartition in jobIds.Partition(maxBatch).ToList())
+        {
+            var inClause = sql.InClauseFor("job_id", "@JobIds");
+            var sqlText = $@"
+SELECT cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome
+FROM {t}
+WHERE cluster_id = @ClusterId AND {inClause}";
+
+            var rows = await conn.QueryAsync<SqlJobExecutionPersistenceRecord>(sqlText,
+                new { ClusterId = ClusterConnConfig.ClusterId, JobIds = idsPartition });
+            results.AddRange(rows.Select(SqlJobPersistenceConvertUtil.FromPersistence));
+        }
+
+        return results;
+    }
+
     public bool Exists(Guid jobId)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -469,7 +494,7 @@ FROM {t} j
         p.Add($"ExpectedVersion_{i}", expectedVersion, DbType.String);
     }
 
-    public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
+    public async Task<IList<Guid>> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
     {
         if (limit <= 0) throw new ArgumentException("limit must be > 0", nameof(limit));
 
@@ -498,9 +523,10 @@ ORDER BY {cFinalizedAt} ASC, {cId} ASC");
             Aborted = (int)JobMasterJobStatus.Aborted,
         })).ToList();
 
-        if (ids.Count == 0) return 0;
+        if (ids.Count == 0) return ids;
 
-        return await DeleteByIdsAsync(ids);
+        await DeleteByIdsAsync(ids);
+        return ids;
     }
 
     public async Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit)
@@ -596,12 +622,14 @@ FROM jobs_page j
         }
     }
 
-    public virtual async Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    public virtual async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions)
     {
-        if (jobs.Count == 0) return;
+        if (jobs.Count == 0) return new List<Guid>();
 
         var t = TableName();
         var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        var executionsByJobId = jobExecutions.ToLookup(e => e.JobId);
+        var insertedIds = new List<Guid>();
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -621,6 +649,8 @@ FROM jobs_page j
 
                 if (newJobs.Count > 0)
                 {
+                    insertedIds.AddRange(newJobs.Select(j => j.Id));
+
                     var newEntries = newJobs
                         .Select(j => genericUtil.MapToSqlEntry(SqlJobPersistenceConvertUtil.ToPersistence(j).Metadata!))
                         .ToList();
@@ -636,9 +666,17 @@ FROM jobs_page j
                     {
                         await conn.ExecuteAsync(valuesSql.Value.sqlText, valuesSql.Value.dynParams, tx);
                     }
+
+                    var executionsToInsert = newJobs.SelectMany(j => executionsByJobId[j.Id]).ToList();
+                    if (executionsToInsert.Count > 0)
+                    {
+                        var (execSqlText, execDynParams) = BuildBulkInsertJobExecutionsSql(executionsToInsert);
+                        await conn.ExecuteAsync(execSqlText, execDynParams, tx);
+                    }
                 }
             }
             tx.Commit();
+            return insertedIds;
         }
         catch
         {
@@ -1078,6 +1116,39 @@ FROM jobs_page j
         p.Add("OutcomeMessage", execution.OutcomeMessage);
         p.Add("Outcome", (int)execution.Outcome);
         return p;
+    }
+
+    // Bulk variant of BuildJobExecutionInsertSql/BuildJobExecutionParams -- used by BulkInsertIfNotExistsAsync
+    // to copy JobExecutions for newly-inserted jobs during archiving/migration. No existence guard needed:
+    // the caller only ever passes executions belonging to jobs it just confirmed are new to this cluster.
+    private (string sqlText, DynamicParameters dynParams) BuildBulkInsertJobExecutionsSql(IList<JobExecution> executions)
+    {
+        var t = JobExecutionTableName();
+        const string cols = "cluster_id, id, job_id, started_at, agent_connection_id, agent_worker_id, bucket_id, host_id, host_display_name, finalized_at, outcome_message, outcome";
+        var sb = new StringBuilder($"INSERT INTO {t} ({cols}) VALUES \n");
+        var dynParams = new DynamicParameters();
+
+        for (var i = 0; i < executions.Count; i++)
+        {
+            var e = executions[i];
+            sb.Append($"(@ClusterId_{i}, @Id_{i}, @JobId_{i}, @StartedAt_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @BucketId_{i}, @HostId_{i}, @HostDisplayName_{i}, @FinalizedAt_{i}, @OutcomeMessage_{i}, @Outcome_{i})");
+            if (i < executions.Count - 1) sb.Append(",\n");
+
+            dynParams.Add($"ClusterId_{i}", e.ClusterId);
+            dynParams.Add($"Id_{i}", e.Id);
+            dynParams.Add($"JobId_{i}", e.JobId);
+            dynParams.Add($"StartedAt_{i}", e.StartedAt);
+            dynParams.Add($"AgentConnectionId_{i}", e.AgentConnectionId?.IdValue);
+            dynParams.Add($"AgentWorkerId_{i}", e.AgentWorkerId);
+            dynParams.Add($"BucketId_{i}", e.BucketId);
+            dynParams.Add($"HostId_{i}", e.HostId?.IdValue);
+            dynParams.Add($"HostDisplayName_{i}", e.HostId?.HostDisplayName);
+            dynParams.Add($"FinalizedAt_{i}", e.FinalizedAt);
+            dynParams.Add($"OutcomeMessage_{i}", e.OutcomeMessage);
+            dynParams.Add($"Outcome_{i}", (int)e.Outcome);
+        }
+
+        return (sb.ToString(), dynParams);
     }
 
     protected (string Columns, string ValuesParams) InsertColumnsAndParams()

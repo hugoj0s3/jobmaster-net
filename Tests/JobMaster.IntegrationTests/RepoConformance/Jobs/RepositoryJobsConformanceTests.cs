@@ -599,7 +599,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
-        Assert.True(deleted >= 2, $"Expected at least 2 deleted, got {deleted}");
+        Assert.True(deleted.Count >= 2, $"Expected at least 2 deleted, got {deleted.Count}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
@@ -632,8 +632,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 3);
-        Assert.True(deleted <= 3, $"Expected at most 3 deleted, got {deleted}");
-        Assert.True(deleted >= 1, $"Expected at least 1 deleted, got {deleted}");
+        Assert.True(deleted.Count <= 3, $"Expected at most 3 deleted, got {deleted.Count}");
+        Assert.True(deleted.Count >= 1, $"Expected at least 1 deleted, got {deleted.Count}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
@@ -696,7 +696,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         await SettleAsync();
         var deleted = await Fixture.MasterJobs.PurgeFinalizedAsync(cutoff, limit: 100);
-        Assert.True(deleted >= 3, $"Expected at least 3 deleted, got {deleted}");
+        Assert.True(deleted.Count >= 3, $"Expected at least 3 deleted, got {deleted.Count}");
 
         var remaining = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria
         {
@@ -1565,7 +1565,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var j2 = NewJob(def, JobMasterJobStatus.Failed);
         j2.Metadata = "{\"testIdentifier\":\"bulk-insert-j2\"}";
 
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 });
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 }, Array.Empty<JobExecution>());
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
         var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
@@ -1646,7 +1646,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
             .SetDateTimeValue("mdt", dt2)
             .SetGuidValue("mguid", guid2));
 
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 });
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 }, Array.Empty<JobExecution>());
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
         var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
@@ -1712,7 +1712,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
 
         var brandNew = NewJob(def, JobMasterJobStatus.Cancelled);
 
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { conflicting, brandNew });
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { conflicting, brandNew }, Array.Empty<JobExecution>());
 
         var fromDbExisting = await Fixture.MasterJobs.GetAsync(existing.Id);
         Assert.NotNull(fromDbExisting);
@@ -1731,7 +1731,103 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     public async Task BulkInsertIfNotExists_EmptyList_ShouldNoOp()
     {
         // Should not throw and should not touch anything else in the same cluster.
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(Array.Empty<JobRawModel>());
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(Array.Empty<JobRawModel>(), Array.Empty<JobExecution>());
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldCopy_JobExecutions_ForNewlyInsertedJobs()
+    {
+        var def = "defBulkInsertExec-" + JobMasterRandomUtil.NewGuid4();
+        var job = NewJob(def, JobMasterJobStatus.Succeeded);
+        var now = DateTime.UtcNow;
+
+        var execution1 = new JobExecution(Fixture.ClusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobId = job.Id,
+            StartedAt = now.AddMinutes(-2),
+            FinalizedAt = now.AddMinutes(-1),
+            AgentConnectionId = Fixture.AgentConnectionId,
+            AgentWorkerId = "worker-1",
+            BucketId = "bucket-1",
+            OutcomeMessage = "attempt 1 failed",
+            Outcome = JobExecutionOutcomeStatus.Failed,
+        };
+        var execution2 = new JobExecution(Fixture.ClusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobId = job.Id,
+            StartedAt = now.AddSeconds(-30),
+            FinalizedAt = now,
+            OutcomeMessage = "Job execution completed successfully.",
+            Outcome = JobExecutionOutcomeStatus.Succeeded,
+        };
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { job }, new[] { execution1, execution2 });
+        await SettleAsync();
+
+        var fromDb = (await Fixture.MasterJobs.QueryJobExecutionsAsync(job.Id)).OrderBy(e => e.StartedAt).ToList();
+        Assert.Equal(2, fromDb.Count);
+
+        Assert.Equal(execution1.Id, fromDb[0].Id);
+        Assert.Equal(execution1.AgentWorkerId, fromDb[0].AgentWorkerId);
+        Assert.Equal(execution1.BucketId, fromDb[0].BucketId);
+        Assert.Equal(execution1.OutcomeMessage, fromDb[0].OutcomeMessage);
+        Assert.Equal(execution1.Outcome, fromDb[0].Outcome);
+
+        Assert.Equal(execution2.Id, fromDb[1].Id);
+        Assert.Equal(execution2.Outcome, fromDb[1].Outcome);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldNotDuplicate_JobExecutions_ForExistingJobs()
+    {
+        var def = "defBulkInsertExecExisting-" + JobMasterRandomUtil.NewGuid4();
+        var job = NewJob(def, JobMasterJobStatus.Succeeded);
+
+        // Job already exists on this cluster, with no executions.
+        await Fixture.MasterJobs.AddAsync(job);
+
+        var fabricatedExecution = new JobExecution(Fixture.ClusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobId = job.Id,
+            StartedAt = DateTime.UtcNow,
+            FinalizedAt = DateTime.UtcNow,
+            Outcome = JobExecutionOutcomeStatus.Succeeded,
+        };
+
+        // Same job id, already exists -- BulkInsertIfNotExistsAsync must skip it, and skip its execution too.
+        var conflicting = Clone(job);
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { conflicting }, new[] { fabricatedExecution });
+
+        var fromDb = await Fixture.MasterJobs.QueryJobExecutionsAsync(job.Id);
+        Assert.Empty(fromDb);
+    }
+
+    [Fact]
+    public async Task QueryJobExecutionsForJobsAsync_ShouldReturnExecutions_AcrossMultipleJobs()
+    {
+        var def = "defQueryExecMulti-" + JobMasterRandomUtil.NewGuid4();
+        var job1 = NewJob(def, JobMasterJobStatus.Succeeded);
+        var job2 = NewJob(def, JobMasterJobStatus.Failed);
+        var unrelatedJob = NewJob(def, JobMasterJobStatus.Succeeded);
+
+        var exec1 = new JobExecution(Fixture.ClusterId) { Id = JobMasterRandomUtil.NewGuid4(), JobId = job1.Id, Outcome = JobExecutionOutcomeStatus.Succeeded };
+        var exec2 = new JobExecution(Fixture.ClusterId) { Id = JobMasterRandomUtil.NewGuid4(), JobId = job2.Id, Outcome = JobExecutionOutcomeStatus.Failed };
+        var execUnrelated = new JobExecution(Fixture.ClusterId) { Id = JobMasterRandomUtil.NewGuid4(), JobId = unrelatedJob.Id, Outcome = JobExecutionOutcomeStatus.Succeeded };
+
+        await Fixture.MasterJobs.AddJobExecutionAsync(exec1);
+        await Fixture.MasterJobs.AddJobExecutionAsync(exec2);
+        await Fixture.MasterJobs.AddJobExecutionAsync(execUnrelated);
+        await SettleAsync();
+
+        var results = await Fixture.MasterJobs.QueryJobExecutionsForJobsAsync(new[] { job1.Id, job2.Id });
+
+        Assert.Equal(2, results.Count);
+        Assert.Contains(results, e => e.Id == exec1.Id);
+        Assert.Contains(results, e => e.Id == exec2.Id);
+        Assert.DoesNotContain(results, e => e.Id == execUnrelated.Id);
     }
 
     private static JobRawModel Clone(JobRawModel job)
@@ -1861,7 +1957,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Parallel.ForEachAsync(
             jobs.Partition(seedPartitionSize),
             new ParallelOptions { MaxDegreeOfParallelism = seedMaxDegreeOfParallelism },
-            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList()));
+            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList(), Array.Empty<JobExecution>()));
 
         var probeCriteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = poolSize };
         var acquireCriteria = new JobQueryCriteria { JobDefinitionId = def, Status = JobMasterJobStatus.OnMaster, CountLimit = jobCount };
@@ -1931,7 +2027,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await Parallel.ForEachAsync(
             jobs.Partition(partitionSize),
             new ParallelOptions { MaxDegreeOfParallelism = 10 },
-            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList()));
+            async (partition, _) => await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(partition.ToList(), Array.Empty<JobExecution>()));
         insertSw.Stop();
         Output.WriteLine($"BulkInsertIfNotExistsAsync: {totalRecords} jobs via {totalRecords / partitionSize} partitions of {partitionSize}, {insertSw.Elapsed.TotalMilliseconds:F1}ms total");
 

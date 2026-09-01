@@ -9,6 +9,8 @@ public interface IScheduleClient
         string? clusterId = null,
         int? afterSeconds = null,
         int? priority = null,
+        bool? injectFailure = null,
+        int? maxNumberOfRetries = null,
         CancellationToken ct = default);
 }
 

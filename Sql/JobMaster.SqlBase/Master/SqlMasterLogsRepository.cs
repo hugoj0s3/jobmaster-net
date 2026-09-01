@@ -3,8 +3,10 @@ using System.Text;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
 using JobMaster.SqlBase.Scripts;
@@ -92,13 +94,17 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
         return row == null ? null : ToLogItem(row);
     }
 
-    public async Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit)
+    public async Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit, JobMasterLogCategory? excludeCategory = null)
     {
         if (limit <= 0) throw new ArgumentException("Limit must be > 0", nameof(limit));
 
         var t = TableName();
         var selectSql = new StringBuilder($"SELECT id FROM {t}\n");
         selectSql.Append("WHERE cluster_id = @ClusterId AND timestamp_utc <= @TimestampTo\n");
+        if (excludeCategory.HasValue)
+        {
+            selectSql.Append("AND (category IS NULL OR category <> @ExcludeCategory)\n");
+        }
         selectSql.Append("ORDER BY timestamp_utc ASC, id ASC\n");
         selectSql.Append(sql.OffsetQueryFor(limit, 0));
 
@@ -109,7 +115,8 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
             var ids = (await conn.QueryAsync<Guid>(selectSql.ToString(), new
             {
                 ClusterId = ClusterConnConfig.ClusterId,
-                TimestampTo = DateTime.SpecifyKind(timestampTo, DateTimeKind.Utc)
+                TimestampTo = DateTime.SpecifyKind(timestampTo, DateTimeKind.Utc),
+                ExcludeCategory = excludeCategory?.ToString()
             }, tx)).ToList();
 
             if (ids.Count == 0)
@@ -123,6 +130,60 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
 
             tx.Commit();
             return ids.Count;
+        }
+        catch
+        {
+            tx.SafeRollback();
+            throw;
+        }
+    }
+
+    public async Task<IList<LogItem>> QueryForReferenceIdsAsync(JobMasterLogCategory category, IList<string> referenceIds)
+    {
+        if (referenceIds.Count == 0) return new List<LogItem>();
+
+        var t = TableName();
+        var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        var results = new List<LogItem>();
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var idsPartition in referenceIds.Partition(maxBatch).ToList())
+        {
+            var inClause = sql.InClauseFor("reference_id", "@ReferenceIds");
+            var sqlText = $"SELECT * FROM {t} WHERE cluster_id = @ClusterId AND category = @Category AND {inClause}";
+
+            var rows = await conn.QueryAsync<LogPersistenceRecord>(sqlText, new
+            {
+                ClusterId = ClusterConnConfig.ClusterId,
+                Category = category.ToString(),
+                ReferenceIds = idsPartition
+            });
+            results.AddRange(rows.Select(ToLogItem));
+        }
+
+        return results;
+    }
+
+    public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
+    {
+        if (ids.Count == 0) return 0;
+
+        var t = TableName();
+        var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        var deleted = 0;
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            foreach (var idsPartition in ids.Partition(maxBatch).ToList())
+            {
+                var deleteSql = $"DELETE FROM {t} WHERE cluster_id = @ClusterId AND {sql.InClauseFor("id", "@Ids")}";
+                deleted += await conn.ExecuteAsync(deleteSql, new { ClusterId = ClusterConnConfig.ClusterId, Ids = idsPartition }, tx);
+            }
+
+            tx.Commit();
+            return deleted;
         }
         catch
         {

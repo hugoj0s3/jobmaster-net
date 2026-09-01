@@ -159,6 +159,27 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? [];
     }
 
+    public async Task<List<ApiLogItem>> GetLogsAsync(string clusterId, Guid referenceId, int? category = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        // ReferenceGuid (not ReferenceId) -- the API normalises it to the "N" (no-dashes) format logs
+        // are actually stored under (see JobMasterLoggerExtensions), so callers don't need to know that.
+        query["ReferenceGuid"] = referenceId.ToString();
+        if (category.HasValue)
+        {
+            query["Category"] = category.Value.ToString();
+        }
+
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/logs?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiLogItem>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
     public async Task<string> GetJwtTokenAsync(string subject, CancellationToken ct = default)
     {
         var response = await httpClient.PostAsJsonAsync("/auth/token", new { subject }, ct);

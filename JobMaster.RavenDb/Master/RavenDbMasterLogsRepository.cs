@@ -1,6 +1,7 @@
 using JobMaster.RavenDb.Connections;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using Raven.Client;
@@ -80,14 +81,15 @@ internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareReposit
         return doc == null ? null : ToDomain(doc);
     }
 
-    public async Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit)
+    public async Task<int> DeleteByTimestampAsync(DateTime timestampTo, int limit, JobMasterLogCategory? excludeCategory = null)
     {
         if (limit <= 0) throw new ArgumentException("Limit must be greater than 0", nameof(limit));
 
         var cutoff = DateTime.SpecifyKind(timestampTo, DateTimeKind.Utc);
 
         // AllowStale is safe: a missed entry this tick is still just as old next tick.
-        var rql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.TimestampUtc <= $cutoff order by e.TimestampUtc asc limit 0, $limit";
+        var excludeClause = excludeCategory.HasValue ? "and (e.Category = null or e.Category != $excludeCategory) " : "";
+        var rql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.TimestampUtc <= $cutoff {excludeClause}order by e.TimestampUtc asc limit 0, $limit";
         var operation = await store.Operations.SendAsync(new DeleteByQueryOperation(new IndexQuery
         {
             Query = rql,
@@ -96,11 +98,50 @@ internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareReposit
                 ["clusterId"] = ClusterConnConfig.ClusterId,
                 ["cutoff"] = cutoff,
                 ["limit"] = limit,
+                ["excludeCategory"] = excludeCategory,
             }
         }, new QueryOperationOptions { AllowStale = true }));
 
         var result = await operation.WaitForCompletionAsync<BulkOperationResult>();
         return (int)result.Total;
+    }
+
+    public async Task<IList<LogItem>> QueryForReferenceIdsAsync(JobMasterLogCategory category, IList<string> referenceIds)
+    {
+        if (referenceIds.Count == 0) return new List<LogItem>();
+
+        using var session = store.OpenAsyncSession();
+        var rql = $"from '{CollectionName}' as e where e.ClusterId = $clusterId and e.Category = $category and e.ReferenceId in ($referenceIds)";
+        var docs = await session.Advanced.AsyncRawQuery<RavenDbLogDocument>(rql)
+            .AddParameter("clusterId", ClusterConnConfig.ClusterId)
+            .AddParameter("category", category)
+            .AddParameter("referenceIds", referenceIds)
+            .ToListAsync();
+
+        return docs.Select(ToDomain).ToList();
+    }
+
+    public async Task<int> DeleteByIdsAsync(IList<Guid> ids)
+    {
+        if (ids.Count == 0) return 0;
+
+        var totalDeleted = 0;
+        var maxBatchSize = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        for (var i = 0; i < ids.Count; i += maxBatchSize)
+        {
+            var batch = ids.Skip(i).Take(maxBatchSize).ToArray();
+
+            using var session = store.OpenAsyncSession();
+            foreach (var id in batch)
+            {
+                session.Delete(DocumentId(id));
+            }
+
+            await session.SaveChangesAsync();
+            totalDeleted += batch.Length;
+        }
+
+        return totalDeleted;
     }
 
     private (string Rql, Dictionary<string, object?> Parameters) BuildQueryRql(LogItemQueryCriteria criteria, bool forCount = false)

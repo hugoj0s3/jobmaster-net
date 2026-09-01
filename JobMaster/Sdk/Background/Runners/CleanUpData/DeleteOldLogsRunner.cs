@@ -1,5 +1,6 @@
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 
@@ -53,7 +54,17 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
 
         try
         {
-            var deleted = await logsRepo.DeleteByTimestampAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
+            // JobMasterLogCategory.JobExecution is only excluded when archiving is actually configured --
+            // that's the only case where this blanket timestamp purge racing DeleteOldFinalJobsRunner (which
+            // otherwise owns that category's cleanup, tied to when its parent job is archived/purged) could
+            // cause real, permanent data loss (deleting a log before it's ever archived). With no archive
+            // target, DeleteOldFinalJobsRunner deletes that same log locally anyway once the job is purged,
+            // so there's nothing to protect -- deleting it a little earlier here is harmless, and letting it
+            // through the normal blanket purge avoids JobExecution logs otherwise only ever being cleaned up
+            // whenever their specific job happens to be purged (which can lag well behind their own age, or
+            // never happen if the job keeps retrying).
+            var excludeCategory = !string.IsNullOrEmpty(cfg.TargetArchivedClusterId) ? JobMasterLogCategory.JobExecution : (JobMasterLogCategory?)null;
+            var deleted = await logsRepo.DeleteByTimestampAsync(cutoff, BackgroundAgentWorker.TransferBatchSize, excludeCategory: excludeCategory);
             var next = burstLimiter.Next(desiredNext, burstNext, deleted);
             return OnTickResult.Success(next);
         }

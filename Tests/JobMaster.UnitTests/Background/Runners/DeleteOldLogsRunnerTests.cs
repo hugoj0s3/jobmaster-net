@@ -19,13 +19,14 @@ public class DeleteOldLogsRunnerTests
     private static ClusterConfigurationModel ConfigWithTtl(TimeSpan ttl)
         => new("test-cluster") { DataRetentionTtl = ttl };
 
-    private static LogItem LogRecord(string clusterId, DateTime timestampUtc)
+    private static LogItem LogRecord(string clusterId, DateTime timestampUtc, JobMasterLogCategory? category = null)
         => new LogItem
         {
             ClusterId = clusterId,
             Id = JobMasterRandomUtil.NewGuid7(),
             Level = JobMasterLogLevel.Info,
             Message = "test",
+            Category = category,
             TimestampUtc = timestampUtc,
         };
 
@@ -94,6 +95,54 @@ public class DeleteOldLogsRunnerTests
         f.LogsRepository.Logs.Should().HaveCount(1);
         f.LogsRepository.Logs.Single().TimestampUtc
             .Should().BeCloseTo(DateTime.UtcNow.AddDays(-1), TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenArchivingConfigured_ShouldNeverDelete_JobExecutionCategoryLogs()
+    {
+        // Locks in the race fix with DeleteOldFinalJobsRunner: when archiving is configured, this
+        // category's lifecycle is owned by that runner instead (tied to when its parent job is
+        // archived/purged), so this blanket timestamp purge must never touch it, no matter how old --
+        // deleting it here first would permanently lose it before it could ever be archived.
+        var f = RunnerFixture.Create();
+        var ttl = TimeSpan.FromDays(7);
+        f.ClusterConfig.Config = ConfigWithTtl(ttl);
+        f.ClusterConfig.Config.TargetArchivedClusterId = "archive-cluster";
+
+        var oldJobExecutionLog = LogRecord(f.ClusterId, DateTime.UtcNow.AddDays(-30), JobMasterLogCategory.JobExecution);
+        var oldOtherLog = LogRecord(f.ClusterId, DateTime.UtcNow.AddDays(-30), JobMasterLogCategory.Job);
+        f.LogsRepository.Logs.Add(oldJobExecutionLog);
+        f.LogsRepository.Logs.Add(oldOtherLog);
+
+        var runner = new DeleteOldLogsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.LogsRepository.Logs.Should().ContainSingle().Which.Should().Be(oldJobExecutionLog);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenNoArchivingConfigured_ShouldDelete_JobExecutionCategoryLogsToo()
+    {
+        // With no archive target, DeleteOldFinalJobsRunner deletes a purged job's JobExecution-category
+        // logs locally anyway once that job is purged -- so there's no archive to race, and excluding the
+        // category here would just mean it's never cleaned up promptly (or at all, for a job stuck
+        // retrying forever). It should be treated like any other category in that case.
+        var f = RunnerFixture.Create();
+        var ttl = TimeSpan.FromDays(7);
+        f.ClusterConfig.Config = ConfigWithTtl(ttl);
+        // TargetArchivedClusterId left unset.
+
+        var oldJobExecutionLog = LogRecord(f.ClusterId, DateTime.UtcNow.AddDays(-30), JobMasterLogCategory.JobExecution);
+        var oldOtherLog = LogRecord(f.ClusterId, DateTime.UtcNow.AddDays(-30), JobMasterLogCategory.Job);
+        f.LogsRepository.Logs.Add(oldJobExecutionLog);
+        f.LogsRepository.Logs.Add(oldOtherLog);
+
+        var runner = new DeleteOldLogsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.LogsRepository.Logs.Should().BeEmpty();
     }
 
     [Fact]

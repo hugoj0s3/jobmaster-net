@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using JobMaster.Abstractions.Models;
 using JobMaster.RavenDb.Connections;
@@ -194,6 +195,20 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         var docs = await session.Advanced.AsyncRawQuery<RavenDbJobExecutionDocument>(rql)
             .AddParameter("clusterId", ClusterConnConfig.ClusterId)
             .AddParameter("jobId", jobId)
+            .ToListAsync();
+
+        return docs.Select(ToDomain).ToList();
+    }
+
+    public async Task<IList<JobExecution>> QueryJobExecutionsForJobsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<JobExecution>();
+
+        using var session = store.OpenAsyncSession();
+        var rql = $"from '{ExecutionCollectionName}' as e where e.ClusterId = $clusterId and e.JobId in ($jobIds)";
+        var docs = await session.Advanced.AsyncRawQuery<RavenDbJobExecutionDocument>(rql)
+            .AddParameter("clusterId", ClusterConnConfig.ClusterId)
+            .AddParameter("jobIds", jobIds)
             .ToListAsync();
 
         return docs.Select(ToDomain).ToList();
@@ -620,11 +635,12 @@ update {{
 
     // ==================== Purge / archive ====================
 
-    public async Task<int> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
+    public async Task<IList<Guid>> PurgeFinalizedAsync(DateTime cutoffUtc, int limit)
     {
         var jobIds = await QueryFinalizedIdsAsync(cutoffUtc, limit);
-        if (jobIds.Count == 0) return 0;
-        return await DeleteByIdsAsync(jobIds);
+        if (jobIds.Count == 0) return jobIds;
+        await DeleteByIdsAsync(jobIds);
+        return jobIds;
     }
 
     public async Task<IList<JobRawModel>> QueryFinalizedToPurgeAsync(DateTime cutoffUtc, int limit)
@@ -694,13 +710,16 @@ update {{
         return totalDeleted;
     }
     
-    public async Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions)
     {
-        if (jobs.Count == 0) return;
+        if (jobs.Count == 0) return new List<Guid>();
+
+        var executionsByJobId = jobExecutions.ToLookup(e => e.JobId);
 
         try
         {
-            await InternalBulkInsertIfNotExistsAsync(jobs);
+            var inserted = await InternalBulkInsertIfNotExistsAsync(jobs, executionsByJobId);
+            return inserted.Select(j => j.Id).ToList();
         }
         catch (ConcurrencyException ex)
         {
@@ -710,16 +729,22 @@ update {{
                 JobMasterLogCategory.Job,
                 exception: ex);
 
-            var (_, failedJobs) = await BulkInsertFallbackPerPartitionAsync(jobs);
+            var (succeededJobs, failedJobs) = await BulkInsertFallbackPerPartitionAsync(jobs, executionsByJobId);
+            var insertedIds = succeededJobs.Select(j => j.Id).ToList();
             if (failedJobs.Count > 0)
             {
-                await BulkInsertFallbackPerRowAsync(failedJobs);
+                insertedIds.AddRange(await BulkInsertFallbackPerRowAsync(failedJobs, executionsByJobId));
             }
+
+            return insertedIds;
         }
     }
 
     // Mirrors InternalBulkUpdateAsync -- "insert if not present" unit, reused at every fallback granularity.
-    private async Task<IList<JobRawModel>> InternalBulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    // Job docs and their JobExecution docs are stored in the same session, so they commit atomically
+    // together via one SaveChangesAsync() -- matching how the SQL implementation inserts both in one
+    // transaction.
+    private async Task<IList<JobRawModel>> InternalBulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, ILookup<Guid, JobExecution> executionsByJobId)
     {
         using var session = store.OpenAsyncSession();
         var ids = jobs.Select(j => DocumentId(j.Id)).ToArray();
@@ -738,6 +763,16 @@ update {{
 
         if (pendingInserts.Count == 0) return new List<JobRawModel>();
 
+        foreach (var (job, _) in pendingInserts)
+        {
+            foreach (var execution in executionsByJobId[job.Id])
+            {
+                var execDoc = ToExecutionDocument(execution);
+                await session.StoreAsync(execDoc, changeVector: string.Empty, id: ExecutionDocumentId(execution.Id));
+                ApplyExecutionCollectionMetadata(session.Advanced.GetMetadataFor(execDoc));
+            }
+        }
+
         await session.SaveChangesAsync();
 
         foreach (var (job, doc) in pendingInserts)
@@ -748,7 +783,7 @@ update {{
         return pendingInserts.Select(x => x.Model).ToList();
     }
 
-    private async Task<(IList<JobRawModel> SucceededJobs, IList<JobRawModel> FailedJobs)> BulkInsertFallbackPerPartitionAsync(IList<JobRawModel> jobs)
+    private async Task<(IList<JobRawModel> SucceededJobs, IList<JobRawModel> FailedJobs)> BulkInsertFallbackPerPartitionAsync(IList<JobRawModel> jobs, ILookup<Guid, JobExecution> executionsByJobId)
     {
         var failedJobs = new List<JobRawModel>();
         var succeededJobs = new List<JobRawModel>();
@@ -757,7 +792,7 @@ update {{
         {
             try
             {
-                var saved = await InternalBulkInsertIfNotExistsAsync(partition.ToList());
+                var saved = await InternalBulkInsertIfNotExistsAsync(partition.ToList(), executionsByJobId);
                 succeededJobs.AddRange(saved);
             }
             catch (Exception ex)
@@ -773,8 +808,10 @@ update {{
         return (succeededJobs, failedJobs);
     }
 
-    private async Task BulkInsertFallbackPerRowAsync(IList<JobRawModel> jobs)
+    private async Task<IList<Guid>> BulkInsertFallbackPerRowAsync(IList<JobRawModel> jobs, ILookup<Guid, JobExecution> executionsByJobId)
     {
+        var insertedIds = new ConcurrentBag<Guid>();
+
         await JobMasterParallelUtil.ForEachAsync(
             jobs,
             new ParallelOptions { MaxDegreeOfParallelism = PerRowSessionMaxDegreeOfParallelism },
@@ -782,13 +819,16 @@ update {{
             {
                 try
                 {
-                    await InternalBulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+                    var saved = await InternalBulkInsertIfNotExistsAsync(new List<JobRawModel> { job }, executionsByJobId);
+                    foreach (var s in saved) insertedIds.Add(s.Id);
                 }
                 catch (ConcurrencyException)
                 {
                     // Already exists now -- leave untouched, matches "insert if not exists" semantics.
                 }
             });
+
+        return insertedIds.ToList();
     }
 
     // ==================== WHERE builder ====================
