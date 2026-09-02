@@ -27,3 +27,11 @@ var app = builder.Build();
 // This maps the endpoints (e.g., /jm-api/my-cluster/jobs)
 app.MapJobMasterApi();
 ```
+
+## 📚 Full Documentation
+
+- [API Configuration](https://docs.jobmaster.hugoj0s3.dev/docs/monitoring/api-configuration) — authentication, Swagger, logging, and full endpoint reference
+
+---
+**Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**License:** MIT

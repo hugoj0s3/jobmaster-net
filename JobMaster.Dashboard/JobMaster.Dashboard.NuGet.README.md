@@ -90,5 +90,9 @@ dashboard.AddTheme(DashboardBuiltInTheme.Dark, "QA")
 
 ## 📚 Full Documentation
 
-- [DashboardConfiguration.md](https://github.com/hugoj0s3/jobmaster-net/blob/master/docs/DashboardConfiguration.md) — complete configuration reference
-- [DashboardScreenshots.md](https://github.com/hugoj0s3/jobmaster-net/blob/master/docs/DashboardScreenshots.md) — annotated screenshots of every dashboard page
+- [Dashboard Configuration](https://docs.jobmaster.hugoj0s3.dev/docs/monitoring/dashboard/configuration) — complete configuration reference
+- [Dashboard Screenshots](https://docs.jobmaster.hugoj0s3.dev/docs/monitoring/dashboard/screenshots) — annotated screenshots of every dashboard page
+
+---
+**Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**License:** MIT
