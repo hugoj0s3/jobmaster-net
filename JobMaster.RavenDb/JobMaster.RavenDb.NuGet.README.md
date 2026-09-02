@@ -61,4 +61,5 @@ config.UseRavenDb(
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**Docs:** [RavenDB provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/ravendb)  
 **License:** MIT

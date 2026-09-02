@@ -53,4 +53,5 @@ config.AddAgentConnectionConfig("Sql-Transport")
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**Docs:** [PostgreSQL provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/postgres)  
 **License:** MIT

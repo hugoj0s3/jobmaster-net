@@ -65,4 +65,5 @@ Server=localhost;Database=jobmaster;User=root;Password=secret;UseAffectedRows=tr
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**Docs:** [MySQL provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/mysql)  
 **License:** MIT

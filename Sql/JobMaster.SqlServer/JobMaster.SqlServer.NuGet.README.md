@@ -67,4 +67,5 @@ With RCSI enabled, `READ COMMITTED` queries use row-version snapshots instead of
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**Docs:** [SQL Server provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/sql-server)  
 **License:** MIT

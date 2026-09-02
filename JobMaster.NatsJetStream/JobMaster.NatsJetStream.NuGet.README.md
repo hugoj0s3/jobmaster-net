@@ -52,4 +52,5 @@ builder.Services.AddJobMasterCluster(config =>
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  
+**Docs:** [NATS JetStream provider guide](https://docs.jobmaster.hugoj0s3.dev/docs/configuration/providers/nats)  
 **License:** MIT
