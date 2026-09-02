@@ -15,6 +15,12 @@ public static class ConfigExtensions
     /// </summary>
     /// <param name="connectionString">Format: "Urls=url1,url2;Database=name".</param>
     /// <param name="certificate">Client certificate for RavenDB's X.509 authentication, if the server requires one.</param>
+    /// <param name="collectionPrefix">Custom collection-name prefix for all JobMaster collections. Defaults to <c>JM_</c>.</param>
+    /// <param name="enableDocumentExpiration">Opts the master database into RavenDB's native
+    /// document-expiration background job. Disabled by default; purely a housekeeping extra, not required
+    /// for correctness.</param>
+    /// <param name="documentExpirationFrequency">How often the expiration sweep runs, once
+    /// <paramref name="enableDocumentExpiration"/> is set. Defaults to 1 hour.</param>
     /// <param name="requestTimeout">Overrides RavenDB.Client's own default HTTP request timeout for every
     /// operation against this connection. Left unset, RavenDB.Client's own default applies (a very
     /// generous 12-hour ceiling -- not a meaningful per-request timeout in practice).</param>
@@ -26,22 +32,16 @@ public static class ConfigExtensions
     /// next use.</param>
     /// <param name="pooledConnectionIdleTimeout">Closes a pooled connection that's been idle this long.
     /// Left unset, .NET's own <c>SocketsHttpHandler</c> default applies.</param>
-    /// <param name="collectionPrefix">Custom collection-name prefix for all JobMaster collections. Defaults to <c>JM_</c>.</param>
-    /// <param name="enableDocumentExpiration">Opts the master database into RavenDB's native
-    /// document-expiration background job. Disabled by default; purely a housekeeping extra, not required
-    /// for correctness.</param>
-    /// <param name="documentExpirationFrequency">How often the expiration sweep runs, once
-    /// <paramref name="enableDocumentExpiration"/> is set. Defaults to 1 hour.</param>
     public static T UseRavenDb<T>(
         this T clusterConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
-        TimeSpan? requestTimeout = null,
-        TimeSpan? pooledConnectionLifetime = null,
-        TimeSpan? pooledConnectionIdleTimeout = null,
         string? collectionPrefix = null,
         bool enableDocumentExpiration = false,
-        TimeSpan? documentExpirationFrequency = null)
+        TimeSpan? documentExpirationFrequency = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null)
         where T : IBaseClusterConfigSelector<IClusterConfigSelector>
     {
         clusterConfigSelector.ClusterConnString(connectionString);
@@ -94,10 +94,10 @@ public static class ConfigExtensions
         this IAgentConnectionConfigSelector agentConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
+        string? collectionPrefix = null,
         TimeSpan? requestTimeout = null,
         TimeSpan? pooledConnectionLifetime = null,
-        TimeSpan? pooledConnectionIdleTimeout = null,
-        string? collectionPrefix = null)
+        TimeSpan? pooledConnectionIdleTimeout = null)
     {
         agentConfigSelector.AgentConnString(connectionString);
         agentConfigSelector.AgentRepoType(RavenDbRepositoryConstants.RepositoryTypeId);
