@@ -18,13 +18,13 @@ internal class PostgresJobMasterRuntimeSetup : SqlJobMasterRuntimeSetup
         OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
             RepositoryTypeId,
             maxBatchSize: 50,
-            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(50));
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(3, 1000));
 
         OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
             RepositoryTypeId,
             maxBatchSize: 50,
-            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25),
-            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 500));
+            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(3, 1000),
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 750));
 
         await CreateCaseInsensitiveCollationAsync();
         await base.OnBeforeStartAsync(mainServiceProvider);

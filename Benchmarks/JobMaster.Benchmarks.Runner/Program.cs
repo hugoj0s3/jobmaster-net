@@ -53,7 +53,9 @@ await environment.StartAsync(
     dbNanoCpus: (long)(options.DbCpu * 1_000_000_000),
     dbMemoryBytes: (long)(options.DbMemoryGb * 1024 * 1024 * 1024),
     workerNanoCpus: (long)(options.WorkerCpu * 1_000_000_000),
-    workerMemoryBytes: (long)(options.WorkerMemoryGb * 1024 * 1024 * 1024));
+    workerMemoryBytes: (long)(options.WorkerMemoryGb * 1024 * 1024 * 1024),
+    natsNanoCpus: (long)(options.NatsCpu * 1_000_000_000),
+    natsMemoryBytes: (long)(options.NatsMemoryGb * 1024 * 1024 * 1024));
 Console.WriteLine("Containers ready.");
 
 if (options.WarmupDelay > TimeSpan.Zero)

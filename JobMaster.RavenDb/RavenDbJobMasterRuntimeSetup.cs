@@ -23,13 +23,13 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
             RavenDbRepositoryConstants.RepositoryTypeId,
             maxBatchSize: 250,
-            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 5000));
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(5, 5000));
 
         OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
             RavenDbRepositoryConstants.RepositoryTypeId,
             maxBatchSize: 250,
             internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(5, 2500),
-            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(50, 250));
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(30, 500));
 
         var allClusterConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
             .Where(c => c.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)

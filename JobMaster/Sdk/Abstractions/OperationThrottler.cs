@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Utils;
+
 namespace JobMaster.Sdk.Abstractions;
 
 internal class OperationThrottler
@@ -6,7 +8,7 @@ internal class OperationThrottler
 
     public int? Capacity { get; }
     private readonly SemaphoreSlim? semaphore;
-    
+
     public int AcquireTimeoutMs { get; }
 
     public OperationThrottler(int? capacity, int acquireTimeoutMs = DefaultAcquireTimeoutMs)
@@ -19,11 +21,19 @@ internal class OperationThrottler
         }
     }
 
+    // A failed Wait() falls through and runs func() anyway (fail-open, not fail-closed) -- see the
+    // other overloads' own comments. When many callers are contending for the same scarce capacity,
+    // they tend to hit that timeout in a tight cluster and would otherwise all fall through and fire
+    // at once -- a synchronized burst against the very thing the throttler exists to pace. A small
+    // random jitter before falling through spreads that cluster out instead.
+    private static int JitterMs() => JobMasterRandomUtil.GetInt(2, 11) * 25; // 50-250ms, in 25ms steps
+
     public T Exec<T>(Func<T> func)
     {
         if (semaphore == null) return func();
 
         var acquired = semaphore.Wait(AcquireTimeoutMs);
+        if (!acquired) Thread.Sleep(JitterMs());
         try
         {
             return func();
@@ -39,6 +49,7 @@ internal class OperationThrottler
         if (semaphore == null) { func(); return; }
 
         var acquired = semaphore.Wait(AcquireTimeoutMs);
+        if (!acquired) Thread.Sleep(JitterMs());
         try
         {
             func();
@@ -54,6 +65,7 @@ internal class OperationThrottler
         if (semaphore == null) return await func();
 
         var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
+        if (!acquired) await Task.Delay(JitterMs());
         try
         {
             return await func();
@@ -69,6 +81,7 @@ internal class OperationThrottler
         if (semaphore == null) { await func(); return; }
 
         var acquired = await semaphore.WaitAsync(AcquireTimeoutMs);
+        if (!acquired) await Task.Delay(JitterMs());
         try
         {
             await func();

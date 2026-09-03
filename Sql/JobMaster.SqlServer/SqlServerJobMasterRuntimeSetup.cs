@@ -13,13 +13,13 @@ internal class SqlServerJobMasterRuntimeSetup : SqlJobMasterRuntimeSetup
         OperationThrottlerSettingsTemplateFactory.RegisterForMaster(
             RepositoryTypeId,
             maxBatchSize: 50,
-            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(50));
+            throttlerSettingsTemplate: new OperationThrottlerSettingsTemplate(15, 5000));
 
         OperationThrottlerSettingsTemplateFactory.RegisterForAgent(
             RepositoryTypeId,
             maxBatchSize: 50,
-            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(25),
-            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 500));
+            internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(10, 2500),
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(200, 500));
 
         await base.OnBeforeStartAsync(mainServiceProvider);
     }

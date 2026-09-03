@@ -104,6 +104,13 @@ public sealed class CliOptions
     public double DbCpu { get; init; } = 2;
     public double DbMemoryGb { get; init; } = 2;
 
+    /// <summary>NATS JetStream container resource limits, independent of <see cref="DbCpu"/>/
+    /// <see cref="DbMemoryGb"/> -- only relevant when <see cref="UseNats"/> is set, since the two
+    /// containers (SQL/RavenDB master DB and NATS agent transport) can need very different sizing.
+    /// Defaults match <see cref="DbCpu"/>/<see cref="DbMemoryGb"/>'s own original 2 CPU / 2GB spec.</summary>
+    public double NatsCpu { get; init; } = 2;
+    public double NatsMemoryGb { get; init; } = 2;
+
     /// <summary>Per-worker-container resource limits -- defaults match the original fixed 0.5 CPU /
     /// 512MB spec. Overridable to test whether worker containers actually need that much (e.g. lower
     /// per-worker CPU while raising worker count to see how total cluster capacity behaves).</summary>
@@ -137,6 +144,8 @@ public sealed class CliOptions
         var burstMaxWaitMinutes = 60.0;
         var dbCpu = 2.0;
         var dbMemoryGb = 2.0;
+        var natsCpu = 2.0;
+        var natsMemoryGb = 2.0;
         var workerCpu = 0.5;
         var workerMemoryGb = 0.5;
         var coordinatorCount = 4;
@@ -164,6 +173,12 @@ public sealed class CliOptions
                     break;
                 case "--db-memory-gb":
                     dbMemoryGb = double.Parse(args[++i]);
+                    break;
+                case "--nats-cpu":
+                    natsCpu = double.Parse(args[++i]);
+                    break;
+                case "--nats-memory-gb":
+                    natsMemoryGb = double.Parse(args[++i]);
                     break;
                 case "--worker-cpu":
                     workerCpu = double.Parse(args[++i]);
@@ -304,6 +319,8 @@ public sealed class CliOptions
             BurstMaxWait = TimeSpan.FromMinutes(burstMaxWaitMinutes),
             DbCpu = dbCpu,
             DbMemoryGb = dbMemoryGb,
+            NatsCpu = natsCpu,
+            NatsMemoryGb = natsMemoryGb,
             WorkerCpu = workerCpu,
             WorkerMemoryGb = workerMemoryGb
         };

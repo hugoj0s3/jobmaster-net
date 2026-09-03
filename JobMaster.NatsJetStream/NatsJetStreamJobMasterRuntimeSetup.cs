@@ -52,7 +52,7 @@ internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             NatsJetStreamConstants.RepositoryTypeId,
             maxBatchSize: 50,
             internalThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(250, 1000),
-            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(100, 125));
+            schedulingThrottlerSettingsTemplate: new OperationThrottlerSettingsTemplate(500, 250));
 
         return Task.CompletedTask;
     }

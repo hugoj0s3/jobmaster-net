@@ -21,7 +21,7 @@ dotnet add package JobMaster
 To achieve true resilience and massive scale, JobMaster utilizes a **three-layer architecture**:
 
 1.  **The Master (Coordination):** The "Source of Truth." It manages cluster topology, job definitions, and long-term auditing. It ensures that the state of your entire ecosystem is persistent and consistent.
-2.  **Agents (Transport):** High-speed ephemeral storage or message brokers (PostgreSQL, SQL Server, or NATS JetStream). Agents act as high-performance buffers for "in-flight" jobs, ensuring workers can claim tasks with ultra-low latency.
+2.  **Agents (Transport):** High-speed ephemeral storage or message brokers (PostgreSQL, MySQL, SQL Server, RavenDB, or NATS JetStream). Agents act as high-performance buffers for "in-flight" jobs, ensuring workers can claim tasks with ultra-low latency.
 3.  **Workers (Execution):** The compute power. Workers monitor specific Agents, claim available jobs using atomic locks, and synchronize execution results back to the Master Database.
 
 ## 🚀 Getting Started
@@ -120,7 +120,7 @@ See [NaturalCron](https://github.com/hugoj0s3/NaturalCron)
  
 ## 🛠 Advanced Features
 
-* **Transport Agnostic:** Seamlessly switch between RDBMS (Postgres, MySQL, SQL Server) and Message Brokers (NATS JetStream) without changing your business logic.
+* **Transport Agnostic:** Seamlessly switch between RDBMS (Postgres, MySQL, SQL Server), Document Databases (RavenDB), and Message Brokers (NATS JetStream) without changing your business logic.
 * **Performance Buffering:** New jobs are instantly persisted to the Agent for immediate execution, then asynchronously synced to the Master for long-term auditing.
 * **Atomic Locking:** Built-in protection to ensure that even in a multi-node cluster, a job is never executed by more than one worker simultaneously.
 * **Static & Dynamic Scheduling:** Support for code-defined "Static Profiles" that sync on startup and "Dynamic Schedules" created at runtime via API.

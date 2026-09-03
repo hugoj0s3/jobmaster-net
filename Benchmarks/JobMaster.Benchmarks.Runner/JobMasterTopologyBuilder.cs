@@ -304,27 +304,29 @@ public static class JobMasterTopologyBuilder
             $"Password={BenchmarkContainerEnvironment.SqlServerPassword};" +
             "TrustServerCertificate=True;Max Pool Size=300;Connect Timeout=60;",
 
+        // Maximum Pool Size/timeouts added after a baseline run hit real MySqlException "Too many
+        // connections" at 30 full-mode containers, even with low (5/5/5) throttler capacity --
+        // same failure mode Postgres already hit, fixed the same way (explicit client pool ceiling
+        // + a raised server-side max-connections, see BenchmarkContainerEnvironment.cs).
         DbEngine.MySql =>
             $"Server={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Port={BenchmarkContainerEnvironment.MySqlPort};" +
             $"Database={databaseName};" +
             $"User ID={BenchmarkContainerEnvironment.MySqlUsername};" +
             $"Password={BenchmarkContainerEnvironment.MySqlPassword};" +
-            "UseAffectedRows=True;AllowUserVariables=True",
+            "UseAffectedRows=True;AllowUserVariables=True;Maximum Pool Size=25;Connection Timeout=300;Default Command Timeout=120;",
 
-        // Pool size capped at 5 (down from 25) -- with up to ~20 containers each holding their own
-        // master-DB pool (plus, in Pure mode, a second pool to their own agent database), a
-        // per-container ceiling in the dozens multiplies into real, observed max_connections
-        // exhaustion ("sorry, too many clients already") regardless of the server-side
-        // max_connections setting. 5 keeps per-container demand small enough that this shouldn't
-        // recur at any executor count this benchmark uses.
+        // Pool size raised to 25 for this throttler-calibration pass (server max_connections=2000
+        // gives headroom: 30 containers * 25 * 2 pools = 1500, well under it). CommandTimeout raised
+        // to 120s alongside the existing 300s connect Timeout, so a query queued behind DB contention
+        // doesn't get cut off client-side before the server actually answers.
         DbEngine.Postgres =>
             $"Host={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Port={BenchmarkContainerEnvironment.DbPort};" +
             $"Database={databaseName};" +
             $"Username={BenchmarkContainerEnvironment.DbUsername};" +
             $"Password={BenchmarkContainerEnvironment.DbPassword};" +
-            "Maximum Pool Size=5;Timeout=300;",
+            "Maximum Pool Size=25;Timeout=300;CommandTimeout=120;",
         _ => throw new ArgumentException("Invalid Db Engine")
     };
 }

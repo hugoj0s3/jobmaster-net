@@ -104,6 +104,12 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         // per-worker CPU while raising worker *count* to see how total cluster capacity behaves).
         long? workerNanoCpus = null,
         long? workerMemoryBytes = null,
+        // Independent of dbNanoCpus/dbMemoryBytes -- the NATS container and the SQL/RavenDB master DB
+        // container are separate resources that can need different sizing when calibrating a *Nats
+        // config. Falls back to the DB values (not a separate hardcoded default) so callers that don't
+        // care keep getting one consistent size, same as before this parameter existed.
+        long? natsNanoCpus = null,
+        long? natsMemoryBytes = null,
         CancellationToken ct = default)
     {
         network = new NetworkBuilder().Build();
@@ -113,6 +119,8 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
         var effectiveDbMemoryBytes = dbMemoryBytes ?? DbMemoryBytes;
         var effectiveWorkerNanoCpus = workerNanoCpus ?? WorkerNanoCpus;
         var effectiveWorkerMemoryBytes = workerMemoryBytes ?? WorkerMemoryBytes;
+        var effectiveNatsNanoCpus = natsNanoCpus ?? effectiveDbNanoCpus;
+        var effectiveNatsMemoryBytes = natsMemoryBytes ?? effectiveDbMemoryBytes;
 
         if (dbEngine == DbEngine.RavenDB)
         {
@@ -157,6 +165,11 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
                 .WithNetworkAliases(NatsNetworkAlias)
                 .WithUsername(NatsUsername)
                 .WithPassword(NatsPassword)
+                .WithCreateParameterModifier(p =>
+                {
+                    p.HostConfig.NanoCPUs = effectiveNatsNanoCpus;
+                    p.HostConfig.Memory = effectiveNatsMemoryBytes;
+                })
                 .Build();
             await NatsContainer.StartAsync(ct);
         }
@@ -284,7 +297,10 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             // No leading "mysqld" -- docker-entrypoint.sh prepends it itself when the first arg
             // starts with '-', matching ScenarioGlobalEnvironment's MySQL setup. Unlike Postgres,
             // WithCommand doesn't break MsSqlBuilder's/MySqlBuilder's readiness wait here.
-            .WithCommand("--max-connections=400")
+            // 400 was confirmed insufficient the same way Postgres's original 500 was -- real
+            // "Too many connections" MySqlException failures at 30 full-mode containers even with
+            // low (5/5/5) throttler capacity. Raised to 2000 to match Postgres's own ceiling.
+            .WithCommand("--max-connections=2000")
             .WithCreateParameterModifier(p =>
             {
                 p.HostConfig.NanoCPUs = dbNanoCpus;
