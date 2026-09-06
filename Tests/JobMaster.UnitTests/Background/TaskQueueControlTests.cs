@@ -13,9 +13,9 @@ public class TaskQueueControlTests
     [Theory]
     [InlineData(JobMasterPriority.VeryLow,  2, 10)]
     [InlineData(JobMasterPriority.Low,      3, 15)]
-    [InlineData(JobMasterPriority.Medium,   4, 20)]
-    [InlineData(JobMasterPriority.High,     5, 25)]
-    [InlineData(JobMasterPriority.Critical, 6, 30)]
+    [InlineData(JobMasterPriority.Medium,   5, 25)]
+    [InlineData(JobMasterPriority.High,     8, 40)]
+    [InlineData(JobMasterPriority.Critical, 13, 65)]
     public void Create_WhenDefaultFactor_ShouldSizeQueuesByPriority(
         JobMasterPriority priority, int expectedRunSlots, int expectedWaitingCapacity)
     {

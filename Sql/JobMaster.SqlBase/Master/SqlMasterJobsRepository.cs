@@ -352,7 +352,7 @@ FROM {t} j
         return await conn.QuerySingleAsync<JobProbeResult>(sqlText, args);
     }
 
-    public async Task BulkUpdateAsync(BulkJobUpdateRequest request)
+    public virtual async Task BulkUpdateAsync(BulkJobUpdateRequest request)
     {
         if (request.JobIds.Count == 0 || request.Properties.Count == 0) return;
 

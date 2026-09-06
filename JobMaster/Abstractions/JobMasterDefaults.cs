@@ -44,8 +44,10 @@ public static class JobMasterDefaults
         /// <summary>Default look-ahead window for pre-fetching job buckets: 15 seconds.</summary>
         public static readonly TimeSpan BucketBufferLeadTime = TimeSpan.FromSeconds(15);
 
-        /// <summary>Default parallelism multiplier: 1.0 (no scaling).</summary>
-        public const double ParallelismFactor = 1.0;
+        /// <summary>Cap applied when no explicit <c>ParallelismFactor</c> is set: the worker
+        /// defaults to its container's <see cref="Environment.ProcessorCount"/>, capped at this
+        /// value, rather than a fixed multiplier.</summary>
+        public const double MaxParallelismFactor = 10;
 
         /// <summary>Default concurrent execution slots per priority level: 1.</summary>
         public const int BucketQtyPerPriority = 1;

@@ -10,6 +10,9 @@ dashboard/static/jobmaster-config.json
 # Benchmark run output (throughput/latency/resource reports, per-run, not source)
 Benchmarks/Results/
 
+# Benchmark working notes (machine-specific paths, cloud instance tracking, not source)
+Benchmarks/Documentation/
+
 # User-specific files
 *.suo
 *.user

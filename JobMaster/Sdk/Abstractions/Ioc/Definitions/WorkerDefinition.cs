@@ -12,7 +12,10 @@ internal sealed class WorkerDefinition
     public int TransferBatchSize { get; set; } = JobMasterDefaults.Worker.TransferBatchSize;
     public int BucketBufferSize { get; set; } = JobMasterDefaults.Worker.BucketBufferSize;
     public AgentWorkerMode Mode { get; set; } = JobMasterDefaults.Worker.DefaultMode;
-    public double ParallelismFactor { get; set; } = JobMasterDefaults.Worker.ParallelismFactor;
+    /// <summary>Null means unset -- resolved to a processor-count-based default at worker
+    /// registration time, not here, since that's where <see cref="Environment.ProcessorCount"/>
+    /// actually reflects this worker's own container.</summary>
+    public double? ParallelismFactor { get; set; }
     /// <summary>
     /// Explicit per-priority bucket counts. Absent entries default to
     /// <see cref="JobMasterDefaults.Worker.BucketQtyPerPriority"/> at startup.

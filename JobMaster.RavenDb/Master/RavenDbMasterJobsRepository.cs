@@ -626,6 +626,16 @@ update {{
                 {
                     return; // Lost the race during the batch attempt too -- silently excluded.
                 }
+                catch (Exception ex)
+                {
+                    // Deliberately swallowed, not rethrown -- broad catch, unlike ConcurrencyException
+                    // above. This runs inside JobMasterParallelUtil.ForEachAsync alongside other rows in
+                    // parallel; letting any exception here escape would fail the whole ForEachAsync call
+                    // and discard `results`, which already holds every other row that succeeded in this
+                    // same fan-out.
+                    logger.Error($"BulkUpdateAsync per-row retry failed. JobId={job.Id}", JobMasterLogCategory.Job, job.Id, exception: ex);
+                    return;
+                }
 
                 foreach (var s in saved) results.Add(s);
             });
@@ -825,6 +835,15 @@ update {{
                 catch (ConcurrencyException)
                 {
                     // Already exists now -- leave untouched, matches "insert if not exists" semantics.
+                }
+                catch (Exception ex)
+                {
+                    // Deliberately swallowed, not rethrown -- broad catch, unlike ConcurrencyException
+                    // above. Runs inside JobMasterParallelUtil.ForEachAsync alongside other rows in
+                    // parallel; letting any exception here escape would fail the whole ForEachAsync call
+                    // and discard `insertedIds`, which already holds every other row that succeeded in
+                    // this same fan-out.
+                    logger.Error($"BulkInsertIfNotExistsAsync per-row retry failed. JobId={job.Id}", JobMasterLogCategory.Job, job.Id, exception: ex);
                 }
             });
 

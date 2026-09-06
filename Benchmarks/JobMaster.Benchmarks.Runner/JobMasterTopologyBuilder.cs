@@ -289,25 +289,14 @@ public static class JobMasterTopologyBuilder
     {
         DbEngine.RavenDB =>
             $"Urls=http://{BenchmarkContainerEnvironment.DbNetworkAlias}:8080;Database={databaseName}",
-
-        // Connect Timeout raised to 60s (from SqlClient's 15s default) -- real observed failure was
-        // "Connection Timeout Expired" during the pre-login handshake under concurrent connection
-        // load, not a rejection or a query-execution timeout. Max Pool Size deliberately left at 300
-        // per explicit user instruction. Note: unlike Postgres/MySql, Microsoft.Data.SqlClient has no
-        // connection-string-level command (query-execution) timeout -- that's only settable per
-        // SqlCommand in code, so it isn't adjustable here without touching JobMaster.SqlBase/
-        // JobMaster.SqlServer's Dapper call sites directly.
+        
         DbEngine.SqlServer =>
             $"Server={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Database={databaseName};" +
             $"User Id={BenchmarkContainerEnvironment.SqlServerUsername};" +
             $"Password={BenchmarkContainerEnvironment.SqlServerPassword};" +
-            "TrustServerCertificate=True;Max Pool Size=300;Connect Timeout=60;",
-
-        // Maximum Pool Size/timeouts added after a baseline run hit real MySqlException "Too many
-        // connections" at 30 full-mode containers, even with low (5/5/5) throttler capacity --
-        // same failure mode Postgres already hit, fixed the same way (explicit client pool ceiling
-        // + a raised server-side max-connections, see BenchmarkContainerEnvironment.cs).
+            "TrustServerCertificate=True;Max Pool Size=300;Connect Timeout=300;Command Timeout=120;",
+        
         DbEngine.MySql =>
             $"Server={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Port={BenchmarkContainerEnvironment.MySqlPort};" +
@@ -316,10 +305,6 @@ public static class JobMasterTopologyBuilder
             $"Password={BenchmarkContainerEnvironment.MySqlPassword};" +
             "UseAffectedRows=True;AllowUserVariables=True;Maximum Pool Size=25;Connection Timeout=300;Default Command Timeout=120;",
 
-        // Pool size raised to 25 for this throttler-calibration pass (server max_connections=2000
-        // gives headroom: 30 containers * 25 * 2 pools = 1500, well under it). CommandTimeout raised
-        // to 120s alongside the existing 300s connect Timeout, so a query queued behind DB contention
-        // doesn't get cut off client-side before the server actually answers.
         DbEngine.Postgres =>
             $"Host={BenchmarkContainerEnvironment.DbNetworkAlias};" +
             $"Port={BenchmarkContainerEnvironment.DbPort};" +

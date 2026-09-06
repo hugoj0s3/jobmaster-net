@@ -89,6 +89,19 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     private readonly object jobsToFlushLock = new();
     private DateTime lastFlushedAtUtc = DateTime.MinValue;
 
+    // Computed once per flush cycle (see NextFlushInterval), not re-rolled on every shouldFlush
+    // check -- the old inline JobMasterRandomUtil.GetInt(5, 11) call was re-evaluated every single
+    // tick, making the effective wait time memoryless-random instead of a stable, jittered target.
+    private DateTime nextFlushAtUtc = DateTime.MinValue;
+
+    // Tracks how many times each job has been re-queued after a failed flush (see
+    // FlushToOnBoardingControlAsync's catch block). Caps the fast re-queue-and-retry-next-pulse path
+    // at MaxFlushRequeueAttempts so a job that can never persist (not just transient contention)
+    // doesn't loop forever -- once it hits the cap it's dropped from tracking here and falls back to
+    // the slower CheckDeadlineJobsAsync "lost job" sweep, same as before this retry path existed.
+    private const int MaxFlushRequeueAttempts = 20;
+    private readonly Dictionary<Guid, int> flushRequeueAttemptCounts = new();
+
     private readonly JobMasterLockKeys lockKeys;
     private readonly string bucketId;
     private readonly JobMasterPriority priority;
@@ -355,14 +368,28 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// a bulk update before being pushed. Only jobs returned by the bulk update (confirming
     /// successful persistence) are admitted to the onboarding queue.
     /// </summary>
+    // 5000-15000ms, in 250ms steps. Computed once per flush cycle -- see nextFlushAtUtc. Widest
+    // range tested (2026-09-05, 5 parallel cloud A/B trials of 8-12/5-15/10-15/5-10/12-15) won
+    // clearly on both deadlock count and throughput -- with ~40 buckets (20 workers x 2 buckets)
+    // each independently rolling a random next-flush time, a wider spread reduces the odds any two
+    // land close enough together to collide on the shared job table (a birthday-paradox effect).
+    private static TimeSpan NextFlushInterval() => TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(20, 61) * 250);
+
+    // 50-250ms, in 25ms steps -- extra desynchronization specifically for the buffer-full trigger.
+    // Buckets under similar sustained load tend to fill their buffer and hit this trigger together,
+    // unlike the time-based trigger, which is already independently randomized per bucket via
+    // nextFlushAtUtc.
+    private static TimeSpan BufferFullJitter() => TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(2, 11) * 25);
+
     private async Task FlushToOnBoardingControlAsync()
     {
         List<JobRawModel> batch;
+        bool bufferWasFull;
         lock (jobsToFlushLock)
         {
-           var shouldFlush = DateTime.UtcNow - lastFlushedAtUtc >= TimeSpan.FromSeconds(10)
-                          || jobsToFlush.Count >= backgroundAgentWorker.BucketBufferSize;
-           
+            bufferWasFull = jobsToFlush.Count >= backgroundAgentWorker.BucketBufferSize;
+            var shouldFlush = DateTime.UtcNow >= nextFlushAtUtc || bufferWasFull;
+
             if (!shouldFlush)
             {
                 return;
@@ -374,13 +401,25 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             }
 
             lastFlushedAtUtc = DateTime.UtcNow;
-            
+            nextFlushAtUtc = lastFlushedAtUtc + NextFlushInterval();
+
             var take = Math.Min(jobsToFlush.Count, backgroundAgentWorker.BucketBufferSize);
             batch = jobsToFlush.GetRange(0, take);
             jobsToFlush.RemoveRange(0, take);
         }
 
         var bucket = this.masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
+        
+        await Task.Delay(TimeSpan.FromMilliseconds(100));
+
+        if (bufferWasFull)
+        {
+            // Additional jitter when the bucket is full.
+            await Task.Delay(BufferFullJitter());
+        }
+
+        bool hasFailed = false;
+
         if (bucket?.Status == BucketStatus.Active)
         {
             foreach (var job in batch)
@@ -390,13 +429,26 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
             foreach (var partition in batch.Partition(MasterMaxBatchSize))
             {
-                var updated = await backgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.BulkUpdateAsync(partition.ToList()));
+                var partitionList = partition.ToList();
+
+                IList<JobRawModel> updated;
+                try
+                {
+                    updated = await backgroundAgentWorker.WorkerClusterOperations.BulkUpdateAsync(partitionList);
+                }
+                catch (Exception e)
+                {
+                    RequeueAfterFlushFailure(partitionList, e);
+                    // await Task.Delay(TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(1, 10) * 50));
+                    hasFailed = true;
+                    continue;
+                }
 
                 foreach (var job in updated)
                 {
                     OnBoardingControl.Push(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt());
                     logger.Debug($"OnBoarding flushed: JobId={job.Id}");
+                    flushRequeueAttemptCounts.Remove(job.Id);
                 }
             }
         }
@@ -404,11 +456,79 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             foreach (var partition in batch.Partition(MasterMaxBatchSize))
             {
-                var idsToHeld = partition.Select(x => x.Id).ToList();
+                var partitionList = partition.ToList();
+                var idsToHeld = partitionList.Select(x => x.Id).ToList();
                 var heldOnMasterReq = BulkJobUpdateRequest.HeldOnMaster(idsToHeld);
 
-                await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o =>
-                    o.BulkUpdateAsync(heldOnMasterReq));
+                try
+                {
+                    await backgroundAgentWorker.WorkerClusterOperations.BulkUpdateAsync(heldOnMasterReq);
+                }
+                catch (Exception e)
+                {
+                    RequeueAfterFlushFailure(partitionList, e);
+                    hasFailed = true;
+                    continue;
+                }
+
+                foreach (var id in idsToHeld)
+                {
+                    flushRequeueAttemptCounts.Remove(id);
+                }
+            }
+        }
+        
+        if (hasFailed)
+        {
+            lock (jobsToFlushLock)
+            {
+                JobMasterRandomUtil.Shuffle(jobsToFlush);    
+            }
+            
+            await Task.Delay(TimeSpan.FromMilliseconds(JobMasterRandomUtil.GetInt(10, 21) * 100));
+        }
+    }
+
+    /// <summary>
+    /// Called from a failed flush partition's catch block. Logs the error and re-queues the
+    /// partition into <see cref="jobsToFlush"/> so it retries on this bucket's next pulse, capped at
+    /// <see cref="MaxFlushRequeueAttempts"/> attempts per job -- beyond that a job is dropped from
+    /// this fast path and falls back to the slower <see cref="CheckDeadlineJobsAsync"/> "lost job"
+    /// sweep instead of retrying forever.
+    /// </summary>
+    private void RequeueAfterFlushFailure(List<JobRawModel> partitionList, Exception e)
+    {
+        logger.Error($"Flush failed for a partition of {partitionList.Count} job(s), re-queuing for retry on the next pulse.", JobMasterLogCategory.JobExecution, exception: e);
+
+        var toRequeue = new List<JobRawModel>(partitionList.Count);
+        foreach (var job in partitionList)
+        {
+            var attempts = (flushRequeueAttemptCounts.TryGetValue(job.Id, out var priorAttempts) ? priorAttempts : 0) + 1;
+            if (attempts > MaxFlushRequeueAttempts)
+            {
+                // A job that fails to persist MaxFlushRequeueAttempts times in a row is more likely
+                // poisoned (always fails) than just unlucky contention -- stop re-queuing it here so
+                // it can't loop forever, and let it fall back to the slower CheckDeadlineJobsAsync
+                // sweep instead, same as before this path existed.
+                logger.Warn($"Flush retry cap ({MaxFlushRequeueAttempts}) reached, dropping from fast re-queue path. JobId={job.Id}", JobMasterLogCategory.JobExecution, job.Id);
+                flushRequeueAttemptCounts.Remove(job.Id);
+            }
+            else
+            {
+                flushRequeueAttemptCounts[job.Id] = attempts;
+                toRequeue.Add(job);
+            }
+        }
+
+        if (toRequeue.Count > 0)
+        {
+            // Appended to the end, not inserted at the front -- inserting at 0 would put a failed
+            // partition first in line for the very next flush, retrying straight back into
+            // whatever contention just caused it to fail. Appending lets other (uncontended) jobs
+            // flush first, giving the failed ones more natural spacing before their own retry.
+            lock (jobsToFlushLock)
+            {
+                jobsToFlush.AddRange(toRequeue);
             }
         }
     }

@@ -97,10 +97,12 @@ public interface IAgentWorkerSelector
     /// Scales the concurrent execution capacity of this worker across all priority levels.
     /// The system calculates a run capacity per bucket using:
     /// <c>RunCapacity = BasePriorityCapacity × Factor</c>
-    /// where base capacities are: VeryLow=2, Low=3, Medium=4, High=5, Critical=6.
+    /// where base capacities are: VeryLow=2, Low=3, Medium=5, High=8, Critical=13.
     /// A built-in backpressure mechanism automatically pauses job fetching when the internal
     /// waiting queue reaches <c>RunCapacity × 5</c>, preventing memory exhaustion under heavy load.
-    /// Default: <see cref="JobMasterDefaults.Worker.ParallelismFactor"/> (1.0).
+    /// Default (when not called): the worker's own <see cref="Environment.ProcessorCount"/>, capped
+    /// at <see cref="JobMasterDefaults.Worker.MaxParallelismFactor"/> -- not a fixed multiplier, so
+    /// it scales with whatever CPU the container actually has.
     /// </summary>
     /// <param name="factor">
     /// A positive multiplier applied to each priority's base capacity.

@@ -29,7 +29,7 @@ public static class HangfireTopologyBuilder
             $"Database={DatabaseName};" +
             $"User Id={BenchmarkContainerEnvironment.SqlServerUsername};" +
             $"Password={BenchmarkContainerEnvironment.SqlServerPassword};" +
-            "TrustServerCertificate=True;Max Pool Size=300;";
+            "TrustServerCertificate=True;Max Pool Size=300;Connect Timeout=300;Command Timeout=120;";
 
         var specs = new List<WorkerContainerSpec>(workerCount);
         for (var i = 0; i < workerCount; i++)

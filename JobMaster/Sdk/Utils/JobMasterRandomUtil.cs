@@ -32,7 +32,19 @@ internal static class JobMasterRandomUtil
     public static int GetInt(int toExclusive) => Rnd.Next(toExclusive);
 
     public static double GetDouble() => Rnd.NextDouble();
-    
+
+    // Fisher-Yates, in place. Used to randomize row-processing order for a retry after a deadlock --
+    // a fresh random order gives the retry a different lock-acquisition path than whatever order just
+    // collided, without needing to know anything about why the original order failed.
+    public static void Shuffle<T>(IList<T> list)
+    {
+        for (var i = list.Count - 1; i > 0; i--)
+        {
+            var j = GetInt(i + 1);
+            (list[i], list[j]) = (list[j], list[i]);
+        }
+    }
+
     public static bool GetBoolean() => Rnd.Next() % 2 == 0;
 
     

@@ -63,7 +63,7 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
     /// </summary>
     /// <param name="priority">
     /// Determines the base number of concurrent running slots:
-    /// <c>VeryLow=2, Low=3, Medium=4, High=5, Critical=6</c>.
+    /// <c>VeryLow=2, Low=3, Medium=5, High=8, Critical=13</c>.
     /// </param>
     /// <param name="factor">
     /// Multiplier applied to the base run capacity (rounded to nearest integer, minimum 1).
@@ -79,13 +79,17 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         double factor = 1,
         Func<T, bool>? preEnqueueAction = null)
     {
+        // Fibonacci progression (was a flat +1 arithmetic one: 2,3,4,5,6) -- keeps a roughly
+        // constant ~1.6x ratio between adjacent tiers instead of a shrinking one, so priority
+        // keeps mattering at the top end rather than flattening out (Critical is now ~6.5x
+        // VeryLow's base capacity, vs 3x before).
         var runCapacity = priority switch
         {
             JobMasterPriority.VeryLow => 2,
             JobMasterPriority.Low => 3,
-            JobMasterPriority.Medium => 4,
-            JobMasterPriority.High => 5,
-            JobMasterPriority.Critical => 6,
+            JobMasterPriority.Medium => 5,
+            JobMasterPriority.High => 8,
+            JobMasterPriority.Critical => 13,
             _ => 1
         };
         

@@ -4,9 +4,13 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using Dapper;
 using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 using JobMaster.SqlBase;
 using JobMaster.SqlBase.Connections;
 using JobMaster.SqlBase.Extensions;
@@ -32,10 +36,49 @@ internal class SqlServerMasterJobsRepository : SqlMasterJobsRepository
     // SQL Server-specific: one multi-row UPDATE ... FROM ... JOIN (VALUES ...) instead of N
     // sequential single-row UPDATEs. OUTPUT inserted.<id> gives back exactly which ids were
     // touched in the same round trip, so no follow-up query is needed here (unlike MySQL).
+    //
+    // Sorting the whole batch by Id (tried as a deadlock-avoidance measure) was confirmed
+    // empirically NOT to help: Job.Id is a GUID v7 (time-ordered), so in a burst scenario a
+    // batch's natural onboarding order already closely tracks Id order -- sorting was close to a
+    // no-op, and benchmark deadlock counts with it were statistically the same as without it.
+    //
+    // Every call shuffles row order and adds a small jitter delay afterward (on every call, not
+    // as a retry/fallback) to desynchronize concurrent buckets' lock-acquisition order and
+    // request timing under burst load.
     public override async Task<IList<JobRawModel>> BulkUpdateAsync(IList<JobRawModel> jobs)
     {
         if (jobs.Count == 0) return Array.Empty<JobRawModel>();
 
+        var shuffled = jobs.ToList();
+        JobMasterRandomUtil.Shuffle(shuffled);
+
+        var result = await InternalBulkUpdateAsync(shuffled);
+        await JitterDelayAsync();
+        return result;
+    }
+
+    // Same reasoning as the BulkUpdateAsync(IList<JobRawModel>) override above: shuffle JobIds order
+    // and add a small jitter delay afterward, on every call, to desynchronize concurrent buckets'
+    // lock-acquisition order and request timing under burst load. This overload's UPDATE ... WHERE
+    // Id IN (...) touches the same shared, GUID v7-keyed job table as the other overload.
+    public override async Task BulkUpdateAsync(BulkJobUpdateRequest request)
+    {
+        if (request.JobIds.Count > 0)
+        {
+          JobMasterRandomUtil.Shuffle(request.JobIds);
+        }
+        
+        await base.BulkUpdateAsync(request);
+        await JitterDelayAsync();
+    }
+
+    // 10-25ms, inclusive -- small enough not to meaningfully slow down a single call, large enough
+    // to spread out concurrent callers that would otherwise all retry/re-flush in lockstep.
+    private static Task JitterDelayAsync() => Task.Delay(JobMasterRandomUtil.GetInt(10, 26));
+
+    // Pure "attempt this batch" unit, no exception handling -- reusable at any fallback granularity.
+    private async Task<IList<JobRawModel>> InternalBulkUpdateAsync(IList<JobRawModel> jobs)
+    {
         var newVersions = jobs.ToDictionary(j => j.Id, _ => JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant());
 
         var p = new DynamicParameters();

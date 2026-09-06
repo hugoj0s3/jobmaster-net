@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
@@ -431,7 +432,12 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var masterAgentsService =
             clusterAwareFactory.GetComponent<IMasterAgentWorkersService>();
 
-        var agentWorker = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, workerDefinition.ParallelismFactor);
+        // Environment.ProcessorCount reflects this container's own CPU allocation (cgroup-aware
+        // since .NET Core 3.0), so an unset ParallelismFactor scales with what the worker actually
+        // has available instead of a fixed multiplier that's too low on a beefy container and too
+        // high on a constrained one. Capped so a very large container doesn't over-provision slots.
+        var parallelismFactor = workerDefinition.ParallelismFactor ?? Math.Min(Environment.ProcessorCount, JobMasterDefaults.Worker.MaxParallelismFactor);
+        var agentWorker = await masterAgentsService.RegisterWorkerAsync(agentConnectionId, workerName!, workerLane, workerDefinition.Mode, parallelismFactor);
 
         var qtyOfBuckets = workerDefinition.BucketQty.Sum(x => x.Value);
         var background = new JobMasterBackgroundAgentWorker()
