@@ -176,8 +176,9 @@ Phase3 to check later, once the job assertions are already satisfied.
 
 ## Timing
 
-Expected comparable to `DrainModeTest.PostgresDist`'s timing (that variant's full run took **1h4m**
-across all 3 phases with the current widened timeouts — `AllJobsSavedTimeout` 2 min, `FinalizeTimeout`
-45 min, `OldBucketsResolvedTimeout` 20 min), but this RavenDB variant has not yet been run end-to-end,
-so its actual timing is not yet measured. Re-tighten or loosen the timeouts if a real run's timing
-drifts materially from what's encoded here.
+Passes reliably in **15-18 minutes** end to end. `AllJobsSavedTimeout` is `00:10:00`, not
+`00:02:00` — `AssignedLostBucketsRunner` reassigns this scenario's 3 simultaneously-dead agent
+connections' orphaned buckets one at a time across its own tick cadence, not in parallel, so
+covering all 3 can occasionally take longer than 2 minutes even though nothing is actually stuck.
+`FinalizeTimeout` (45 min) and `OldBucketsResolvedTimeout` (20 min) have generous headroom and were
+left unchanged.

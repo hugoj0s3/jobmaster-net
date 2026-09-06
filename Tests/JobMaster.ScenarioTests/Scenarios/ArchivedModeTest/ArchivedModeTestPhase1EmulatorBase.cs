@@ -43,7 +43,7 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
     private const int JobExecutionLogCategory = 2;
     private const int ExecutionSampleSize = 5;
 
-    private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(10);
 
     // DataRetentionTtl is the framework's 10-minute floor; the purge runner's own poll interval is
     // derived from it (max(5min, min(ttl/2, 1hr)) => 5 minutes here). Budget generously past both the

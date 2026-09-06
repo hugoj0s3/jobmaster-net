@@ -229,10 +229,19 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
             // Client major version (RavenDB.Client 7.x, referenced by JobMaster.RavenDb) must track the
             // server image's major version -- a mismatch rejects the client's request bodies with a
             // binary/JSON protocol error.
+            //
+            // CPU/memory capped to match RavenDB Community's own license ceiling (3 CPU / 6GB)
+            const long ravenDbNanoCpus = 3_000_000_000; // 3 CPU
+            const long ravenDbMemoryBytes = 6L * 1024 * 1024 * 1024; // 6GB
             var container = new RavenDbBuilder()
                 .WithImage("ravendb/ravendb:7.2-ubuntu-latest")
                 .WithNetwork(Network)
                 .WithNetworkAliases("ravendb")
+                .WithCreateParameterModifier(p =>
+                {
+                    p.HostConfig.NanoCPUs = ravenDbNanoCpus;
+                    p.HostConfig.Memory = ravenDbMemoryBytes;
+                })
                 .Build();
 
             await container.StartAsync(ct);

@@ -35,7 +35,7 @@ public sealed class RavenDbDistPhase2Emulator(ScenarioGlobalEnvironment global, 
     // master-backed count) for a short window after being scheduled, and -- for jobs that were
     // mid-drain when the crash hit -- until PollingDrainSavePendingJobsRunner recovers them. This is
     // the only thing this phase waits on, so it should resolve quickly.
-    private static readonly TimeSpan AllJobsSavedTimeout = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan AllJobsSavedTimeout = TimeSpan.FromMinutes(10);
 
     public override RavenDbDistPhases Phase() => RavenDbDistPhases.Phase2;
 

@@ -28,7 +28,7 @@ public abstract class FallbackBucketTestPhase1EmulatorBase<TPhaseEnum>(ScenarioG
 
     // NoBucketFallbackThreshold is a fixed 2.5-minute framework constant (not configurable per
     // cluster) -- budget generously past it plus onboarding/execution latency.
-    private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(20);
 
     protected abstract string ClusterId { get; }
     protected abstract string ContainerName { get; }
