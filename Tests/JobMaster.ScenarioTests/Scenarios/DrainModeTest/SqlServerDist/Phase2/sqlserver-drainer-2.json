@@ -1,0 +1,25 @@
+{
+  "containerName": "sqlserver-drainer-2",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "sqlserver-drainer-2",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "sqlserver-drain-load",
+      "Default": true,
+      "RepoType": "SqlServer",
+      "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDrainLoadCluster;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;",
+      "AgentConnections": [
+        {
+          "Name": "sqlserver-agent-2",
+          "RepositoryType": "SqlServer",
+          "ConnectionString": "Server={{SqlServerHost}};Database=SqlServerDrainLoadAgent2;User Id={{SqlServerUsername}};Password={{SqlServerPassword}};TrustServerCertificate=True;Max Pool Size=300;"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "drainer-2", "AgentConnectionName": "sqlserver-agent-2", "WorkerMode": "Drain" }
+      ]
+    }
+  ]
+}

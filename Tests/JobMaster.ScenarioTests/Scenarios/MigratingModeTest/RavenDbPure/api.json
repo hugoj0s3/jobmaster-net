@@ -1,0 +1,24 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=MigratingSource"
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=MigratingTarget"
+    }
+  ]
+}

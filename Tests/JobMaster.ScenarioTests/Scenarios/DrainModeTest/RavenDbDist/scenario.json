@@ -1,0 +1,9 @@
+{
+  "scenarioName": "ravendb-dist",
+  "phases": [
+    { "name": "phase-1", "containers": ["ravendb-coordinator", "ravendb-executor-1", "ravendb-executor-2", "ravendb-executor-3"] },
+    { "name": "phase-2", "containers": ["ravendb-coordinator", "ravendb-drainer-1", "ravendb-drainer-2", "ravendb-drainer-3"] },
+    { "name": "phase-3", "containers": ["ravendb-coordinator", "ravendb-executor-1", "ravendb-executor-2", "ravendb-executor-3"] }
+  ],
+  "api": { "container": "api" }
+}

@@ -1,0 +1,37 @@
+{
+  "containerName": "raven-migration",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "raven-migration",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "migrating-source",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=MigratingSource",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "migrating-target",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "migrating-target",
+      "Default": false,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=MigratingTarget",
+      "AgentConnections": [
+        {
+          "Name": "raven-agent-target",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=MigratingTargetAgent"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "raven-agent-target", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

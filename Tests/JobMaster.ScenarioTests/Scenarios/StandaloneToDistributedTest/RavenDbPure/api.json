@@ -1,0 +1,18 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=StandaloneToDist"
+    }
+  ]
+}

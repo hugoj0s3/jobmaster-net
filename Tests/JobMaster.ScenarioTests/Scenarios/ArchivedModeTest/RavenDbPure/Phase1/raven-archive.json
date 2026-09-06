@@ -1,0 +1,38 @@
+{
+  "containerName": "raven-archive",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "raven-archive",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "archive-source",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=ArchiveSource",
+      "DataRetentionTtl": "00:10:00",
+      "TargetArchivedClusterId": "archive-target",
+      "AgentConnections": [
+        {
+          "Name": "raven-agent-source",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=ArchiveSourceAgent"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "raven-agent-source", "WorkerMode": "Execution" }
+      ]
+    },
+    {
+      "ClusterId": "archive-target",
+      "Default": false,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=ArchiveTarget",
+      "Mode": "Archived",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

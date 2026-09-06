@@ -1,0 +1,25 @@
+{
+  "containerName": "ravendb-executor",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "ravendb-executor",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=StandaloneToDist",
+      "AgentConnections": [
+        {
+          "Name": "ravendb-agent-dist",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=StandaloneToDistAgent"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor", "AgentConnectionName": "ravendb-agent-dist", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

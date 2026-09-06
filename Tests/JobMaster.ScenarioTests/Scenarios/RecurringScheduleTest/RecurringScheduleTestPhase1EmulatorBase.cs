@@ -5,10 +5,15 @@ using JobMaster.ScenarioTests.Runner;
 namespace JobMaster.ScenarioTests.Scenarios.RecurringScheduleTest;
 
 /// <summary>
-/// Shared phase-1 logic for every recurring-schedule scenario: exercises all 4 combinations of
-/// (static vs dynamic registration) x (TimeSpanInterval vs NaturalCron compiler) against a single
-/// standalone cluster, using a real Docker-container app (<c>TargetTestRecurringApp</c>), not an
-/// in-process handler like <c>Tests/JobMaster.IntegrationTests</c>'s equivalent test.
+/// Shared phase-1 logic for every recurring-schedule scenario: exercises 6 registration/compiler
+/// combinations against a single standalone cluster -- the 2x2 matrix of (static vs dynamic
+/// registration) x (TimeSpanInterval vs NaturalCron compiler), plus two extra registration-path
+/// checks: a static schedule registered purely via <c>[TimeSpanIntervalSchedule]</c> attribute
+/// auto-registration (no profile), and a dynamic schedule created via
+/// <c>IJobMasterScheduler.Advanced.RecurringAsync&lt;TDefinition&gt;()</c> (the
+/// <c>JobDefinitionConfigAttribute</c> path) instead of the classic handler-typed overload. Uses a
+/// real Docker-container app (<c>TargetTestRecurringApp</c>), not an in-process handler like
+/// <c>Tests/JobMaster.IntegrationTests</c>'s equivalent test.
 ///
 /// Interval is a fixed 6 minutes for every combination -- deliberately in the middle of the
 /// required (5min, 15min) exclusive range: long enough to avoid seconds-level granularity, short

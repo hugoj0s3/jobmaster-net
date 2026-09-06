@@ -1,4 +1,4 @@
-# RecurringScheduleTest.PostgresPure
+# RecurringScheduleTest.RavenDbPure
 
 Proves recurring schedules fire correctly end to end through a real Docker-container app
 (`TargetTestRecurringApp`), covering 6 recurring-schedule combinations: the 2x2 matrix of
@@ -14,18 +14,21 @@ against a real containerized app, matching the `ScheduleTest` suite's architectu
 
 ## Topology
 
-- `postgres-recurring` — one `TargetTestRecurringApp` container, standalone cluster
-  (`Standalone: true`, master + worker in one process), database `PostgresRecurring`. A single
+- `ravendb-recurring` — one `TargetTestRecurringApp` container, standalone cluster
+  (`Standalone: true`, master + worker in one process), database `RavendbRecurring`. A single
   cluster is enough here — unlike `ScheduleTest`'s `*Pure` scenarios, this isn't testing
   connection/drain lifecycle, just recurring-firing correctness.
 - `api` — one `TargetTestApi` container, zero workers, registering the one cluster so the
   recurring-schedule cross-check (`GET /{clusterId}/recurring-schedules`) can be verified against
   the JobMaster API, not just Redis execution records.
-- `dockerfilePath: "Tests/TargetTestRecurringApp/Dockerfile"` in `Phase1/postgres-recurring.json`
-  is the actual point of this scenario existing: it's the first scenario to point a container at an
-  app *other than* `TargetTestScheduleApp`/`TargetTestApi`, exercising `ScenarioRunner`'s
-  now-real `ContainerDefinition.DockerfilePath`-driven image selection (previously dead JSON — see
-  `ScenarioGlobalEnvironment.GetOrBuildAppImageAsync`).
+- `dockerfilePath: "Tests/TargetTestRecurringApp/Dockerfile"` in `Phase1/ravendb-recurring.json`
+  points this scenario at the same non-schedule-app image `RecurringScheduleTest.PostgresPure`
+  uses, exercising `ScenarioRunner`'s `ContainerDefinition.DockerfilePath`-driven image selection
+  (previously dead JSON — see `ScenarioGlobalEnvironment.GetOrBuildAppImageAsync`).
+- No `ConnectionOptions` tuning (e.g. `pooledConnectionLifetimeMs`) is set on the cluster's master
+  connection — plain connection string, matching every other RavenDB scenario variant in this suite.
+  That binder behavior is already covered by unit tests
+  (`Tests/JobMaster.UnitTests/Ioc/RavenDbConnectionOptionsTests.cs`).
 
 ## Why `TransientThreshold` is `00:10:00`, not the usual `00:02:00`
 
@@ -61,7 +64,7 @@ the "consecutive executions spaced ~6 minutes apart" check is shared between bot
 
 ## What Phase1 does
 
-`PostgresPureTests.RunAllPhases` (via `PostgresPurePhase1Emulator` → the shared
+`RavenDbPureTests.RunAllPhases` (via `RavenDbPurePhase1Emulator` → the shared
 `RecurringScheduleTestPhase1EmulatorBase`):
 
 1. Creates 3 dynamic recurring schedules: `TimeSpanInterval`/`"00:06:00"` and

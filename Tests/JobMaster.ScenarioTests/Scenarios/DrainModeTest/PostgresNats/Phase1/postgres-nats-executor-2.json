@@ -1,0 +1,26 @@
+{
+  "containerName": "postgres-nats-executor-2",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-executor-2",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-nats-drain-load",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresNatsDrainLoadCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:05:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-2",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor-2", "AgentConnectionName": "nats-agent-2", "WorkerMode": "Execution", "ParallelismFactor": 4.0 }
+      ]
+    }
+  ]
+}

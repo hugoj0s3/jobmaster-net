@@ -1,0 +1,18 @@
+{
+  "containerName": "ravendb-recurring",
+  "dockerfilePath": "Tests/TargetTestRecurringApp/Dockerfile",
+  "networkAlias": "ravendb-recurring",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "ravendb-recurring",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbRecurring",
+      "TransientThreshold": "00:10:00",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

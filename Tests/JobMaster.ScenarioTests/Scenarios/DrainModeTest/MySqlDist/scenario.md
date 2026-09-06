@@ -1,0 +1,182 @@
+# DrainModeTest.MySqlDist
+
+Tests each `AgentWorkerMode` (`Coordinator`, `Execution`, `Drain`) **in isolation, one per phase, each
+in its own separate container**, under real load (5000 jobs), with a drain triggered while jobs are
+genuinely in flight — not after everything has already finished.
+
+This is deliberately a different shape from `ScheduleTest`'s drain coverage (`Phase2`/`Phase3` there):
+that suite bundles a Coordinator and 3 Drain workers into one shared container process, and only ever
+drains an *idle* cluster (Phase1 fully completes before Phase2 flips any worker to `Drain`). Neither
+of those choices exercises what happens when a worker dies with real work still in its buckets, and
+bundling modes into one process can mask a bug in one runner behind another mode's runner picking up
+the slack. This scenario keeps that from happening by construction.
+
+This variant is a mechanical mirror of `DrainModeTest.PostgresDist`, swapped to MySQL — same topology,
+same job plan, same phase logic, same assertions. See that variant's scenario.md for the fuller
+narrative; this file restates it with MySQL names/connection strings.
+
+## Topology
+
+One cluster (`mysql-drain-load`), one master database, **3 agent connections**
+(`mysql-agent-1/2/3`, each its own agent-side database) — one per worker throughout, matching how
+`ScheduleTest`'s own dist clusters are shaped, just split across separate containers/processes
+instead of bundled into one:
+
+| Phase | Containers | Modes |
+|---|---|---|
+| 1 | `mysql-coordinator`, `mysql-executor-1`, `mysql-executor-2`, `mysql-executor-3` | Coordinator, Execution ×3 |
+| 2 | `mysql-coordinator`, `mysql-drainer-1`, `mysql-drainer-2`, `mysql-drainer-3` | Coordinator, Drain ×3 |
+| 3 | `mysql-coordinator`, `mysql-executor-1`, `mysql-executor-2`, `mysql-executor-3` | Coordinator, Execution ×3 |
+
+Each connection keeps the same worker identity throughout: `mysql-executor-N` (Phase1) dies, is
+drained by `mysql-drainer-N` (Phase2, same `AgentConnectionName: mysql-agent-N`), then
+`mysql-executor-N` (Phase3, container name reused — safe, since it was already explicitly stopped in
+Phase1 before Phase2 ever starts) returns on the exact same connection. This mirrors a realistic
+rolling crash/recycle-then-restore per connection, not an arbitrary pool sharing one connection with
+no real reason to need 3 workers.
+
+`mysql-coordinator` is re-declared unchanged in every phase for explicitness.
+
+**`ScenarioRunner.StartPhaseAsync` only starts the containers a phase's `scenario.json` entry lists —
+it does not stop a container just because a later phase omits it.** So all 3 Phase1 executors are
+stopped *explicitly*, via `Runner.StopAsync(...)` at the end of `MySqlDistPhase1Emulator`, not by
+simply leaving them out of Phase2's container list. This is the simulated crash: the whole executor
+fleet dies mid-batch, with most of the 5000 jobs still unfinished.
+
+## A Coordinator is never truly execution-incapable — found empirically, not a bug
+
+The original design assumed Phase2 (Coordinator + Drain-only) would have zero execution capability,
+and that Phase2 (Drain-only) vs Phase3 (real executors) shape a clean "before/after" split for job
+completion. Real behavior is more interesting: `AssignJobsToBucketsRunner`
+(`JobMaster/Sdk/Background/Runners/JobAndRecurringScheduleLifeCycleControl/AssignJobsToBucketsRunner.cs`,
+part of every Coordinator's runner set) spins up its own embedded `PollingJobsExecutionRunner` for a
+temporary **fallback bucket** once a job has had no regular bucket available for
+`JobMasterConstants.NoBucketFallbackThreshold` (2.5 minutes) — a deliberate job-starvation safety
+net (see `ChangeLog.internal.md`'s "Coordinator fallback bucket durability" / "Orphaned fallback
+buckets after a Coordinator crash" entries for the fix history on this exact mechanism). At 5000-job
+volume the drain itself takes longer than 2.5 minutes, so this reliably triggers — the Coordinator
+*will* trickle some jobs through to `Succeeded` on its own during Phase2, slowly and serially.
+
+`MySqlDistPhase2Emulator` doesn't fight this, and doesn't wait for it either (same lesson learned the
+hard way while building `PostgresDist`, not re-discovered here). The fallback bucket lives on its own
+separate reserved connection (`JobMasterConstants.MasterFallbackAgentConnName`), entirely independent
+of `mysql-agent-1/2/3`, and is served by exactly one serial runner — at 5000-job volume that trickle
+simply cannot finish within any timeout reasonable for this phase, and it doesn't need to: finishing
+everything is Phase3's job. So Phase2 asserts something narrower and connection-scoped instead: no
+job is ever lost (total count stays at 5000 throughout), and every real bucket on all 3 connections
+eventually gets destroyed by the drain lifecycle — regardless of how far the fallback trickle has
+gotten in the meantime. It does **not** wait for or assert zero execution during Phase2. Phase3 still
+earns its place: it proves *fast, parallel* finalization via 3 live executors, in contrast to
+Phase2's slow single-threaded fallback trickle — genuinely different code paths
+(`LoadExecutionRunners`'s normal `JobsExecutionRunner` vs. the Coordinator's one-off fallback
+`PollingJobsExecutionRunner`), not just "the same thing, faster." Phase3's `FinalizeTimeout` also has
+to absorb whatever the fallback runner left mid-flight (jobs sitting `Onboarded`/`Queued`/`InBucket`
+in the fallback bucket recover independently via `HeldOnMasterDeadlineTimeoutJobsRunner` once their
+`ProcessDeadline` passes, and get picked up again by a real bucket) — this is real, self-healing
+JobMaster behavior, not something the test needs to special-case.
+
+## Job plan
+
+5000 jobs (3500 `fast` / 1250 `normal` / 250 `slow`, `TestApp.Fast`/`Normal`/`Slow`, priorities
+Medium/High/Low respectively) — deliberately above `JobMasterDefaults.Worker.TransferBatchSize`
+(1000, the number of jobs pulled from master per DB round-trip), so onboarding the full batch
+requires multiple transfer cycles, not one. `DrainModeTestPlan.cs` (shared, one directory up, with
+`PostgresDist` and every other provider variant) is the single source of truth for this plan, shared
+by all 3 phases — each phase is a separate `Activator.CreateInstance` instance with no in-memory
+hand-off from the one before it, so every phase recomputes the same deterministic (non-GUID)
+`TestIdentifier`s (`drainload-fast`/`drainload-normal`/`drainload-slow`) instead of relying on state
+Phase1 alone would hold. Job-set correctness across phases is verified against the API (persists
+across every container restart), not any list passed between phases.
+
+## Phase-by-phase
+
+- **Phase1**: schedules all 5000 jobs (via `mysql-executor-1`'s HTTP endpoint — which container issues
+  the scheduling call doesn't matter, all 3 register the same cluster), then **immediately** stops
+  all 3 executors — no waiting, no assertions in between. This is deliberate: waiting for jobs to
+  settle into any particular state before crashing (flushed off `PendingSave`, onboarded off
+  `OnMaster`, etc.) would mean the crash only ever hits jobs already sitting in a bucket, exercising
+  just `PollingDrainProcessingJobsRunner`. Crashing immediately after scheduling means jobs are
+  caught across every pipeline stage — some still `PendingSave` (agent-side transport only, not yet
+  in the master store), some `OnMaster`, some already `InBucket`/`Onboarded`/`Queued`/`Processing` —
+  so Phase2 has to recover through both `PollingDrainSavePendingJobsRunner` and
+  `PollingDrainProcessingJobsRunner`, not just one of them.
+- **Phase2**: checks only one thing, fast — every job made it durably into the master store,
+  regardless of status (`GetJobCountAsync(clusterId) == 5000`). It deliberately does **not** wait for
+  the bucket lifecycle to finish draining/destroying the old buckets: that's a slow (tens of minutes),
+  separate administrative concern with no bearing on job safety. It does capture the exact set of
+  bucket IDs Phase1's dead executors owned (`DrainModeTestState.OriginalBucketIds`, populated right at
+  the start of `RunAsync`, before anything else could create a new bucket on the same connections) so
+  Phase3 can assert precisely those buckets' lifecycle later, unaffected by whatever fresh buckets
+  Phase3's returning executors create on the same connections. Also does **not** assert anything about
+  job status (`OnMaster` vs `Succeeded`) — see the fallback-bucket section above for why that would be
+  asserting something false about real JobMaster behavior.
+- **Phase3**: live executors return on their original connections, onboard and finish the `OnMaster`
+  backlog (plus whatever the Phase2 fallback trickle left mid-flight). Waits for all 5000 jobs to
+  reach `Succeeded`, per batch, and cross-checks the Redis-tracked execution set against the
+  API-persisted job set exactly — no loss, no duplicate execution. Only *after* the job assertions
+  pass does it check the bucket lifecycle, and only lightly: every one of Phase1's captured original
+  bucket IDs must have reached `ReadyToDelete` (or already be physically gone) — not full destruction.
+  See "Bucket lifecycle: how far is far enough?" below for why.
+
+## A real bug found and fixed along the way (framework-wide, discovered building PostgresDist)
+
+Building the `PostgresDist` variant of this scenario surfaced a genuine bug, not just a test-design
+lesson: `MarkBucketAsLostRunner` (the periodic sweep that detects a dead worker's orphaned buckets)
+called `WorkerClusterOperations.MarkBucketAsLostAsync(string bucketId)`, which re-fetched the bucket
+via a *cached* read (`Get(bucketId, BucketFastAllowDiscrepancy)`) before marking it lost and writing
+it back — unlike its sibling `MarkBucketAsLostIfNotDrainingAsync`, already fixed earlier the same
+release to use a fresh, uncached read. Confirmed live via direct container-log instrumentation (a
+worker correctly showed `IsAlive=False`, the bucket was correctly identified as eligible, yet the
+mark-as-lost write never reliably landed). Fixed by having `MarkBucketAsLostRunner` pass the
+already-fresh `BucketModel` it already holds directly (no re-fetch at all), and by fixing the
+`string`-keyed overload itself (still needed by `NatsJetStreamRunnerBase`, which only has an ID on
+hand) to do a fresh `QueryAsync` re-read instead of the cached `Get`.
+
+Also found and fixed: `DrainRunnersCoordinator.OnTickAsync` took a cluster-wide distributed lock
+(`JobMasterLockKeys.BucketRunnerLock()`, shared with `MarkBucketAsLostRunner`,
+`AssignedLostBucketsRunner`, and `DestroyReadyToDeleteBucketsRunner`) for no correctness reason.
+`DrainRunnersCoordinator` runs every 10 seconds on *each* drainer (the highest-frequency contender by
+far), yet its own bucket queries are already filtered to
+`AgentWorkerId == BackgroundAgentWorker.AgentWorkerId` — different drainers never touch each other's
+buckets — and every `JobMasterRunner` subclass with `useSemaphore: true` already serializes against
+every other such runner *on the same worker process* via `BackgroundAgentWorker.MainSemaphoreSlim`,
+so no cross-runner distributed lock was needed here at all, not even a worker-scoped one. Removed the
+lock entirely rather than narrowing its scope. `AssignedLostBucketsRunner` and `MarkBucketAsLostRunner`
+were left on the shared global lock — both genuinely scan cluster-wide (not per-worker), so
+de-contending them isn't the same easy, obviously-safe change.
+
+A second bug surfaced alongside this: `WorkerClusterOperations.MarkBucketAsLostAsync(string bucketId)`
+re-fetched the bucket via an awkward `QueryAsync(BucketIds: [bucketId])` (itself a workaround for
+there being no dedicated "get one, uncached" method). Added
+`IMasterBucketsService.GetNoCacheAsync(string bucketId)` as the proper primitive and switched both
+`MarkBucketAsLostAsync` overloads to use it.
+
+These are framework-level fixes, not specific to Postgres or MySQL — they apply equally here. Kept as
+historical context since this is where they were first found, not because `MySqlDist` is expected to
+surface anything new.
+
+## Bucket lifecycle: how far is far enough?
+
+The lifecycle tail (`Draining → ReadyToDelete → destroyed`) is gated by the same
+`JobMasterConstants.BucketNoJobsBeforeReadyToDelete` (10 min) constant twice over:
+`MarkBucketReadyToDeleteRunner` polls every 5 min and requires a continuous 10-min "no jobs" window
+before transitioning to `ReadyToDelete` (~10-15 min realistically); `DestroyReadyToDeleteBucketsRunner`
+itself only ticks every 10 min and won't act until the bucket's `DeletesAt` (`ReadyToDelete`-time + 10
+more min) has passed (~10-20 min more). The two legs are comparable in duration — reaching
+`ReadyToDelete` is not a dramatic shortcut versus full physical deletion.
+
+Given that, and that the `ReadyToDelete → destroyed` mechanics are already covered in isolation by
+`DestroyReadyToDeleteBucketsRunnerTests`, Phase3 only waits for Phase1's original buckets to reach
+`ReadyToDelete` (or already be destroyed), not full deletion — this scenario's job is to prove no job
+was lost or duplicated under real drain/recover load, not to re-prove destruction timing. Phase2 also
+does not wait on bucket state at all (see Phase2 above) — it only captures the original bucket IDs for
+Phase3 to check later, once the job assertions are already satisfied.
+
+## Timing
+
+Not yet measured for this variant. Expected comparable to `PostgresDist`'s timing (that variant's full
+run took ~1h4m under an earlier, stricter version of Phase3's bucket check that waited for full
+physical destruction rather than `ReadyToDelete`; with the current `ReadyToDelete`-only check and a
+20-minute `OldBucketsResolvedTimeout`, most of that tail should overlap with the 45-minute
+`FinalizeTimeout` wait instead of adding to it). Re-tighten or loosen the timeouts here if a real
+run's timing drifts materially once this variant is actually executed.

@@ -1,0 +1,9 @@
+{
+  "scenarioName": "mysql-dist",
+  "phases": [
+    { "name": "phase-1", "containers": ["mysql-coordinator", "mysql-executor-1", "mysql-executor-2", "mysql-executor-3"] },
+    { "name": "phase-2", "containers": ["mysql-coordinator", "mysql-drainer-1", "mysql-drainer-2", "mysql-drainer-3"] },
+    { "name": "phase-3", "containers": ["mysql-coordinator", "mysql-executor-1", "mysql-executor-2", "mysql-executor-3"] }
+  ],
+  "api": { "container": "api" }
+}

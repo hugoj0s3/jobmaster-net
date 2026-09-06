@@ -7,7 +7,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ArchivedModeTest;
 
 /// <summary>
 /// Shared phase-1 logic for every repo-type variant of this scenario (PostgresPure, MySqlPure,
-/// SqlServerPure, PostgresNats): one container hosts two clusters (DeleteOldFinalJobsRunner
+/// SqlServerPure, PostgresNats, RavenDbPure): one container hosts two clusters (DeleteOldFinalJobsRunner
 /// cross-cluster forwards via <c>JobMasterClusterAwareComponentFactories.TryGetFactory</c>, which
 /// only resolves clusters registered in the same process) -- an entirely ordinary Active source
 /// (but with DataRetentionTtl set to JobMasterDefaults.MinDataRetentionTtl -- 10 minutes, the

@@ -1,0 +1,30 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "Tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "ravendb-standalone",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbStandalone"
+    },
+    {
+      "ClusterId": "ravendb-dist-one",
+      "Default": false,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbDistCluster"
+    },
+    {
+      "ClusterId": "ravendb-dist-two",
+      "Default": false,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbDistCluster"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "containerName": "postgres-nats-drainer-3",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "postgres-nats-drainer-3",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "postgres-nats-drain-load",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=PostgresNatsDrainLoadCluster;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:05:00",
+      "AgentConnections": [
+        {
+          "Name": "nats-agent-3",
+          "RepositoryType": "NatsJetStream",
+          "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "drainer-3", "AgentConnectionName": "nats-agent-3", "WorkerMode": "Drain" }
+      ]
+    }
+  ]
+}

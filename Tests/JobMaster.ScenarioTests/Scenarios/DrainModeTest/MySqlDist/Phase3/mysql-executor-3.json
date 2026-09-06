@@ -1,0 +1,25 @@
+{
+  "containerName": "mysql-executor-3",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mysql-executor-3",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mysql-drain-load",
+      "Default": true,
+      "RepoType": "MySql",
+      "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDrainLoadCluster;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
+      "AgentConnections": [
+        {
+          "Name": "mysql-agent-3",
+          "RepositoryType": "MySql",
+          "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlDrainLoadAgent3;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "executor-3", "AgentConnectionName": "mysql-agent-3", "WorkerMode": "Execution", "ParallelismFactor": 4.0 }
+      ]
+    }
+  ]
+}

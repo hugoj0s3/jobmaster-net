@@ -1,0 +1,9 @@
+{
+  "scenarioName": "postgres-nats-dist",
+  "phases": [
+    { "name": "phase-1", "containers": ["postgres-nats-coordinator", "postgres-nats-executor-1", "postgres-nats-executor-2", "postgres-nats-executor-3"] },
+    { "name": "phase-2", "containers": ["postgres-nats-coordinator", "postgres-nats-drainer-1", "postgres-nats-drainer-2", "postgres-nats-drainer-3"] },
+    { "name": "phase-3", "containers": ["postgres-nats-coordinator", "postgres-nats-executor-1", "postgres-nats-executor-2", "postgres-nats-executor-3"] }
+  ],
+  "api": { "container": "api" }
+}

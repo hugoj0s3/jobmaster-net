@@ -1,0 +1,9 @@
+{
+  "scenarioName": "sqlserver-dist",
+  "phases": [
+    { "name": "phase-1", "containers": ["sqlserver-coordinator", "sqlserver-executor-1", "sqlserver-executor-2", "sqlserver-executor-3"] },
+    { "name": "phase-2", "containers": ["sqlserver-coordinator", "sqlserver-drainer-1", "sqlserver-drainer-2", "sqlserver-drainer-3"] },
+    { "name": "phase-3", "containers": ["sqlserver-coordinator", "sqlserver-executor-1", "sqlserver-executor-2", "sqlserver-executor-3"] }
+  ],
+  "api": { "container": "api" }
+}

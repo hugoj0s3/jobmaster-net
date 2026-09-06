@@ -1,0 +1,7 @@
+{
+  "scenarioName": "ravendb-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["raven-migration"] }
+  ],
+  "api": { "container": "api" }
+}

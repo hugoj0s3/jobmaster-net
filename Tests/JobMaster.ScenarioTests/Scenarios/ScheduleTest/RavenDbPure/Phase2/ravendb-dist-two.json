@@ -1,0 +1,37 @@
+{
+  "containerName": "ravendb-dist-two",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "ravendb-dist-two",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "ravendb-dist-two",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbDistCluster",
+      "AgentConnections": [
+        {
+          "Name": "raven-agent-1",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=RavenAgent1"
+        },
+        {
+          "Name": "raven-agent-2",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=RavenAgent2"
+        },
+        {
+          "Name": "raven-agent-3",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=RavenAgent3"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "raven-agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "raven-agent-2" },
+        { "WorkerName": "w3", "AgentConnectionName": "raven-agent-3" }
+      ]
+    }
+  ]
+}

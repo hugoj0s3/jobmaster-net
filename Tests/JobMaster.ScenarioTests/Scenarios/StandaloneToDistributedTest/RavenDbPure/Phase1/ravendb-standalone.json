@@ -1,0 +1,19 @@
+{
+  "containerName": "ravendb-standalone",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "ravendb-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "standalone-to-dist",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=StandaloneToDist",
+      "Workers": [
+        { "WorkerName": "w1" }
+      ]
+    }
+  ]
+}

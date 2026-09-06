@@ -1,0 +1,25 @@
+{
+  "containerName": "ravendb-drainer-1",
+  "dockerfilePath": "Tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "ravendb-drainer-1",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "ravendb-drain-load",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=RavendbDrainLoadCluster",
+      "AgentConnections": [
+        {
+          "Name": "raven-agent-1",
+          "RepositoryType": "RavenDB",
+          "ConnectionString": "Urls={{RavenDbUrl}};Database=RavenDrainAgent1"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "drainer-1", "AgentConnectionName": "raven-agent-1", "WorkerMode": "Drain" }
+      ]
+    }
+  ]
+}
