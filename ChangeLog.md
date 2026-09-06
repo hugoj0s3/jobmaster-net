@@ -6,7 +6,7 @@
 
 ---
 
-## JobMaster 0.11.0-alpha
+## JobMaster 0.0.11-alpha
 
 ### Added
 

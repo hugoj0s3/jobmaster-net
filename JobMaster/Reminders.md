@@ -35,7 +35,7 @@ The goal is to introduce a durable buffering layer that batches schedule writes 
 
 ### JobDefinition-based scheduling — static recurring schedules still open
 One-time and dynamic-recurring scheduling via `IJobMasterScheduler.Advanced` (`JobDefinitionConfig`/
-`JobDefinitionConfigAttribute`/`IJobMasterSchedulerAdvanced`) shipped in 0.11.0-alpha — see ChangeLog.md.
+`JobDefinitionConfigAttribute`/`IJobMasterSchedulerAdvanced`) shipped in 0.0.11-alpha — see ChangeLog.md.
 Still open: `RecurringScheduleDefinitionCollection.Add<Th>()` (static recurring schedules) has the same
 handler-type coupling and hasn't been given the same treatment yet.
 
