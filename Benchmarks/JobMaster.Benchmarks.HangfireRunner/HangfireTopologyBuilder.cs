@@ -13,7 +13,7 @@ public static class HangfireTopologyBuilder
 {
     public const string DatabaseName = "hangfire";
 
-    public static IReadOnlyList<WorkerContainerSpec> BuildWorkerSpecs(int workerCount, string runId)
+    public static IReadOnlyList<WorkerContainerSpec> BuildWorkerSpecs(int workerCount, string runId, int jobConcurrency)
     {
         if (workerCount < 1)
         {
@@ -42,7 +42,8 @@ public static class HangfireTopologyBuilder
                 {
                     ["HANGFIRE_SQLSERVER_CONNECTION_STRING"] = sqlServerConnectionString,
                     ["REDIS_CONNECTION_STRING"] = $"{BenchmarkContainerEnvironment.RedisNetworkAlias}:6379",
-                    ["BENCHMARK_RUN_ID"] = runId
+                    ["BENCHMARK_RUN_ID"] = runId,
+                    ["HANGFIRE_WORKER_COUNT"] = jobConcurrency.ToString()
                 }
             });
         }

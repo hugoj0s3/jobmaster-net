@@ -22,7 +22,7 @@ if (options.StepDownJobsPerMinute.HasValue)
 var runId = Guid.NewGuid().ToString("N")[..8];
 Console.WriteLine($"RunId={runId}");
 
-var workerSpecs = HangfireTopologyBuilder.BuildWorkerSpecs(options.WorkerCount, runId);
+var workerSpecs = HangfireTopologyBuilder.BuildWorkerSpecs(options.WorkerCount, runId, options.JobConcurrency);
 
 await using var environment = new BenchmarkContainerEnvironment();
 

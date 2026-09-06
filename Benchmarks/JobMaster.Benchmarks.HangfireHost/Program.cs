@@ -28,9 +28,15 @@ builder.Services.AddHangfire(config => config
         DisableGlobalLocks = true,
         CommandBatchMaxTimeout = TimeSpan.FromMinutes(5)
     }));
+var workerCount = int.Parse(Environment.GetEnvironmentVariable("HANGFIRE_WORKER_COUNT")
+    ?? throw new InvalidOperationException("HANGFIRE_WORKER_COUNT environment variable must be set."));
+
 builder.Services.AddHangfireServer(options =>
 {
     options.ServerName = $"{Environment.MachineName}:{Guid.NewGuid()}";
+    // Explicit rather than Hangfire's own default (Environment.ProcessorCount x 5) so this matches
+    // JobMaster's actual per-worker concurrency for a fair comparison -- see CliOptions.JobConcurrency.
+    options.WorkerCount = workerCount;
 });
 
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")

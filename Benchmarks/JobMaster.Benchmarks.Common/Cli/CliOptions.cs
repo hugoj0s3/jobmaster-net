@@ -39,6 +39,14 @@ public sealed class CliOptions
     public double WorkerCpu { get; init; } = 0.5;
     public double WorkerMemoryGb { get; init; } = 0.5;
 
+    /// <summary>Concurrent job-execution slots per worker container. Default (10) matches JobMaster's
+    /// own effective per-worker concurrency at its confirmed-good benchmark defaults (2 Medium buckets
+    /// x TaskQueueControl's base Medium capacity of 5, at the SDK's default ParallelismFactor of 1 --
+    /// see JobMasterTopologyBuilder/TaskQueueControl.Create), so a framework left at this default runs
+    /// with the same total in-flight-job capacity per container instead of its own unrelated default
+    /// (e.g. Hangfire's own default is Environment.ProcessorCount x 5).</summary>
+    public int JobConcurrency { get; init; } = 10;
+
     public static CliOptions Parse(string[] args)
     {
         var rate = 1000;
@@ -58,6 +66,7 @@ public sealed class CliOptions
         var dbMemoryGb = 2.0;
         var workerCpu = 0.5;
         var workerMemoryGb = 0.5;
+        var jobConcurrency = 10;
 
         for (var i = 0; i < args.Length; i++)
         {
@@ -83,6 +92,9 @@ public sealed class CliOptions
                     break;
                 case "--worker-memory-gb":
                     workerMemoryGb = double.Parse(args[++i]);
+                    break;
+                case "--job-concurrency":
+                    jobConcurrency = int.Parse(args[++i]);
                     break;
                 case "--rate":
                     rate = int.Parse(args[++i]);
@@ -152,7 +164,8 @@ public sealed class CliOptions
             DbCpu = dbCpu,
             DbMemoryGb = dbMemoryGb,
             WorkerCpu = workerCpu,
-            WorkerMemoryGb = workerMemoryGb
+            WorkerMemoryGb = workerMemoryGb,
+            JobConcurrency = jobConcurrency
         };
     }
 }

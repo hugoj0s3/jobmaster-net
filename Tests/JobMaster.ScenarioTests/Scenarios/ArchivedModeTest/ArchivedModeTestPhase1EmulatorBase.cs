@@ -147,6 +147,10 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
             "the failed attempt's JobExecution-category log must have been archived alongside the job, " +
             "not lost the way DeleteOldLogsRunner's blanket purge would otherwise have raced it away");
 
+        var sourceFailedJobLogs = await api.GetLogsAsync(SourceClusterId, failedJobId, category: JobExecutionLogCategory);
+        sourceFailedJobLogs.Should().BeEmpty(
+            "the log must have been purged from the source once archived, not merely copied to the target");
+
         // Same DataRetentionTtl/TargetArchivedClusterId drive DeleteOldInactiveRecurringSchedulesRunner
         // too -- the cancelled schedule above is a terminated-recurring-schedule candidate from the
         // moment it was cancelled, same as the jobs above are candidates from the moment they succeeded.
