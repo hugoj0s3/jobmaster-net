@@ -108,6 +108,7 @@ public static class JobMasterTopologyBuilder
             {
                 ["pooledConnectionLifetimeMs"] = 120000,
                 ["pooledConnectionIdleTimeoutMs"] = 60000,
+                ["requestTimeoutMs"] = 300000,
             }
             : null;
 
@@ -213,6 +214,7 @@ public static class JobMasterTopologyBuilder
                 {
                     ["pooledConnectionLifetimeMs"] = 120000,
                     ["pooledConnectionIdleTimeoutMs"] = 60000,
+                    ["requestTimeoutMs"] = 300000,
                 }
                 : null
         };

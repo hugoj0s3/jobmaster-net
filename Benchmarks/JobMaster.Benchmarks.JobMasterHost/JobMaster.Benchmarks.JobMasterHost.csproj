@@ -14,6 +14,19 @@
 
     <ItemGroup>
         <ProjectReference Include="..\JobMaster.Benchmarks.Common\JobMaster.Benchmarks.Common.csproj" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(UseProjectRefs)' != 'true'">
+        <PackageReference Include="JobMaster" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlBase" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.Postgres" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.MySql" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlServer" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.NatsJetStream" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.RavenDb" Version="$(JobMasterPackageVersion)" />
+    </ItemGroup>
+
+    <ItemGroup Condition="'$(UseProjectRefs)' == 'true'">
         <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
         <ProjectReference Include="..\..\Sql\JobMaster.SqlBase\JobMaster.SqlBase.csproj" />
         <ProjectReference Include="..\..\Sql\JobMaster.Postgres\JobMaster.Postgres.csproj" />

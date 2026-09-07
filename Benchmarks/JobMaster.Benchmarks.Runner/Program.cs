@@ -69,7 +69,20 @@ var mux = await ConnectionMultiplexer.ConnectAsync(redisConnectionString);
 
 // Timeout raised from HttpClient's 100s default -- a large burst batch can take longer than that
 // to schedule; must match across all three runners for a fair comparison.
-var scheduleClients = Enumerable.Range(0, workerSpecs.Count)
+//
+// When both FullModeCount and CoordinatorContainerCount are set, this is a producer/worker split
+// topology: dedicated containers act as pure scheduling producers (called "producers" here, not
+// "coordinators", to avoid confusion with JobMaster's own Coordinator role -- under the hood they're
+// built with WorkerMode=Coordinator since that's the SDK mode with no bucket of its own, so no
+// execution work competes with their HTTP handling), while the Full-mode containers only execute --
+// never receiving schedule traffic directly. Producer containers are built right after the
+// Full-mode ones in BuildWorkerSpecs, hence the index range below. With no dedicated producers (the
+// default), every container both accepts schedule calls and executes, same as before.
+var producerCount = options.CoordinatorContainerCount;
+var scheduleIndices = producerCount > 0
+    ? Enumerable.Range(options.FullModeCount, producerCount)
+    : Enumerable.Range(0, workerSpecs.Count);
+var scheduleClients = scheduleIndices
     .Select(i => (IScheduleClient)new HttpScheduleClient(new HttpClient { BaseAddress = new Uri(environment.GetWorkerBaseUrl(i)), Timeout = TimeSpan.FromMinutes(60) }))
     .ToList();
 var roundRobinClient = new RoundRobinScheduleClient(scheduleClients);
