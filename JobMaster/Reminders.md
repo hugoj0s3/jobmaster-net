@@ -45,6 +45,9 @@ handler-type coupling and hasn't been given the same treatment yet.
 ## Serialization
 - **Source Generator Context (`JsonSerializerContext`)**: Upgrade `InternalJobMasterSerializer` to use `System.Text.Json` Source Generators. By declaring the exact types being serialized (e.g., `JobRawModel`, `Dictionary<string, object?>`), we can completely eliminate runtime reflection for JSON parsing, achieving AOT-level speed with zero allocations.
 
+## Benchmarks
+- **Re-run the RavenDB+NATS benchmark with capped (not unlimited) worker CPU/memory**: Local testing (2026-09-07/08) found that uncapped worker CPU quietly made `Environment.ProcessorCount` inside each worker container report the full host core count instead of 1-2, which unlocked dramatically higher execution throughput (~90/sec → ~330+/sec) — but running many workers fully uncapped simultaneously (10+) reliably collapses the host (containers fail to start/answer, all schedule requests time out). The safer, repeatable middle ground found so far: cap workers at **2 CPU / 4GB each**, DB at **3 CPU / 6GB**, NATS at **3 CPU / 4GB** — gives most of the throughput benefit without the collapse risk. Next step: repeat this properly (3x-averaged, not single runs) on a dedicated machine with 20 workers once a suitably sized box is provisioned (a DigitalOcean CPU-Optimized droplet, 48 vCPU/96GB, ~$1.50/hr, was sized for this — 20 workers x 2 CPU = 40 vCPU + DB/NATS headroom).
+
 ## Messaging & Positioning
 - **Standalone Mode is a Selling Point:** The documentation mentions that reverting from Distributed to Standalone is a one-way operation. We need to re-word this or handle it gracefully to prevent scaring off early adopters. Standalone is a huge benefit (start simple, scale to NATS later while keeping the code).
 - **Fallback Bucket Starvation Penalty:** Add a limit or "never processed" flag for fallback buckets to prevent memory starvation on coordinator nodes if a user misconfigures lane priorities.
