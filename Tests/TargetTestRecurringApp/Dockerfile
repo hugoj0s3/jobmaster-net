@@ -7,11 +7,11 @@ ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Tests/TargetTestRecurringApp/TargetTestRecurringApp.csproj", "Tests/TargetTestRecurringApp/"]
 COPY ["JobMaster/JobMaster.csproj", "JobMaster/"]
-COPY ["Repositories/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Repositories/JobMaster.SqlBase/"]
-COPY ["Repositories/JobMaster.Postgres/JobMaster.Postgres.csproj", "Repositories/JobMaster.Postgres/"]
-COPY ["Repositories/JobMaster.MySql/JobMaster.MySql.csproj", "Repositories/JobMaster.MySql/"]
-COPY ["Repositories/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Repositories/JobMaster.SqlServer/"]
-COPY ["Repositories/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj", "Repositories/JobMaster.NatsJetStream/"]
+COPY ["Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Providers/JobMaster.SqlBase/"]
+COPY ["Providers/JobMaster.Postgres/JobMaster.Postgres.csproj", "Providers/JobMaster.Postgres/"]
+COPY ["Providers/JobMaster.MySql/JobMaster.MySql.csproj", "Providers/JobMaster.MySql/"]
+COPY ["Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Providers/JobMaster.SqlServer/"]
+COPY ["Providers/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj", "Providers/JobMaster.NatsJetStream/"]
 COPY ["Directory.Build.props", "Directory.Packages.props", "./"]
 RUN dotnet restore "Tests/TargetTestRecurringApp/TargetTestRecurringApp.csproj"
 COPY . .

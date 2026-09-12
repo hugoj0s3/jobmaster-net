@@ -14,12 +14,12 @@
 
     <ItemGroup>
         <ProjectReference Include="..\..\JobMaster\JobMaster.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.SqlBase\JobMaster.SqlBase.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.Postgres\JobMaster.Postgres.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.MySql\JobMaster.MySql.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
-        <ProjectReference Include="..\..\Repositories\JobMaster.RavenDb\JobMaster.RavenDb.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.SqlBase\JobMaster.SqlBase.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.Postgres\JobMaster.Postgres.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.MySql\JobMaster.MySql.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
+        <ProjectReference Include="..\..\Providers\JobMaster.RavenDb\JobMaster.RavenDb.csproj" />
     </ItemGroup>
 
 </Project>

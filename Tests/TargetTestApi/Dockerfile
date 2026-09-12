@@ -8,11 +8,11 @@ WORKDIR /src
 COPY ["Tests/TargetTestApi/TargetTestApi.csproj", "Tests/TargetTestApi/"]
 COPY ["JobMaster.Api/JobMaster.Api.csproj", "JobMaster.Api/"]
 COPY ["JobMaster/JobMaster.csproj", "JobMaster/"]
-COPY ["Repositories/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Repositories/JobMaster.SqlBase/"]
-COPY ["Repositories/JobMaster.Postgres/JobMaster.Postgres.csproj", "Repositories/JobMaster.Postgres/"]
-COPY ["Repositories/JobMaster.MySql/JobMaster.MySql.csproj", "Repositories/JobMaster.MySql/"]
-COPY ["Repositories/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Repositories/JobMaster.SqlServer/"]
-COPY ["Repositories/JobMaster.RavenDb/JobMaster.RavenDb.csproj", "Repositories/JobMaster.RavenDb/"]
+COPY ["Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Providers/JobMaster.SqlBase/"]
+COPY ["Providers/JobMaster.Postgres/JobMaster.Postgres.csproj", "Providers/JobMaster.Postgres/"]
+COPY ["Providers/JobMaster.MySql/JobMaster.MySql.csproj", "Providers/JobMaster.MySql/"]
+COPY ["Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Providers/JobMaster.SqlServer/"]
+COPY ["Providers/JobMaster.RavenDb/JobMaster.RavenDb.csproj", "Providers/JobMaster.RavenDb/"]
 COPY ["Directory.Build.props", "Directory.Packages.props", "./"]
 RUN dotnet restore "Tests/TargetTestApi/TargetTestApi.csproj"
 COPY . .
