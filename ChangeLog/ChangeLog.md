@@ -10,7 +10,13 @@
 
 ### Added
 
-- **`GET {basePath}/whoami`** (`JobMaster.Api`) — Returns the authenticated caller's identity (`{ subject, authenticationType }`) as already resolved by whichever authentication provider is configured (API key, username/password, or JWT bearer). Mainly useful for a client that only holds a secret (e.g. an API key) and needs to know who that secret actually resolves to — `JobMaster.Dashboard`'s login screen uses it to show the API key's owner name after signing in. No other changes in this version; core JobMaster/Postgres/MySql/SqlServer/RavenDb/NatsJetStream packages are unaffected and remain at their previously published versions.
+- **`GET {basePath}/whoami`** (`JobMaster.Api`) — Returns the authenticated caller's identity (`{ subject, authenticationType }`) as already resolved by whichever authentication provider is configured (API key, username/password, or JWT bearer). Mainly useful for a client that only holds a secret (e.g. an API key) and needs to know who that secret actually resolves to — `JobMaster.Dashboard`'s login screen uses it to show the API key's owner name after signing in.
+
+- **RavenDB agent dispatch operations now retry automatically on a transient connection reset** (`JobMaster.RavenDb`) — Under heavy concurrent write load, RavenDB can reset a `bulk_docs` connection mid-request (`Connection reset by peer`, sometimes preceded by a `503 ServiceUnavailable`) while the server itself stays healthy — a transient hiccup, not a real failure. Every RavenDB agent-dispatcher operation (`PushMessage(Async)`, `BulkPushMessageAsync`, `PullMessagesAsync`, `HasJobsAsync`, `DestroyBucketAsync`) now retries up to 5 times on that specific error, with an escalating 250ms-step backoff (250, 500, 750, 1000, 1250ms) between attempts, before giving up and surfacing the exception as before. Each retry is logged at `Debug`; only the final exhausted failure logs at `Error`. Benchmarking under a 20-worker burst load found this eliminated job scheduling failures entirely that previously occurred under contention on a single shared RavenDB agent connection.
+
+### Changed
+
+- **RavenDB's default scheduling-throttler capacity/timeout retuned** (`JobMaster.RavenDb`) — The scheduling throttler that gates concurrent RavenDB agent-dispatch operations now defaults to a higher capacity with a longer acquire-timeout (`OperationThrottlerSettingsTemplate(200, 2500)`, was `(30, 500)`). Benchmarking found that a short acquire-timeout paired with low capacity was counterproductive: the throttler's fail-open behavior meant operations frequently bypassed the cap rather than waiting for a slot, letting more concurrent requests reach RavenDB at exactly the moments it was already under the most contention. The new defaults reduce that effect; no configuration changes are required to pick this up.
 
 ## JobMaster 0.0.11-alpha
 
@@ -69,6 +75,7 @@
 
 ### Changed
 
+- ⚠️ **Breaking change: `DashboardAuthProviderId` renamed to `DashboardAuthType`** (also gained a new `OAuth` member). There is no obsolete alias for the old name — update any reference (e.g. `DisableAuth(DashboardAuthProviderId.SimpleJwt)` → `DisableAuth(DashboardAuthType.SimpleJwt)`) before upgrading, or your build will fail to compile.
 - **`PublicAuthProviderConfig.Id` renamed to `Key`** — for consistency with `OAuthProviderConfig.Key` and the rest of the public config surface. If you consume the dashboard's static `jobmaster-config.json` directly (outside the C# host), update any reference to `auth.providers[].id`.
 - **`PublicAuthConfig.OAuthTabLabel`** — new optional field carrying the shared tab label configured via `WithTabLabel(...)` for every OAuth provider.
 
