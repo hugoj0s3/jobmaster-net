@@ -238,6 +238,11 @@ builder.Services.AddJobMasterDashboard(dashboard =>
         .AddField("username", "UserName")
         .AddField("password", "Password", DashboardJwtFormFieldType.Password);
 
+    dashboard.ConfigOAuth()
+        .AddOAuthProvider("mock", "Sign in with Mock IdP", "/mock-idp/authorize", "/mock-idp/token", "dev-client")
+            .WithScopes("openid", "profile")
+        .WithTokenIssuer(identity => Task.FromResult(GenerateDummyJwt(identity.Subject, jwtTvp)));
+
     dashboard.ConfigureAuthRetention()
         .SetAuthRetentionType(DashboardAuthRetentionType.ServerSideInMemory);
 });
@@ -299,6 +304,35 @@ app.MapPost("/jm-api/auth/token", async (HttpRequest req) =>
 .WithOpenApi()
 .WithTags("Auth")
 .WithSummary("Dummy token endpoint for dashboard login testing");
+
+// Throwaway mock OAuth provider, just for exercising the dashboard's OAuth login flow end-to-end
+// in dev without a real IdP. Not PKCE/state-verified server-side — it's a mock, not a real one.
+app.MapGet("/mock-idp/authorize", (HttpRequest req) =>
+{
+    var redirectUri = req.Query["redirect_uri"].ToString();
+    var state = req.Query["state"].ToString();
+    var approveUrl = $"{redirectUri}?code=mock-code&state={Uri.EscapeDataString(state)}";
+    var html = $"""
+        <html><body style="font-family:sans-serif;text-align:center;margin-top:100px">
+        <h2>Mock IdP</h2>
+        <p>Approve login as <b>mockuser</b>?</p>
+        <a href="{approveUrl}" style="padding:10px 20px;background:#333;color:#fff;text-decoration:none;border-radius:6px">Approve</a>
+        </body></html>
+        """;
+    return Results.Content(html, "text/html");
+})
+.WithOpenApi()
+.WithTags("Auth")
+.WithSummary("Mock OAuth authorize endpoint for dashboard OAuth testing");
+
+app.MapPost("/mock-idp/token", () =>
+{
+    var idToken = GenerateDummyJwt("mockuser", jwtTvp);
+    return Results.Ok(new { access_token = "mock-access-token", id_token = idToken, token_type = "bearer" });
+})
+.WithOpenApi()
+.WithTags("Auth")
+.WithSummary("Mock OAuth token endpoint for dashboard OAuth testing");
 
 await app.Services.StartJobMasterRuntimeAsync();
 
