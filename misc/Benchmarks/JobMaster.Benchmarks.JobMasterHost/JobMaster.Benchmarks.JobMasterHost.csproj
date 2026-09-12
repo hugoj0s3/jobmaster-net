@@ -18,11 +18,11 @@
 
     <ItemGroup Condition="'$(UseProjectRefs)' != 'true'">
         <PackageReference Include="JobMaster" Version="$(JobMasterPackageVersion)" />
-        <PackageReference Include="JobMaster.SqlBase" Version="$(JobMasterPackageVersion)" />
-        <PackageReference Include="JobMaster.Postgres" Version="$(JobMasterPackageVersion)" />
-        <PackageReference Include="JobMaster.MySql" Version="$(JobMasterPackageVersion)" />
-        <PackageReference Include="JobMaster.SqlServer" Version="$(JobMasterPackageVersion)" />
-        <PackageReference Include="JobMaster.NatsJetStream" Version="$(JobMasterPackageVersion)" />
+        <PackageReference Include="JobMaster.SqlBase" Version="0.0.11-alpha" />
+        <PackageReference Include="JobMaster.Postgres" Version="0.0.11-alpha" />
+        <PackageReference Include="JobMaster.MySql" Version="0.0.11-alpha" />
+        <PackageReference Include="JobMaster.SqlServer" Version="0.0.11-alpha" />
+        <PackageReference Include="JobMaster.NatsJetStream" Version="0.0.11-alpha" />
         <PackageReference Include="JobMaster.RavenDb" Version="$(JobMasterPackageVersion)" />
     </ItemGroup>
 

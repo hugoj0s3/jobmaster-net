@@ -363,7 +363,6 @@ public sealed class BenchmarkContainerEnvironment : IAsyncDisposable
             .WithDockerfile(key)
             .WithName(imageName)
             .WithCleanUp(true)
-            .WithBuildArgument("USE_PROJECT_REFS", "true")
             .Build();
 
         await image.CreateAsync(ct);
