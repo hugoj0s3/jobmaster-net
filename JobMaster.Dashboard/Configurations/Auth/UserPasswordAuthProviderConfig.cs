@@ -1,8 +1,8 @@
 namespace JobMaster.Dashboard.Configurations.Auth;
 
-internal sealed class UserPasswordAuthProviderConfig : DashboardAuthProviderConfig
+internal sealed class UserPasswordAuthProviderConfig : DashboardAuthTypeConfig
 {
-    public override DashboardAuthProviderId ProviderId => DashboardAuthProviderId.UserPassword;
+    public override DashboardAuthType AuthType => DashboardAuthType.UserPassword;
     public string UserHeaderName { get; set; } = "X-User-Name";
     public string PasswordHeaderName { get; set; } = "X-Password";
 }

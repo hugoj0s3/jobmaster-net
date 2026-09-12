@@ -17,5 +17,12 @@ internal class DashboardAuthRetentionConfig
     /// </summary>
     public TimeSpan DefaultCredentialsExpiry { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>
+    /// When set via <see cref="Ioc.Selectors.AuthRetention.IJobMasterDashboardAuthRetentionSelector.UseCustom{T}"/>,
+    /// this type is registered as <see cref="AuthRetention.IJobMasterAuthRetentionStorage"/> instead of the
+    /// built-in implementation matching <see cref="AuthRetentionType"/>.
+    /// </summary>
+    public Type? CustomAuthRetentionStorageType { get; set; }
+
     internal static readonly TimeSpan SessionIdleExpiry = TimeSpan.FromHours(24);
 }

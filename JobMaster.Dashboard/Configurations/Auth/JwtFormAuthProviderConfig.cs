@@ -1,8 +1,8 @@
 namespace JobMaster.Dashboard.Configurations.Auth;
 
-internal sealed class JwtFormAuthProviderConfig : DashboardAuthProviderConfig
+internal sealed class JwtFormAuthProviderConfig : DashboardAuthTypeConfig
 {
-    public override DashboardAuthProviderId ProviderId => DashboardAuthProviderId.JwtForm;
+    public override DashboardAuthType AuthType => DashboardAuthType.JwtForm;
     public string TokenUrl { get; set; } = string.Empty;
     public string HeaderName { get; set; } = "Authorization";
     public string Scheme { get; set; } = "Bearer";

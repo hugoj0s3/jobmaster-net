@@ -1,24 +1,15 @@
 using FluentAssertions;
 using JobMaster.Dashboard.AuthRetention;
-using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Options;
 
 namespace JobMaster.UnitTests.Dashboard.AuthRetention;
 
-public class DistributedAuthRetentionServiceTests
+public class InMemoryAuthRetentionStorageTests
 {
-    private readonly IDistributedCache cache =
-        new MemoryDistributedCache(Options.Create(new MemoryDistributedCacheOptions()));
+    private readonly InMemoryAuthRetentionStorage sut =
+        new(new MemoryCache(new MemoryCacheOptions()));
 
-    private readonly DistributedAuthRetentionService sut;
-
-    public DistributedAuthRetentionServiceTests()
-    {
-        sut = new DistributedAuthRetentionService(cache);
-    }
-
-    private static StoredAuth NewAuth(string tokenValue = "tok") => new()
+    private static RetainedCredential NewAuth(string tokenValue = "tok") => new()
     {
         Secrets = new Dictionary<string, string> { ["token"] = tokenValue },
         ExpiresAt = DateTime.UtcNow.AddHours(1)
@@ -55,6 +46,16 @@ public class DistributedAuthRetentionServiceTests
     }
 
     [Fact]
+    public async Task StoreAsync_DifferentKeys_AreIsolated()
+    {
+        await sut.StoreAsync("session1", "keyA", NewAuth("a"));
+        await sut.StoreAsync("session1", "keyB", NewAuth("b"));
+
+        (await sut.GetAsync("session1", "keyA"))!.Secrets["token"].Should().Be("a");
+        (await sut.GetAsync("session1", "keyB"))!.Secrets["token"].Should().Be("b");
+    }
+
+    [Fact]
     public async Task StoreAsync_DifferentSessions_AreIsolated()
     {
         await sut.StoreAsync("sessionA", "key1", NewAuth("a"));
@@ -65,13 +66,9 @@ public class DistributedAuthRetentionServiceTests
     }
 
     [Fact]
-    public async Task StoreAsync_OverwritesExistingEntry()
+    public async Task RemoveAsync_NonExistentKey_DoesNotThrow()
     {
-        await sut.StoreAsync("session1", "key1", NewAuth("first"));
-        await sut.StoreAsync("session1", "key1", NewAuth("second"));
-
-        var result = await sut.GetAsync("session1", "key1");
-
-        result!.Secrets["token"].Should().Be("second");
+        var act = async () => await sut.RemoveAsync("session1", "missing");
+        await act.Should().NotThrowAsync();
     }
 }

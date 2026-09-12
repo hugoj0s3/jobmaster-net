@@ -2,6 +2,7 @@
     import AppLogo from "$lib/components/AppLogo.svelte";
     import { AuthRetentionUtil } from "$lib/api/auth-retention-util";
     import { ApiClientUtil } from "$lib/api/api-client-util";
+    import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
     import type { Credentials } from "$lib/api/credentials";
 
     let { auth, onLogin } = $props();
@@ -37,6 +38,19 @@
     }
 
     let isSubmitting = $state(false);
+    let oauthError = $state<string | null>(null);
+
+    async function startOAuthLogin(provider: { key: string }) {
+        oauthError = null;
+        try {
+            const res = await fetch(`${JobMasterConfigUtil.getBasePath()}/oauth/${provider.key}`);
+            if (!res.ok) throw new Error(`Failed to start login (${res.status})`);
+            const { url } = await res.json();
+            window.location.href = url;
+        } catch (err) {
+            oauthError = err instanceof Error ? err.message : "Login failed";
+        }
+    }
 
     async function handleSubmit(e: SubmitEvent) {
         e.preventDefault();
@@ -191,12 +205,37 @@
                 </div>
             {/if}
 
-            <button type="submit" class="btn btn-primary btn-block mt-2" disabled={isSubmitting}>
-                {#if isSubmitting}
-                    <span class="loading loading-spinner loading-sm"></span>
-                {/if}
-                Sign In
-            </button>
+            {#if selectedProvider?.type !== "OAUTH"}
+                <button type="submit" class="btn btn-primary btn-block mt-2" disabled={isSubmitting}>
+                    {#if isSubmitting}
+                        <span class="loading loading-spinner loading-sm"></span>
+                    {/if}
+                    Sign In
+                </button>
+            {/if}
         </form>
+
+        {#if selectedProvider?.type === "OAUTH"}
+            <button
+                type="button"
+                class="btn btn-block mt-2"
+                style={`${selectedProvider.backgroundColor ? `background-color:${selectedProvider.backgroundColor};` : ""}${selectedProvider.foregroundColor ? `color:${selectedProvider.foregroundColor};` : ""}`}
+                onclick={() => startOAuthLogin(selectedProvider)}
+            >
+                {#if selectedProvider.icon}
+                    <img src={selectedProvider.icon} alt="" class="h-5 w-5" />
+                {/if}
+                Sign in with {selectedProvider.displayName ?? "SSO"}
+            </button>
+
+            {#if oauthError}
+                <div class="alert alert-error text-sm py-2 mt-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <span>{oauthError}</span>
+                </div>
+            {/if}
+        {/if}
     </div>
 </main>

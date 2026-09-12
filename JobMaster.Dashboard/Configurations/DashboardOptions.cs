@@ -40,6 +40,12 @@ internal class DashboardOptions
     /// </summary>
     public string SessionCookieName => $"{DeriveSlug(BasePath)}-credentials-session";
 
+    /// <summary>
+    /// HttpOnly cookie name carrying the transient OAuth flow state/id between the initiate and
+    /// confirm steps, derived from <see cref="BasePath"/>.
+    /// </summary>
+    public string OAuthFlowCookieName => $"{DeriveSlug(BasePath)}-oauth-flow";
+
     private static string DeriveSlug(string basePath)
     {
         var path = basePath.TrimStart('/');

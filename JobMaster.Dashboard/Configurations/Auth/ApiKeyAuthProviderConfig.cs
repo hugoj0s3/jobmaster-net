@@ -1,7 +1,7 @@
 namespace JobMaster.Dashboard.Configurations.Auth;
 
-internal sealed class ApiKeyAuthProviderConfig : DashboardAuthProviderConfig
+internal sealed class ApiKeyAuthProviderConfig : DashboardAuthTypeConfig
 {
-    public override DashboardAuthProviderId ProviderId => DashboardAuthProviderId.ApiKey;
+    public override DashboardAuthType AuthType => DashboardAuthType.ApiKey;
     public string HeaderName { get; set; } = "X-Api-Key";
 }

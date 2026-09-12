@@ -42,15 +42,42 @@ internal static class DashboardPublicConfigConvertUtil
         return new PublicAuthConfig
         {
             Enabled = auth.Enabled,
-            Providers = auth.Providers.Where(p => !p.Disabled).Select(ToPublicAuthProvider).ToList()
+            Providers = auth.Providers.Where(p => !p.Disabled).SelectMany(ToPublicAuthProviders).ToList()
         };
     }
 
-    private static PublicAuthProviderConfig ToPublicAuthProvider(DashboardAuthProviderConfig provider)
+    // Every auth type maps to exactly one public entry, except OAuth: its single config holds a
+    // list of individual providers (Google, GitHub, etc.), each of which becomes its own entry.
+    private static IEnumerable<PublicAuthProviderConfig> ToPublicAuthProviders(DashboardAuthTypeConfig provider)
+    {
+        if (provider is OAuthAuthConfig oauth)
+            return oauth.Providers.Select(ToPublicOAuthProvider);
+
+        return [ToPublicAuthProvider(provider)];
+    }
+
+    private static PublicAuthProviderConfig ToPublicOAuthProvider(OAuthProviderConfig provider)
+    {
+        return new PublicAuthProviderConfig
+        {
+            Type = "OAUTH",
+            DisplayName = provider.DisplayName,
+            Key = provider.Key,
+            Icon = provider.Icon,
+            BackgroundColor = provider.BackgroundColor,
+            ForegroundColor = provider.ForegroundColor,
+            // OAuth bearer tokens always use RFC 6750 framing — the browser only ever
+            // forwards the JobMaster-minted JWT, never builds the authorize URL itself.
+            HeaderName = "Authorization",
+            Scheme = "Bearer"
+        };
+    }
+
+    private static PublicAuthProviderConfig ToPublicAuthProvider(DashboardAuthTypeConfig provider)
     {
         var config = new PublicAuthProviderConfig
         {
-            Type = ToProviderTypeString(provider.ProviderId),
+            Type = ToProviderTypeString(provider.AuthType),
             DisplayName = provider.DisplayName
         };
 
@@ -152,13 +179,14 @@ internal static class DashboardPublicConfigConvertUtil
         _                                  => theme.ToString().ToLowerInvariant()
     };
 
-    private static string ToProviderTypeString(DashboardAuthProviderId id) => id switch
+    private static string ToProviderTypeString(DashboardAuthType type) => type switch
     {
-        DashboardAuthProviderId.ApiKey       => "API_KEY",
-        DashboardAuthProviderId.UserPassword => "USER_PASSWORD",
-        DashboardAuthProviderId.SimpleJwt    => "JWT_SIMPLE",
-        DashboardAuthProviderId.JwtForm      => "JWT_CUSTOM_FORM",
-        _                                    => id.ToString().ToUpperInvariant()
+        DashboardAuthType.ApiKey       => "API_KEY",
+        DashboardAuthType.UserPassword => "USER_PASSWORD",
+        DashboardAuthType.SimpleJwt    => "JWT_SIMPLE",
+        DashboardAuthType.JwtForm      => "JWT_CUSTOM_FORM",
+        DashboardAuthType.OAuth        => "OAUTH",
+        _                              => type.ToString().ToUpperInvariant()
     };
 
     private static string ToFieldTypeString(DashboardJwtFormFieldType type) => type switch

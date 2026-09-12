@@ -177,14 +177,14 @@ internal sealed class OpenApiJsonConfigSeeder
             if (provider is null) continue;
 
             // User config (including explicit disables) always wins — one provider per type.
-            if (options.Auth.Providers.Any(p => p.ProviderId == provider.ProviderId)) continue;
+            if (options.Auth.Providers.Any(p => p.AuthType == provider.AuthType)) continue;
 
             options.Auth.Enabled = true;
             options.Auth.Providers.Add(provider);
         }
     }
 
-    private static DashboardAuthProviderConfig? MapScheme(string schemeName, JsonElement scheme)
+    private static DashboardAuthTypeConfig? MapScheme(string schemeName, JsonElement scheme)
     {
         if (!scheme.TryGetProperty("type", out var typeProp)) return null;
 

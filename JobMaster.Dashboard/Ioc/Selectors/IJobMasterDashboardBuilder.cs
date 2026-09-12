@@ -67,11 +67,19 @@ public interface IJobMasterDashboardBuilder
     Auth.IJobMasterDashboardJwtFormAuthSelector ConfigJwtFormAuth(string tokenUrl);
 
     /// <summary>
+    /// Configures OAuth/SSO authentication. Unlike every other <c>Config*Auth()</c> method,
+    /// this is a group — call <c>.AddOAuthProvider(...)</c> on the returned selector repeatedly
+    /// to configure multiple simultaneous providers (e.g. both GitHub and Google).
+    /// </summary>
+    Auth.IJobMasterDashboardOAuthSelector ConfigOAuth();
+
+    /// <summary>
     /// Disables the specified auth type, preventing it from appearing in the dashboard
     /// even if the API reports it. Takes precedence over any auto-discovered auth provider
-    /// of the same type.
+    /// of the same type. For <see cref="DashboardAuthType.OAuth"/> this disables every configured
+    /// OAuth provider at once — to disable just one, use <c>ConfigOAuth().DisableProvider(key)</c>.
     /// </summary>
-    IJobMasterDashboardBuilder DisableAuth(DashboardAuthProviderId providerId);
+    IJobMasterDashboardBuilder DisableAuth(DashboardAuthType authType);
 
     /// <summary>
     /// Configures auth providers and clusters from a JobMaster OpenAPI JSON spec.

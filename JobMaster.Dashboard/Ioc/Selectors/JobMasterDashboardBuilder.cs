@@ -132,22 +132,35 @@ internal class JobMasterDashboardBuilder : IJobMasterDashboardBuilder
         return new JobMasterDashboardJwtFormAuthSelector(config);
     }
 
-    public IJobMasterDashboardBuilder DisableAuth(DashboardAuthProviderId providerId)
+    public IJobMasterDashboardOAuthSelector ConfigOAuth()
     {
-        var existing = options.Auth.Providers.FirstOrDefault(p => p.ProviderId == providerId);
+        var existing = options.Auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault();
+        if (existing is not null)
+            return new JobMasterDashboardOAuthSelector(existing);
+
+        options.Auth.Enabled = true;
+        var config = new OAuthAuthConfig();
+        options.Auth.Providers.Add(config);
+        return new JobMasterDashboardOAuthSelector(config);
+    }
+
+    public IJobMasterDashboardBuilder DisableAuth(DashboardAuthType authType)
+    {
+        var existing = options.Auth.Providers.FirstOrDefault(p => p.AuthType == authType);
         if (existing is not null)
         {
             existing.Disabled = true;
             return this;
         }
 
-        DashboardAuthProviderConfig placeholder = providerId switch
+        DashboardAuthTypeConfig placeholder = authType switch
         {
-            DashboardAuthProviderId.ApiKey => new ApiKeyAuthProviderConfig { Disabled = true },
-            DashboardAuthProviderId.UserPassword => new UserPasswordAuthProviderConfig { Disabled = true },
-            DashboardAuthProviderId.SimpleJwt => new SimpleJwtAuthProviderConfig { Disabled = true },
-            DashboardAuthProviderId.JwtForm => new JwtFormAuthProviderConfig { Disabled = true },
-            _ => throw new ArgumentOutOfRangeException(nameof(providerId))
+            DashboardAuthType.ApiKey => new ApiKeyAuthProviderConfig { Disabled = true },
+            DashboardAuthType.UserPassword => new UserPasswordAuthProviderConfig { Disabled = true },
+            DashboardAuthType.SimpleJwt => new SimpleJwtAuthProviderConfig { Disabled = true },
+            DashboardAuthType.JwtForm => new JwtFormAuthProviderConfig { Disabled = true },
+            DashboardAuthType.OAuth => new OAuthAuthConfig { Disabled = true },
+            _ => throw new ArgumentOutOfRangeException(nameof(authType))
         };
         options.Auth.Providers.Add(placeholder);
         return this;

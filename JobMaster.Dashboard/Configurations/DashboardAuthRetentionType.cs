@@ -19,4 +19,10 @@ public enum DashboardAuthRetentionType
     /// Use only for development or trusted internal environments.
     /// </summary>
     ClientSideSessionStorage = 4,
+
+    /// <summary>
+    /// A custom <see cref="AuthRetention.IJobMasterAuthRetentionStorage"/> implementation is in use,
+    /// set automatically by <see cref="Ioc.Selectors.AuthRetention.IJobMasterDashboardAuthRetentionSelector.UseCustom{T}"/>.
+    /// </summary>
+    Custom = 5,
 }

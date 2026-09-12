@@ -63,7 +63,7 @@ export interface PublicJwtFormFieldConfig {
 }
 
 export interface PublicAuthProviderConfig {
-    type: 'API_KEY' | 'USER_PASSWORD' | 'JWT_SIMPLE' | 'JWT_CUSTOM_FORM';
+    type: 'API_KEY' | 'USER_PASSWORD' | 'JWT_SIMPLE' | 'JWT_CUSTOM_FORM' | 'OAUTH';
     displayName: string | null;
     headerName: string | null;
     scheme: string | null;
@@ -71,6 +71,10 @@ export interface PublicAuthProviderConfig {
     passwordHeaderName: string | null;
     tokenUrl: string | null;
     fields: PublicJwtFormFieldConfig[] | null;
+    key: string | null;
+    icon: string | null;
+    backgroundColor: string | null;
+    foregroundColor: string | null;
 }
 
 export interface PublicAuthConfig {

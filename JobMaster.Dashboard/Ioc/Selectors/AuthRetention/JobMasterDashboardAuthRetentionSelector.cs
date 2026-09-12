@@ -1,4 +1,5 @@
 using System;
+using JobMaster.Dashboard.AuthRetention;
 using JobMaster.Dashboard.Configurations;
 
 namespace JobMaster.Dashboard.Ioc.Selectors.AuthRetention;
@@ -21,6 +22,13 @@ internal class JobMasterDashboardAuthRetentionSelector : IJobMasterDashboardAuth
     public IJobMasterDashboardAuthRetentionSelector WithDefaultCredentialsExpiry(TimeSpan expiry)
     {
         this.config.DefaultCredentialsExpiry = expiry;
+        return this;
+    }
+
+    public IJobMasterDashboardAuthRetentionSelector UseCustom<T>() where T : class, IJobMasterAuthRetentionStorage
+    {
+        this.config.AuthRetentionType = DashboardAuthRetentionType.Custom;
+        this.config.CustomAuthRetentionStorageType = typeof(T);
         return this;
     }
 }

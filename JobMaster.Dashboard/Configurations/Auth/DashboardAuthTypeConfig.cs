@@ -1,8 +1,8 @@
 namespace JobMaster.Dashboard.Configurations.Auth;
 
-internal abstract class DashboardAuthProviderConfig
+internal abstract class DashboardAuthTypeConfig
 {
-    public abstract DashboardAuthProviderId ProviderId { get; }
+    public abstract DashboardAuthType AuthType { get; }
     public string? DisplayName { get; set; }
     /// <summary>
     /// When <see langword="true"/> this auth type is hidden from the dashboard even if the API reports it.

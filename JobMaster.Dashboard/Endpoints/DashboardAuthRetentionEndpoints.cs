@@ -24,10 +24,9 @@ internal static class DashboardAuthRetentionEndpoints
         endpoints.MapPost($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
             HttpContext ctx,
-            IAuthRetentionService persistence,
+            IJobMasterAuthRetentionStorage persistence,
             DashboardOptions options,
-            [FromBody] CredentialsRequest request,
-            CancellationToken ct) =>
+            [FromBody] CredentialsRequest request) =>
         {
             var config = options.AuthRetention;
             var sessionId = ctx.Request.Cookies[options.SessionCookieName];
@@ -35,13 +34,13 @@ internal static class DashboardAuthRetentionEndpoints
 
             var expiry = request.DurationToExpire ?? config.DefaultCredentialsExpiry;
             var expiresAt = DateTime.UtcNow.Add(expiry);
-            var stored = new StoredAuth
+            var stored = new RetainedCredential
             {
                 Secrets = request.Secrets,
                 ExpiresAt = expiresAt
             };
 
-            await persistence.StoreAsync(sessionId, credentialKey, stored, ct);
+            await persistence.StoreAsync(sessionId, credentialKey, stored);
 
             AppendSessionCookie(ctx, options, sessionId);
             return Results.Ok(expiresAt);
@@ -50,14 +49,13 @@ internal static class DashboardAuthRetentionEndpoints
         endpoints.MapGet($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
             HttpContext ctx,
-            IAuthRetentionService persistence,
-            DashboardOptions options,
-            CancellationToken ct) =>
+            IJobMasterAuthRetentionStorage persistence,
+            DashboardOptions options) =>
         {
             var sessionId = ctx.Request.Cookies[options.SessionCookieName];
             if (sessionId is null) return Results.NotFound();
 
-            var stored = await persistence.GetAsync(sessionId, credentialKey, ct);
+            var stored = await persistence.GetAsync(sessionId, credentialKey);
             if (stored is null || stored.ExpiresAt < DateTime.UtcNow) return Results.NotFound();
 
             AppendSessionCookie(ctx, options, sessionId);
@@ -76,14 +74,13 @@ internal static class DashboardAuthRetentionEndpoints
         endpoints.MapDelete($"{basePath}/credentials/{{credentialKey}}", async (
             [FromRoute] string credentialKey,
             HttpContext ctx,
-            IAuthRetentionService persistence,
-            DashboardOptions options,
-            CancellationToken ct) =>
+            IJobMasterAuthRetentionStorage persistence,
+            DashboardOptions options) =>
         {
             var sessionId = ctx.Request.Cookies[options.SessionCookieName];
 
             if (sessionId is not null)
-                await persistence.RemoveAsync(sessionId, credentialKey, ct);
+                await persistence.RemoveAsync(sessionId, credentialKey);
 
             return Results.NoContent();
         }).ExcludeFromDescription();

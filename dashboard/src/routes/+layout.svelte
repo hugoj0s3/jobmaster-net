@@ -15,6 +15,13 @@
 
     let {children} = $props();
 
+    // The OAuth callback page must render (and run its own onMount) regardless of login
+    // state — without this bypass, the gating below would show the Login screen on top of
+    // it instead, since isLoggedIn starts false and this page is exactly what completes login.
+    let isOAuthCallbackPath = $derived(
+        page.url.pathname.replace(/\/+$/, "").split("/").pop() === "oauth-callback"
+    );
+
     let config = $state<any>(null);
     let isLoggedIn = $state(false);
     let currentCluster = $state<any>(null);
@@ -271,7 +278,10 @@
     }
 </script>
 
-{#if !config}
+{#if isOAuthCallbackPath}
+    {@render children()}
+
+{:else if !config}
     <div class="flex h-screen items-center justify-center bg-base-200 text-base-content">
         <span class="loading loading-infinity loading-lg text-primary"></span>
     </div>
