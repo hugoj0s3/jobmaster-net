@@ -8,7 +8,7 @@
 
 A browser-based single-page application for monitoring and managing your JobMaster clusters. Served as embedded static assets directly from your ASP.NET Core application — no separate deployment required.
 
-![JobMaster Dashboard](https://raw.githubusercontent.com/hugoj0s3/jobmaster-net/master/docs/img/dashboard/dashboard-overview.png)
+![JobMaster Dashboard](https://docs.jobmaster.hugoj0s3.dev/img/dashboard/dashboard-overview.png)
 
 ## 📦 Installation
 

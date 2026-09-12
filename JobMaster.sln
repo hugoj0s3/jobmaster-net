@@ -3,23 +3,23 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # 
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster", "JobMaster\JobMaster.csproj", "{1E268AC1-1A4B-4A98-8730-FC3E26AF5BFD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SampleWeb", "JobMaster.SampleWeb\JobMaster.SampleWeb.csproj", "{A2ED8D21-4503-4A00-9F28-F312A9D11DF4}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SampleWeb", "misc\JobMaster.SampleWeb\JobMaster.SampleWeb.csproj", "{A2ED8D21-4503-4A00-9F28-F312A9D11DF4}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Sql", "Sql", "{560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Repositories", "Repositories", "{560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlBase", "Sql\JobMaster.SqlBase\JobMaster.SqlBase.csproj", "{F30A538D-FA41-4692-A858-509CB4566B1A}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlBase", "Repositories\JobMaster.SqlBase\JobMaster.SqlBase.csproj", "{F30A538D-FA41-4692-A858-509CB4566B1A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Postgres", "Sql\JobMaster.Postgres\JobMaster.Postgres.csproj", "{AA3B3FC7-618B-4BF2-8510-C89EED4B377C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Postgres", "Repositories\JobMaster.Postgres\JobMaster.Postgres.csproj", "{AA3B3FC7-618B-4BF2-8510-C89EED4B377C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.MySql", "Sql\JobMaster.MySql\JobMaster.MySql.csproj", "{7D15A0BB-133F-4CA8-9B8A-7FA96CC0F6AF}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.MySql", "Repositories\JobMaster.MySql\JobMaster.MySql.csproj", "{7D15A0BB-133F-4CA8-9B8A-7FA96CC0F6AF}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlServer", "Sql\JobMaster.SqlServer\JobMaster.SqlServer.csproj", "{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.SqlServer", "Repositories\JobMaster.SqlServer\JobMaster.SqlServer.csproj", "{2D5E1D7F-1D5B-4E74-9B45-31EAA2E8D0B6}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.UnitTests", "Tests\JobMaster.UnitTests\JobMaster.UnitTests.csproj", "{C043B8A9-CC69-46A3-BE4D-1BDE8A64AEC7}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.IntegrationTests", "Tests\JobMaster.IntegrationTests\JobMaster.IntegrationTests.csproj", "{CAA7533D-78B0-49DE-A482-D90AEAD7BE70}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatsJetStream", "JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NatsJetStream", "Repositories\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj", "{58743752-3914-459C-BFB1-A369404AD82E}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Tests", "Tests", "{B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}"
 EndProject
@@ -35,23 +35,25 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.ScenarioTests", "
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TargetTestRecurringApp", "Tests\TargetTestRecurringApp\TargetTestRecurringApp.csproj", "{FA178C0C-C3DA-478A-A546-7FA45D00B9A1}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "misc", "misc", "{6BFBDE4D-B629-4187-B0D9-135CB4E48EAB}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Benchmarks", "Benchmarks", "{F671B317-9AA9-4820-B9BE-47A0AE46A578}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.Common", "Benchmarks\JobMaster.Benchmarks.Common\JobMaster.Benchmarks.Common.csproj", "{AB496C44-29FF-46BB-8F90-8E08D589212F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.Common", "misc\Benchmarks\JobMaster.Benchmarks.Common\JobMaster.Benchmarks.Common.csproj", "{AB496C44-29FF-46BB-8F90-8E08D589212F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.JobMasterHost", "Benchmarks\JobMaster.Benchmarks.JobMasterHost\JobMaster.Benchmarks.JobMasterHost.csproj", "{5F3CC077-A982-4B44-994B-A5F450B9CB49}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.JobMasterHost", "misc\Benchmarks\JobMaster.Benchmarks.JobMasterHost\JobMaster.Benchmarks.JobMasterHost.csproj", "{5F3CC077-A982-4B44-994B-A5F450B9CB49}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.Runner", "Benchmarks\JobMaster.Benchmarks.Runner\JobMaster.Benchmarks.Runner.csproj", "{7AD4981D-A3F4-4DD8-BD0E-D7616076AAD0}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.Runner", "misc\Benchmarks\JobMaster.Benchmarks.Runner\JobMaster.Benchmarks.Runner.csproj", "{7AD4981D-A3F4-4DD8-BD0E-D7616076AAD0}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.QuartzHost", "Benchmarks\JobMaster.Benchmarks.QuartzHost\JobMaster.Benchmarks.QuartzHost.csproj", "{C5E5FF1F-EDC5-4A26-AAC9-4C9244FA7B0B}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.QuartzHost", "misc\Benchmarks\JobMaster.Benchmarks.QuartzHost\JobMaster.Benchmarks.QuartzHost.csproj", "{C5E5FF1F-EDC5-4A26-AAC9-4C9244FA7B0B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.QuartzRunner", "Benchmarks\JobMaster.Benchmarks.QuartzRunner\JobMaster.Benchmarks.QuartzRunner.csproj", "{95F24E29-FB62-4FB3-9C53-AEC6BAF6E99C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.QuartzRunner", "misc\Benchmarks\JobMaster.Benchmarks.QuartzRunner\JobMaster.Benchmarks.QuartzRunner.csproj", "{95F24E29-FB62-4FB3-9C53-AEC6BAF6E99C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.HangfireHost", "Benchmarks\JobMaster.Benchmarks.HangfireHost\JobMaster.Benchmarks.HangfireHost.csproj", "{79F4DAD8-5238-46FA-B341-A8DEE8F01952}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.HangfireHost", "misc\Benchmarks\JobMaster.Benchmarks.HangfireHost\JobMaster.Benchmarks.HangfireHost.csproj", "{79F4DAD8-5238-46FA-B341-A8DEE8F01952}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.HangfireRunner", "Benchmarks\JobMaster.Benchmarks.HangfireRunner\JobMaster.Benchmarks.HangfireRunner.csproj", "{91FF9BBB-338A-4BFE-8CD3-492FF477F327}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Benchmarks.HangfireRunner", "misc\Benchmarks\JobMaster.Benchmarks.HangfireRunner\JobMaster.Benchmarks.HangfireRunner.csproj", "{91FF9BBB-338A-4BFE-8CD3-492FF477F327}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.RavenDb", "JobMaster.RavenDb\JobMaster.RavenDb.csproj", "{441D7AFC-65FF-449C-98CA-10875CEE8B98}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.RavenDb", "Repositories\JobMaster.RavenDb\JobMaster.RavenDb.csproj", "{441D7AFC-65FF-449C-98CA-10875CEE8B98}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -361,5 +363,9 @@ Global
 		{95F24E29-FB62-4FB3-9C53-AEC6BAF6E99C} = {F671B317-9AA9-4820-B9BE-47A0AE46A578}
 		{79F4DAD8-5238-46FA-B341-A8DEE8F01952} = {F671B317-9AA9-4820-B9BE-47A0AE46A578}
 		{91FF9BBB-338A-4BFE-8CD3-492FF477F327} = {F671B317-9AA9-4820-B9BE-47A0AE46A578}
+		{441D7AFC-65FF-449C-98CA-10875CEE8B98} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
+		{F671B317-9AA9-4820-B9BE-47A0AE46A578} = {6BFBDE4D-B629-4187-B0D9-135CB4E48EAB}
+		{A2ED8D21-4503-4A00-9F28-F312A9D11DF4} = {6BFBDE4D-B629-4187-B0D9-135CB4E48EAB}
+		{58743752-3914-459C-BFB1-A369404AD82E} = {560B68EA-EED1-468A-B37D-E3F4E6EA0FAB}
 	EndGlobalSection
 EndGlobal

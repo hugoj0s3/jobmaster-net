@@ -1,4 +1,4 @@
-# <img src="img/logo.svg" width="52" valign="middle" /> JobMaster
+# <img src="https://docs.jobmaster.hugoj0s3.dev/img/logo.svg" width="52" valign="middle" /> JobMaster
 
 **Distributed job orchestration engine for .NET. Built for horizontal scale, designed for resilience.**
 
