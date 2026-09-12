@@ -5,7 +5,7 @@ using Raven.Client.ServerWide.Operations;
 namespace JobMaster.Benchmarks.Common.Containers;
 
 /// <summary>Creates the per-worker databases (master + each dedicated agent connection) before the
-/// JobMaster host containers start. Mirrors <c>Tests/JobMaster.ScenarioTests/Runner/RavenDbDatabaseProvisioner.cs</c>.</summary>
+/// JobMaster host containers start. Mirrors <c>tests/JobMaster.ScenarioTests/Runner/RavenDbDatabaseProvisioner.cs</c>.</summary>
 public static class RavenDbDatabaseProvisioner
 {
     public static async Task CreateDatabasesIfNotExistsAsync(string ravenDbUrl, IEnumerable<string> databaseNames, CancellationToken ct = default)

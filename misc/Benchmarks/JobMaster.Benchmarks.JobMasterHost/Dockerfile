@@ -10,13 +10,13 @@ ARG USE_PROJECT_REFS=false
 WORKDIR /src
 COPY ["misc/Benchmarks/JobMaster.Benchmarks.JobMasterHost/JobMaster.Benchmarks.JobMasterHost.csproj", "misc/Benchmarks/JobMaster.Benchmarks.JobMasterHost/"]
 COPY ["misc/Benchmarks/JobMaster.Benchmarks.Common/JobMaster.Benchmarks.Common.csproj", "misc/Benchmarks/JobMaster.Benchmarks.Common/"]
-COPY ["JobMaster/JobMaster.csproj", "JobMaster/"]
-COPY ["Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "Providers/JobMaster.SqlBase/"]
-COPY ["Providers/JobMaster.Postgres/JobMaster.Postgres.csproj", "Providers/JobMaster.Postgres/"]
-COPY ["Providers/JobMaster.MySql/JobMaster.MySql.csproj", "Providers/JobMaster.MySql/"]
-COPY ["Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "Providers/JobMaster.SqlServer/"]
-COPY ["Providers/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj", "Providers/JobMaster.NatsJetStream/"]
-COPY ["Providers/JobMaster.RavenDb/JobMaster.RavenDb.csproj", "Providers/JobMaster.RavenDb/"]
+COPY ["src/JobMaster/JobMaster.csproj", "src/JobMaster/"]
+COPY ["src/Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj", "src/Providers/JobMaster.SqlBase/"]
+COPY ["src/Providers/JobMaster.Postgres/JobMaster.Postgres.csproj", "src/Providers/JobMaster.Postgres/"]
+COPY ["src/Providers/JobMaster.MySql/JobMaster.MySql.csproj", "src/Providers/JobMaster.MySql/"]
+COPY ["src/Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj", "src/Providers/JobMaster.SqlServer/"]
+COPY ["src/Providers/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj", "src/Providers/JobMaster.NatsJetStream/"]
+COPY ["src/Providers/JobMaster.RavenDb/JobMaster.RavenDb.csproj", "src/Providers/JobMaster.RavenDb/"]
 COPY ["Directory.Build.props", "Directory.Packages.props", "./"]
 RUN dotnet restore "misc/Benchmarks/JobMaster.Benchmarks.JobMasterHost/JobMaster.Benchmarks.JobMasterHost.csproj" -p:UseProjectRefs=$USE_PROJECT_REFS
 COPY . .

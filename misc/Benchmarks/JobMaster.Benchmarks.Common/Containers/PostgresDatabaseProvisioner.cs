@@ -5,7 +5,7 @@ namespace JobMaster.Benchmarks.Common.Containers;
 /// <summary>Creates the per-worker databases (master + each dedicated agent connection) before the
 /// JobMaster host containers start -- Postgres requires the database to already exist, unlike
 /// JobMaster's own schema-per-database auto-migration which happens inside the app on startup.
-/// Mirrors <c>Tests/JobMaster.ScenarioTests/Runner/PostgresDatabaseProvisioner.cs</c>.</summary>
+/// Mirrors <c>tests/JobMaster.ScenarioTests/Runner/PostgresDatabaseProvisioner.cs</c>.</summary>
 public static class PostgresDatabaseProvisioner
 {
     private const string DuplicateDatabaseSqlState = "42P04";

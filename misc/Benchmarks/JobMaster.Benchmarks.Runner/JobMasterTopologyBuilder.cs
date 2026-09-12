@@ -284,7 +284,7 @@ public static class JobMasterTopologyBuilder
         $"nats://{BenchmarkContainerEnvironment.NatsUsername}:{BenchmarkContainerEnvironment.NatsPassword}@{BenchmarkContainerEnvironment.NatsNetworkAlias}:{BenchmarkContainerEnvironment.NatsPort}";
 
     // Flags (Max Pool Size, UseAffectedRows/AllowUserVariables) match exactly what
-    // Tests/JobMaster.ScenarioTests' SqlServerPure/MySqlPure JSON templates already use -- JobMaster's
+    // tests/JobMaster.ScenarioTests' SqlServerPure/MySqlPure JSON templates already use -- JobMaster's
     // MySql provider specifically depends on UseAffectedRows/AllowUserVariables for its bulk
     // upsert logic.
     private static string BuildConnectionString(DbEngine dbEngine, string databaseName) => dbEngine switch

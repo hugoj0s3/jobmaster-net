@@ -21,13 +21,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run ApiAuths + BasicExecution
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~ApiAuths|FullyQualifiedName~BasicExecution" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~ApiAuths|FullyQualifiedName~BasicExecution" --logger "console;verbosity=normal"
 
   scenario-test:
     name: ${{ matrix.scenario }}
@@ -55,16 +55,16 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run ${{ matrix.scenario }}
         # Scoped to the ScheduleTest namespace specifically -- RecurringScheduleTest has classes
         # with the same simple names (e.g. "PostgresPure"), so an unscoped "~PostgresPure" filter
         # would match both and run them together in this job.
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   recurring-scenario-test:
     name: Recurring ${{ matrix.scenario }}
@@ -92,13 +92,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Recurring ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.RecurringScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.RecurringScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   archived-mode-test:
     name: Archived ${{ matrix.scenario }}
@@ -122,13 +122,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Archived ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ArchivedModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ArchivedModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   migrating-mode-test:
     name: Migrating ${{ matrix.scenario }}
@@ -150,13 +150,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Migrating ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.MigratingModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.MigratingModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   standalone-to-distributed-test:
     name: Standalone-to-Distributed ${{ matrix.scenario }}
@@ -178,13 +178,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Standalone-to-Distributed ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.StandaloneToDistributedTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.StandaloneToDistributedTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   fallback-bucket-test:
     name: Fallback Bucket ${{ matrix.scenario }}
@@ -208,13 +208,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Fallback Bucket ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.FallbackBucketTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.FallbackBucketTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   drain-mode-test:
     name: Drain Mode ${{ matrix.scenario }}
@@ -238,13 +238,13 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
 
       - name: Run Drain Mode ${{ matrix.scenario }}
-        run: dotnet test Tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.DrainModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.DrainModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
 
   all-scenarios-passed:
     name: All Scenario Tests Passed

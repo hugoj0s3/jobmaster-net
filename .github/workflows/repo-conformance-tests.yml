@@ -28,10 +28,10 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore Tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj
+        run: dotnet restore tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj
 
       - name: Build
-        run: dotnet build Tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-restore --configuration Release
 
       - name: Run conformance tests
-        run: dotnet test Tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-build --configuration Release --logger "console;verbosity=normal"
+        run: dotnet test tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-build --configuration Release --logger "console;verbosity=normal"

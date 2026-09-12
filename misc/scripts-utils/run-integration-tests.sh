@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT="Tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj"
+PROJECT="tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj"
 
 # RepoConformance runs against master DBs only (no NATS, no Mixed)
 MASTER_DBS=(Postgres MySql SqlServer)

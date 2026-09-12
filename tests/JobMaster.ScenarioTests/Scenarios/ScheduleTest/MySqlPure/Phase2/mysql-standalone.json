@@ -1,0 +1,18 @@
+{
+  "containerName": "mysql-standalone",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mysql-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mysql-standalone",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "MySql",
+      "ConnectionString": "Server={{MySqlHost}};Port={{MySqlPort}};Database=MySqlStandalone;User ID={{MySqlUsername}};Password={{MySqlPassword}};UseAffectedRows=True;AllowUserVariables=True",
+      "DataRetentionTtl": "00:10:00",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

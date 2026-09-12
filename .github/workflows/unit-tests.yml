@@ -26,4 +26,4 @@ jobs:
         run: dotnet build JobMaster.sln --no-restore --configuration Release
 
       - name: Test
-        run: dotnet test Tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj --no-build --configuration Release --verbosity normal
+        run: dotnet test tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj --no-build --configuration Release --verbosity normal

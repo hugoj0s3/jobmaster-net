@@ -18,15 +18,15 @@ $nugetCache = "$env:USERPROFILE\.nuget\packages"
     if (Test-Path $p) { Remove-Item -Recurse -Force $p }
 }
 
-dotnet pack JobMaster/JobMaster.csproj                                   -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack JobMaster.Api/JobMaster.Api.csproj                           -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack JobMaster.Dashboard/JobMaster.Dashboard.csproj               -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj      -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.Postgres/JobMaster.Postgres.csproj    -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.MySql/JobMaster.MySql.csproj          -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj  -c Release -p:UseProjectRefs=false -o $OutputDir
-dotnet pack Providers/JobMaster.RavenDb/JobMaster.RavenDb.csproj      -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/JobMaster/JobMaster.csproj                                   -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/JobMaster.Api/JobMaster.Api.csproj                           -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/JobMaster.Dashboard/JobMaster.Dashboard.csproj               -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.SqlBase/JobMaster.SqlBase.csproj      -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.Postgres/JobMaster.Postgres.csproj    -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.MySql/JobMaster.MySql.csproj          -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.SqlServer/JobMaster.SqlServer.csproj  -c Release -p:UseProjectRefs=false -o $OutputDir
+dotnet pack src/Providers/JobMaster.RavenDb/JobMaster.RavenDb.csproj      -c Release -p:UseProjectRefs=false -o $OutputDir
 
 Write-Host ""
 Write-Host "Packages generated in $OutputDir`:"

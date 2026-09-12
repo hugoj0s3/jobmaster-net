@@ -5,7 +5,7 @@
 .claude/
 
 # Dashboard local dev config (contains environment-specific URLs)
-dashboard/static/jobmaster-config.json
+src/dashboard/static/jobmaster-config.json
 
 # Benchmark run output (throughput/latency/resource reports, per-run, not source)
 misc/Benchmarks/Results/
