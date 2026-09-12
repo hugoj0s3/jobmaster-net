@@ -53,4 +53,13 @@ public interface IJobMasterDashboardOAuthSelector
     /// precedence over <see cref="WithStorage"/>.
     /// </summary>
     IJobMasterDashboardOAuthSelector UseCustomStorage<T>() where T : class, IJobMasterOAuthFlowStateStorage;
+
+    /// <summary>
+    /// Sets the label shown for the merged OAuth tab in the dashboard's login screen (every
+    /// configured provider is grouped under one tab, rather than one tab per provider). Defaults
+    /// to "OAuth" if never called. Named distinctly from <c>WithDisplayName</c> (used per-provider,
+    /// on the selector <see cref="AddOAuthProvider(string,string,string,string,string)"/> returns)
+    /// to avoid the two colliding on a single selector.
+    /// </summary>
+    IJobMasterDashboardOAuthSelector WithTabLabel(string label);
 }

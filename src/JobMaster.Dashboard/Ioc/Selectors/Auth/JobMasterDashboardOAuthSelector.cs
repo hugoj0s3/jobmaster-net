@@ -67,4 +67,10 @@ internal class JobMasterDashboardOAuthSelector : IJobMasterDashboardOAuthSelecto
         config.CustomFlowStateStorageType = typeof(T);
         return this;
     }
+
+    public IJobMasterDashboardOAuthSelector WithTabLabel(string label)
+    {
+        config.DisplayName = label;
+        return this;
+    }
 }

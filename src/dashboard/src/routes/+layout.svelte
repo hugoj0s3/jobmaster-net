@@ -26,6 +26,7 @@
     let isLoggedIn = $state(false);
     let currentCluster = $state<any>(null);
     let currentTheme = $state<any>(null);
+    let signedInAs = $state<string | null>(null);
 
     onMount(async () => {
         config = await JobMasterConfigUtil.loadConfig();
@@ -34,15 +35,18 @@
         const credentials = await AuthRetentionUtil.getCredentials();
         if (!credentials) {
             isLoggedIn = false;
+            signedInAs = null;
             return;
         }
 
         const isValidCredentials = await ApiClientUtil.ValidateCredentials(credentials, fetch);
         if (!isValidCredentials) {
             isLoggedIn = false;
+            signedInAs = null;
             return;
         }
 
+        signedInAs = credentials.displayName ?? null;
         isLoggedIn = true;
     });
 
@@ -275,6 +279,7 @@
     async function logout() {
         AuthRetentionUtil.clear();
         isLoggedIn = false;
+        signedInAs = null;
     }
 </script>
 
@@ -287,7 +292,7 @@
     </div>
 
 {:else if !isLoggedIn}
-    <Login auth={config.auth} onLogin={() => (isLoggedIn = true)}/>
+    <Login auth={config.auth} onLogin={(displayName: string | null) => { isLoggedIn = true; signedInAs = displayName; }}/>
 
 {:else}
     {#if currentCluster}
@@ -295,12 +300,22 @@
             <Sidebar/>
 
             <div class="flex-1 flex flex-col min-w-0">
-                <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center px-4 shrink-0">
+                <header class="h-14 border-b border-base-300 bg-base-100 flex items-center justify-center gap-3 px-4 shrink-0">
                     <div class="dropdown dropdown-center">
                         <button
                                 tabindex="0"
                                 class="btn btn-ghost btn-sm h-10 px-3 flex items-center gap-2.5 border border-base-300 bg-base-100 hover:bg-base-200"
                         >
+                            {#if signedInAs}
+                                <div class="flex items-center gap-1.5">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3.5 w-3.5 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                    <span class="text-[12px] font-bold truncate max-w-[140px]">{signedInAs}</span>
+                                </div>
+                                <div class="h-6 w-px bg-base-300"></div>
+                            {/if}
+
                             <!-- Cluster info -->
                             <div class="flex flex-col items-start leading-tight gap-0.5">
                                 <span class="text-[12px] font-bold text-base-content">{currentCluster?.id}</span>
@@ -320,8 +335,14 @@
                                 tabindex="0"
                                 class="dropdown-content menu flex-nowrap p-2 shadow-2xl bg-base-200 rounded-box w-[28rem] mt-2 border border-base-300 z-[100] space-y-2 max-h-[32rem] overflow-y-auto"
                         >
-                            <li class="menu-title flex flex-row items-center justify-between pr-2 text-[12px] font-black">
-                                <span class="opacity-40">Cluster</span>
+                            <li class="px-2 pt-1 pb-0.5 flex flex-row items-center justify-between pr-2 text-[11px] text-base-content/50">
+                                {#if signedInAs}
+                                    <span class="truncate">
+                                        Signed in as <span class="font-semibold text-base-content/70">{signedInAs}</span>
+                                    </span>
+                                {:else}
+                                    <span></span>
+                                {/if}
                                 <button
                                         class="btn btn-ghost btn-xs text-error hover:bg-error/10 font-bold text-[11px] h-6 min-h-6 px-2"
                                         onclick={logout}
@@ -329,6 +350,7 @@
                                     Logout
                                 </button>
                             </li>
+                            <li class="menu-title text-[12px] font-black opacity-40">Cluster</li>
                             <div class="grid grid-cols-2 gap-1 p-2">
                                 {#each config.clusters as cluster}
                                     <li>

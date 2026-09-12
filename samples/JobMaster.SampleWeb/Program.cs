@@ -175,6 +175,10 @@ builder.Services.UseJobMasterApi(o =>
     selector.RegisterDefaultJwtBearerAuthProvider(jwtTvp);
 });
 
+// GitHub's Octicon mark, inlined as a data URI so the login button's icon doesn't depend on an
+// external asset/CDN being reachable.
+const string GitHubIconDataUri = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxNiAxNiI+PHBhdGggZmlsbD0iI2ZmZmZmZiIgZD0iTTggMEMzLjU4IDAgMCAzLjU4IDAgOGMwIDMuNTQgMi4yOSA2LjUzIDUuNDcgNy41OS40LjA3LjU1LS4xNy41NS0uMzggMC0uMTktLjAxLS44Mi0uMDEtMS40OS0yLjAxLjM3LTIuNTMtLjQ5LTIuNjktLjk0LS4wOS0uMjMtLjQ4LS45NC0uODItMS4xMy0uMjgtLjE1LS42OC0uNTItLjAxLS41My42My0uMDEgMS4wOC41OCAxLjIzLjgyLjcyIDEuMjEgMS44Ny44NyAyLjMzLjY2LjA3LS41Mi4yOC0uODcuNTEtMS4wNy0xLjc4LS4yLTMuNjQtLjg5LTMuNjQtMy45NSAwLS44Ny4zMS0xLjU5LjgyLTIuMTUtLjA4LS4yLS4zNi0xLjAyLjA4LTIuMTIgMCAwIC42Ny0uMjEgMi4yLjgyLjY0LS4xOCAxLjMyLS4yNyAyLS4yNy42OCAwIDEuMzYuMDkgMiAuMjcgMS41My0xLjA0IDIuMi0uODIgMi4yLS44Mi40NCAxLjEuMTYgMS45Mi4wOCAyLjEyLjUxLjU2LjgyIDEuMjcuODIgMi4xNSAwIDMuMDctMS44NyAzLjc1LTMuNjUgMy45NS4yOS4yNS41NC43My41NCAxLjQ4IDAgMS4wNy0uMDEgMS45My0uMDEgMi4yIDAgLjIxLjE1LjQ2LjU1LjM4QTguMDEzIDguMDEzIDAgMDAxNiA4YzAtNC40Mi0zLjU4LTgtOC04eiIvPjwvc3ZnPg==";
+
 builder.Services.AddJobMasterDashboard(dashboard =>
 {
     dashboard.UseBasePath("/jm-dashboard");
@@ -239,9 +243,49 @@ builder.Services.AddJobMasterDashboard(dashboard =>
         .AddField("password", "Password", DashboardJwtFormFieldType.Password);
 
     dashboard.ConfigOAuth()
-        .AddOAuthProvider("mock", "Sign in with Mock IdP", "/mock-idp/authorize", "/mock-idp/token", "dev-client")
-            .WithScopes("openid", "profile")
-        .WithTokenIssuer(identity => Task.FromResult(GenerateDummyJwt(identity.Subject, jwtTvp)));
+        .AddOAuthProvider("mock-red", "Sign in with Mock Red", "/mock-idp/mock-red/authorize", "/mock-idp/mock-red/token", "dev-client",
+                backgroundColor: "#ef4444", foregroundColor: "#ffffff")
+            .WithScopes("openid", "profile", "email")
+        .AddOAuthProvider("mock-green", "Sign in with Mock Green", "/mock-idp/mock-green/authorize", "/mock-idp/mock-green/token", "dev-client",
+                backgroundColor: "#22c55e", foregroundColor: "#ffffff")
+            .WithScopes("openid", "profile", "email")
+        .AddOAuthProvider("mock-blue", "Sign in with Mock Blue", "/mock-idp/mock-blue/authorize", "/mock-idp/mock-blue/token", "dev-client",
+                backgroundColor: "#3b82f6", foregroundColor: "#ffffff")
+            .WithScopes("openid", "profile", "email")
+        .AddOAuthProvider("mock-denied", "Sign in with Mock Denied (always fails)", "/mock-idp/mock-denied/authorize", "/mock-idp/mock-denied/token", "dev-client",
+                backgroundColor: "#111827", foregroundColor: "#f87171")
+            .WithScopes("openid", "profile", "email")
+        .WithTokenIssuer(identity =>
+        {
+            // Lets you exercise the rejection path (thrown from a token issuer surfaces as a
+            // 403 with this message shown directly in the Login UI) without needing a real
+            // business rule wired up.
+            if (identity.ProviderKey == "mock-denied")
+                throw new UnauthorizedAccessException("This mock provider always denies login (for testing the rejection flow).");
+
+            return Task.FromResult(GenerateDummyJwt(identity.Subject, jwtTvp));
+        })
+        .WithTabLabel("Sign in with SSO");
+
+    // Real, non-OIDC provider — exercises the UserInfoUrl fallback path (GitHub's OAuth
+    // returns no id_token, unlike the mock providers above). Only added when a real GitHub
+    // OAuth App's credentials are configured via user-secrets, so the sample still runs fine
+    // without them.
+    var githubClientId = builder.Configuration["GITHUB_CLIENT_ID"];
+    var githubClientSecret = builder.Configuration["GITHUB_CLIENT_SECRET"];
+    if (!string.IsNullOrEmpty(githubClientId) && !string.IsNullOrEmpty(githubClientSecret))
+    {
+        dashboard.ConfigOAuth()
+            .AddOAuthProvider("github", "Sign in with GitHub",
+                    "https://github.com/login/oauth/authorize",
+                    "https://github.com/login/oauth/access_token",
+                    githubClientId,
+                    clientSecret: githubClientSecret,
+                    scopes: new[] { "read:user" },
+                    userInfoUrl: "https://api.github.com/user",
+                    icon: GitHubIconDataUri,
+                    backgroundColor: "#24292f", foregroundColor: "#ffffff");
+    }
 
     dashboard.ConfigureAuthRetention()
         .SetAuthRetentionType(DashboardAuthRetentionType.ServerSideInMemory);
@@ -305,17 +349,20 @@ app.MapPost("/jm-api/auth/token", async (HttpRequest req) =>
 .WithTags("Auth")
 .WithSummary("Dummy token endpoint for dashboard login testing");
 
-// Throwaway mock OAuth provider, just for exercising the dashboard's OAuth login flow end-to-end
-// in dev without a real IdP. Not PKCE/state-verified server-side — it's a mock, not a real one.
-app.MapGet("/mock-idp/authorize", (HttpRequest req) =>
+// Throwaway mock OAuth provider(s), just for exercising the dashboard's OAuth login flow
+// end-to-end in dev without a real IdP. Not PKCE/state-verified server-side — it's a mock, not a
+// real one. One shared route per step, parameterized by {key} so each configured mock provider
+// (mock-red/mock-green/mock-blue/mock-denied) gets its own simulated identity without duplicating
+// endpoints.
+app.MapGet("/mock-idp/{key}/authorize", (string key, HttpRequest req) =>
 {
     var redirectUri = req.Query["redirect_uri"].ToString();
     var state = req.Query["state"].ToString();
     var approveUrl = $"{redirectUri}?code=mock-code&state={Uri.EscapeDataString(state)}";
     var html = $"""
         <html><body style="font-family:sans-serif;text-align:center;margin-top:100px">
-        <h2>Mock IdP</h2>
-        <p>Approve login as <b>mockuser</b>?</p>
+        <h2>Mock IdP — {key}</h2>
+        <p>Approve login as <b>{key}-user</b> ({key}@example.com)?</p>
         <a href="{approveUrl}" style="padding:10px 20px;background:#333;color:#fff;text-decoration:none;border-radius:6px">Approve</a>
         </body></html>
         """;
@@ -325,10 +372,10 @@ app.MapGet("/mock-idp/authorize", (HttpRequest req) =>
 .WithTags("Auth")
 .WithSummary("Mock OAuth authorize endpoint for dashboard OAuth testing");
 
-app.MapPost("/mock-idp/token", () =>
+app.MapPost("/mock-idp/{key}/token", (string key) =>
 {
-    var idToken = GenerateDummyJwt("mockuser", jwtTvp);
-    return Results.Ok(new { access_token = "mock-access-token", id_token = idToken, token_type = "bearer" });
+    var idToken = GenerateMockIdToken(key, jwtTvp);
+    return Results.Ok(new { access_token = $"mock-access-token-{key}", id_token = idToken, token_type = "bearer" });
 })
 .WithOpenApi()
 .WithTags("Auth")
@@ -369,18 +416,6 @@ app.MapDelete("/cancel-recurring-schedule-job", (Guid id, IJobMasterScheduler jo
 {
     jobScheduler.CancelRecurring(id);
 }).WithOpenApi();
-//
-// app.MapPost("/stop-immediately", async (IJob) =>
-// {
-//     if (JobMasterRuntime.Instance != null)
-//     {
-//         await JobMasterRuntime.Instance.StopImmediatelyAsync();
-//     }
-//     
-//     return "Stop initiated";
-// }).WithOpenApi();
-
-
 
 app.Run();
 
@@ -396,46 +431,20 @@ static string GenerateDummyJwt(string username, TokenValidationParameters tvp)
     return handler.WriteToken(handler.CreateToken(descriptor));
 }
 
-
-
-// namespace JobMaster.SampleWeb
-// {
-//     public class HelloJobHandler : IJobMasterHandler
-//     {
-//         public HelloJobHandler()
-//         {
-//         }
-//     
-//         public Task HandleAsync(Job job)
-//         {
-//             var name = job.Data.GetStringValue("Name") ?? string.Empty;
-//             SayHello(name);
-//
-//             RedisJobs.AddJobExecutedId(job.Id);
-//             RedisJobs.RemoveScheduledJobId(job.Id);
-//         
-//             return Task.CompletedTask;
-//         }
-//
-//         public static void SayHello(string name)
-//         {
-//             Console.WriteLine($"Hello {name}");
-//         }
-//     }
-//
-//
-//
-//     public class HelloJobLongRunHandler : IJobMasterHandler
-//     {
-//         public async Task HandleAsync(Job job)
-//         {
-//             for (var i = 0; i < 100; i++)
-//             {
-//                 await Task.Delay(i * 100);
-//             }
-//         
-//             var name = job.Data.GetStringValue("Name");
-//             Console.WriteLine($"Hello {name}");
-//         }
-//     }
-// }
+// Simulated OIDC id_token for the mock IdP — carries an email claim (unlike GenerateDummyJwt)
+// so mock OAuth logins can exercise email-based logic (e.g. a domain check in WithTokenIssuer).
+static string GenerateMockIdToken(string key, TokenValidationParameters tvp)
+{
+    var handler = new JwtSecurityTokenHandler();
+    var descriptor = new SecurityTokenDescriptor
+    {
+        Subject = new ClaimsIdentity([
+            new Claim("sub", $"{key}-user"),
+            new Claim("email", $"{key}@example.com"),
+            new Claim("name", $"Mock {key}")
+        ]),
+        Expires = DateTime.UtcNow.AddMinutes(10),
+        SigningCredentials = new SigningCredentials(tvp.IssuerSigningKey, SecurityAlgorithms.HmacSha256)
+    };
+    return handler.WriteToken(handler.CreateToken(descriptor));
+}

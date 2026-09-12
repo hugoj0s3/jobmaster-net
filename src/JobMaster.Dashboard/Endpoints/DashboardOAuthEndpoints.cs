@@ -95,6 +95,8 @@ internal static class DashboardOAuthEndpoints
 
             using var client = httpClientFactory.CreateClient();
             client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            // Some providers' APIs (e.g. GitHub's) reject any request with no User-Agent header.
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("JobMaster.Dashboard");
 
             using var tokenRes = await client.PostAsync(ResolveUrl(ctx, provider.TokenUrl), new FormUrlEncodedContent(form), ct);
             if (!tokenRes.IsSuccessStatusCode) return Results.BadRequest(new { error = "token_exchange_failed" });
@@ -123,7 +125,20 @@ internal static class DashboardOAuthEndpoints
                 return Results.BadRequest(new { error = "cannot_establish_identity" });
             }
 
-            var token = await oauthConfig.TokenIssuer!(identity);
+            identity.HttpContext = ctx;
+
+            string token;
+            try
+            {
+                token = await oauthConfig.TokenIssuer!(identity);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                // The token issuer rejected this login for a reason meant to be shown to the
+                // user (e.g. a domain blacklist) — anything else propagates as an unhandled
+                // exception instead, so an unexpected bug doesn't leak its message to the browser.
+                return Results.Json(new { error = ex.Message }, statusCode: StatusCodes.Status403Forbidden);
+            }
 
             if (oauthConfig.OnLoginSucceeded is not null)
             {
@@ -187,7 +202,13 @@ internal static class DashboardOAuthEndpoints
 
         claims["provider"] = providerKey;
         var sub = claims.GetValueOrDefault("sub") ?? "unknown";
-        return new OAuthUserIdentity { Subject = $"{providerKey}:{sub}", Claims = claims };
+        return new OAuthUserIdentity
+        {
+            Subject = $"{providerKey}:{sub}",
+            ProviderKey = providerKey,
+            ProviderUserId = sub,
+            Claims = claims
+        };
     }
 
     private static OAuthUserIdentity IdentityFromUserInfo(JsonElement userInfo, string providerKey)
@@ -202,7 +223,13 @@ internal static class DashboardOAuthEndpoints
         claims["provider"] = providerKey;
         var id = claims.GetValueOrDefault("id") ?? claims.GetValueOrDefault("sub")
             ?? claims.GetValueOrDefault("login") ?? claims.GetValueOrDefault("email") ?? "unknown";
-        return new OAuthUserIdentity { Subject = $"{providerKey}:{id}", Claims = claims };
+        return new OAuthUserIdentity
+        {
+            Subject = $"{providerKey}:{id}",
+            ProviderKey = providerKey,
+            ProviderUserId = id,
+            Claims = claims
+        };
     }
 
     private static string? ScalarToString(JsonElement value) => value.ValueKind switch
@@ -212,6 +239,7 @@ internal static class DashboardOAuthEndpoints
         JsonValueKind.True or JsonValueKind.False => value.ToString(),
         _ => null
     };
+
 }
 
 internal sealed class OAuthConfirmRequest

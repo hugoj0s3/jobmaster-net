@@ -22,6 +22,23 @@ export class ApiClientUtil {
 		return !response.error && response.response.ok;
 	}
 
+	// Best-effort only: an older JobMaster.Api without this endpoint (404), or any other
+	// failure, must never block login over a purely cosmetic display name.
+	static async GetWhoAmI(credentials: Credentials, fetchFn: typeof fetch, clusterId?: string): Promise<string | undefined> {
+		try {
+			await JobMasterConfigUtil.loadConfig();
+			const apiUrl = JobMasterConfigUtil.getClusterApiUrl(clusterId);
+			const apiClient = ApiClientUtil.CreateApiClient(apiUrl, fetchFn, credentials);
+
+			const response = await apiClient.GET("/whoami");
+			if (response.error || !response.response.ok) return undefined;
+
+			return response.data?.subject ?? undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
 	private static async buildAuthHeaders(credentials?: Credentials): Promise<Record<string, string>> {
 		credentials ??= await AuthRetentionUtil.getCredentials() ?? undefined;
 		if (!credentials) {

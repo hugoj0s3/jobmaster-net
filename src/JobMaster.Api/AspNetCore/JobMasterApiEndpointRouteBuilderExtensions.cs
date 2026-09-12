@@ -17,6 +17,12 @@ namespace JobMaster.Api.AspNetCore;
 
 internal static class JobMasterApiEndpointRouteBuilderExtensions
 {
+    private const string ResolvedIdentityItemKey = "JobMaster.ResolvedIdentity";
+
+    /// <summary>Retrieves the identity already resolved by <see cref="MapJobMasterApi"/>'s endpoint filter for this request.</summary>
+    internal static JobMasterApiIdentity? GetResolvedIdentity(HttpContext httpContext) =>
+        httpContext.Items.TryGetValue(ResolvedIdentityItemKey, out var value) ? value as JobMasterApiIdentity : null;
+
     public static IEndpointRouteBuilder MapJobMasterApi(this IEndpointRouteBuilder endpoints)
     {
         var group = endpoints.GetJobMasterEndpointGroup();
@@ -30,6 +36,7 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
                 var authProvider = context.HttpContext.RequestServices
                     .GetRequiredService<IJobMasterAuthorizationProvider>();
                 var identity = await identityProvider.GetIdentityAsync(context.HttpContext);
+                context.HttpContext.Items[ResolvedIdentityItemKey] = identity;
 
                 var opt = context.HttpContext.RequestServices.GetRequiredService<IOptions<JobMasterApiOptions>>().Value;
                 if (options.EnableLogging)
@@ -50,6 +57,7 @@ internal static class JobMasterApiEndpointRouteBuilderExtensions
                 return await next(context);
             });
         
+        group.MapWhoAmIEndpoints();
         group.MapBucketsEndpoints();
         group.MapClustersEndpoints();
         group.MapWorkersEndpoints();

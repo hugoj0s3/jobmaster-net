@@ -2,7 +2,7 @@
     import { onMount } from "svelte";
     import { AuthRetentionUtil } from "$lib/api/auth-retention-util";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
-    import type { Credentials } from "$lib/api/credentials";
+    import { decodeJwtSubject, type Credentials } from "$lib/api/credentials";
 
     let error = $state<string | null>(null);
 
@@ -39,7 +39,7 @@
             const { token } = await res.json();
             if (!token) throw new Error("No token returned");
 
-            const credentials: Credentials = { type: "OAUTH", secretValue: token };
+            const credentials: Credentials = { type: "OAUTH", secretValue: token, displayName: decodeJwtSubject(token) };
             await AuthRetentionUtil.storeCredentials(credentials);
 
             window.location.href = JobMasterConfigUtil.resolveHref("/");

@@ -678,6 +678,7 @@ export interface paths {
                     Level?: components["schemas"]["ApiJobMasterLogLevel"];
                     Category?: components["schemas"]["ApiJobMasterLogCategory"];
                     ReferenceId?: string;
+                    ReferenceGuid?: string;
                     FromTimestamp?: string;
                     ToTimestamp?: string;
                     Keyword?: string;
@@ -762,6 +763,7 @@ export interface paths {
                     Level?: components["schemas"]["ApiJobMasterLogLevel"];
                     Category?: components["schemas"]["ApiJobMasterLogCategory"];
                     ReferenceId?: string;
+                    ReferenceGuid?: string;
                     FromTimestamp?: string;
                     ToTimestamp?: string;
                     Keyword?: string;
@@ -939,6 +941,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/whoami": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description OK */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ApiWhoAmIModel"];
+                    };
+                };
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/{clusterId}/workers": {
         parameters: {
             query?: never;
@@ -950,6 +987,7 @@ export interface paths {
             parameters: {
                 query?: {
                     AgentConnectionId?: string;
+                    HostId?: string;
                     WorkerLane?: string;
                     Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
@@ -995,6 +1033,7 @@ export interface paths {
             parameters: {
                 query?: {
                     AgentConnectionId?: string;
+                    HostId?: string;
                     WorkerLane?: string;
                     Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
@@ -1192,6 +1231,7 @@ export interface components {
             triggerSourceType?: components["schemas"]["JobMasterTriggerSourceType"];
             bucketId?: string | null;
             agentConnectionId?: string | null;
+            agentConnectionName?: string | null;
             agentWorkerId?: string | null;
             hostId?: string | null;
             hostDisplayName?: string | null;
@@ -1279,6 +1319,10 @@ export interface components {
             workerLane?: string | null;
             isStaticIdle?: boolean;
         };
+        ApiWhoAmIModel: {
+            subject?: string | null;
+            authenticationType?: components["schemas"]["JobMasterApiAuthenticationType"];
+        };
         /**
          * Format: int32
          * @enum {integer}
@@ -1289,6 +1333,11 @@ export interface components {
          * @enum {integer}
          */
         BucketType: 1 | 2;
+        /**
+         * Format: int32
+         * @enum {integer}
+         */
+        JobMasterApiAuthenticationType: 0 | 1 | 2 | 3;
         /**
          * Format: int32
          * @enum {integer}

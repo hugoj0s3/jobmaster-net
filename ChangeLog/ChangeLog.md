@@ -6,6 +6,12 @@
 
 ---
 
+## JobMaster 0.0.11-alpha.2
+
+### Added
+
+- **`GET {basePath}/whoami`** (`JobMaster.Api`) — Returns the authenticated caller's identity (`{ subject, authenticationType }`) as already resolved by whichever authentication provider is configured (API key, username/password, or JWT bearer). Mainly useful for a client that only holds a secret (e.g. an API key) and needs to know who that secret actually resolves to — `JobMaster.Dashboard`'s login screen uses it to show the API key's owner name after signing in. No other changes in this version; core JobMaster/Postgres/MySql/SqlServer/RavenDb/NatsJetStream packages are unaffected and remain at their previously published versions.
+
 ## JobMaster 0.0.11-alpha
 
 ### Added
@@ -35,6 +41,36 @@
 - **A transient SQL deadlock while acquiring jobs no longer surfaces as an error** — Acquiring jobs to dispatch could hit a database deadlock under concurrent load; this previously retried a few times before giving up and throwing. A deadlock here means the transaction was rolled back before claiming anything, which is functionally the same as a poll that simply found nothing ready to claim — it's now treated that way (no jobs acquired this tick, tried again on the next one) instead of propagating as an exception.
 
 - **Archiving a job silently discarded its execution history and error logs** — `DeleteOldFinalJobsRunner` already archived a finalized job's own row to the target `Archived` cluster before deleting it locally, but never copied that job's `JobExecution` records (one per attempt, carrying start time, outcome, and any error message) or its `JobExecution`-category log entries, so both were permanently lost the moment a job was archived. Both now travel with the job to the archive cluster. This also closes an independent race, when archiving is configured: `DeleteOldLogsRunner`'s own blanket log purge could delete a `JobExecution`-category log before it was ever archived — that category's cleanup is now owned solely by the archiving/purge runner in that case, so the two can no longer race each other (with no archive target configured, `DeleteOldLogsRunner` still purges `JobExecution` logs like any other category, since there's nothing to protect). Cluster migration (`MigrateJobsRunner`) was updated the same way, so a migrated job's execution history and logs are no longer dropped either.
+
+## JobMaster.Dashboard 0.0.4-alpha
+
+### Added
+
+- **OAuth/SSO login** — `dashboard.ConfigOAuth()` configures one or more OAuth/OIDC providers (e.g. "Sign in with GitHub") as a real Authorization Code + PKCE browser-redirect flow, alongside the existing API Key/Username-Password/JWT login types:
+  ```csharp
+  dashboard.ConfigOAuth()
+      .AddOAuthProvider("github", "Sign in with GitHub",
+              "https://github.com/login/oauth/authorize",
+              "https://github.com/login/oauth/access_token", "<client-id>")
+          .WithClientSecret("<client-secret>")
+          .WithScopes("read:user")
+          .WithUserInfoUrl("https://api.github.com/user")
+          .WithIcon(githubIconDataUri)
+          .WithBackgroundColor("#24292f")
+          .WithForegroundColor("#ffffff")
+      .WithTokenIssuer(identity => Task.FromResult(jwtProvider.GenerateToken(identity.Subject)))
+      .WithTabLabel("Sign in with SSO");
+  ```
+  The dashboard's own backend acts as the OAuth client and never hands the IdP's own token to the browser: it exchanges the authorization code, resolves identity (from the token response's `id_token` if present, otherwise a configured `WithUserInfoUrl` fallback for non-OIDC providers like classic GitHub OAuth Apps), and passes that identity to your `WithTokenIssuer(...)` hook, which mints the actual JobMaster JWT — typically by calling your existing `IJobMasterJwtBearerAuthProvider.GenerateToken`. **No changes to `JobMaster.Api` are required for OAuth itself** — the token-minting glue lives entirely in your own `Program.cs`. `WithClientSecret(...)` is optional (PKCE is always used regardless); every provider added under one `ConfigOAuth()` call shares the same `WithTokenIssuer`/`WithStorage`/`OnLoginSucceeded`/`WithTabLabel` settings, and all configured OAuth providers collapse into a single tab in the login screen (customizable via `WithTabLabel`) showing each as its own branded button.
+  - **Flow-state storage** — the short-lived `{ state, PKCE verifier }` record created when a login starts is stored via `WithStorage(OAuthFlowStateStorage.Cookie | InMemory | Distributed)` (defaults to `Cookie`, which needs no server-side storage at all — sealed via ASP.NET Core Data Protection) or a fully custom implementation via `UseCustomStorage<T>() where T : class, IJobMasterOAuthFlowStateStorage`.
+  - **`OnLoginSucceeded(Func<OAuthUserIdentity, Task>)`** — optional, best-effort hook for side effects after a successful OAuth login (analytics, audit logging, welcome emails); any exception it throws is swallowed rather than failing the login.
+- **`IJobMasterAuthRetentionStorage`** (renamed and promoted to `public`, was the internal `IAuthRetentionService`) — the credential-retention storage abstraction is now a supported extensibility point: `dashboard.ConfigureAuthRetention().UseCustom<T>() where T : class, IJobMasterAuthRetentionStorage` plugs in your own implementation, matching the same pattern OAuth flow-state storage uses.
+- **"Signed in as ..." shown for every login type** — the app shell now shows the current user's name (icon + name next to the cluster switcher, and inside its dropdown alongside Logout): the typed username for Username/Password logins, the API key's registered owner name for API Key logins (via the new `GET /whoami` on `JobMaster.Api`, see above — gracefully shows nothing against an older `JobMaster.Api` without that endpoint), and the `sub` claim of the held JWT for JWT and OAuth logins alike.
+
+### Changed
+
+- **`PublicAuthProviderConfig.Id` renamed to `Key`** — for consistency with `OAuthProviderConfig.Key` and the rest of the public config surface. If you consume the dashboard's static `jobmaster-config.json` directly (outside the C# host), update any reference to `auth.providers[].id`.
+- **`PublicAuthConfig.OAuthTabLabel`** — new optional field carrying the shared tab label configured via `WithTabLabel(...)` for every OAuth provider.
 
 ## JobMaster 0.0.10-alpha.2
 

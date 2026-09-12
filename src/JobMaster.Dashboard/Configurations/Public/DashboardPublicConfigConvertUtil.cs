@@ -42,7 +42,8 @@ internal static class DashboardPublicConfigConvertUtil
         return new PublicAuthConfig
         {
             Enabled = auth.Enabled,
-            Providers = auth.Providers.Where(p => !p.Disabled).SelectMany(ToPublicAuthProviders).ToList()
+            Providers = auth.Providers.Where(p => !p.Disabled).SelectMany(ToPublicAuthProviders).ToList(),
+            OAuthTabLabel = auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault()?.DisplayName
         };
     }
 

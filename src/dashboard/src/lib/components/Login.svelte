@@ -3,11 +3,22 @@
     import { AuthRetentionUtil } from "$lib/api/auth-retention-util";
     import { ApiClientUtil } from "$lib/api/api-client-util";
     import { JobMasterConfigUtil } from "$lib/api/job-master-config-util";
-    import type { Credentials } from "$lib/api/credentials";
+    import { decodeJwtSubject, type Credentials } from "$lib/api/credentials";
 
     let { auth, onLogin } = $props();
 
-    let selectedProvider = $state(auth.providers?.[0]);
+    // Every OAuth provider collapses into one "OAuth" tab showing all of them stacked together,
+    // rather than each provider getting its own tab — keeps the tab strip from growing unbounded
+    // as more providers are added, and matches the conventional social-login pattern of showing
+    // every "Sign in with X" option at once.
+    let oauthProviders = $derived((auth.providers ?? []).filter((p: any) => p.type === "OAUTH"));
+    let otherProviders = $derived((auth.providers ?? []).filter((p: any) => p.type !== "OAUTH"));
+    let tabs = $derived([
+        ...otherProviders,
+        ...(oauthProviders.length > 0 ? [{ type: "OAUTH_GROUP", displayName: auth.oAuthTabLabel ?? "OAuth", providers: oauthProviders }] : [])
+    ]);
+
+    let selectedProvider = $state(tabs[0]);
 
     let apiKey = $state("");
     let user = $state("");
@@ -25,16 +36,26 @@
         }
     }
 
-    async function storeSecretCredential(secretValue: string) {
-        if (!selectedProvider) return;
+    async function storeSecretCredential(secretValue: string): Promise<Credentials | undefined> {
+        if (!selectedProvider) return undefined;
 
         const credentials: Credentials = {
             type: selectedProvider.type,
             secretValue
         };
 
+        if (selectedProvider.type === "JWT_SIMPLE" || selectedProvider.type === "JWT_CUSTOM_FORM") {
+            credentials.displayName = decodeJwtSubject(secretValue);
+        }
+
         await validateCredentials(credentials);
+
+        if (selectedProvider.type === "API_KEY") {
+            credentials.displayName = await ApiClientUtil.GetWhoAmI(credentials, fetch);
+        }
+
         await AuthRetentionUtil.storeCredentials(credentials);
+        return credentials;
     }
 
     let isSubmitting = $state(false);
@@ -59,22 +80,26 @@
 
         AuthRetentionUtil.clear();
 
+        let loggedInCredentials: Credentials | undefined;
+
         try {
             if (selectedProvider?.type === "API_KEY") {
-                await storeSecretCredential(apiKey);
+                loggedInCredentials = await storeSecretCredential(apiKey);
 
             } else if (selectedProvider?.type === "JWT_SIMPLE") {
-                await storeSecretCredential(jwtToken);
+                loggedInCredentials = await storeSecretCredential(jwtToken);
 
             } else if (selectedProvider?.type === "USER_PASSWORD") {
                 const credentials: Credentials = {
                     type: "USER_PASSWORD",
                     userName: user,
-                    userPassword: pwd
+                    userPassword: pwd,
+                    displayName: user
                 };
 
                 await validateCredentials(credentials);
                 await AuthRetentionUtil.storeCredentials(credentials);
+                loggedInCredentials = credentials;
 
             } else if (selectedProvider?.type === "JWT_CUSTOM_FORM") {
                 const body = new URLSearchParams();
@@ -93,10 +118,14 @@
 
                 if (!token) throw new Error("No token in response");
 
-                await storeSecretCredential(token);
+                loggedInCredentials = await storeSecretCredential(token);
             }
 
-            onLogin();
+            // Explicitly pass back whatever this login used (or nothing), rather than leaving
+            // the parent's "signed in as" state at whatever it happened to be from a previous
+            // login in this same page session (e.g. a prior OAuth login) — every non-OAuth type
+            // has no displayName, so this always correctly resets it.
+            onLogin(loggedInCredentials?.displayName ?? null);
         } catch (err) {
             loginError = err instanceof Error ? err.message : "Login failed";
         } finally {
@@ -119,15 +148,15 @@
 
         <div class="divider mt-8 mb-6"></div>
 
-        {#if (auth.providers?.length ?? 0) > 1}
+        {#if tabs.length > 1}
             <div class="tabs tabs-boxed mb-6 flex">
-                {#each auth.providers as provider}
+                {#each tabs as tab}
                     <button
                         type="button"
-                        class="tab flex-1 {selectedProvider === provider ? 'tab-active' : ''}"
-                        onclick={() => { selectedProvider = provider; loginError = null; }}
+                        class="tab flex-1 {selectedProvider === tab ? 'tab-active' : ''}"
+                        onclick={() => { selectedProvider = tab; loginError = null; oauthError = null; }}
                     >
-                        {provider.displayName ?? provider.type}
+                        {tab.displayName ?? tab.type}
                     </button>
                 {/each}
             </div>
@@ -205,7 +234,7 @@
                 </div>
             {/if}
 
-            {#if selectedProvider?.type !== "OAUTH"}
+            {#if selectedProvider?.type !== "OAUTH_GROUP"}
                 <button type="submit" class="btn btn-primary btn-block mt-2" disabled={isSubmitting}>
                     {#if isSubmitting}
                         <span class="loading loading-spinner loading-sm"></span>
@@ -215,18 +244,22 @@
             {/if}
         </form>
 
-        {#if selectedProvider?.type === "OAUTH"}
-            <button
-                type="button"
-                class="btn btn-block mt-2"
-                style={`${selectedProvider.backgroundColor ? `background-color:${selectedProvider.backgroundColor};` : ""}${selectedProvider.foregroundColor ? `color:${selectedProvider.foregroundColor};` : ""}`}
-                onclick={() => startOAuthLogin(selectedProvider)}
-            >
-                {#if selectedProvider.icon}
-                    <img src={selectedProvider.icon} alt="" class="h-5 w-5" />
-                {/if}
-                Sign in with {selectedProvider.displayName ?? "SSO"}
-            </button>
+        {#if selectedProvider?.type === "OAUTH_GROUP"}
+            <div class="space-y-2">
+                {#each selectedProvider.providers as provider (provider.key)}
+                    <button
+                        type="button"
+                        class="btn btn-block"
+                        style={`${provider.backgroundColor ? `background-color:${provider.backgroundColor};` : ""}${provider.foregroundColor ? `color:${provider.foregroundColor};` : ""}`}
+                        onclick={() => startOAuthLogin(provider)}
+                    >
+                        {#if provider.icon}
+                            <img src={provider.icon} alt="" class="h-5 w-5" />
+                        {/if}
+                        {provider.displayName ?? `Sign in with ${provider.key}`}
+                    </button>
+                {/each}
+            </div>
 
             {#if oauthError}
                 <div class="alert alert-error text-sm py-2 mt-2">

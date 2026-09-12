@@ -80,6 +80,7 @@ export interface PublicAuthProviderConfig {
 export interface PublicAuthConfig {
     enabled: boolean;
     providers: PublicAuthProviderConfig[];
+    oAuthTabLabel: string | null;
 }
 
 export interface PublicClusterConfig {
