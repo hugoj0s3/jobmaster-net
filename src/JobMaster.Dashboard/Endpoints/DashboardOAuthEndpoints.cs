@@ -74,8 +74,10 @@ internal static class DashboardOAuthEndpoints
             if (cookieValue is null) return Results.BadRequest(new { error = "missing_flow" });
 
             var flowState = await flowStorage.ConsumeAsync(cookieValue);
-            if (flowState is null) return Results.BadRequest(new { error = "invalid_or_expired_flow" });
-            if (!string.IsNullOrEmpty(request.State) && request.State != flowState.State)
+            if (flowState is null) 
+                return Results.BadRequest(new { error = "invalid_or_expired_flow" });
+            
+            if (string.IsNullOrEmpty(request.State) || request.State != flowState.State)
                 return Results.BadRequest(new { error = "state_mismatch" });
 
             var oauthConfig = options.Auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault();
