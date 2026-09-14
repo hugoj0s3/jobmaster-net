@@ -4,6 +4,10 @@
 > Documents implementation details, class-level changes, architectural decisions, and bug root causes for each release.
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
+### JobMaster.Dashboard 0.0.4-alpha.3
+#### Fixed
+- **`DashboardAuthRetentionType.Custom` resolved to `"none"` instead of `"server"` in the public config** (`Configurations\Public\DashboardPublicConfigConvertUtil.cs`): the auth-retention `switch` handled `ServerSideInMemory`/`ServerSideDistributed` explicitly (`=> "server"`) but had no arm for `Custom`, so it fell through to the `_ => "none"` default — the frontend then treated the session as client-only (no server round-trip) even when `dashboard.ConfigureAuthRetention().UseCustom<T>()` had wired up a real `IJobMasterAuthRetentionStorage`. Found while building a demo app (jobmaster-sandbox) with a Postgres-backed `IJobMasterAuthRetentionStorage`. Fixed by adding `DashboardAuthRetentionType.Custom => "server"` alongside the two existing server-side arms. Packed and consumed locally (`0.0.4-alpha.3-local1`) against jobmaster-sandbox to confirm the fix before bumping to this published version.
+
 ### 0.0.11-alpha
 #### Added
 - **`JobDefinitionConfig`/`JobDefinitionConfigAttribute`/`IJobMasterSchedulerAdvanced` — publisher/consumer separation for scheduling** (`JobMaster.Abstractions`): lets a publisher schedule a job by referencing only a small shared definition — a `JobDefinitionConfig` (id + config) or a `JobDefinitionConfigAttribute` subclass that carries one — without ever referencing the handler's own assembly. Covers one-time jobs (`OnceNow`/`OnceAt`/`OnceAfter` + `*Async`) and dynamic recurring jobs (`Recurring`/`RecurringAsync`, both expression styles); static schedules got their own, separate attribute-based path instead (see the `RecurringScheduleAttribute` entry below) rather than extending `RecurringScheduleDefinitionCollection.Add<Th>()`'s config-object surface directly.

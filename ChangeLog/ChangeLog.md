@@ -6,6 +6,12 @@
 
 ---
 
+## JobMaster.Dashboard 0.0.4-alpha.3
+
+### Fixed
+
+- **`DashboardAuthRetentionType.Custom` was mapped to `"none"` in the dashboard's public config, silently disabling a custom `IJobMasterAuthRetentionStorage` implementation's server-side session persistence** — `DashboardPublicConfigConvertUtil.ToPublicConfig`'s auth-retention mapping only recognized `ServerSideInMemory`/`ServerSideDistributed` as `"server"`; `Custom` fell through to the `_ => "none"` default, telling the frontend the dashboard has no server-side session at all even when `dashboard.ConfigureAuthRetention().UseCustom<T>()` had registered a real one. Sessions backed by a custom retention storage now round-trip correctly. No configuration changes are needed — upgrading is sufficient.
+
 ## JobMaster 0.0.11-alpha.2
 
 ### Added

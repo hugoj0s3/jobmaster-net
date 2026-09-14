@@ -19,6 +19,7 @@ internal static class DashboardPublicConfigConvertUtil
                 DashboardAuthRetentionType.ClientSideSessionStorage => "client",
                 DashboardAuthRetentionType.ServerSideInMemory       => "server",
                 DashboardAuthRetentionType.ServerSideDistributed    => "server",
+                DashboardAuthRetentionType.Custom                   => "server",
                 _                                                   => "none",
             },
             Auth = ToPublicAuth(options.Auth),
