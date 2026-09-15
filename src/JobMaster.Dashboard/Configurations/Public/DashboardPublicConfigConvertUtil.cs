@@ -44,7 +44,9 @@ internal static class DashboardPublicConfigConvertUtil
         {
             Enabled = auth.Enabled,
             Providers = auth.Providers.Where(p => !p.Disabled).SelectMany(ToPublicAuthProviders).ToList(),
-            OAuthTabLabel = auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault()?.DisplayName
+            OAuthTabLabel = auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault()?.DisplayName,
+            OAuthConsentCheckboxLabel = auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault()?.ConsentCheckboxLabel,
+            OAuthConsentDetailsText = auth.Providers.OfType<OAuthAuthConfig>().FirstOrDefault()?.ConsentDetailsText
         };
     }
 

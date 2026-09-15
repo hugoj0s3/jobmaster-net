@@ -32,4 +32,21 @@ internal sealed class OAuthAuthConfig : DashboardAuthTypeConfig
     /// Set by <c>UseCustomStorage&lt;T&gt;()</c> alongside <see cref="FlowStateStorage"/> = <see cref="OAuthFlowStateStorage.Custom"/>.
     /// </summary>
     public Type? CustomFlowStateStorageType { get; set; }
+
+    /// <summary>
+    /// Set by <c>WithConsentText(...)</c>. Short label shown directly next to a checkbox under the
+    /// OAuth provider buttons — every provider button stays disabled until it's checked. Once
+    /// checked, the browser remembers it (keyed by a hash of this text plus <see cref="ConsentDetailsText"/>,
+    /// so editing either invalidates every prior consent) and the gate never shows again on that
+    /// browser. Null unless set, in which case no gate is shown at all.
+    /// </summary>
+    public string? ConsentCheckboxLabel { get; set; }
+
+    /// <summary>
+    /// Optional longer text revealed via a "Learn more" disclosure next to <see cref="ConsentCheckboxLabel"/>
+    /// — for the common pattern of a short checkbox label ("I agree to how sign-in data is used")
+    /// backed by a fuller explanation the visitor can expand if they want it. Has no effect unless
+    /// <see cref="ConsentCheckboxLabel"/> is also set.
+    /// </summary>
+    public string? ConsentDetailsText { get; set; }
 }

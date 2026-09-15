@@ -1,5 +1,7 @@
 using FluentAssertions;
 using JobMaster.Abstractions.StaticRecurringSchedules;
+using JobMaster.Cronos;
+using JobMaster.NCrontab;
 using JobMaster.RecurrenceExpressions.NaturalCron;
 using JobMaster.RecurrenceExpressions.TimeSpanInterval;
 
@@ -23,5 +25,23 @@ public class RecurringScheduleAttributeTests
 
         attr.Expression.Should().Be("00:06:00");
         attr.ExpressionTypeId.Should().Be(TimeSpanIntervalExprCompiler.TypeId);
+    }
+
+    [Fact]
+    public void CronosScheduleAttribute_ExposesExpressionAndTypeId()
+    {
+        var attr = new CronosScheduleAttribute("*/6 * * * *");
+
+        attr.Expression.Should().Be("*/6 * * * *");
+        attr.ExpressionTypeId.Should().Be(CronosExprCompiler.TypeId);
+    }
+
+    [Fact]
+    public void NCrontabScheduleAttribute_ExposesExpressionAndTypeId()
+    {
+        var attr = new NCrontabScheduleAttribute("*/6 * * * *");
+
+        attr.Expression.Should().Be("*/6 * * * *");
+        attr.ExpressionTypeId.Should().Be(NCrontabExprCompiler.TypeId);
     }
 }

@@ -6,6 +6,28 @@
 
 ---
 
+## JobMaster.Dashboard 0.0.5-alpha
+
+### Added
+
+- **OAuth login consent gate** — `dashboard.ConfigOAuth().WithConsentText(checkboxLabel, detailsText?)` gates every OAuth provider button behind a required checkbox, useful for disclosing what signing in records (e.g. a visitor log) or how the user may be contacted afterward before they click through to the provider. An optional `detailsText` renders as a "View details" link opening a dialog with the longer disclosure text. Consent is remembered per browser (`localStorage`, keyed by a hash of `checkboxLabel + detailsText`), so a returning visitor isn't asked again — editing either string invalidates every previously stored consent and shows the gate again, without needing a separate version number to bump.
+
+### Fixed
+
+- **The job/recurring-schedule "Log Detail" modal showed a truncated exception message** — clicking "Details" on a log row reused the row already fetched from the log list endpoint, which the API caps to 100 characters to keep list payloads small (e.g. `System.InvalidOperationException: Fake sandbox failure...` cut off mid-sentence as `System.Invali...`). The modal now fetches the full log via `GET {basePath}/logs/{id}` when opened, showing the complete message and stack trace.
+
+## JobMaster.Cronos 0.0.1-alpha
+
+### Added
+
+- **New package: standard cron syntax via [Cronos](https://github.com/HangfireIO/Cronos)** — `JobMaster.Cronos` adds a recurrence provider for standard 5-field (`* * * * *`) or 6-field-with-seconds (`* * * * * *`) cron expressions, an alternative to `NaturalCron`'s DSL and `TimeSpanInterval`. Unlike the built-in compilers, it ships as a separate package and must be registered explicitly — call `services.AddJobMasterCronos()` before `AddJobMasterCluster`. Supports the same dynamic (`await scheduler.RecurringAsync<T>("*/5 * * * *")`) and static (`[CronosSchedule("...")]`, or `RecurringScheduleDefinitionCollection.Add<T>("...")`) registration paths as the built-in providers, with the 5-vs-6-field format auto-detected from the expression. Note that standard cron is wall-clock grid-aligned (`*/5 * * * *` fires at fixed `:00/:05/:10/...` marks), unlike `NaturalCron`'s `every N minutes` or `TimeSpanInterval`, both of which fire relative to when the schedule was created.
+
+## JobMaster.NCrontab 0.0.1-alpha
+
+### Added
+
+- **New package: standard cron syntax via [NCrontab](https://github.com/atifaziz/NCrontab)** — `JobMaster.NCrontab` adds the same standard-cron recurrence provider as `JobMaster.Cronos` above, backed by the NCrontab library instead. Register via `services.AddJobMasterNCrontab()` before `AddJobMasterCluster`; use `[NCrontabSchedule("...")]` for static schedules. Both packages support identical syntax — pick whichever you already know or depend on elsewhere.
+
 ## JobMaster.Dashboard 0.0.4-alpha.3
 
 ### Fixed

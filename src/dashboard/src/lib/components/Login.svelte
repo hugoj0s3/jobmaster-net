@@ -54,15 +54,65 @@
             credentials.displayName = await ApiClientUtil.GetWhoAmI(credentials, fetch);
         }
 
-        await AuthRetentionUtil.storeCredentials(credentials);
+        const stored = await AuthRetentionUtil.storeCredentials(credentials);
+        if (!stored) throw new Error("Signed in, but couldn't save your session. Please try again.");
         return credentials;
     }
 
     let isSubmitting = $state(false);
     let oauthError = $state<string | null>(null);
 
+    // Change-detection only, not a security hash -- if either consent text changes, the hash
+    // changes, the localStorage key no longer matches, and every prior consent is invalidated
+    // (the gate reappears) without needing a separate version number to remember to bump.
+    function djb2Hash(text: string): string {
+        let hash = 5381;
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+        }
+        return (hash >>> 0).toString(36);
+    }
+
+    let consentStorageKey = $derived(
+        auth.oAuthConsentCheckboxLabel
+            ? `jobmaster_oauth_consent_${djb2Hash(auth.oAuthConsentCheckboxLabel + (auth.oAuthConsentDetailsText ?? ""))}`
+            : null
+    );
+
+    function hasStoredConsent(key: string): boolean {
+        try {
+            return localStorage.getItem(key) === "accepted";
+        } catch {
+            // Private browsing / blocked storage -- fail safe by re-showing the gate rather than
+            // throwing, since a login screen must render regardless.
+            return false;
+        }
+    }
+
+    // Read once at mount, not reactively -- this decides whether the gate shows up AT ALL on this
+    // page load. A returning visitor who already consented never sees it again.
+    let consentRemembered = consentStorageKey ? hasStoredConsent(consentStorageKey) : false;
+
+    // Whether the checkbox is currently ticked in THIS view. Starts ticked (and irrelevant) if
+    // already remembered; otherwise starts unticked. Ticking it only enables the buttons -- it
+    // deliberately does NOT write to storage or hide the gate by itself. The gate only ever goes
+    // away because the visitor actually clicked through to a provider (see startOAuthLogin), or
+    // because a future page load finds consentRemembered already true.
+    let consentChecked = $state(consentRemembered);
+
+    let consentDetailsDialog: HTMLDialogElement | undefined = $state();
+
     async function startOAuthLogin(provider: { key: string }) {
         oauthError = null;
+
+        if (consentStorageKey) {
+            try {
+                localStorage.setItem(consentStorageKey, "accepted");
+            } catch {
+                // Best-effort only -- if storage is blocked, the gate just reappears next visit.
+            }
+        }
+
         try {
             const res = await fetch(`${JobMasterConfigUtil.getBasePath()}/oauth/${provider.key}`);
             if (!res.ok) throw new Error(`Failed to start login (${res.status})`);
@@ -251,6 +301,7 @@
                         type="button"
                         class="btn btn-block"
                         style={`${provider.backgroundColor ? `background-color:${provider.backgroundColor};` : ""}${provider.foregroundColor ? `color:${provider.foregroundColor};` : ""}`}
+                        disabled={auth.oAuthConsentCheckboxLabel ? !consentChecked : false}
                         onclick={() => startOAuthLogin(provider)}
                     >
                         {#if provider.icon}
@@ -260,6 +311,41 @@
                     </button>
                 {/each}
             </div>
+
+            {#if auth.oAuthConsentCheckboxLabel && !consentRemembered}
+                <div class="mt-3 space-y-1">
+                    <label class="label cursor-pointer justify-start gap-2 py-0">
+                        <input type="checkbox" class="checkbox checkbox-sm" bind:checked={consentChecked} />
+                        <span class="label-text text-sm">{auth.oAuthConsentCheckboxLabel}</span>
+                    </label>
+                    {#if auth.oAuthConsentDetailsText}
+                        <button
+                            type="button"
+                            class="link link-hover mx-auto block w-fit text-xs text-base-content/60"
+                            onclick={() => consentDetailsDialog?.showModal()}
+                        >
+                            View details
+                        </button>
+                    {/if}
+                </div>
+            {/if}
+
+            {#if auth.oAuthConsentDetailsText}
+                <dialog bind:this={consentDetailsDialog} class="modal">
+                    <div class="modal-box">
+                        <h3 class="text-lg font-bold">{auth.oAuthConsentCheckboxLabel}</h3>
+                        <p class="py-4 text-sm text-base-content/80">{auth.oAuthConsentDetailsText}</p>
+                        <div class="modal-action">
+                            <form method="dialog">
+                                <button class="btn">Close</button>
+                            </form>
+                        </div>
+                    </div>
+                    <form method="dialog" class="modal-backdrop">
+                        <button>close</button>
+                    </form>
+                </dialog>
+            {/if}
 
             {#if oauthError}
                 <div class="alert alert-error text-sm py-2 mt-2">

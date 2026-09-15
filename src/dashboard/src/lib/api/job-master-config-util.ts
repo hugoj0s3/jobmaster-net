@@ -81,6 +81,8 @@ export interface PublicAuthConfig {
     enabled: boolean;
     providers: PublicAuthProviderConfig[];
     oAuthTabLabel: string | null;
+    oAuthConsentCheckboxLabel: string | null;
+    oAuthConsentDetailsText: string | null;
 }
 
 export interface PublicClusterConfig {

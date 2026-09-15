@@ -1,4 +1,6 @@
 using FluentAssertions;
+using JobMaster.Cronos;
+using JobMaster.NCrontab;
 using JobMaster.RecurrenceExpressions;
 using JobMaster.RecurrenceExpressions.TimeSpanInterval;
 using JobMaster.RecurrenceExpressions.NaturalCron;
@@ -587,5 +589,349 @@ public class RecurringSchedulePlannerTests
             diff.Should().BeCloseTo(interval, TimeSpan.FromSeconds(2),
                 $"dates should be approximately {interval.TotalMinutes} minute(s) apart");
         }
+    }
+
+    [Fact]
+    public void PlanNextDates_WithCronos_ShouldGenerateDatesWithinHorizon()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromSeconds(5);
+        var compiler = new CronosExprCompiler();
+        var expression = compiler.Compile("*/5 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithCronos_ShouldGenerateDatesWithinHorizon");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"stopAt: {baseDateTime.Add(horizon):O}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates.Take(10))
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty("should generate dates within the horizon");
+
+        var stopAt = DateTime.UtcNow + horizon;
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeOnOrBefore(stopAt, "all dates should be within the horizon"));
+
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeAfter(baseDateTime, "all dates should be after baseDateTime"));
+
+        for (int i = 1; i < nextDates.Count; i++)
+        {
+            var diff = nextDates[i] - nextDates[i - 1];
+            diff.Should().BeCloseTo(interval, TimeSpan.FromSeconds(1),
+                $"dates should be approximately {interval.TotalSeconds}s apart");
+        }
+
+        lastScheduleAt.Should().Be(nextDates.Max());
+    }
+
+    [Fact]
+    public void PlanNextDates_WithCronos_PastBaseDateTime_ShouldGenerateFutureDates()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow.AddMinutes(-10);
+        var horizon = TimeSpan.FromMinutes(5);
+        var compiler = new CronosExprCompiler();
+        var expression = compiler.Compile("*/10 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithCronos_PastBaseDateTime_ShouldGenerateFutureDates");
+        output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes ago)");
+        output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
+        output.WriteLine($"horizon: {horizon}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates.Take(10))
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty("should generate dates even with past baseDateTime");
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeAfter(baseDateTime, "all dates should be after baseDateTime"));
+
+        var stopAt = DateTime.UtcNow + horizon;
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeOnOrBefore(stopAt, "all dates should be within the planning horizon"));
+    }
+
+    [Fact]
+    public void PlanNextDates_WithCronos_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow.AddMinutes(10);
+        var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromSeconds(5);
+        var compiler = new CronosExprCompiler();
+        var expression = compiler.Compile("*/5 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithCronos_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway");
+        output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes from now)");
+        output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
+        output.WriteLine($"horizon: {horizon}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        output.WriteLine($"lastScheduleAt: {lastScheduleAt:O}");
+
+        // Unlike NaturalCron/TimeSpanInterval (relative to the cursor), standard cron is wall-clock
+        // grid-aligned -- the next occurrence is the next 5-second-of-minute boundary after
+        // baseDateTime, not necessarily baseDateTime+interval.
+        nextDates.Should().ContainSingle("baseDateTime is beyond the horizon, but at least one occurrence is always returned");
+        nextDates[0].Should().BeAfter(baseDateTime);
+        nextDates[0].Should().BeOnOrBefore(baseDateTime + interval);
+        (nextDates[0].Second % (int)interval.TotalSeconds).Should().Be(0, "occurrences should land on the 5-second grid");
+        lastScheduleAt.Should().Be(nextDates[0]);
+    }
+
+    [Fact]
+    public void PlanNextDates_WithCronos_EndBefore_ShouldRespectEndBound()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var endBefore = DateTime.UtcNow.AddMinutes(2);
+        var compiler = new CronosExprCompiler();
+        var expression = compiler.Compile("*/10 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithCronos_EndBefore_ShouldRespectEndBound");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"endBefore: {endBefore:O}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: endBefore);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates)
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty();
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeBefore(endBefore, "all dates should respect endBefore bound"));
+        nextDates.Count.Should().BeLessThanOrEqualTo(13, "should respect the endBefore limit");
+    }
+
+    [Fact]
+    public void PlanNextDates_WithNCrontab_ShouldGenerateDatesWithinHorizon()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromSeconds(5);
+        var compiler = new NCrontabExprCompiler();
+        var expression = compiler.Compile("*/5 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithNCrontab_ShouldGenerateDatesWithinHorizon");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"stopAt: {baseDateTime.Add(horizon):O}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates.Take(10))
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty("should generate dates within the horizon");
+
+        var stopAt = DateTime.UtcNow + horizon;
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeOnOrBefore(stopAt, "all dates should be within the horizon"));
+
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeAfter(baseDateTime, "all dates should be after baseDateTime"));
+
+        for (int i = 1; i < nextDates.Count; i++)
+        {
+            var diff = nextDates[i] - nextDates[i - 1];
+            diff.Should().BeCloseTo(interval, TimeSpan.FromSeconds(1),
+                $"dates should be approximately {interval.TotalSeconds}s apart");
+        }
+
+        lastScheduleAt.Should().Be(nextDates.Max());
+    }
+
+    [Fact]
+    public void PlanNextDates_WithNCrontab_PastBaseDateTime_ShouldGenerateFutureDates()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow.AddMinutes(-10);
+        var horizon = TimeSpan.FromMinutes(5);
+        var compiler = new NCrontabExprCompiler();
+        var expression = compiler.Compile("*/10 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithNCrontab_PastBaseDateTime_ShouldGenerateFutureDates");
+        output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes ago)");
+        output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
+        output.WriteLine($"horizon: {horizon}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates.Take(10))
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty("should generate dates even with past baseDateTime");
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeAfter(baseDateTime, "all dates should be after baseDateTime"));
+
+        var stopAt = DateTime.UtcNow + horizon;
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeOnOrBefore(stopAt, "all dates should be within the planning horizon"));
+    }
+
+    [Fact]
+    public void PlanNextDates_WithNCrontab_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow.AddMinutes(10);
+        var horizon = TimeSpan.FromMinutes(5);
+        var interval = TimeSpan.FromSeconds(5);
+        var compiler = new NCrontabExprCompiler();
+        var expression = compiler.Compile("*/5 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithNCrontab_BaseDateTimeBeyondHorizon_ShouldReturnSingleOccurrenceAnyway");
+        output.WriteLine($"baseDateTime: {baseDateTime:O} (10 minutes from now)");
+        output.WriteLine($"UtcNow: {DateTime.UtcNow:O}");
+        output.WriteLine($"horizon: {horizon}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: null);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        output.WriteLine($"lastScheduleAt: {lastScheduleAt:O}");
+
+        // Unlike NaturalCron/TimeSpanInterval (relative to the cursor), standard cron is wall-clock
+        // grid-aligned -- the next occurrence is the next 5-second-of-minute boundary after
+        // baseDateTime, not necessarily baseDateTime+interval.
+        nextDates.Should().ContainSingle("baseDateTime is beyond the horizon, but at least one occurrence is always returned");
+        nextDates[0].Should().BeAfter(baseDateTime);
+        nextDates[0].Should().BeOnOrBefore(baseDateTime + interval);
+        (nextDates[0].Second % (int)interval.TotalSeconds).Should().Be(0, "occurrences should land on the 5-second grid");
+        lastScheduleAt.Should().Be(nextDates[0]);
+    }
+
+    [Fact]
+    public void PlanNextDates_WithNCrontab_EndBefore_ShouldRespectEndBound()
+    {
+        // Arrange
+        var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
+        var baseDateTime = DateTime.UtcNow;
+        var horizon = TimeSpan.FromMinutes(5);
+        var endBefore = DateTime.UtcNow.AddMinutes(2);
+        var compiler = new NCrontabExprCompiler();
+        var expression = compiler.Compile("*/10 * * * * *");
+
+        output.WriteLine($"Test: PlanNextDates_WithNCrontab_EndBefore_ShouldRespectEndBound");
+        output.WriteLine($"baseDateTime: {baseDateTime:O}");
+        output.WriteLine($"horizon: {horizon}");
+        output.WriteLine($"endBefore: {endBefore:O}");
+
+        // Act
+        var (lastScheduleAt, nextDates, planningHorizon) = planner.PlanNextDates(
+            recurringScheduleId,
+            hasFailedOnLastPlan: false,
+            ianaTimeZoneId: "UTC",
+            expr: expression,
+            horizon: horizon,
+            baseDateTime: baseDateTime,
+            endBeforeUtc: endBefore);
+
+        // Assert
+        output.WriteLine($"Results: {nextDates.Count} dates generated");
+        foreach (var date in nextDates)
+        {
+            output.WriteLine($"  - {date:O}");
+        }
+
+        nextDates.Should().NotBeEmpty();
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeBefore(endBefore, "all dates should respect endBefore bound"));
+        nextDates.Count.Should().BeLessThanOrEqualTo(13, "should respect the endBefore limit");
     }
 }

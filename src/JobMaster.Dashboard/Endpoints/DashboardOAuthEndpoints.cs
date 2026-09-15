@@ -36,10 +36,14 @@ internal static class DashboardOAuthEndpoints
             var flowState = new OAuthFlowState { ProviderKey = id, State = state, CodeVerifier = codeVerifier };
             var cookieValue = await flowStorage.BeginAsync(flowState);
 
+            // Secure over plain HTTP is silently dropped by not every browser the same way (some
+            // exempt localhost, some don't) -- tying it to the actual request scheme is correct
+            // either way and keeps this cookie working during local http://localhost development,
+            // same reasoning as DashboardAuthRetentionEndpoints.AppendSessionCookie.
             ctx.Response.Cookies.Append(options.OAuthFlowCookieName, cookieValue, new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                Secure = ctx.Request.IsHttps,
                 SameSite = SameSiteMode.Strict,
                 MaxAge = TimeSpan.FromMinutes(10)
             });

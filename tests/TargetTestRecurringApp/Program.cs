@@ -2,7 +2,9 @@ using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Cronos;
 using JobMaster.Ioc.Extensions;
+using JobMaster.NCrontab;
 using StackExchange.Redis;
 using TargetTestRecurringApp;
 using TargetTestRecurringApp.Handlers;
@@ -18,6 +20,11 @@ Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStrea
 Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDb.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Cronos/NCrontab are separate assemblies and are not auto-discovered by RecurrenceCompilerFactory
+// (unlike the built-in TimeSpanInterval/NaturalCron compilers) -- must register before AddJobMasterCluster.
+builder.Services.AddJobMasterCronos();
+builder.Services.AddJobMasterNCrontab();
 
 var clusterConfigsJson = Environment.GetEnvironmentVariable("JOBMASTER_CLUSTER_CONFIGS_JSON");
 if (string.IsNullOrWhiteSpace(clusterConfigsJson))

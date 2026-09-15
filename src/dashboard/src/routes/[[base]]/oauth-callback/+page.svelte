@@ -40,7 +40,8 @@
             if (!token) throw new Error("No token returned");
 
             const credentials: Credentials = { type: "OAUTH", secretValue: token, displayName: decodeJwtSubject(token) };
-            await AuthRetentionUtil.storeCredentials(credentials);
+            const stored = await AuthRetentionUtil.storeCredentials(credentials);
+            if (!stored) throw new Error("Signed in, but couldn't save your session. Please try again.");
 
             window.location.href = JobMasterConfigUtil.resolveHref("/");
         } catch (err) {

@@ -4,7 +4,16 @@
 @config "../tailwind.config.js";
 @import "tailwindcss";
 @plugin "daisyui" {
-    themes: light, corporate, retro, emerald, cupcake, dark, business, night, dracula, synthwave, jobmaster-light, jobmaster-dark;
+    /* Every theme DashboardBuiltInTheme (JobMaster.Dashboard/Configurations/Themes/DashboardBuiltInTheme.cs)
+       promises, so each one actually has generated CSS -- previously only 12 of the 34 were listed
+       here, so picking any of the other 22 (bumblebee, cyberpunk, valentine, halloween, garden,
+       forest, aqua, lofi, pastel, fantasy, wireframe, black, luxury, cmyk, autumn, acid, lemonade,
+       coffee, winter, dim, nord, sunset) silently did nothing anywhere in the app, not just in the
+       theme picker's preview. */
+    themes: light, dark, cupcake, bumblebee, emerald, corporate, synthwave, retro, cyberpunk,
+        valentine, halloween, garden, forest, aqua, lofi, pastel, fantasy, wireframe, black,
+        luxury, dracula, cmyk, autumn, business, acid, lemonade, night, coffee, winter, dim,
+        nord, sunset, jobmaster-light, jobmaster-dark;
 }
 
 @theme {
@@ -18,7 +27,10 @@
         --color-logo-content: var(--color-primary-content);
     }
 
-    :root[data-theme="jobmaster-light"] {
+    /* Not :root-scoped (unlike a first pass at this) so this also applies when data-theme is set
+       on a nested element, not just <html> -- needed for the theme picker's per-button preview
+       swatches (routes/+layout.svelte), which scope data-theme directly on each button. */
+    [data-theme="jobmaster-light"] {
         color-scheme: light;
 
         --color-base-100: oklch(0.98 0.005 270);
@@ -51,7 +63,7 @@
         --color-error-content: oklch(0.98 0 0);
     }
 
-    :root[data-theme="jobmaster-dark"] {
+    [data-theme="jobmaster-dark"] {
         color-scheme: dark;
 
         --color-base-100: oklch(0.17 0.02 260);

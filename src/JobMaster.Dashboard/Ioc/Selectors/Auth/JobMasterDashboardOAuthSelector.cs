@@ -73,4 +73,11 @@ internal class JobMasterDashboardOAuthSelector : IJobMasterDashboardOAuthSelecto
         config.DisplayName = label;
         return this;
     }
+
+    public IJobMasterDashboardOAuthSelector WithConsentText(string checkboxLabel, string? detailsText = null)
+    {
+        config.ConsentCheckboxLabel = checkboxLabel;
+        config.ConsentDetailsText = detailsText;
+        return this;
+    }
 }

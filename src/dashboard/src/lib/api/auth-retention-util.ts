@@ -16,53 +16,66 @@ export class AuthRetentionUtil {
 		}
 
 		if (config.authRetentionMode === 'server') {
-			const basePath = JobMasterConfigUtil.getBasePath();
+			return await AuthRetentionUtil.storeCredentialsOnServer(serialized, /* retryOnRejectedSession */ true);
+		}
 
-			// Open session if not already opened
-			if (!sessionStorage.getItem('jm_session_opened')) {
-				try {
-					const openRes = await fetch(`${basePath}/credentials/open-session`, {
-						method: 'POST'
-					});
-					if (!openRes.ok) {
-						console.error('Failed to open credentials session on server:', openRes.statusText);
-						return false;
-					}
-					sessionStorage.setItem('jm_session_opened', 'true');
-				} catch (err) {
-					console.error('Error opening credentials session on server:', err);
-					return false;
-				}
-			}
+		return false;
+	}
 
-			// Store the credentials serialized under a generic "credentials" key
+	// 'jm_session_opened' in sessionStorage is only a local cache of "we already asked the server
+	// to open one" -- it can go stale (server restarted, cookie got dropped, session expired
+	// server-side) without this tab knowing. A stale flag used to mean every retry skipped
+	// open-session, kept sending a request with no valid cookie, and silently 403'd forever with
+	// no way to recover short of manually clearing storage. Now a 403 on the store step clears the
+	// stale flag and retries exactly once with a freshly opened session before giving up for real.
+	private static async storeCredentialsOnServer(serialized: string, retryOnRejectedSession: boolean): Promise<boolean> {
+		const basePath = JobMasterConfigUtil.getBasePath();
+
+		if (!sessionStorage.getItem('jm_session_opened')) {
 			try {
-				const storeRes = await fetch(`${basePath}/credentials/jm_credentials`, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json'
-					},
-					body: JSON.stringify({
-						secrets: {
-							credentials: serialized
-						}
-					})
+				const openRes = await fetch(`${basePath}/credentials/open-session`, {
+					method: 'POST'
 				});
-
-				if (!storeRes.ok) {
-					console.error('Failed to store credentials on server:', storeRes.statusText);
+				if (!openRes.ok) {
+					console.error('Failed to open credentials session on server:', openRes.statusText);
 					return false;
 				}
-
-				this.credentials = JSON.parse(serialized) as Credentials;
-				return true;
+				sessionStorage.setItem('jm_session_opened', 'true');
 			} catch (err) {
-				console.error('Error storing credentials on server:', err);
+				console.error('Error opening credentials session on server:', err);
 				return false;
 			}
 		}
 
-		return false;
+		try {
+			const storeRes = await fetch(`${basePath}/credentials/jm_credentials`, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json'
+				},
+				body: JSON.stringify({
+					secrets: {
+						credentials: serialized
+					}
+				})
+			});
+
+			if (storeRes.status === 403 && retryOnRejectedSession) {
+				sessionStorage.removeItem('jm_session_opened');
+				return await AuthRetentionUtil.storeCredentialsOnServer(serialized, false);
+			}
+
+			if (!storeRes.ok) {
+				console.error('Failed to store credentials on server:', storeRes.statusText);
+				return false;
+			}
+
+			this.credentials = JSON.parse(serialized) as Credentials;
+			return true;
+		} catch (err) {
+			console.error('Error storing credentials on server:', err);
+			return false;
+		}
 	}
 
 	static async getCredentials(): Promise<Credentials | null> {

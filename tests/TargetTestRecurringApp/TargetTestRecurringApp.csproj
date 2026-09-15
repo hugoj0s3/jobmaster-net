@@ -20,6 +20,8 @@
         <ProjectReference Include="..\..\src\Providers\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
         <ProjectReference Include="..\..\src\Providers\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
         <ProjectReference Include="..\..\src\Providers\JobMaster.RavenDb\JobMaster.RavenDb.csproj" />
+        <ProjectReference Include="..\..\src\Providers\JobMaster.Cronos\JobMaster.Cronos.csproj" />
+        <ProjectReference Include="..\..\src\Providers\JobMaster.NCrontab\JobMaster.NCrontab.csproj" />
     </ItemGroup>
 
 </Project>

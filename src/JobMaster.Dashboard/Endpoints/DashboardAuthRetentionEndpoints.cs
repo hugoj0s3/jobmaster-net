@@ -30,7 +30,13 @@ internal static class DashboardAuthRetentionEndpoints
         {
             var config = options.AuthRetention;
             var sessionId = ctx.Request.Cookies[options.SessionCookieName];
-            if (sessionId is null) return Results.Forbid();
+            // Results.Forbid() requires ASP.NET Core's own authentication middleware
+            // (IAuthenticationService) to process the challenge -- not guaranteed to be
+            // registered by a consuming app that only uses JobMaster's own auth abstractions
+            // (e.g. jobmaster-sandbox never calls AddAuthentication()), so it throws instead of
+            // ever returning 403. A missing session cookie isn't an authentication challenge to
+            // begin with -- it's "no session", so a plain status code is both correct and safe.
+            if (sessionId is null) return Results.StatusCode(StatusCodes.Status403Forbidden);
 
             var expiry = request.DurationToExpire ?? config.DefaultCredentialsExpiry;
             var expiresAt = DateTime.UtcNow.Add(expiry);
@@ -90,10 +96,15 @@ internal static class DashboardAuthRetentionEndpoints
 
     private static void AppendSessionCookie(HttpContext ctx, DashboardOptions options, string sessionId)
     {
+        // Secure cookies are silently dropped by every browser over plain HTTP -- hardcoding
+        // Secure = true meant server-side auth retention (ServerSideInMemory/Distributed/Custom)
+        // could never actually persist a session during local http://localhost development, only
+        // once deployed behind real HTTPS. Tying it to the current request's own scheme means it's
+        // still Secure in production (where it matters) without breaking local testing.
         ctx.Response.Cookies.Append(options.SessionCookieName, sessionId, new CookieOptions
         {
             HttpOnly = true,
-            Secure = true,
+            Secure = ctx.Request.IsHttps,
             SameSite = SameSiteMode.Strict,
             MaxAge = DashboardAuthRetentionConfig.SessionIdleExpiry
         });

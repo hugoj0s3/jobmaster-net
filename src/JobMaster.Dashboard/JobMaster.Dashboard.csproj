@@ -4,8 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <VersionPrefix>0.0.4</VersionPrefix>
-    <VersionSuffix>alpha.3</VersionSuffix>
+    <VersionPrefix>0.0.5</VersionPrefix>
+    <VersionSuffix>alpha</VersionSuffix>
 
     <PackageId>JobMaster.Dashboard</PackageId>
     <Authors>Hugo Silva</Authors>

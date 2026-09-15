@@ -202,6 +202,26 @@
 		await copyFeedback.copy(jobId);
 	}
 
+	async function openLogDetail(log: LogEntry) {
+		selectedLogDetail = log;
+		const logId = log.id;
+		if (!logId) return;
+
+		try {
+			const cid = clusterId();
+			if (!cid) return;
+			const jm = await ApiClientUtil.CreateApiClientFromConfig(fetch);
+			const resp = await jm.GET("/{clusterId}/logs/{id}", {
+				params: { path: { clusterId: cid, id: logId } }
+			});
+			if (!resp.error && resp.data) {
+				selectedLogDetail = resp.data as LogEntry;
+			}
+		} catch {
+			// Keep the truncated row as a fallback.
+		}
+	}
+
 	$: filteredLogs = selectedLogLevel
 		? recentLogs.filter(log => log.level === parseInt(selectedLogLevel))
 		: recentLogs;
@@ -511,7 +531,7 @@
 												<td>
 													<button
 														class="btn btn-ghost btn-xs opacity-70 hover:opacity-100"
-														on:click={() => selectedLogDetail = log}
+														on:click={() => openLogDetail(log)}
 													>
 														Details
 													</button>

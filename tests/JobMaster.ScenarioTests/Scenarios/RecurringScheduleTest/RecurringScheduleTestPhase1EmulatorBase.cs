@@ -5,14 +5,21 @@ using JobMaster.ScenarioTests.Runner;
 namespace JobMaster.ScenarioTests.Scenarios.RecurringScheduleTest;
 
 /// <summary>
-/// Shared phase-1 logic for every recurring-schedule scenario: exercises 6 registration/compiler
+/// Shared phase-1 logic for every recurring-schedule scenario: exercises 8 registration/compiler
 /// combinations against a single standalone cluster -- the 2x2 matrix of (static vs dynamic
 /// registration) x (TimeSpanInterval vs NaturalCron compiler), plus two extra registration-path
 /// checks: a static schedule registered purely via <c>[TimeSpanIntervalSchedule]</c> attribute
 /// auto-registration (no profile), and a dynamic schedule created via
 /// <c>IJobMasterScheduler.Advanced.RecurringAsync&lt;TDefinition&gt;()</c> (the
-/// <c>JobDefinitionConfigAttribute</c> path) instead of the classic handler-typed overload. Uses a
-/// real Docker-container app (<c>TargetTestRecurringApp</c>), not an in-process handler like
+/// <c>JobDefinitionConfigAttribute</c> path) instead of the classic handler-typed overload, plus two
+/// static-only combos proving the satellite <c>JobMaster.Cronos</c>/<c>JobMaster.NCrontab</c>
+/// packages (standard cron syntax, registered manually via <c>AddJobMasterCronos</c>/
+/// <c>AddJobMasterNCrontab</c> since -- unlike the built-in compilers -- they aren't auto-discovered).
+/// Cronos/NCrontab deliberately have no dynamic-registration combo here: the generic
+/// expressionTypeId+string dynamic path is already proven by the TimeSpanInterval/NaturalCron combos
+/// above, so a dynamic combo per new compiler would just duplicate already-proven registration
+/// mechanics without adding real coverage. Uses a real Docker-container app
+/// (<c>TargetTestRecurringApp</c>), not an in-process handler like
 /// <c>tests/JobMaster.IntegrationTests</c>'s equivalent test.
 ///
 /// Interval is a fixed 6 minutes for every combination -- deliberately in the middle of the
@@ -54,6 +61,11 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
     // between TargetTestScheduleApp and PureScheduleTestPhase1EmulatorBase.
     private const string StaticTimeSpanIntervalTestIdentifier = "static-timespan-interval";
     private const string StaticNaturalCronTestIdentifier = "static-natural-cron";
+
+    // Must match tests/TargetTestRecurringApp/StaticProfiles/StaticCronosProfile.cs and
+    // StaticNCrontabProfile.cs's TestIdentifier consts -- same duplication reasoning as above.
+    private const string StaticCronosTestIdentifier = "static-cronos";
+    private const string StaticNCrontabTestIdentifier = "static-ncrontab";
 
     // Must match TargetTestRecurringApp/Handlers/AttributeStaticTickHandler.cs's TestIdentifier --
     // registered purely via [TimeSpanIntervalSchedule], no profile, proving RecurringScheduleAttribute
@@ -109,6 +121,8 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
         await Runner.Tracker.ClearAsync(StaticTimeSpanIntervalTestIdentifier);
         await Runner.Tracker.ClearAsync(StaticNaturalCronTestIdentifier);
         await Runner.Tracker.ClearAsync(AttributeStaticTickTestIdentifier);
+        await Runner.Tracker.ClearAsync(StaticCronosTestIdentifier);
+        await Runner.Tracker.ClearAsync(StaticNCrontabTestIdentifier);
 
         // Captured right after the container's health check passed (StartPhaseAsync already
         // returned by the time RunAsync runs) -- a reasonably tight upper bound on when the static
@@ -135,6 +149,12 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             "advanced-tick", TimeSpanIntervalExpressionTypeId, IntervalExpression, dynamicAdvancedId, ClusterId);
         var dynamicAdvancedCreatedAtUtc = DateTime.UtcNow;
 
+        // Cronos/NCrontab are standard, wall-clock grid-aligned cron (unlike NaturalCron/
+        // TimeSpanInterval, which fire relative to CreatedAt) -- their first firing can land anywhere
+        // in (staticCreatedAtUtc, staticCreatedAtUtc+Interval], not predictably near CreatedAt+Interval,
+        // and could even land within ImmediateCheckDelay of creation by pure chance. Both checks below
+        // that assume relative-cadence timing are opted out for these two via
+        // ChecksFirstFiringTiming: false -- count/no-duplicate/spacing checks still apply to them.
         var combos = new[]
         {
             new Combo(StaticTimeSpanIntervalTestIdentifier, staticCreatedAtUtc),
@@ -143,12 +163,15 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             new Combo(dynamicTimeSpanId, dynamicTimeSpanCreatedAtUtc),
             new Combo(dynamicNaturalCronId, dynamicNaturalCronCreatedAtUtc),
             new Combo(dynamicAdvancedId, dynamicAdvancedCreatedAtUtc),
+            new Combo(StaticCronosTestIdentifier, staticCreatedAtUtc, ChecksFirstFiringTiming: false),
+            new Combo(StaticNCrontabTestIdentifier, staticCreatedAtUtc, ChecksFirstFiringTiming: false),
         };
 
         // Nothing should have fired yet -- catches an accidental "fires immediately" bug (e.g. the
-        // wrong scheduler method) well before the real wait below.
+        // wrong scheduler method) well before the real wait below. Skipped for grid-aligned combos --
+        // see the remark above the combos array.
         await Task.Delay(ImmediateCheckDelay);
-        foreach (var combo in combos)
+        foreach (var combo in combos.Where(c => c.ChecksFirstFiringTiming))
         {
             var executedSoFar = await Runner.Tracker.GetAllAsync(combo.TestIdentifier);
             executedSoFar.Should().BeEmpty(
@@ -170,13 +193,18 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
 
             // First-firing timing: both compilers are relative to creation (CreatedAt + Interval) --
             // see the class remarks on why NaturalCron isn't wall-clock-grid-aligned despite reading
-            // like a cron expression.
-            var firstExecUtc = executions[0].ExecutedAtUtc;
-            var expectedFirstUtc = combo.CreatedAtUtc + Interval;
+            // like a cron expression. Skipped for Cronos/NCrontab (ChecksFirstFiringTiming: false) --
+            // those ARE wall-clock grid-aligned, so "CreatedAt + Interval" isn't a meaningful
+            // expectation for them; see the remark above the combos array.
+            if (combo.ChecksFirstFiringTiming)
+            {
+                var firstExecUtc = executions[0].ExecutedAtUtc;
+                var expectedFirstUtc = combo.CreatedAtUtc + Interval;
 
-            (firstExecUtc - expectedFirstUtc).TotalSeconds.Should().BeInRange(
-                -FirstFiringEarlyTolerance.TotalSeconds, FirstFiringLateTolerance.TotalSeconds,
-                $"'{combo.TestIdentifier}' first execution should land close to its expected due time, not early or badly late");
+                (firstExecUtc - expectedFirstUtc).TotalSeconds.Should().BeInRange(
+                    -FirstFiringEarlyTolerance.TotalSeconds, FirstFiringLateTolerance.TotalSeconds,
+                    $"'{combo.TestIdentifier}' first execution should land close to its expected due time, not early or badly late");
+            }
 
             // Consecutive-firing spacing: shared check, both compilers fire exactly Interval apart
             // once started.
@@ -231,5 +259,5 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
                 s.JobDefinitionId == expectedJobDefinitionId);
     }
 
-    private sealed record Combo(string TestIdentifier, DateTime CreatedAtUtc);
+    private sealed record Combo(string TestIdentifier, DateTime CreatedAtUtc, bool ChecksFirstFiringTiming = true);
 }

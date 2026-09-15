@@ -127,6 +127,23 @@
         }
     });
 
+    // The theme picker's preview buttons scope data-theme to themselves so each shows its own
+    // colors (see applyTheme's own data-theme/color handling below) -- but radius/font overrides
+    // are a site-wide JobMaster baseline applied via inline style on <html>, which a button's own
+    // [data-theme=X] DaisyUI rule (more specific to the button itself than an inherited value from
+    // an ancestor) would otherwise win over, e.g. Cupcake's native large corner radius showing up
+    // in its swatch even though selecting Cupcake for real keeps JobMaster's flatter radius. Forcing
+    // the same radius vars inline on each button, same as applyStyleOverrides does at the root,
+    // keeps every swatch's shape consistent with what actually gets applied.
+    let primaryTheme = $derived(config?.themeConfigs?.themes?.find((t: any) => t.id === config?.themeConfigs?.primaryThemeId));
+    function previewRadiusStyle(): string {
+        const so = primaryTheme?.styleOverrides;
+        const box = so?.borderRadiusBox ?? "0.5rem";
+        const selector = so?.borderRadiusBtn ?? "0.5rem";
+        const field = so?.borderRadiusBadge ?? "0.25rem";
+        return `--radius-box:${box};--radius-selector:${selector};--radius-field:${field};`;
+    }
+
     const themeVarMap: Record<string, string> = {
         logo: "--color-logo",
         logoContent: "--color-logo-content",
@@ -333,7 +350,7 @@
                         <!-- svelte-ignore a11y_no_noninteractive_tabindex -->
                         <ul
                                 tabindex="0"
-                                class="dropdown-content menu flex-nowrap p-2 shadow-2xl bg-base-200 rounded-box w-[28rem] mt-2 border border-base-300 z-[100] space-y-2 max-h-[32rem] overflow-y-auto"
+                                class="dropdown-content menu flex-nowrap p-2 shadow-2xl bg-base-200 rounded-box w-[28rem] mt-2 border border-base-300 z-[100] space-y-0.5 max-h-[32rem] overflow-y-auto"
                         >
                             <li class="px-2 pt-1 pb-0.5 flex flex-row items-center justify-between pr-2 text-[11px] text-base-content/50">
                                 {#if signedInAs}
@@ -354,8 +371,16 @@
                             <div class="grid grid-cols-2 gap-1 p-2">
                                 {#each config.clusters as cluster}
                                     <li>
+                                        <!-- For the currently active cluster, read currentTheme (a $state written by
+                                             applyTheme on every selection) instead of re-reading resolveThemeId's
+                                             sessionStorage lookup -- sessionStorage isn't a tracked reactive signal, so
+                                             an expression that only calls resolveThemeId never re-runs when the theme
+                                             changes, only on the next full reload. Every other cluster's card still
+                                             uses resolveThemeId since its own stored theme hasn't changed. -->
                                         <button
-                                                class="flex flex-col items-start py-2 w-full {currentCluster?.id === cluster.id ? 'active' : ''}"
+                                                data-theme={cluster.id === currentCluster?.id ? (currentTheme?.baseTheme ?? resolveThemeId(cluster.id, config)) : resolveThemeId(cluster.id, config)}
+                                                style={previewRadiusStyle()}
+                                                class="flex flex-col items-start py-1.5 w-full bg-base-100 text-base-content border border-base-300 {currentCluster?.id === cluster.id ? 'ring-2 ring-primary' : ''}"
                                                 onclick={() => handleClusterChange(cluster.id)}
                                         >
                                             <span class="text-[12px] font-bold">{cluster.id}</span>
@@ -373,7 +398,9 @@
                             <div class="grid grid-cols-2 gap-1 p-2">
                                 {#each config.themeConfigs.themes as theme}
                                     <button
-                                            class="btn btn-xs font-mono text-[12px] {currentTheme?.id === theme.id ? 'btn-primary' : 'btn-ghost border-base-300'}"
+                                            data-theme={theme.baseTheme}
+                                            style={previewRadiusStyle()}
+                                            class="btn btn-xs font-mono text-[12px] bg-base-100 text-base-content border-base-300 {currentTheme?.id === theme.id ? 'ring-2 ring-primary' : ''}"
                                             onclick={() => applyTheme(theme.id, true)}
                                     >
                                         {theme.displayName}
@@ -408,9 +435,11 @@
                     {#each config.clusters as cluster (cluster.id)}
                         <a
                             href={JobMasterConfigUtil.resolveHref("/", cluster.id)}
-                            class="btn btn-block justify-between"
+                            data-theme={resolveThemeId(cluster.id, config)}
+                            style={previewRadiusStyle()}
+                            class="btn btn-block justify-between bg-base-100 text-base-content border border-base-300 h-auto py-3"
                         >
-                            <div class="flex flex-col items-start gap-0.5">
+                            <div class="flex flex-col items-start gap-1">
                                 <div class="font-medium">{cluster.id}</div>
                                 {#if cluster.environmentName}
                                     <span class="badge badge-primary badge-xs">{cluster.environmentName}</span>

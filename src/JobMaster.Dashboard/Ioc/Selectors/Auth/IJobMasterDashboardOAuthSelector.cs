@@ -62,4 +62,17 @@ public interface IJobMasterDashboardOAuthSelector
     /// to avoid the two colliding on a single selector.
     /// </summary>
     IJobMasterDashboardOAuthSelector WithTabLabel(string label);
+
+    /// <summary>
+    /// Gates every OAuth provider button under this <c>ConfigOAuth()</c> call behind a checkbox —
+    /// buttons stay disabled until <paramref name="checkboxLabel"/> is checked. Once checked, the
+    /// browser remembers it (via <c>localStorage</c>, keyed by a hash of the text so editing either
+    /// parameter invalidates every prior consent) and the gate never shows again on that browser.
+    /// Global to the whole OAuth group, not per-provider — every provider added under one
+    /// <c>ConfigOAuth()</c> call shares the same login behavior and disclosure, so a per-provider
+    /// split would just be two checkboxes describing the same thing.
+    /// </summary>
+    /// <param name="checkboxLabel">Short text shown directly next to the checkbox, e.g. "I agree to how sign-in data is used".</param>
+    /// <param name="detailsText">Optional longer explanation revealed via a "Learn more" disclosure next to the checkbox.</param>
+    IJobMasterDashboardOAuthSelector WithConsentText(string checkboxLabel, string? detailsText = null);
 }
