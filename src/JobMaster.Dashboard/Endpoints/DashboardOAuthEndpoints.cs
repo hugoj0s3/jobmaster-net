@@ -19,6 +19,7 @@ internal static class DashboardOAuthEndpoints
     {
         endpoints.MapGet($"{basePath}/oauth/{{id}}", async (
             [FromRoute] string id,
+            [FromQuery] string? consent,
             HttpContext ctx,
             DashboardOptions options,
             IJobMasterOAuthFlowStateStorage flowStorage) =>
@@ -29,11 +30,25 @@ internal static class DashboardOAuthEndpoints
             var provider = oauthConfig.Providers.FirstOrDefault(p => p.Key == id);
             if (provider is null) return Results.NotFound();
 
+            // Bound as string, not bool: the frontend sends "1"/"0" (see Login.svelte), and
+            // ASP.NET Core's default bool query-string binder only accepts "true"/"false" —
+            // "1" silently fails to parse and leaves a `bool consent` parameter false regardless
+            // of what was actually sent, which previously made every login fail with
+            // "consent_required" even after checking the box.
+            var isConsent = consent == "1";
+
+            // The frontend already disables the sign-in button until the checkbox is checked, but
+            // that's a UI courtesy, not a security boundary — a request that skips the frontend
+            // entirely (a stale cached page, a direct call, a modified client) must not be able to
+            // start a login without consent when a gate is actually configured.
+            if (!string.IsNullOrEmpty(oauthConfig.ConsentCheckboxLabel) && !isConsent)
+                return Results.BadRequest(new { error = "consent_required" });
+
             var codeVerifier = GenerateCodeVerifier();
             var codeChallenge = GenerateCodeChallenge(codeVerifier);
             var state = Guid.NewGuid().ToString("N");
 
-            var flowState = new OAuthFlowState { ProviderKey = id, State = state, CodeVerifier = codeVerifier };
+            var flowState = new OAuthFlowState { ProviderKey = id, State = state, CodeVerifier = codeVerifier, Consent = isConsent };
             var cookieValue = await flowStorage.BeginAsync(flowState);
 
             // Secure over plain HTTP is silently dropped by not every browser the same way (some
@@ -131,6 +146,11 @@ internal static class DashboardOAuthEndpoints
                 return Results.BadRequest(new { error = "cannot_establish_identity" });
             }
 
+            // Carried from the initiate step (see the GET handler above) rather than re-derived
+            // here, since the confirm request itself has no way to know what the checkbox looked
+            // like at initiation time — the flow state is the only thing that survives the
+            // redirect round-trip to the IdP and back.
+            identity.Claims[OAuthUserIdentity.ConsentClaimKey] = flowState.Consent ? "1" : "0";
             identity.HttpContext = ctx;
 
             string token;

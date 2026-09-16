@@ -6,6 +6,18 @@
 
 ---
 
+## JobMaster.Dashboard 0.0.6-alpha
+
+### Added
+
+- **Inline consent link** — wrap one word/phrase in a single pair of square brackets inside `WithConsentText`'s `checkboxLabel`, e.g. `"I agree to how sign-in data is used. [Details]"`, to turn it into the "View details" trigger sitting naturally inside the sentence, instead of as a separate line below the checkbox. Falls back to the original separate-line trigger if the label has no brackets, so existing calls are unaffected.
+- **`OAuthUserIdentity.IsConsent()`** — lets a `WithTokenIssuer`/`OnLoginSucceeded` hook check whether the visitor actually checked the consent box at this login (`false` when no consent gate is configured), e.g. `if (!identity.IsConsent()) return;` before recording a lead or other consent-gated side effect. The underlying claim key is also exposed as `OAuthUserIdentity.ConsentClaimKey` for the rare case a consumer needs the raw string.
+- **Server-side consent enforcement** — when a consent gate is configured (`WithConsentText`), the OAuth login-initiate endpoint now rejects the request (`400`, `{ "error": "consent_required" }`) if consent wasn't affirmed, rather than relying solely on the frontend disabling the sign-in button. Closes a gap where a request that skipped the frontend entirely (a stale cached page, a direct call, a modified client) could start a login without consent.
+
+### Fixed
+
+- **A consent-gated login could fail with "consent_required" even after checking the box** — the frontend sends the consent flag as `1`/`0`, but the initiate endpoint bound it as a plain `bool` query parameter, and ASP.NET Core's default `bool` binder only accepts the literal strings `"true"`/`"false"` — `"1"` silently failed to parse, leaving the server-side value `false` regardless of what was actually checked. Fixed by binding it as a string and comparing directly.
+
 ## JobMaster.Dashboard 0.0.5-alpha
 
 ### Added

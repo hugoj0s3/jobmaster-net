@@ -10,6 +10,8 @@ A browser-based single-page application for monitoring and managing your JobMast
 
 ![JobMaster Dashboard](https://docs.jobmaster.hugoj0s3.dev/img/dashboard/dashboard-overview.png)
 
+**🚀 Live demo:** [sandbox.jobmaster.hugoj0s3.dev](https://sandbox.jobmaster.hugoj0s3.dev) — sign in with GitHub and click around a realistic multi-cluster deployment before installing anything.
+
 ## 📦 Installation
 
 ```bash

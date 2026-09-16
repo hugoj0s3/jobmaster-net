@@ -102,6 +102,36 @@
 
     let consentDetailsDialog: HTMLDialogElement | undefined = $state();
 
+    // Markdown-lite: a `[bracketed]` word inside the checkbox label becomes the inline "View
+    // details" trigger, e.g. "I agree with [terms]." -- lets the disclosure link sit naturally in
+    // the sentence instead of as a separate element below/after the checkbox. Only the first
+    // bracket pair is honored; falls back to no inline link (and the separate trailing button
+    // below) if the label has none.
+    let consentLinkMatch = $derived(auth.oAuthConsentCheckboxLabel?.match(/\[([^\]]+)\]/));
+    let consentLabelBefore = $derived(
+        consentLinkMatch ? auth.oAuthConsentCheckboxLabel.slice(0, consentLinkMatch.index) : (auth.oAuthConsentCheckboxLabel ?? "")
+    );
+    let consentLabelLinkText = $derived(consentLinkMatch ? consentLinkMatch[1] : null);
+    let consentLabelAfter = $derived(
+        consentLinkMatch ? auth.oAuthConsentCheckboxLabel.slice((consentLinkMatch.index ?? 0) + consentLinkMatch[0].length) : ""
+    );
+    let hasInlineConsentLink = $derived(!!(consentLabelLinkText && auth.oAuthConsentDetailsText));
+
+    // Plain-text version of the checkbox label with the `[brackets]` markup stripped (but the
+    // wrapped text kept) -- used wherever the label is shown as an inert string rather than
+    // re-parsed into an inline link, e.g. the details dialog's own heading.
+    let consentLabelPlainText = $derived(
+        consentLinkMatch ? consentLabelBefore + consentLabelLinkText + consentLabelAfter : (auth.oAuthConsentCheckboxLabel ?? "")
+    );
+
+    function openConsentDetails(e: MouseEvent) {
+        // Prevents the native "click anywhere in a <label> toggles its <input>" behavior from
+        // firing when the inline link sits inside the checkbox's own <label>.
+        e.preventDefault();
+        e.stopPropagation();
+        consentDetailsDialog?.showModal();
+    }
+
     async function startOAuthLogin(provider: { key: string }) {
         oauthError = null;
 
@@ -114,7 +144,9 @@
         }
 
         try {
-            const res = await fetch(`${JobMasterConfigUtil.getBasePath()}/oauth/${provider.key}`);
+            // consentChecked is false when no consent gate is configured (see its derivation
+            // above), so this is always accurate to send, not just when a gate exists.
+            const res = await fetch(`${JobMasterConfigUtil.getBasePath()}/oauth/${provider.key}?consent=${consentChecked ? 1 : 0}`);
             if (!res.ok) throw new Error(`Failed to start login (${res.status})`);
             const { url } = await res.json();
             window.location.href = url;
@@ -316,9 +348,15 @@
                 <div class="mt-3 space-y-1">
                     <label class="label cursor-pointer justify-start gap-2 py-0">
                         <input type="checkbox" class="checkbox checkbox-sm" bind:checked={consentChecked} />
-                        <span class="label-text text-sm">{auth.oAuthConsentCheckboxLabel}</span>
+                        <span class="label-text text-sm">
+                            {#if hasInlineConsentLink}
+                                {consentLabelBefore}<button type="button" class="link link-primary link-hover" onclick={openConsentDetails}>{consentLabelLinkText}</button>{consentLabelAfter}
+                            {:else}
+                                {consentLabelPlainText}
+                            {/if}
+                        </span>
                     </label>
-                    {#if auth.oAuthConsentDetailsText}
+                    {#if auth.oAuthConsentDetailsText && !hasInlineConsentLink}
                         <button
                             type="button"
                             class="link link-hover mx-auto block w-fit text-xs text-base-content/60"
@@ -333,7 +371,7 @@
             {#if auth.oAuthConsentDetailsText}
                 <dialog bind:this={consentDetailsDialog} class="modal">
                     <div class="modal-box">
-                        <h3 class="text-lg font-bold">{auth.oAuthConsentCheckboxLabel}</h3>
+                        <h3 class="text-lg font-bold">{consentLabelPlainText}</h3>
                         <p class="py-4 text-sm text-base-content/80">{auth.oAuthConsentDetailsText}</p>
                         <div class="modal-action">
                             <form method="dialog">

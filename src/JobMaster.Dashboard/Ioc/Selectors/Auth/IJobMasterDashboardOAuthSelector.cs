@@ -72,7 +72,13 @@ public interface IJobMasterDashboardOAuthSelector
     /// <c>ConfigOAuth()</c> call shares the same login behavior and disclosure, so a per-provider
     /// split would just be two checkboxes describing the same thing.
     /// </summary>
-    /// <param name="checkboxLabel">Short text shown directly next to the checkbox, e.g. "I agree to how sign-in data is used".</param>
-    /// <param name="detailsText">Optional longer explanation revealed via a "Learn more" disclosure next to the checkbox.</param>
+    /// <param name="checkboxLabel">
+    /// Short text shown directly next to the checkbox, e.g. "I agree to how sign-in data is used".
+    /// Wrap one word/phrase in a single pair of square brackets, e.g. "I agree with [terms].", to
+    /// turn it into the inline trigger for <paramref name="detailsText"/> instead of showing a
+    /// separate "View details" link below the checkbox. Only the first bracket pair is honored;
+    /// ignored if <paramref name="detailsText"/> is null.
+    /// </param>
+    /// <param name="detailsText">Optional longer explanation revealed via a "View details" disclosure next to (or inline within) the checkbox label.</param>
     IJobMasterDashboardOAuthSelector WithConsentText(string checkboxLabel, string? detailsText = null);
 }
