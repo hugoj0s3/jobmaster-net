@@ -10,6 +10,23 @@
 
 ---
 
+## Benchmarks
+
+50k-job bursts, 20 workers, real HTTP scheduling (not in-process microbenchmarks):
+
+| Config                    | Scheduling throughput |
+|---------------------------|-----------------------|
+| RavenDB + NATS             | **23.8k jobs/sec**    |
+| RavenDB (single DB)*       | 6.5k jobs/sec         |
+| PostgreSQL                 | 6.1k jobs/sec         |
+| MySQL                      | 4.4k jobs/sec         |
+
+*RavenDB ran at half the CPU/memory of the other engines (a Community Edition license cap) and still led the field.
+
+Full methodology, resource limits, and detailed results: [docs.jobmaster.hugoj0s3.dev/docs/benchmarks/results](https://docs.jobmaster.hugoj0s3.dev/docs/benchmarks/results).
+
+---
+
 ## Quick Start
 
 Standalone is the simplest way to run JobMaster. A single database connection handles coordination, job storage, and the transport layer — no additional brokers required.
@@ -85,21 +102,6 @@ await jobScheduler.RecurringAsync<HelloJobHandler>(expression);
 // Expression string
 await jobScheduler.RecurringAsync<HelloJobHandler>(NaturalCronExprCompiler.TypeId, "every 1 minutes");
 ```
-
----
-
-## Benchmarks
-
-50k-job bursts, 20 workers, real HTTP scheduling (not in-process microbenchmarks):
-
-| Config                    | Scheduling throughput |
-|---------------------------|-----------------------|
-| RavenDB + NATS            | **23.8k jobs/sec**    |
-| RavenDB (single DB)       | 6.5k jobs/sec         |
-| PostgreSQL                | 6.1k jobs/sec         |
-| MySQL                     | 4.4k jobs/sec         |
-
-Full methodology, resource limits, and detailed results: [docs.jobmaster.hugoj0s3.dev/docs/benchmarks/results](https://docs.jobmaster.hugoj0s3.dev/docs/benchmarks/results).
 
 ---
 
