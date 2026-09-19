@@ -2,6 +2,26 @@
 
 Follow-ups noted during work but deliberately deferred out of the PR they came up in.
 
+## `OpenApiJsonConfigSeeder` trusts the request's `Host` header for a server-side fetch (SSRF)
+
+Bare `FromOpenApiJson()` with no explicit `ApiUrl` builds its self-fetch URL from the client-controlled
+`Host` header (`src\JobMaster.Dashboard\OpenApi\OpenApiJsonConfigSeeder.cs`), and `ApplyApiUrl` can then
+set `ApiUrl` — served to every browser as `ApiBaseUrl`, i.e. where login requests get sent — from that
+fetch's response. A forged `Host` can redirect where every visitor's credentials go, until process restart.
+`AllowedHosts`, reverse proxies, and load balancers don't reliably close this — can't rely on infra alone.
+Sandbox demo is unaffected (`UseApiUrl("/jm-api")` explicitly, never calls `FromOpenApiJson()`).
+
+Fix direction (not implemented): require `ApiUrl` explicitly; drop the Host-based self-fetch branch in
+`SeedAsync`; `FromOpenApiJson(...)` keeps working only via an explicit absolute URL or file path.
+
+## `DashboardOAuthEndpoints`'s `redirect_uri` also derives from `ctx.Request.Host` — fine, but undocumented
+
+Same Host-derived pattern in `BuildCallbackUrl`/`ResolveUrl` (`DashboardOAuthEndpoints.cs`), but not a bug
+here — the OAuth provider itself rejects a `redirect_uri` that doesn't exactly match what's registered for
+the Client ID, so a forged `Host` alone doesn't work. Only becomes a real issue if the provider allows
+loose/wildcard redirect matching, or the admin registered one. Gap is just doc: nothing tells admins to
+register the exact, full callback URL. Worth a line in the OAuth setup docs.
+
 ## `JobMasterRuntime.StartAsync` validation is still split across two places
 
 Raised 2026-07-19 while working on the Migrating-mode PR. Point 1 (validation must fully complete
@@ -319,6 +339,18 @@ those overloads still have no deadlock-specific handling of their own. Worth rev
 acquire path" should now mean given that path no longer retries deadlocks either -- possibly the same
 catch-and-return-empty-equivalent (an empty/no-op update result) rather than reintroducing a retry policy.
 
+## `CronosExprExtensions`/`NCrontabExprExtensions` have colliding method names
+
+Both classes expose identically-named/signed methods (`Recurring<T>`/`RecurringAsync<T>`/`Add<Th>`, all
+taking a plain `string`), so using both `JobMaster.Cronos` and `JobMaster.NCrontab` together makes calls
+ambiguous. Auto-discovery (try each compiler until one parses) was considered and rejected — Cronos and
+NCrontab both parse the same common cron syntax, so it'd be non-deterministic, not just an edge case.
+
+Fix direction (not implemented): prefix each provider's methods with its name
+(`CronosRecurringAsync<T>`/`CronosAdd<Th>`, `NCrontabRecurringAsync<T>`/`NCrontabAdd<Th>`, etc.), mark the
+old ambiguous methods `[Obsolete]` rather than removing them, defer deduping the two classes' identical
+bodies until the obsolete methods are actually removed later.
+
 ## Hybrid worker concept: independent transport configuration per connection role
 
 Raised 2026-08-25 during a benchmarking session. Idea: let a worker's save/dispatch path and its execution
@@ -333,3 +365,18 @@ AddWorker("worker-1")
     .SaveTransport([nats-connection])
     .Execution([raven-db]);
 ```
+
+## `JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` re-scans all assemblies per distinct handler type
+
+On a cache miss it does a full assembly scan but only caches the one entry it was looking for, so N
+distinct handler types pay N full scans instead of one. Hot path: called on every job execution. Fix:
+populate the whole map from the one scan (per-type canonical ID via `GetJobDefinitionId`), consistent
+with how `DefaultRuntimeValidatorSetup` already resolves IDs for its duplicate check.
+
+## Idea: opt-in `EnforceJobDefinitionIdExplicit` validation setting
+
+A handler with no explicit ID attribute silently falls back to `Type.FullName` — renaming/moving the class
+then breaks resolution for anything already persisted under the old name. Idea: an opt-in setting that
+fails/warns startup validation when a handler relies on that fallback, alongside the existing
+duplicate-ID check in `DefaultRuntimeValidatorSetup`. Open question: handler discovery is `AppDomain`-wide,
+not per-cluster, so the setting's scope (global vs. per-cluster) isn't settled.
