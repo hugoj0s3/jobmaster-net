@@ -335,6 +335,9 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
         var cleanupDeadAgentConnectionsRunner = new CleanupDeadAgentConnectionsRunner(this);
         await cleanupDeadAgentConnectionsRunner.StartAsync();
+
+        var cleanupDeadHostsRunner = new CleanupDeadHostsRunner(this);
+        await cleanupDeadHostsRunner.StartAsync();
     }
 
     private async Task LoadExecutionRunners(AgentConnectionId agentConnectionId)

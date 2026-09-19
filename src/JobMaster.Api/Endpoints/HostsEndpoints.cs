@@ -33,6 +33,10 @@ internal static class HostsEndpoints
         }
 
         var hosts = await service.QueryAllAsync();
+
+        if (criteria.IsAlive.HasValue)
+            hosts = hosts.Where(h => h.IsAlive() == criteria.IsAlive.Value).ToList();
+
         return Results.Ok(hosts.Count);
     }
 
@@ -48,6 +52,10 @@ internal static class HostsEndpoints
         }
 
         var hosts = await service.QueryAllAsync();
+
+        if (criteria.IsAlive.HasValue)
+            hosts = hosts.Where(h => h.IsAlive() == criteria.IsAlive.Value).ToList();
+
         var apiHosts = hosts.Select(ApiHostModel.FromDomain).ToList();
         
         // Apply in-memory sorting

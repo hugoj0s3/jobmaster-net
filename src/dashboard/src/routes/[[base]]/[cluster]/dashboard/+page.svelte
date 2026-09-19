@@ -36,6 +36,7 @@
             executionMode: number;
             drainingMode: number;
             fullMode: number;
+            coordinatorMode: number;
             lastHeartbeatText: string;
         };
         hosts: {
@@ -98,6 +99,7 @@
                 executionMode: 0,
                 drainingMode: 0,
                 fullMode: 0,
+                coordinatorMode: 0,
                 lastHeartbeatText: "—"
             },
             hosts: {
@@ -166,6 +168,11 @@
         return count > 0 ? activeClass : "badge-ghost";
     }
 
+    function upcomingJobsHref(status: number): string {
+        const scheduledAt = encodeURIComponent(`rel:min:0:${settings.nextMinutes}`);
+        return JobMasterConfigUtil.resolveHref(`/jobs?statuses=${status}&scheduledAt=${scheduledAt}`, clusterId());
+    }
+
     async function refreshNow() {
         isRefreshing = true;
         try {
@@ -182,6 +189,7 @@
                     queuedCount,
                     processingCount,
                     hostsCount,
+                    offlineHostsCount,
                     bucketsCount,
                     bucketsActiveCount,
                     bucketsCompletingCount,
@@ -230,6 +238,13 @@
 
                     (jmApi as any).GET("/{clusterId}/hosts/count", {
                         params: { path: { clusterId: cid } }
+                    }).then((r: any) => {
+                        if (r.error) throw r.error;
+                        return r.data as number;
+                    }),
+
+                    (jmApi as any).GET("/{clusterId}/hosts/count", {
+                        params: { path: { clusterId: cid }, query: { IsAlive: false } }
                     }).then((r: any) => {
                         if (r.error) throw r.error;
                         return r.data as number;
@@ -336,11 +351,12 @@
                         executionMode: workerModes.filter((m) => m === WorkerMode.Execution).length,
                         drainingMode: workerModes.filter((m) => m === WorkerMode.Drain).length,
                         fullMode: workerModes.filter((m) => m === WorkerMode.Full).length,
+                        coordinatorMode: workerModes.filter((m) => m === WorkerMode.Coordinator).length,
                         lastHeartbeatText: DateDisplayUtil.formatRelativeOrDate(lastHb, uiNow)
                     },
                     hosts: {
                         total: hostsCount,
-                        offline: 0
+                        offline: offlineHostsCount
                     },
                     buckets: {
                         total: bucketsCount,
@@ -517,7 +533,7 @@
                     <div class="mt-2 text-5xl font-semibold">{metrics.upcomingJobs.total}</div>
 
                     <div class="mt-3 space-y-1 text-xs opacity-70">
-                        <a title="Persisted in the master store, waiting to be assigned to a bucket." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.OnMaster}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Persisted in the master store, waiting to be assigned to a bucket." href={upcomingJobsHref(ApiJobStatus.OnMaster)} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.OnMaster}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.OnMaster, "badge-primary")} font-mono text-base font-semibold`}
@@ -525,7 +541,7 @@
                                 {metrics.upcomingJobs.breakdown.OnMaster}
                             </span>
                         </a>
-                        <a title="Assigned to a bucket per the transient threshold window, waiting for its execution time." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.InBucket}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Assigned to a bucket per the transient threshold window, waiting for its execution time." href={upcomingJobsHref(ApiJobStatus.InBucket)} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.InBucket}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.InBucket, "badge-secondary")} font-mono text-base font-semibold`}
@@ -533,7 +549,7 @@
                                 {metrics.upcomingJobs.breakdown.InBucket}
                             </span>
                         </a>
-                        <a title="Accepted by the worker and held in memory, ~30 seconds before scheduled execution." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Onboarded}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Accepted by the worker and held in memory, ~30 seconds before scheduled execution." href={upcomingJobsHref(ApiJobStatus.Onboarded)} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Onboarded}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Onboarded, "badge-info")} font-mono text-base font-semibold`}
@@ -541,7 +557,7 @@
                                 {metrics.upcomingJobs.breakdown.Onboarded}
                             </span>
                         </a>
-                        <a title="Waiting for a free execution slot on the worker." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Queued}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Waiting for a free execution slot on the worker." href={upcomingJobsHref(ApiJobStatus.Queued)} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Queued}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Queued, "badge-warning")} font-mono text-base font-semibold`}
@@ -549,7 +565,7 @@
                                 {metrics.upcomingJobs.breakdown.Queued}
                             </span>
                         </a>
-                        <a title="Actively being executed by its registered job handler." href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Processing}`, clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                        <a title="Actively being executed by its registered job handler." href={upcomingJobsHref(ApiJobStatus.Processing)} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             {JobStatusUtil.Label.Processing}
                             <span
                                 class={`badge badge-sm ${kpiBadgeClass(metrics.upcomingJobs.breakdown.Processing, "badge-accent")} font-mono text-base font-semibold`}
@@ -564,9 +580,12 @@
             <div class="card bg-base-200/70 shadow-xl backdrop-blur">
                 <div class="card-body">
                     <div class="text-sm opacity-80">Failed Jobs <span class="opacity-60">(last {settings.lastHours}h)</span></div>
-                    <div class="mt-2 text-5xl font-semibold text-error">
+                    <a
+                        href={JobMasterConfigUtil.resolveHref(`/jobs?statuses=${ApiJobStatus.Failed}&scheduledAt=${encodeURIComponent(`rel:hour:-${settings.lastHours}:`)}`, clusterId())}
+                        class="mt-2 block text-5xl font-semibold text-error hover:opacity-80 transition-opacity"
+                    >
                         {metrics.failures.failedJobs}
-                    </div>
+                    </a>
                 </div>
             </div>
 
@@ -587,6 +606,10 @@
                         <a href={JobMasterConfigUtil.resolveHref('/workers?modes=Full', clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
                             <span>Full Mode</span>
                             <span class="font-mono text-base font-semibold">{metrics.workers.fullMode}</span>
+                        </a>
+                        <a href={JobMasterConfigUtil.resolveHref('/workers?modes=Coordinator', clusterId())} class="flex items-center justify-between gap-2 rounded px-1 -mx-1 hover:bg-base-300/50 transition-colors">
+                            <span>Coordinator Mode</span>
+                            <span class="font-mono text-base font-semibold">{metrics.workers.coordinatorMode}</span>
                         </a>
 
                     </div>

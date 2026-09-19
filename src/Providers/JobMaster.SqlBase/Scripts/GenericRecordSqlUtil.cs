@@ -721,7 +721,22 @@ VALUES (@RecordUniqueId, @KeyName, @ValueText, @ValueBinary, @ValueInt64, @Value
 
     public IList<GenericRecordEntry> LinearListToDomain(IEnumerable<SqlGenericRecordEntryLinearDto> result)
     {
-        var dictionary = result.GroupBy(x => x.RecordUniqueId).ToDictionary(x => x.Key, x => x.ToList());
+        var rows = result as IList<SqlGenericRecordEntryLinearDto> ?? result.ToList();
+
+        // "timestamp without time zone" columns (Postgres/MySQL/SQL Server alike) carry no offset,
+        // so ADO.NET hands DateTime values back as Kind=Unspecified even though everything written
+        // through MapToSqlEntry is UTC. Re-label them here, at the SQL boundary where we know that
+        // convention holds, rather than assuming it in the generic (non-SQL-aware) domain layer.
+        foreach (var row in rows)
+        {
+            row.CreatedAt = DateTime.SpecifyKind(row.CreatedAt, DateTimeKind.Utc);
+            if (row.ExpiresAt.HasValue)
+                row.ExpiresAt = DateTime.SpecifyKind(row.ExpiresAt.Value, DateTimeKind.Utc);
+            if (row.ValueDateTime.HasValue)
+                row.ValueDateTime = DateTime.SpecifyKind(row.ValueDateTime.Value, DateTimeKind.Utc);
+        }
+
+        var dictionary = rows.GroupBy(x => x.RecordUniqueId).ToDictionary(x => x.Key, x => x.ToList());
         var entries = MapLinearToSqlEntry(dictionary);
         return entries.Select(MapToEntry).ToList();
     }

@@ -9,4 +9,6 @@ public class ApiHostCriteria
     public int? Offset { get; set; }
     /// <summary>Optional sort specification.</summary>
     public ApiSortByCriteria? SortBy { get; set; }
+    /// <summary>Filter by alive status.</summary>
+    public bool? IsAlive { get; set; }
 }

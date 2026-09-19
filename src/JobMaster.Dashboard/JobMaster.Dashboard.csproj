@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <VersionPrefix>0.0.6</VersionPrefix>
-    <VersionSuffix>alpha</VersionSuffix>
+    <VersionSuffix>alpha.2</VersionSuffix>
 
     <PackageId>JobMaster.Dashboard</PackageId>
     <Authors>Hugo Silva</Authors>

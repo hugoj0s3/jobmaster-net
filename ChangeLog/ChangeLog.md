@@ -6,6 +6,33 @@
 
 ---
 
+## JobMaster 0.0.11-alpha.3
+
+### Added
+
+- **`IsAlive` query filter on `GET {basePath}/hosts` and `GET {basePath}/hosts/count`** (`JobMaster.Api`) — mirrors the filter already available on `/workers`. Lets a caller ask specifically for online or offline hosts instead of fetching every host and filtering client-side.
+
+### Fixed
+
+- **Dead hosts were never actually deleted** — the runner responsible for removing hosts that stopped heartbeating existed and was fully unit-tested, but was never started by the coordinator, so nothing ever ran it. Host records accumulated indefinitely across every process restart, showing as an ever-growing, mostly-"offline" host count. It now runs alongside the other coordinator-owned cleanup work.
+
+- ⚠️ **A host's timestamps could drift into the future over time on SQL providers (Postgres, MySQL, SQL Server), permanently hiding it from cleanup and making it look "alive" forever** — reading a `DateTime` back from a `timestamp`/`datetime` column returns it with an unspecified time-zone marker; converting that value (rather than simply re-labeling it as UTC, which is what it already was) treated it as local time and shifted it by the server's UTC offset. Because a host's periodic stats update reads its own record back and writes it out again with that same field unchanged, the shift compounded a little further on every update cycle — over enough cycles, the timestamp could end up far enough in the future that every "is this host still alive" check (including the cleanup runner's own dead-check above, which compares against "now") could never match it again. **If you're upgrading from an affected version, host records already corrupted by this need a one-time manual cleanup** — check for hosts with implausible future `LastHeartbeat`/`CreatedAt` values and delete them; the fix here only prevents new drift going forward, it doesn't repair rows already affected.
+
+## JobMaster.Dashboard 0.0.6-alpha.2
+
+### Added
+
+- **"Coordinator Mode" row on the Workers Online card** — the total already included Coordinator-mode workers, but the breakdown beneath it had no row for them, so the visible rows didn't sum to the total whenever one was online.
+- **Failed Jobs count now links through to the Jobs page**, filtered to failed status — matching the click-through behavior already present on every other Overview card.
+- **Upcoming Execution and Failed Jobs links now carry the same time window shown on their card** — clicking a status under "Upcoming Execution (next N min)", or the Failed Jobs count, previously landed on the Jobs page with an unrelated default ±60-minute filter instead of the window the number actually represented.
+- **Browser tab title** — every page now shows `JobMaster | <Page>` (e.g. `JobMaster | Jobs`) instead of the raw URL.
+
+### Fixed
+
+- **The Overview's "Offline" host count was hardcoded to `0`** — it now queries the real count instead of a placeholder value.
+
+---
+
 ## JobMaster.Dashboard 0.0.6-alpha
 
 ### Added

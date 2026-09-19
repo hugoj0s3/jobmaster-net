@@ -428,7 +428,7 @@ ORDER BY {cExpiresAt} ASC, {cRecordId} ASC");
     private async Task InsertEntryValuesAsync(IDbConnection conn, IDbTransaction tx, SqlGenericRecordEntry entry)
     {
         if (entry.Values.Count == 0) return;
-        
+
         var (insertSql, rows) = genericUtil.BuildInsertEntryValuesSql(entry);
 
         await conn.ExecuteAsync(AppendSqlTag(insertSql, "InsertEntryValuesAsync", entry.GroupId), rows, tx);

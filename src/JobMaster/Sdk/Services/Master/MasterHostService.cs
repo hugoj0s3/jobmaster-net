@@ -91,7 +91,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
             MemoryUsedBytes = hostStats.MemoryUsedBytes,
             ProcessorCount = hostStats.ProcessorCount,
         };
-        
+
         var genericRecord =
             GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.Host, record.Id, record);
 
@@ -109,7 +109,7 @@ internal class MasterHostService : JobMasterClusterAwareComponent, IMasterHostSe
         {
             return;
         }
-            
+
         var hostStats = await CaptureStatsAsync(HostId.Recover(host.HostDisplayName, hostId));
         host.CpuUsagePercent = hostStats.CpuUsagePercent;
         host.DiskAvailableBytes = hostStats.DiskAvailableBytes;

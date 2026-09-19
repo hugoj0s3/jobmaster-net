@@ -298,7 +298,32 @@
         isLoggedIn = false;
         signedInAs = null;
     }
+
+    const routeTitles: Record<string, string> = {
+        dashboard: "Dashboard",
+        jobs: "Jobs",
+        workers: "Workers",
+        hosts: "Hosts",
+        buckets: "Buckets",
+        "recurring-schedules": "Recurring Schedules",
+        "agent-connections": "Agent Connections",
+    };
+
+    function pageTitle(): string {
+        if (!config) return "JobMaster";
+        if (isOAuthCallbackPath) return "JobMaster | Signing In";
+        if (!isLoggedIn) return "JobMaster | Sign In";
+        if (!currentCluster) return "JobMaster | Select Cluster";
+
+        const seg = getPathAfterCluster().split("/").filter(Boolean)[0] ?? "dashboard";
+        const routeName = routeTitles[seg] ?? (seg.charAt(0).toUpperCase() + seg.slice(1));
+        return `JobMaster | ${routeName}`;
+    }
 </script>
+
+<svelte:head>
+    <title>{pageTitle()}</title>
+</svelte:head>
 
 {#if isOAuthCallbackPath}
     {@render children()}

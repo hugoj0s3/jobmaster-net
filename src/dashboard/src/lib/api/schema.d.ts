@@ -365,6 +365,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    IsAlive?: boolean;
                     CountLimit?: number;
                     Offset?: number;
                 };
@@ -405,6 +406,7 @@ export interface paths {
         get: {
             parameters: {
                 query?: {
+                    IsAlive?: boolean;
                     CountLimit?: number;
                     Offset?: number;
                 };
