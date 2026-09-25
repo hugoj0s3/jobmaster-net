@@ -380,3 +380,20 @@ then breaks resolution for anything already persisted under the old name. Idea: 
 fails/warns startup validation when a handler relies on that fallback, alongside the existing
 duplicate-ID check in `DefaultRuntimeValidatorSetup`. Open question: handler discovery is `AppDomain`-wide,
 not per-cluster, so the setting's scope (global vs. per-cluster) isn't settled.
+
+## `JobMasterScheduler` was `public` by oversight, not design — fixed 2026-09-19, watch for other bootstrap-plumbing classes with the same slip
+
+Raised/fixed 2026-09-19. `src\JobMaster\JobMasterScheduler.cs`'s concrete `JobMasterScheduler` class only
+exists so `AddJobMasterClusterExtensions.cs` can populate `BootstrapBlueprintDefinitions.JobMasterScheduler`
+before the DI container is built — the same bootstrap trick `JobMasterRuntimeSingleton.Instance` uses right
+next to it (`JobMasterRuntimeSingleton` is already correctly `internal static`). `JobMasterScheduler` was
+`public class` instead, unintentionally exposing its static `Instance` singleton as if it were a supported
+DI bypass, even though the class's own XML doc already said to prefer injecting `IJobMasterScheduler`.
+Confirmed via grep that only `AddJobMasterClusterExtensions.cs` (same assembly) and
+`JobMaster.UnitTests\JobMasterSchedulerTests.cs` (covered by `JobMaster`'s `InternalsVisibleTo` grant)
+ever referenced the concrete type — every other consumer (samples, benchmarks, providers) depends only on
+`IJobMasterScheduler`. Changed to `internal class`; full solution rebuild clean.
+
+Since this was a plain oversight rather than a deliberate choice, worth a quick audit of any other
+DI-bootstrap-only concrete classes in the SDK for the same public/internal slip, rather than assuming
+`JobMasterScheduler` was the only one.
