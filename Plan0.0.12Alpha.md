@@ -160,6 +160,12 @@ already stored on master.
 // StoredOnMaster:      persisted on master.
 public enum ScheduleReceiptStatus { AcceptedOnTransport, StoredOnMaster }
 
+// Confirmed: master has the row.
+// Unknown:   timed out or master error — it may still commit afterwards. Never "not on master": a failure
+//            doesn't prove the row isn't there (e.g. network error after commit). Calling again is safe —
+//            the write is insert-if-not-exists by job id, so a retry can't duplicate.
+public enum MasterConfirmationResult { Confirmed, Unknown }
+
 public sealed class JobScheduleReceipt
 {
     public ScheduleReceiptStatus Status { get; }
@@ -167,26 +173,29 @@ public sealed class JobScheduleReceipt
     public string? AgentWorkerId { get; }   // null when StoredOnMaster
     public JobContext Context { get; }
 
-    // Forces the save to master and waits (see item 7). Returns false on timeout.
+    // Forces the save to master and waits (see item 7).
     // Not recommended on the hot path — documented as such.
-    public Task<bool> ConfirmOnMasterAsync(TimeSpan? timeout = null);
+    public Task<MasterConfirmationResult> ConfirmOnMasterAsync(TimeSpan? timeout = null);
 }
 
 public sealed class RecurringScheduleReceipt { /* same shape, RecurringScheduleContext Context */ }
 ```
 - Naming decided: "Receipt" (accepted, not necessarily on master yet); `AgentWorkerId` matches
   `BucketModel`/`JobRawModel`; no `CancellationToken` — `IJobMasterScheduler` has none anywhere, timeout only.
+- `ConfirmOnMasterAsync` returns `MasterConfirmationResult`, not `bool` (feedback from Reddit thread): a `bool`
+  `false` would read as "not on master" when it really means "unknown". The receipt stays immutable —
+  `Status` keeps the value from scheduling time; the confirmation is a separate answer.
 - Sync methods return `JobScheduleReceipt`; async return `Task<JobScheduleReceipt>` — same type for both.
 - `IJobMasterSchedulerClusterAware.Schedule*` returns the status/bucket/worker info so `JobMasterScheduler`
   can build the receipt.
-- Until item 7 lands, `ConfirmOnMasterAsync` on `StoredOnMaster` returns `true` immediately; on
+- Until item 7 lands, `ConfirmOnMasterAsync` on `StoredOnMaster` returns `Confirmed` immediately; on
   `AcceptedOnTransport` it needs item 7's mechanism — so ship 6 and 7 in the same release.
 
 **Decided.** Hard break — no `[Obsolete]` shims for the old `JobContext`-returning methods. Documented as a
 breaking change (ChangeLog + docs migration note: `var ctx = scheduler.OnceNow<T>()` → `….Context`).
 
 **Open decisions.**
-- `ConfirmOnMasterAsync` default timeout value (returns `false` on timeout — decided).
+- `ConfirmOnMasterAsync` default timeout value.
 
 **Tasks.**
 - [ ] Types + XML docs.
