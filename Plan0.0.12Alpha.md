@@ -298,20 +298,21 @@ Workers attach to the hybrid connection like any other.
 
 **Decided: one shared format for RepoType and fingerprint**, always built by the framework (never by a provider):
 ```
-hybrid:<transport><SEP><execution>
-RepoType:    hybrid:NatsJetStream+RavenDb
-Fingerprint: hybrid:<nats-fp>+<ravendb-fp>
+hybrid:<transport>&&<execution>
+RepoType:    hybrid:NatsJetStream&&RavenDb
+Fingerprint: hybrid:<nats-fp>&&<ravendb-fp>
 ```
 - Role order is fixed (transport first), so swapping roles changes both strings → `ProtectConnectionChanges`
   catches it. Changing either underlying connection also changes the hybrid fingerprint.
-- `SEP` (candidate `+`, alternative `||`) and the `hybrid:` prefix become **reserved**. Hard validation, with
-  explicit throws:
-  - any `IAgentFingerprintResolver` returning a fingerprint containing `SEP` or starting with `hybrid:` → throw
+- Separator decided: `&&` (reads as "both"; two chars so it won't appear by accident; unlike `+`, it doesn't
+  silently decode to a space in a query string). `&&` and the `hybrid:` prefix become **reserved**. Hard
+  validation, with explicit throws:
+  - any `IAgentFingerprintResolver` returning a fingerprint containing `&&` or starting with `hybrid:` → throw
     (today all resolvers return GUIDs: Sql `ToString()`, NATS/RavenDB `ToString("N")`, so nothing breaks);
-  - any provider `RepositoryTypeId` containing `SEP`/`:` → throw at registration
+  - any provider `RepositoryTypeId` containing `&&`/`:` → throw at registration
     (current ids: `Postgres`, `MySql`, `SqlServer`, `NatsJetStream`, `RavenDb` — all fine).
-- Still to pick: `+` vs `||`. `+` reads better in logs/dashboard; `||` is less likely to appear in a future
-  provider id. Either works once reserved.
+- Encoding: any Dashboard/Api place that puts repo type or fingerprint in a URL must URL-encode it (`&` splits
+  query params); anything building HTML by hand must escape `&`. Add a test for the URL case if it exists.
 
 **Storage length check (done).**
 - Master: the agent connection's `Fingerprint`/`RepositoryTypeId` live in `AgentConnectionRecord`, serialized as
@@ -344,7 +345,6 @@ hybrid?" first, split it, and call the lookup with the right role's repo type �
 **Tasks.**
 - [ ] Create the dedicated sub-plan file and move this section into it.
 - [ ] Inventory every repo-type-keyed call site and assign it a role (transport/execution).
-- [ ] Pick the separator (`+` vs `||`).
 - [ ] Settle the open decisions above; split the work into PRs in the sub-plan.
 
 ---
