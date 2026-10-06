@@ -27,7 +27,8 @@
 - **Startup validation for unknown cluster ids.** Startup now fails when any of these names a cluster that isn't configured:
   - a handler's `[JobMasterClusterId]`;
   - a `JobDefinitionConfig.ClusterId` on an applied definition attribute;
-  - the `Config.ClusterId` of any `IStaticJobDefinitionConfig` type, even one only used for publishing.
+  - the `Config.ClusterId` of any `IStaticJobDefinitionConfig` type, even one only used for publishing;
+  - an `IStaticRecurringSchedulesProfile`'s `ClusterId`. Previously this only failed after the workers had already started, with a `KeyNotFoundException` while registering the profile's schedules.
 
   Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
 

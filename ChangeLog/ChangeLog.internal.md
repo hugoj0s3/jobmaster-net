@@ -24,13 +24,17 @@
     - New `internal static ValidateClusterIds(handlerTypes, staticJobDefinitionConfigTypes, configuredClusterIds)` (case-insensitive) covers handler-resolved cluster ids and every `IStaticJobDefinitionConfig` type's `Config.ClusterId`, including publisher-only definitions (Hugo's call).
     - It is a static helper so it can be unit-tested, because `ValidateAsync` scans every loaded assembly, and the unit-test assembly deliberately contains rule-breaking handlers.
     - `GetConfig` can't throw there, because a type missing `Config` already returns early further up.
+    - New `internal static ValidateStaticProfileClusterIds(profileTypes, configuredClusterIds)` checks each `IStaticRecurringSchedulesProfile`'s static `ClusterId`. Profiles are discovered the same way as `BootstrapStaticRecurringSchedules`; a blank or unset `ClusterId` is valid.
+      - The gap predates this PR (Hugo spotted it). An unknown profile `ClusterId` passed `info.IsValid`, which only checks the format, and the disabled-priority check skipped it via `SingleOrDefault` → `null`.
+      - It then threw `KeyNotFoundException` from `JobMasterClusterAwareComponentFactories.GetFactory` in the upsert loop. That loop runs in `StartAsync` **after** `worker.StartAsync()`, so the workers kept running, `Started` stayed `false`, and the profile's schedules were never registered.
+      - The tests use plain types with the same static members rather than real profile implementations, so the runtime's assembly-wide profile discovery never picks them up.
   - **Not changed (decided):** `CancelJob`/`ReSchedule`/`CancelRecurring` still fall back to the default cluster. They only receive an id, so there is no handler type to look up. This is documented in the `IJobMasterScheduler` XML docs. The `clusterId` param docs on the scheduling methods, on `IJobMasterSchedulerAdvanced`, and on `IStaticRecurringSchedulesProfile.ClusterId` were updated to the new precedence.
   - **Tests:**
     - `JobUtilTests`: `GetClusterId` for each precedence case.
     - `JobMasterSchedulerTests`: jobs sync/async, dynamic recurring, Advanced `TDefinition` and config-object overloads, override preservation, and resolved-cluster validation.
     - `RecurringScheduleDefinitionCollectionTests`: profile wins, handler attribute, definition config, default, and one profile spanning clusters.
     - New `DefaultRuntimeValidatorSetupTests`.
-    - 673/673 unit tests pass.
+    - 676/676 unit tests pass.
 
 ### JobMaster 0.0.11-alpha.3
 #### Added

@@ -72,6 +72,48 @@ public class DefaultRuntimeValidatorSetupTests
             .Should().BeNull();
     }
 
+    [Fact]
+    public void ValidateStaticProfileClusterIds_WhenProfileClusterNotConfigured_ReturnsError()
+    {
+        var error = DefaultRuntimeValidatorSetup.ValidateStaticProfileClusterIds(
+            new[] { typeof(UnknownClusterProfile) },
+            new[] { "default" });
+
+        error.Should().NotBeNull();
+        error.Should().Contain(typeof(UnknownClusterProfile).FullName).And.Contain("'profile-cluster'");
+    }
+
+    [Fact]
+    public void ValidateStaticProfileClusterIds_WhenProfileClusterConfigured_IgnoringCase_ReturnsNull()
+    {
+        DefaultRuntimeValidatorSetup.ValidateStaticProfileClusterIds(
+                new[] { typeof(UnknownClusterProfile) },
+                new[] { "default", "PROFILE-CLUSTER" })
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateStaticProfileClusterIds_WhenProfileDeclaresNoCluster_ReturnsNull()
+    {
+        DefaultRuntimeValidatorSetup.ValidateStaticProfileClusterIds(
+                new[] { typeof(NoClusterProfile) },
+                new[] { "default" })
+            .Should().BeNull();
+    }
+
+    // Plain types with the same static members the validator reads — deliberately not implementing
+    // IStaticRecurringSchedulesProfile, so the runtime's assembly-wide profile discovery never picks them up.
+    private sealed class UnknownClusterProfile
+    {
+        public static string ProfileId => "validator-profile";
+        public static string ClusterId => "profile-cluster";
+    }
+
+    private sealed class NoClusterProfile
+    {
+        public static string ProfileId => "validator-profile-no-cluster";
+    }
+
     private sealed class PlainHandler : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
