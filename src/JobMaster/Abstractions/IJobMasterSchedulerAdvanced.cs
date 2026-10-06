@@ -33,7 +33,7 @@ public interface IJobMasterSchedulerAdvanced
     /// <param name="timeout">Maximum execution time. Falls back to <c>TDefinition</c>'s config, then the cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries on failure. Falls back to <c>TDefinition</c>'s config, then the cluster default.</param>
     /// <param name="metadata">Optional key-value metadata passed to the handler.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>TDefinition</c>'s config, then the default cluster.</param>
     JobContext OnceNow<TDefinition>(
         IWriteableMessageData? msgData = null,
         JobMasterPriority? priority = null,
@@ -46,7 +46,7 @@ public interface IJobMasterSchedulerAdvanced
     /// <summary>Schedules a job for <paramref name="config"/> to run immediately.</summary>
     /// <param name="config">The job definition's identity and scheduling configuration.</param>
     /// <param name="msgData">Optional payload passed to the handler.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <paramref name="config"/>'s <see cref="JobDefinitionConfig.ClusterId"/>, then the default cluster.</param>
     JobContext OnceNow(
         JobDefinitionConfig config,
         IWriteableMessageData? msgData = null,
@@ -171,7 +171,7 @@ public interface IJobMasterSchedulerAdvanced
     /// <param name="metadata">Optional key-value metadata passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
     /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>TDefinition</c>'s config, then the default cluster.</param>
     RecurringScheduleContext Recurring<TDefinition>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
@@ -194,7 +194,7 @@ public interface IJobMasterSchedulerAdvanced
     /// <param name="data">Optional payload passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
     /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <paramref name="config"/>'s <see cref="JobDefinitionConfig.ClusterId"/>, then the default cluster.</param>
     RecurringScheduleContext Recurring(
         JobDefinitionConfig config,
         IRecurrenceCompiledExpr expression,

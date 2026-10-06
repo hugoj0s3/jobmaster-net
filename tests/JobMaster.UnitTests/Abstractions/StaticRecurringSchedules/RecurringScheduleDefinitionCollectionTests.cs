@@ -53,7 +53,102 @@ public class RecurringScheduleDefinitionCollectionTests
         act.Should().Throw<ArgumentException>();
     }
 
+    // Cluster id precedence: profile ClusterId → handler (JobDefinitionConfig / [JobMasterClusterId]) → default.
+
+    [Fact]
+    public void Add_WhenProfileHasClusterId_ProfileWinsOverHandlerAttribute()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", "profile-cluster", workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(ClusterIdAttrHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("profile-cluster");
+        definition.Id.Should().StartWith("profile-cluster:");
+    }
+
+    [Fact]
+    public void Add_WhenProfileHasNoClusterId_UsesHandlerAttributeCluster()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(ClusterIdAttrHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("attr-cluster");
+        definition.Id.Should().StartWith("attr-cluster:");
+    }
+
+    [Fact]
+    public void Add_WhenProfileHasNoClusterId_UsesHandlerDefinitionConfigCluster()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(AdvancedHandlerWithCluster), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("config-cluster");
+    }
+
+    [Fact]
+    public void Add_WhenNeitherProfileNorHandlerHasClusterId_UsesDefaultCluster()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(PlainHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("default-cluster");
+    }
+
+    [Fact]
+    public void Add_WhenProfileHasNoClusterId_SpansClustersPerHandler()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definitions = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(PlainHandler), "TimeSpanInterval", "00:06:00")
+            .Add(typeof(ClusterIdAttrHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly();
+
+        definitions.Select(x => x.ClusterId).Should().BeEquivalentTo("default-cluster", "attr-cluster");
+    }
+
+    [Fact]
+    public void ProfileInfo_WhenClusterIdBlank_TreatsAsNotSet()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", "  ", workerLane: null);
+
+        profile.ClusterId.Should().BeNull();
+        profile.IsValid.Should().BeTrue();
+    }
+
     private sealed class PlainHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    [JobMasterClusterId("attr-cluster")]
+    private sealed class ClusterIdAttrHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class FakeDefinitionWithClusterAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
+    {
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("advanced-cluster-defid", clusterId: "config-cluster");
+    }
+
+    [FakeDefinitionWithClusterAttribute]
+    private sealed class AdvancedHandlerWithCluster : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }

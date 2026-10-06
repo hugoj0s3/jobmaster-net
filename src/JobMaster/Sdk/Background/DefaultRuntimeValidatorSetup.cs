@@ -3,6 +3,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
 namespace JobMaster.Sdk.Background;
@@ -76,14 +77,29 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
                          t.GetCustomAttribute<JobMasterTimeoutAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterPriorityAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterWorkerLaneAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null))
+                         t.GetCustomAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null ||
+                         t.GetCustomAttribute<JobMasterClusterIdAttribute>() != null))
             .ToList();
 
         if (handlerTypesMixingDefinitionAttributeFamilies.Any())
         {
             result.Add("Job handlers must not combine a JobDefinitionConfigAttribute with individual classic " +
                        "attributes (JobMasterDefinitionId/JobMasterTimeout/JobMasterPriority/JobMasterWorkerLane/" +
-                       $"JobMasterMaxNumberOfRetries) — pick one: {string.Join(", ", handlerTypesMixingDefinitionAttributeFamilies.Select(t => t.FullName))}");
+                       $"JobMasterMaxNumberOfRetries/JobMasterClusterId) — pick one: {string.Join(", ", handlerTypesMixingDefinitionAttributeFamilies.Select(t => t.FullName))}");
+        }
+
+        // Missing Config was already returned on above, so GetConfig can't throw here.
+        var staticJobDefinitionConfigTypes = assemblies
+            .SelectMany(a => a.GetTypes())
+            .Where(t => typeof(IStaticJobDefinitionConfig).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+        var unknownClusterIdError = ValidateClusterIds(
+            handlerTypes.Select(x => x.Type),
+            staticJobDefinitionConfigTypes,
+            BootstrapBlueprintDefinitions.Clusters.Select(c => c.ClusterId));
+        if (unknownClusterIdError != null)
+        {
+            result.Add(unknownClusterIdError);
         }
 
         // Coordinator workers deliberately have no AgentConnectionName (see ChangeLog.md 0.0.10-alpha:
@@ -99,6 +115,40 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         }
 
         return Task.FromResult<IList<string>>(result);
+    }
+
+    /// <summary>
+    /// Returns an error when a handler's own cluster id (applied <see cref="JobDefinitionConfig.ClusterId"/> or
+    /// <see cref="JobMasterClusterIdAttribute"/>) or an <see cref="IStaticJobDefinitionConfig"/>'s
+    /// <see cref="JobDefinitionConfig.ClusterId"/> isn't a configured cluster, so it fails at startup instead of at
+    /// the first schedule call; <c>null</c> when all are fine.
+    /// </summary>
+    internal static string? ValidateClusterIds(
+        IEnumerable<Type> handlerTypes,
+        IEnumerable<Type> staticJobDefinitionConfigTypes,
+        IEnumerable<string?> configuredClusterIds)
+    {
+        var configured = new HashSet<string>(
+            configuredClusterIds.Where(x => !string.IsNullOrEmpty(x)).Select(x => x!),
+            StringComparer.OrdinalIgnoreCase);
+
+        var declared = handlerTypes
+            .Select(t => (Type: t, ClusterId: JobUtil.GetClusterId(t, clusterId: null)))
+            .Concat(staticJobDefinitionConfigTypes
+                .Select(t => (Type: t, ClusterId: JobDefinitionConfigAttribute.GetConfig(t).ClusterId)));
+
+        var unknown = declared
+            .Where(x => x.ClusterId != null && !configured.Contains(x.ClusterId))
+            .ToList();
+
+        if (!unknown.Any())
+        {
+            return null;
+        }
+
+        return "Job handlers / IStaticJobDefinitionConfig implementations declare a cluster id (JobMasterClusterId / " +
+               "JobDefinitionConfig.ClusterId) that is not configured: " +
+               $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
     }
 
     public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)

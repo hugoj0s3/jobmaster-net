@@ -6,6 +6,37 @@
 
 ---
 
+## JobMaster 0.0.12-alpha
+
+### Added
+
+- **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
+  1. the `clusterId` passed to the call;
+  2. `ClusterId` from the handler's `JobDefinitionConfigAttribute` config, or from the `JobDefinitionConfig` you pass to an `Advanced` method;
+  3. `[JobMasterClusterId]` on the handler;
+  4. the default cluster.
+
+  ```csharp
+  [JobMasterClusterId("billing-cluster")]
+  public sealed class InvoiceHandler : IJobMasterHandler { ... }
+
+  await scheduler.OnceNowAsync<InvoiceHandler>(); // goes to "billing-cluster"
+  ```
+
+  This applies to one-off jobs, dynamic recurring schedules, the `Advanced` overloads, and static recurring schedules (both profiles and `[...Schedule]` attributes on the handler). For static schedules, the profile's own `ClusterId` still comes first; a profile that leaves it empty now uses each handler's cluster. Handler-level schedule attributes, which used to always go to the default cluster, now follow `[JobMasterClusterId]` too.
+- **Startup validation for unknown cluster ids.** Startup now fails when any of these names a cluster that isn't configured:
+  - a handler's `[JobMasterClusterId]`;
+  - a `JobDefinitionConfig.ClusterId` on an applied definition attribute;
+  - the `Config.ClusterId` of any `IStaticJobDefinitionConfig` type, even one only used for publishing.
+
+  Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
+
+### Notes
+
+- `CancelJob`/`TryCancelJob`, `CancelRecurring`/`TryCancelRecurringAsync` and `ReSchedule` only receive an id, so they don't look up the handler's cluster. For a job or schedule on a non-default cluster, pass `clusterId` explicitly; it's available from `JobContext.ClusterId` / `RecurringScheduleContext.ClusterId`.
+
+---
+
 ## JobMaster 0.0.11-alpha.3
 
 ### Added

@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;
@@ -150,11 +151,14 @@ public sealed class RecurringScheduleDefinitionCollection
         }
 
         var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
+        // Profile ClusterId → handler (JobDefinitionConfigAttribute / [JobMasterClusterId]) → default.
+        // Must be resolved here, not at spawn time like the lane: the schedule itself is stored on this cluster.
+        var clusterId = JobUtil.GetClusterId(handlerType, this.profile.ClusterId) ?? defaultClusterId;
         lock (unique)
         {
-            var id = GenerateUniqueId(handlerType, defId);
+            var id = GenerateUniqueId(clusterId, handlerType, defId);
             var definition = new StaticRecurringScheduleDefinition(
-                clusterId: string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId,
+                clusterId: clusterId,
                 jobDefinitionId,
                 compiledExpr: compiledExpr,
                 id: id,
@@ -175,11 +179,9 @@ public sealed class RecurringScheduleDefinitionCollection
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
 
-        var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
-
         ValidateDefinition(definition);
 
-        EnsureUnique(clusterId, definition.Id);
+        EnsureUnique(definition.ClusterId, definition.Id);
 
         items.Add(definition);
     }
@@ -213,7 +215,7 @@ public sealed class RecurringScheduleDefinitionCollection
         return sb.ToString();
     }
 
-    private string GenerateUniqueId(Type typeHandler, string? defId)
+    private string GenerateUniqueId(string clusterId, Type typeHandler, string? defId)
     {
         var profileId = SanitizeIdPart(profile.ProfileId);
         var handler = typeHandler;
@@ -228,7 +230,6 @@ public sealed class RecurringScheduleDefinitionCollection
         defSubId = SanitizeIdPart(defSubId);
 
         // Extremely unlikely, but guard in case of collision within this collection
-        var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
         var candidate = $"{clusterId}:{profileId}:{defSubId}";
 
         if (!unique.Contains((clusterId, candidate)))

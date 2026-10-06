@@ -21,7 +21,8 @@ public class JobDefinitionConfig
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         string? workerLane = null,
-        IWritableMetadata? metadata = null)
+        IWritableMetadata? metadata = null,
+        string? clusterId = null)
     {
         if (string.IsNullOrWhiteSpace(jobDefinitionId))
             throw new ArgumentException("JobDefinitionId is required.", nameof(jobDefinitionId));
@@ -32,6 +33,7 @@ public class JobDefinitionConfig
         MaxNumberOfRetries = maxNumberOfRetries;
         WorkerLane = workerLane;
         Metadata = metadata;
+        ClusterId = clusterId;
     }
 
     /// <summary>Stable, human-readable ID identifying the job definition.</summary>
@@ -51,4 +53,7 @@ public class JobDefinitionConfig
 
     /// <summary>Optional key-value metadata passed to the handler.</summary>
     public IWritableMetadata? Metadata { get; }
+
+    /// <summary>Routes the job to a specific cluster. Falls back to the default cluster if unset.</summary>
+    public string? ClusterId { get; }
 }
