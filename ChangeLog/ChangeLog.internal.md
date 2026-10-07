@@ -4,6 +4,38 @@
 > Documents implementation details, class-level changes, architectural decisions, and bug root causes for each release.
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
+### JobMaster 0.0.12-alpha
+#### Added
+- **Cluster id via attribute / `JobDefinitionConfig`** (Plan0.0.12Alpha item 1). The resolution order matches the other job settings: explicit → applied config → individual attribute → default.
+  - **New public API:** `JobMasterClusterIdAttribute` (`Abstractions\Models\Attributes\`), and `JobDefinitionConfig.ClusterId`, added as the last optional constructor parameter so existing calls still compile.
+  - **`JobUtil.GetClusterId(Type, string?)`:** explicit → `JobDefinitionConfigAttribute.TryGetAppliedConfig(t)?.ClusterId` → `[JobMasterClusterId]`. It returns `null` instead of the default cluster, like `GetWorkerLane`, because each caller has its own default. The scheduler uses `JobMasterClusterConnectionConfig.Default`, while the static-recurring collection uses the `defaultClusterId` it was constructed with.
+  - **`JobMasterScheduler`:**
+    - The cluster is resolved once, in `NewJob`/`NewJob<T>`/`NewRecurSchedule`/`NewRecurSchedule<T>`. The `<T>` overloads use `GetClusterId(typeof(T), clusterId)`; the config overloads use `clusterId ?? config.ClusterId`.
+    - `EnsureCanSave(...)` lost its `string? clusterId` parameter and now reads the resolved `ClusterId` from the raw model.
+    - Bug this avoids: the old signature re-resolved the raw argument, so with an attribute cluster it would have checked disabled priorities and the scheduler component against the **default** cluster while saving to the attribute cluster. `JobMasterSchedulerTests.OnceNow_WhenAttributeClusterHasPriorityDisabled_ValidatesAgainstAttributeCluster` guards it.
+    - `ApplyOverrides` now carries `config.ClusterId` through when it rebuilds the config for per-call overrides.
+  - **Static recurring:** the cluster has to be resolved at registration, not at spawn time like the lane, because the schedule itself is stored on that cluster.
+    - `StaticRecurringSchedulesProfileInfo.ClusterId` is now `string?`, with blank normalized to `null`. `null` means "the profile declared none". `IsValid` only checks the format when a value is set. Hugo chose this over a separate `HasExplicitClusterId` flag.
+    - `RecurringScheduleDefinitionCollection.Add(Type, ...)` resolves `JobUtil.GetClusterId(handlerType, profile.ClusterId) ?? defaultClusterId`, giving profile → handler → default. That value is passed into `GenerateUniqueId`, which is prefixed with the cluster id, and into `EnsureUnique`. Neither re-derives it from the profile any more.
+    - `JobMasterRuntime.BootstrapStaticRecurringSchedules` now passes the raw profile `ClusterId`, plus the global default, to the collection. The synthesized `[...Schedule]`-attribute profiles pass `clusterId: null`, so handler attributes are respected there too; before, they were hard-wired to the default cluster.
+    - One profile can now span several clusters, so the disabled-priority check and the upsert loop iterate over all definitions grouped by `def.ClusterId` instead of by `cfg.info.ClusterId`.
+  - **`DefaultRuntimeValidatorSetup`:**
+    - `JobMasterClusterIdAttribute` was added to the "don't mix with `JobDefinitionConfigAttribute`" check.
+    - New `internal static ValidateClusterIds(handlerTypes, staticJobDefinitionConfigTypes, configuredClusterIds)` (case-insensitive) covers handler-resolved cluster ids and every `IStaticJobDefinitionConfig` type's `Config.ClusterId`, including publisher-only definitions (Hugo's call).
+    - It is a static helper so it can be unit-tested, because `ValidateAsync` scans every loaded assembly, and the unit-test assembly deliberately contains rule-breaking handlers.
+    - `GetConfig` can't throw there, because a type missing `Config` already returns early further up.
+    - New `internal static ValidateStaticProfileClusterIds(profileTypes, configuredClusterIds)` checks each `IStaticRecurringSchedulesProfile`'s static `ClusterId`. Profiles are discovered the same way as `BootstrapStaticRecurringSchedules`; a blank or unset `ClusterId` is valid.
+      - The gap predates this PR (Hugo spotted it). An unknown profile `ClusterId` passed `info.IsValid`, which only checks the format, and the disabled-priority check skipped it via `SingleOrDefault` → `null`.
+      - It then threw `KeyNotFoundException` from `JobMasterClusterAwareComponentFactories.GetFactory` in the upsert loop. That loop runs in `StartAsync` **after** `worker.StartAsync()`, so the workers kept running, `Started` stayed `false`, and the profile's schedules were never registered.
+      - The tests use plain types with the same static members rather than real profile implementations, so the runtime's assembly-wide profile discovery never picks them up.
+  - **Not changed (decided):** `CancelJob`/`ReSchedule`/`CancelRecurring` still fall back to the default cluster. They only receive an id, so there is no handler type to look up. This is documented in the `IJobMasterScheduler` XML docs. The `clusterId` param docs on the scheduling methods, on `IJobMasterSchedulerAdvanced`, and on `IStaticRecurringSchedulesProfile.ClusterId` were updated to the new precedence.
+  - **Tests:**
+    - `JobUtilTests`: `GetClusterId` for each precedence case.
+    - `JobMasterSchedulerTests`: jobs sync/async, dynamic recurring, Advanced `TDefinition` and config-object overloads, override preservation, and resolved-cluster validation.
+    - `RecurringScheduleDefinitionCollectionTests`: profile wins, handler attribute, definition config, default, and one profile spanning clusters.
+    - New `DefaultRuntimeValidatorSetupTests`.
+    - 676/676 unit tests pass.
+
 ### JobMaster 0.0.11-alpha.3
 #### Added
 - **`IsAlive` query filter on Hosts** (`JobMaster.Api`) — `ApiHostCriteria.cs` gained `public bool? IsAlive { get; set; }`; `HostsEndpoints.cs`'s `ListHostsAsync`/`CountHostsAsync` both gained `if (criteria.IsAlive.HasValue) hosts = hosts.Where(h => h.IsAlive() == criteria.IsAlive.Value).ToList();` right after `service.QueryAllAsync()`, mirroring `WorkersEndpoints.cs`'s existing `IsAlive` handling on `/workers`/`/workers/count` exactly (same in-memory-filter-after-fetch shape, since `IsAlive()` is a computed property derived from heartbeat data merged at read time — not a persisted column any repository could push a `WHERE` filter down to). Added purely to let `JobMaster.Dashboard`'s Overview page fetch a real offline count instead of a hardcoded `0` (see below).

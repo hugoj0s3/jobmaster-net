@@ -54,6 +54,19 @@ internal static class JobUtil
                    .FirstOrDefault()?.WorkerLane;
     }
 
+    /// <summary>
+    /// Explicit → applied <see cref="JobDefinitionConfigAttribute"/> config → <see cref="JobMasterClusterIdAttribute"/>.
+    /// Returns <c>null</c> when none is set; the caller applies its own default cluster.
+    /// </summary>
+    public static string? GetClusterId(Type jobHandlerType, string? clusterId)
+    {
+        return clusterId
+               ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.ClusterId
+               ?? jobHandlerType.GetCustomAttributes(false)
+                   .OfType<JobMasterClusterIdAttribute>()
+                   .FirstOrDefault()?.ClusterId;
+    }
+
     public static int GetMaxNumberOfRetries(Type jobHandlerType, int? maxNumberOfRetries, ClusterConfigurationModel? masterConfig)
     {
         var result = 3;

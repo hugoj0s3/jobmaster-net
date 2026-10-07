@@ -40,7 +40,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
        
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, DateTime.UtcNow, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         
         SaveJob(jobRawModel);
         
@@ -58,7 +58,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, DateTime.UtcNow, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         
         await SaveJobAsync(jobRawModel);
         
@@ -77,7 +77,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, dateTime, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         SaveJob(jobRawModel);
         
         return JobConvertUtil.ToJobContext(job);
@@ -96,7 +96,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var scheduledAt = DateTime.UtcNow.Add(after);
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, scheduledAt, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         SaveJob(jobRawModel);
         
         return JobConvertUtil.ToJobContext(job);
@@ -114,7 +114,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, scheduledAt, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         
         await SaveJobAsync(jobRawModel);
         return JobConvertUtil.ToJobContext(job);
@@ -126,7 +126,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var scheduledAt = DateTime.UtcNow.Add(after);
         var job = NewJob<T>(clusterId, msgData, priority, timeout, maxNumberOfRetries, metadata, scheduledAt, workerLane);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         
         await SaveJobAsync(jobRawModel);
         return JobConvertUtil.ToJobContext(job);
@@ -137,7 +137,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var recurring = NewRecurSchedule<T>(clusterId, data, expression, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, workerLane);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         SaveRecurringSchedule(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -147,7 +147,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var recurring = NewRecurSchedule<T>(clusterId, data, expression, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, workerLane);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         await SaveRecurringScheduleAsync(raw);
         
         return RecurringScheduleConvertUtil.ToContext(recurring);
@@ -159,7 +159,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
         var recurring = NewRecurSchedule<T>(clusterId, data, compiled, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, workerLane);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         SaveRecurringSchedule(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -170,7 +170,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
         var recurring = NewRecurSchedule<T>(clusterId, data, compiled, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, workerLane);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         await SaveRecurringScheduleAsync(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -236,7 +236,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob(clusterId, config, msgData, DateTime.UtcNow);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
 
         SaveJob(jobRawModel);
 
@@ -260,7 +260,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob(clusterId, config, msgData, DateTime.UtcNow);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
 
         await SaveJobAsync(jobRawModel);
 
@@ -286,7 +286,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob(clusterId, config, msgData, dateTime);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         SaveJob(jobRawModel);
 
         return JobConvertUtil.ToJobContext(job);
@@ -311,7 +311,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var job = NewJob(clusterId, config, msgData, dateTime);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
 
         await SaveJobAsync(jobRawModel);
         return JobConvertUtil.ToJobContext(job);
@@ -337,7 +337,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var scheduledAt = DateTime.UtcNow.Add(after);
         var job = NewJob(clusterId, config, msgData, scheduledAt);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
         SaveJob(jobRawModel);
 
         return JobConvertUtil.ToJobContext(job);
@@ -363,7 +363,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var scheduledAt = DateTime.UtcNow.Add(after);
         var job = NewJob(clusterId, config, msgData, scheduledAt);
         var jobRawModel = job.ToModel();
-        EnsureCanSave(clusterId, jobRawModel);
+        EnsureCanSave(jobRawModel);
 
         await SaveJobAsync(jobRawModel);
         return JobConvertUtil.ToJobContext(job);
@@ -392,7 +392,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var recurring = NewRecurSchedule(clusterId, config, data, expression, startAfter, endBefore);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         SaveRecurringSchedule(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -420,7 +420,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         var recurring = NewRecurSchedule(clusterId, config, data, expression, startAfter, endBefore);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         await SaveRecurringScheduleAsync(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -451,7 +451,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
         var recurring = NewRecurSchedule(clusterId, config, data, compiled, startAfter, endBefore);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         SaveRecurringSchedule(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -482,7 +482,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         var compiled = RecurrenceExprCompiler.Compile(expressionTypeId, expression);
         var recurring = NewRecurSchedule(clusterId, config, data, compiled, startAfter, endBefore);
         var raw = recurring.ToModel();
-        EnsureCanSave(clusterId, raw);
+        EnsureCanSave(raw);
         await SaveRecurringScheduleAsync(raw);
         return RecurringScheduleConvertUtil.ToContext(recurring);
     }
@@ -514,7 +514,8 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
             timeout: timeout ?? config.Timeout,
             maxNumberOfRetries: maxNumberOfRetries ?? config.MaxNumberOfRetries,
             workerLane: workerLane ?? config.WorkerLane,
-            metadata: metadata ?? config.Metadata);
+            metadata: metadata ?? config.Metadata,
+            clusterId: config.ClusterId);
     }
 
     private static string ResolveClusterId(string? clusterId)
@@ -538,7 +539,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         IWriteableMessageData? data,
         DateTime? scheduledAt)
     {
-        clusterId = ResolveClusterId(clusterId);
+        clusterId = ResolveClusterId(clusterId ?? config.ClusterId);
         var clusterConfiguration = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         return Job.New(
             clusterId,
@@ -557,7 +558,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? startAfter,
         DateTime? endBefore)
     {
-        clusterId = ResolveClusterId(clusterId);
+        clusterId = ResolveClusterId(clusterId ?? config.ClusterId);
         return RecurringSchedule.New(
             clusterId,
             config,
@@ -581,7 +582,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? endBefore,
         string? workerLane) where T : IJobMasterHandler
     {
-        clusterId = ResolveClusterId(clusterId);
+        clusterId = ResolveClusterId(JobUtil.GetClusterId(typeof(T), clusterId));
         var rec = RecurringSchedule.New<T>(
             clusterId,
             values,
@@ -608,7 +609,7 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         DateTime? scheduledAt,
         string? workerLane) where T : IJobMasterHandler
     {
-        clusterId = ResolveClusterId(clusterId);
+        clusterId = ResolveClusterId(JobUtil.GetClusterId(typeof(T), clusterId));
         var clusterConfiguration = EnsureGetMasterClusterConfigurationService(clusterId).Get();
         return Job.New<T>(
             clusterId,
@@ -625,15 +626,17 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     
     
 
-    private void EnsureCanSave(string? clusterId, RecurringScheduleRawModel recurringSchMd)
+    // Validates against the model's already-resolved ClusterId (explicit → definition/attribute → default),
+    // never the raw clusterId argument, which would silently fall back to the default cluster.
+    private void EnsureCanSave(RecurringScheduleRawModel recurringSchMd)
     {
         if (recurringSchMd.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
         {
             throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
         }
 
-        EnsureCanSave(clusterId);
-        var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
+        EnsureCanSave(recurringSchMd.ClusterId);
+        var config = EnsureGetMasterClusterConfigurationService(recurringSchMd.ClusterId).Get();
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
 
@@ -647,15 +650,15 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
         }
     }
 
-    private void EnsureCanSave(string? clusterId, JobRawModel job)
+    private void EnsureCanSave(JobRawModel job)
     {
         if (job.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
         {
             throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
         }
 
-        EnsureCanSave(clusterId);
-        var config = EnsureGetMasterClusterConfigurationService(clusterId).Get();
+        EnsureCanSave(job.ClusterId);
+        var config = EnsureGetMasterClusterConfigurationService(job.ClusterId).Get();
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
 

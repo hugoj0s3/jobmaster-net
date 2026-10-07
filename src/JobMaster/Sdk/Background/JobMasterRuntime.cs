@@ -674,18 +674,17 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 ?? throw new InvalidOperationException($"ProfileId missing on {pt.FullName}");
             var profileCluster = (string?)pt.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)
                 ?.GetValue(null);
-            var effectiveCluster = string.IsNullOrWhiteSpace(profileCluster) ? defaultClusterId : profileCluster;
 
             var workerLane = (string?)pt.GetProperty("WorkerLane", BindingFlags.Public | BindingFlags.Static)
                 ?.GetValue(null);
 
-            // Validate profile info
-            var info = new StaticRecurringSchedulesProfileInfo(profileId, effectiveCluster!, workerLane);
+            // Validate profile info. No profile ClusterId → each schedule resolves its handler's cluster, else default.
+            var info = new StaticRecurringSchedulesProfileInfo(profileId, profileCluster, workerLane);
             if (!info.IsValid)
                 throw new InvalidOperationException($"Invalid ProfileId/ClusterId on profile {pt.FullName}");
 
             // 3) Build collection and invoke static Config
-            var collection = new RecurringScheduleDefinitionCollection(info, effectiveCluster!);
+            var collection = new RecurringScheduleDefinitionCollection(info, defaultClusterId);
 
             var configMethod = pt.GetMethod("Config", BindingFlags.Public | BindingFlags.Static);
             if (configMethod == null)
@@ -723,7 +722,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
 
             var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
-            var info = new StaticRecurringSchedulesProfileInfo($"attr:{jobDefinitionId}", defaultClusterId, workerLane: null);
+            var info = new StaticRecurringSchedulesProfileInfo($"attr:{jobDefinitionId}", clusterId: null, workerLane: null);
             if (!info.IsValid)
                 throw new InvalidOperationException($"Invalid synthesized ProfileId for {handlerType.FullName}.");
 
@@ -737,40 +736,35 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
 
         // Validate schedule priorities against disabled priorities before upserting
-        foreach (var cfg in profileInfos)
+        // A profile without its own ClusterId can span clusters (per-handler cluster id), so everything below
+        // goes by each definition's resolved ClusterId, not the profile's.
+        var allDefinitions = profileInfos.SelectMany(x => x.collection.ToReadOnly()).ToList();
+        foreach (var def in allDefinitions)
         {
             var clusterDef = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c =>
-                string.Equals(c.ClusterId, cfg.info.ClusterId, StringComparison.OrdinalIgnoreCase));
+                string.Equals(c.ClusterId, def.ClusterId, StringComparison.OrdinalIgnoreCase));
 
             if (clusterDef?.DisabledPriorities.Any() != true) continue;
 
-            foreach (var def in cfg.collection.ToReadOnly())
+            // null priority defers to the handler attribute — already validated in PreValidation.
+            // Only reject an explicitly-set disabled priority here.
+            if (def.Priority.HasValue && clusterDef.DisabledPriorities.Contains(def.Priority.Value))
             {
-                // null priority defers to the handler attribute — already validated in PreValidation.
-                // Only reject an explicitly-set disabled priority here.
-                if (def.Priority.HasValue && clusterDef.DisabledPriorities.Contains(def.Priority.Value))
-                {
-                    throw new InvalidOperationException(
-                        $"Static recurring schedule '{def.Id}' uses priority {def.Priority.Value}, " +
-                        $"which is disabled on cluster '{cfg.info.ClusterId}'.");
-                }
+                throw new InvalidOperationException(
+                    $"Static recurring schedule '{def.Id}' uses priority {def.Priority.Value}, " +
+                    $"which is disabled on cluster '{def.ClusterId}'.");
             }
         }
 
         // Upsert each desired (one-by-one)
-        foreach (var cfg in profileInfos)
+        foreach (var byCluster in allDefinitions.GroupBy(x => x.ClusterId))
         {
-            var clusterId = cfg.info.ClusterId;
-            if (string.IsNullOrEmpty(clusterId))
-            {
-                clusterId = defaultClusterId;
-            }
-
+            var clusterId = byCluster.Key;
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
             var masterRecurringService = componentFactory.GetService<IMasterRecurringSchedulesService>();
             var masterDistributedLockerService = componentFactory.GetService<IMasterDistributedLockerService>();
             var jobMasterLockKeys = new JobMasterLockKeys(clusterId);
-            foreach (var config in cfg.collection.ToReadOnly())
+            foreach (var config in byCluster)
             {
                 var lockKey = jobMasterLockKeys.RecurringScheduleUpsertStatic(config.Id);
                 var lockToken = masterDistributedLockerService.TryLock(lockKey, TimeSpan.FromMinutes(1));

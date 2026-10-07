@@ -60,16 +60,18 @@ back to the default cluster — same pattern as worker lane.
 - Startup validation (hard rule): an attribute/`JobDefinitionConfig` cluster id that isn't registered must
   fail in `DefaultRuntimeValidatorSetup`, not at first schedule call. Also add `JobMasterClusterIdAttribute`
   to the "don't mix with `JobDefinitionConfigAttribute`" check there.
-- `CancelJob`/`ReSchedule`/`CancelRecurring` still take `clusterId` and default otherwise — a job scheduled
-  to an attribute cluster can't be cancelled without passing the id. Accept + document, or out of scope?
-  (Item 6's result exposes `Context.ClusterId`, which helps.)
+- ~~`CancelJob`/`ReSchedule`/`CancelRecurring` cluster fallback~~ — **decided:** accepted and documented
+  (XML docs). They act by id only, so a non-default cluster must be passed explicitly.
 
 **Tasks.**
-- [ ] Attribute + `JobDefinitionConfig.ClusterId` + `ApplyOverrides` carries it through.
-- [ ] `JobUtil.GetClusterId`; wire into `JobMasterScheduler` (all `Once*`/`Recurring*`, sync + async, both families).
-- [ ] Static recurring: `RecurringScheduleDefinitionCollection` respects handler attribute per decided precedence.
-- [ ] Validator: unknown cluster id + attribute-family mixing.
-- [ ] Unit tests: precedence matrix (explicit / definition config / attribute / default) for jobs, dynamic
+- [x] Attribute + `JobDefinitionConfig.ClusterId` + `ApplyOverrides` carries it through.
+- [x] `JobUtil.GetClusterId`; wire into `JobMasterScheduler` (all `Once*`/`Recurring*`, sync + async, both families).
+- [x] Static recurring: `RecurringScheduleDefinitionCollection` respects handler attribute per decided precedence.
+      (`StaticRecurringSchedulesProfileInfo.ClusterId` is now nullable = "profile declared none"; bootstrap
+      validates/upserts per definition's `ClusterId`, since one profile can now span clusters.)
+- [x] Validator: unknown cluster id (handler types + every `IStaticJobDefinitionConfig` implementation,
+      incl. publisher-only ones) + attribute-family mixing.
+- [x] Unit tests: precedence matrix (explicit / definition config / attribute / default) for jobs, dynamic
       recurring, static recurring, and the Advanced `TDefinition` overloads; validator failures.
 
 **Done when.** Precedence matrix tests green; full unit suite green.

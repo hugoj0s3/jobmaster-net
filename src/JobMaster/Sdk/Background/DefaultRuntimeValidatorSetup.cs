@@ -2,7 +2,9 @@ using System.Reflection;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
+using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
 namespace JobMaster.Sdk.Background;
@@ -76,14 +78,43 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
                          t.GetCustomAttribute<JobMasterTimeoutAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterPriorityAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterWorkerLaneAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null))
+                         t.GetCustomAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null ||
+                         t.GetCustomAttribute<JobMasterClusterIdAttribute>() != null))
             .ToList();
 
         if (handlerTypesMixingDefinitionAttributeFamilies.Any())
         {
             result.Add("Job handlers must not combine a JobDefinitionConfigAttribute with individual classic " +
                        "attributes (JobMasterDefinitionId/JobMasterTimeout/JobMasterPriority/JobMasterWorkerLane/" +
-                       $"JobMasterMaxNumberOfRetries) — pick one: {string.Join(", ", handlerTypesMixingDefinitionAttributeFamilies.Select(t => t.FullName))}");
+                       $"JobMasterMaxNumberOfRetries/JobMasterClusterId) — pick one: {string.Join(", ", handlerTypesMixingDefinitionAttributeFamilies.Select(t => t.FullName))}");
+        }
+
+        // Missing Config was already returned on above, so GetConfig can't throw here.
+        var staticJobDefinitionConfigTypes = assemblies
+            .SelectMany(a => a.GetTypes())
+            .Where(t => typeof(IStaticJobDefinitionConfig).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+        var unknownClusterIdError = ValidateClusterIds(
+            handlerTypes.Select(x => x.Type),
+            staticJobDefinitionConfigTypes,
+            BootstrapBlueprintDefinitions.Clusters.Select(c => c.ClusterId));
+        if (unknownClusterIdError != null)
+        {
+            result.Add(unknownClusterIdError);
+        }
+
+        // Same discovery as JobMasterRuntime.BootstrapStaticRecurringSchedules — without this, an unknown profile
+        // ClusterId only surfaces there as a KeyNotFoundException, after the workers have already started.
+        var staticProfileTypes = assemblies
+            .SelectMany(a => a.GetTypes())
+            .Where(t => !t.IsAbstract && t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
+
+        var unknownProfileClusterIdError = ValidateStaticProfileClusterIds(
+            staticProfileTypes,
+            BootstrapBlueprintDefinitions.Clusters.Select(c => c.ClusterId));
+        if (unknownProfileClusterIdError != null)
+        {
+            result.Add(unknownProfileClusterIdError);
         }
 
         // Coordinator workers deliberately have no AgentConnectionName (see ChangeLog.md 0.0.10-alpha:
@@ -100,6 +131,64 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
 
         return Task.FromResult<IList<string>>(result);
     }
+
+    /// <summary>
+    /// Returns an error when a handler's own cluster id (applied <see cref="JobDefinitionConfig.ClusterId"/> or
+    /// <see cref="JobMasterClusterIdAttribute"/>) or an <see cref="IStaticJobDefinitionConfig"/>'s
+    /// <see cref="JobDefinitionConfig.ClusterId"/> isn't a configured cluster, so it fails at startup instead of at
+    /// the first schedule call; <c>null</c> when all are fine.
+    /// </summary>
+    internal static string? ValidateClusterIds(
+        IEnumerable<Type> handlerTypes,
+        IEnumerable<Type> staticJobDefinitionConfigTypes,
+        IEnumerable<string?> configuredClusterIds)
+    {
+        var configured = ToConfiguredSet(configuredClusterIds);
+
+        var declared = handlerTypes
+            .Select(t => (Type: t, ClusterId: JobUtil.GetClusterId(t, clusterId: null)))
+            .Concat(staticJobDefinitionConfigTypes
+                .Select(t => (Type: t, ClusterId: JobDefinitionConfigAttribute.GetConfig(t).ClusterId)));
+
+        var unknown = declared
+            .Where(x => x.ClusterId != null && !configured.Contains(x.ClusterId))
+            .ToList();
+
+        if (!unknown.Any())
+        {
+            return null;
+        }
+
+        return "Job handlers / IStaticJobDefinitionConfig implementations declare a cluster id (JobMasterClusterId / " +
+               "JobDefinitionConfig.ClusterId) that is not configured: " +
+               $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
+    }
+
+    /// <summary>
+    /// Returns an error when an <see cref="IStaticRecurringSchedulesProfile"/>'s static <c>ClusterId</c> is set but
+    /// isn't a configured cluster; <c>null</c> when all are fine. A blank/unset <c>ClusterId</c> is valid (each
+    /// schedule then falls back to its handler's cluster, which <see cref="ValidateClusterIds"/> covers).
+    /// </summary>
+    internal static string? ValidateStaticProfileClusterIds(IEnumerable<Type> profileTypes, IEnumerable<string?> configuredClusterIds)
+    {
+        var configured = ToConfiguredSet(configuredClusterIds);
+
+        var unknown = profileTypes
+            .Select(t => (Type: t, ClusterId: (string?)t.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)))
+            .Where(x => !string.IsNullOrWhiteSpace(x.ClusterId) && !configured.Contains(x.ClusterId!))
+            .ToList();
+
+        if (!unknown.Any())
+        {
+            return null;
+        }
+
+        return "Static recurring schedule profiles declare a ClusterId that is not configured: " +
+               $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
+    }
+
+    private static HashSet<string> ToConfiguredSet(IEnumerable<string?> configuredClusterIds) =>
+        new HashSet<string>(configuredClusterIds.Where(x => !string.IsNullOrEmpty(x)).Select(x => x!), StringComparer.OrdinalIgnoreCase);
 
     public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {

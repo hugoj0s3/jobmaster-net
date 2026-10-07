@@ -97,6 +97,31 @@ public class JobUtilTests
     }
 
     [Fact]
+    public void GetClusterId_WhenExplicitProvided_UsesProvidedValue()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithClusterId), clusterId: "explicit").Should().Be("explicit");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenAttributePresent_UsesAttribute()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithClusterId), clusterId: null).Should().Be("attr-cluster");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithConfigAndIndividualAttributes), clusterId: null)
+            .Should().Be("config-cluster");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenNoAttributeAndNoOverride_ReturnsNull()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerNoAttributes), clusterId: null).Should().BeNull();
+    }
+
+    [Fact]
     public void GetMaxNumberOfRetries_WhenExplicitProvided_UsesProvidedValue()
     {
         JobUtil.GetMaxNumberOfRetries(typeof(MasterHandlerWithMaxRetries), maxNumberOfRetries: 2, masterConfig: null)
@@ -171,6 +196,12 @@ public class JobUtilTests
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
+    [JobMasterClusterId("attr-cluster")]
+    private class MasterHandlerWithClusterId : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
     [JobMasterMaxNumberOfRetries(4)]
     private class MasterHandlerWithMaxRetries : IJobMasterHandler
     {
@@ -201,12 +232,14 @@ public class JobUtilTests
             priority: JobMasterPriority.Critical,
             timeout: TimeSpan.FromSeconds(21),
             maxNumberOfRetries: 6,
-            workerLane: "config-lane");
+            workerLane: "config-lane",
+            clusterId: "config-cluster");
     }
 
     [FakeDefinitionAttribute]
     [JobMasterTimeout(99)]
     [JobMasterWorkerLane("individual-lane")]
+    [JobMasterClusterId("individual-cluster")]
     [JobMasterMaxNumberOfRetries(9)]
     [JobMasterPriority(JobMasterPriority.Low)]
     private class MasterHandlerWithConfigAndIndividualAttributes : IJobMasterHandler

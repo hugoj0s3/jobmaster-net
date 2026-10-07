@@ -29,7 +29,7 @@ public interface IJobMasterScheduler
     /// <param name="timeout">Maximum execution time. Falls back to <c>[JobMasterTimeout]</c> attribute, then the cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries on failure. Falls back to <c>[JobMasterMaxNumberOfRetries]</c> attribute, then the cluster default.</param>
     /// <param name="metadata">Optional key-value metadata passed to the handler.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>[JobMasterClusterId]</c> attribute, then the default cluster.</param>
     JobContext OnceNow<T>(
         IWriteableMessageData? msgData = null,
         JobMasterPriority? priority = null,
@@ -114,7 +114,7 @@ public interface IJobMasterScheduler
     /// <param name="metadata">Optional key-value metadata passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
     /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>[JobMasterClusterId]</c> attribute, then the default cluster.</param>
     RecurringScheduleContext Recurring<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
@@ -180,7 +180,11 @@ public interface IJobMasterScheduler
     /// Returns <c>true</c> if the job was found and successfully cancelled.
     /// </summary>
     /// <param name="jobId">ID of the job to cancel.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the job was scheduled on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
+    /// </param>
     Task<bool> CancelJobAsync(Guid jobId, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="CancelJobAsync"/>.</summary>
@@ -191,7 +195,11 @@ public interface IJobMasterScheduler
     /// Returns <c>true</c> if the schedule was found and successfully cancelled.
     /// </summary>
     /// <param name="id">ID of the recurring schedule to cancel.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the schedule was created on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for schedules on a non-default cluster (see <see cref="RecurringScheduleContext.ClusterId"/>).
+    /// </param>
     Task<bool> TryCancelRecurringAsync(Guid id, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="TryCancelRecurringAsync"/>.</summary>
@@ -204,7 +212,11 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="jobId">ID of the job to reschedule.</param>
     /// <param name="scheduledAt">New UTC execution time.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the job was scheduled on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
+    /// </param>
     Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="ReScheduleAsync"/>.</summary>
