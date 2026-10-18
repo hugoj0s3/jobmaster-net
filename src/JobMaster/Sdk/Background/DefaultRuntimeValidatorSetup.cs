@@ -71,9 +71,15 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
            result.Add($"Multiple job handlers found with the same JobDefinitionId: {string.Join(", ", handlerTypesWithDuplicateJobDefinitionIds)}");
        }
 
+        var multipleDefinitionAttributesError = ValidateSingleDefinitionAttribute(handlerTypes.Select(x => x.Type));
+        if (multipleDefinitionAttributesError != null)
+        {
+            result.Add(multipleDefinitionAttributesError);
+        }
+
         var handlerTypesMixingDefinitionAttributeFamilies = handlerTypes
             .Select(x => x.Type)
-            .Where(t => t.GetCustomAttribute<JobDefinitionConfigAttribute>() != null &&
+            .Where(t => t.GetCustomAttributes<JobDefinitionConfigAttribute>().Any() &&
                         (t.GetCustomAttribute<JobMasterDefinitionIdAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterTimeoutAttribute>() != null ||
                          t.GetCustomAttribute<JobMasterPriorityAttribute>() != null ||
@@ -130,6 +136,26 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         }
 
         return Task.FromResult<IList<string>>(result);
+    }
+
+    /// <summary>
+    /// Returns an error when a handler applies more than one <see cref="JobDefinitionConfigAttribute"/> (e.g. two
+    /// different subclasses) -- its identity and config would be ambiguous; <c>null</c> when all are fine. Enforced
+    /// here, not in the runtime lookups, which just take the first match so one bad handler can't break other jobs.
+    /// </summary>
+    internal static string? ValidateSingleDefinitionAttribute(IEnumerable<Type> handlerTypes)
+    {
+        var invalid = handlerTypes
+            .Where(t => t.GetCustomAttributes<JobDefinitionConfigAttribute>().Count() > 1)
+            .ToList();
+
+        if (!invalid.Any())
+        {
+            return null;
+        }
+
+        return "Job handlers must not apply more than one JobDefinitionConfigAttribute: " +
+               $"{string.Join(", ", invalid.Select(t => t.FullName))}";
     }
 
     /// <summary>

@@ -101,6 +101,29 @@ public class DefaultRuntimeValidatorSetupTests
             .Should().BeNull();
     }
 
+    [Fact]
+    public void ValidateSingleDefinitionAttribute_WhenHandlerAppliesTwo_ReturnsError()
+    {
+        var error = DefaultRuntimeValidatorSetup.ValidateSingleDefinitionAttribute(new[] { typeof(TwoDefinitionsHandler) });
+
+        error.Should().NotBeNull();
+        error.Should().Contain(typeof(TwoDefinitionsHandler).FullName);
+    }
+
+    [Fact]
+    public void ValidateSingleDefinitionAttribute_WhenAtMostOne_ReturnsNull()
+    {
+        DefaultRuntimeValidatorSetup.ValidateSingleDefinitionAttribute(new[] { typeof(ConfigClusterHandler), typeof(PlainHandler) })
+            .Should().BeNull();
+    }
+
+    [ConfigClusterDefinitionAttribute]
+    [NoClusterDefinitionAttribute]
+    private sealed class TwoDefinitionsHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
     // Plain types with the same static members the validator reads — deliberately not implementing
     // IStaticRecurringSchedulesProfile, so the runtime's assembly-wide profile discovery never picks them up.
     private sealed class UnknownClusterProfile

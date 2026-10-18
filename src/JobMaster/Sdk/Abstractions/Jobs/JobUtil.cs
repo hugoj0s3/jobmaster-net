@@ -3,6 +3,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
 
@@ -29,13 +30,11 @@ internal static class JobUtil
 
             if (timeout is null)
             {
-                var timeoutInSeconds = jobHandlerType.GetCustomAttributes(false)
-                    .OfType<JobMasterTimeoutAttribute>()
-                    .FirstOrDefault()?.TimeoutInSeconds;
+                var timeoutInSeconds = jobHandlerType.GetCachedAttributes<JobMasterTimeoutAttribute>(inherit: false).FirstOrDefault()?.TimeoutInSeconds;
 
                 timeout = timeoutInSeconds.HasValue ?
                     System.TimeSpan.FromSeconds(timeoutInSeconds.Value) :
-                    masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5);
+                    masterConfig?.DefaultJobTimeout ?? JobMasterDefaults.DefaultJobTimeout;
             }
         }
         else
@@ -49,9 +48,7 @@ internal static class JobUtil
     {
         return workerLane
                ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.WorkerLane
-               ?? jobHandlerType.GetCustomAttributes(false)
-                   .OfType<JobMasterWorkerLaneAttribute>()
-                   .FirstOrDefault()?.WorkerLane;
+               ?? jobHandlerType.GetCachedAttributes<JobMasterWorkerLaneAttribute>(inherit: false).FirstOrDefault()?.WorkerLane;
     }
 
     /// <summary>
@@ -62,21 +59,17 @@ internal static class JobUtil
     {
         return clusterId
                ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.ClusterId
-               ?? jobHandlerType.GetCustomAttributes(false)
-                   .OfType<JobMasterClusterIdAttribute>()
-                   .FirstOrDefault()?.ClusterId;
+               ?? jobHandlerType.GetCachedAttributes<JobMasterClusterIdAttribute>(inherit: false).FirstOrDefault()?.ClusterId;
     }
 
     public static int GetMaxNumberOfRetries(Type jobHandlerType, int? maxNumberOfRetries, ClusterConfigurationModel? masterConfig)
     {
-        var result = 3;
+        var result = JobMasterDefaults.MaxRetryCount;
         if (maxNumberOfRetries is null)
         {
             result = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.MaxNumberOfRetries
-                     ?? jobHandlerType.GetCustomAttributes(false)
-                         .OfType<JobMasterMaxNumberOfRetriesAttribute>()
-                         .FirstOrDefault()?.MaxNumberOfRetries
-                     ?? masterConfig?.DefaultMaxOfRetryCount ?? 3;
+                     ?? jobHandlerType.GetCachedAttributes<JobMasterMaxNumberOfRetriesAttribute>(inherit: false).FirstOrDefault()?.MaxNumberOfRetries
+                     ?? masterConfig?.DefaultMaxOfRetryCount ?? JobMasterDefaults.MaxRetryCount;
         }
         else
         {
@@ -91,9 +84,7 @@ internal static class JobUtil
         if (priority is null)
         {
             priority = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.Priority
-                        ?? jobHandlerType.GetCustomAttributes(false)
-                            .OfType<JobMasterPriorityAttribute>()
-                            .FirstOrDefault()?.Priority
+                        ?? jobHandlerType.GetCachedAttributes<JobMasterPriorityAttribute>(inherit: false).FirstOrDefault()?.Priority
                         ?? JobMasterPriority.Medium;
         }
 

@@ -5,6 +5,39 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
+#### Performance
+- **Handler attribute lookups are cached per type** (Hugo's idea), via the new internal `Sdk\Utils\TypeAttributeCacheExtensions`: `GetCachedAttribute<T>(inherit)` and `GetCachedAttributes<T>(inherit)`.
+  - **Where it's used:** only on the per-job path, namely `JobUtil.GetTimeout/GetWorkerLane/GetClusterId/GetMaxNumberOfRetries/GetJobMasterPriority`, `Job.New`'s `[JobMasterMetadata]` read, `JobDefinitionConfigAttribute.TryGetAppliedConfig` and `JobMasterDefinitionIdAttribute.GetJobDefinitionId`.
+  - **`TryGetConfig`'s static-`Config` reflection** is cached per definition type as well.
+  - **Startup scans** (validator, runtime bootstrap, IoC registration) deliberately keep plain reflection, so the cache doesn't fill with every type in the AppDomain.
+  - **Measured on the real `Job.New(clusterId, handlerType)`** (Release, 200k calls, scratch benchmark against HEAD vs. the working tree):
+
+    | Handler | HEAD | cached |
+    |:---|:---|:---|
+    | classic attributes | 31.5 µs / 9.5 KB | 1.7 µs / 1.3 KB |
+    | `JobDefinitionConfigAttribute` | 7.9 µs / 2.5 KB | 0.95 µs / 0.95 KB |
+    | none | 2.2 µs / 1.5 KB | 0.9 µs / 0.95 KB |
+
+    The remainder is the `Job` allocation itself.
+  - **Semantics:**
+    - The cache is keyed by (type, attribute type, inherit) and filled with the type-filtered `Attribute.GetCustomAttributes(type, attrType, inherit)`.
+    - `JobUtil` keeps its `inherit: false` + first-match behavior.
+    - **Deliberate difference (Hugo's call):** `GetCachedAttribute` returns the first match instead of throwing `AmbiguousMatchException` like `GetCustomAttribute<T>()` did. The old throw ran on the per-job path and inside `GetJobHandlerTypeFromId`'s scan of every handler, so one handler with two `JobDefinitionConfigAttribute` subclasses would break lookup for all jobs. It also crashed `DefaultRuntimeValidatorSetup` mid-scan, through `GetJobDefinitionId` and the mixing check.
+    - The "one definition attribute per handler" rule is now a startup validation error instead: `ValidateSingleDefinitionAttribute`. The mixing check also switched to the non-throwing `GetCustomAttributes<JobDefinitionConfigAttribute>().Any()`.
+  - **Bug caught during implementation:** the first version cached *all* attributes per type with `GetCustomAttributes(inherit)`, which instantiates unrelated attributes.
+    - That broke 4 `JobsExecutionEngineTests` simulations: `GetJobHandlerTypeFromId` scans every handler type, and a test handler's `[JobMasterMaxNumberOfRetries(11)]` constructor throws.
+    - In a real app, one handler with a bad attribute anywhere in the AppDomain would have broken handler lookup for every job.
+    - Fixed by the per-attribute-type keying, and guarded by `TypeAttributeCacheExtensionsTests.GetCachedAttribute_DoesNotInstantiateUnrelatedAttributes`.
+  - **Sharing caveat:** cached attribute instances are shared, so they must never be mutated after reading. `JobMasterMetadataAttribute` has setters, but only for named attribute arguments, and nothing writes to them outside constructors.
+  - 685/685 unit tests pass.
+
+#### Fixed
+- **Hardcoded defaults replaced with `JobMasterDefaults`** in `JobUtil.GetTimeout`/`GetMaxNumberOfRetries` and `Job.New(clusterId, JobDefinitionConfig, ...)`.
+  - **Timeout:** the last-resort fallback was `TimeSpan.FromMinutes(5)`, while `JobMasterDefaults.DefaultJobTimeout` (which also initializes `ClusterConfigurationModel.DefaultJobTimeout`) is 1 minute. So a null `masterConfig` behaved differently from a freshly defaulted one. It only hits that path when `IMasterClusterConfigurationService.Get()` returns null; in normal scheduling the config is loaded and its `DefaultJobTimeout` wins.
+  - **Retries:** the literal `3` became `JobMasterDefaults.MaxRetryCount`, which has the same value, so nothing changes.
+  - **Tests:** the assertions that pinned 5 min / 3 in `JobUtilTests` and `JobTests` now reference `JobMasterDefaults`, and the two `JobUtilTests` methods were renamed `..._UsesJobMasterDefault`.
+  - Spotted by Hugo.
+
 #### Breaking
 - **`clusterId` moved from last to right after the payload** (Hugo's call; it's an alpha, so documented instead of shimmed). Applies to:
   - every `Once*`/`Recurring*` overload in `IJobMasterScheduler` and the `TDefinition` overloads of `IJobMasterSchedulerAdvanced`, plus their explicit and implicit implementations in `JobMasterScheduler`;

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Reflection;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.Models.Attributes;
 
@@ -76,7 +77,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
     public static string GetJobDefinitionId(Type type)
     {
         return JobDefinitionConfigAttribute.TryGetAppliedConfig(type)?.JobDefinitionId
-               ?? type.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId
+               ?? type.GetCachedAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId
                ?? type.FullName!;
     }
 }

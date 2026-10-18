@@ -60,6 +60,11 @@
   - an `IStaticRecurringSchedulesProfile`'s `ClusterId`. Previously this only failed after the workers had already started, with a `KeyNotFoundException` while registering the profile's schedules.
 
   Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
+- **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this failed while scheduling or executing, and it could make handler lookup fail for unrelated jobs. It's now a clear validation error at startup.
+
+### Fixed
+
+- **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
 
 ### Notes
 

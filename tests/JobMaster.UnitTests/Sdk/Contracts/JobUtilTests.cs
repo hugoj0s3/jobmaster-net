@@ -72,10 +72,10 @@ public class JobUtilTests
     }
 
     [Fact]
-    public void GetTimeout_WhenNoTimeoutAttributeAndNoMasterConfig_Uses5Minutes()
+    public void GetTimeout_WhenNoTimeoutAttributeAndNoMasterConfig_UsesJobMasterDefault()
     {
         JobUtil.GetTimeout(typeof(MasterHandlerNoAttributes), timeout: null, masterConfig: null)
-            .Should().Be(TimeSpan.FromMinutes(5));
+            .Should().Be(JobMasterDefaults.DefaultJobTimeout);
     }
 
     [Fact]
@@ -144,10 +144,10 @@ public class JobUtilTests
     }
 
     [Fact]
-    public void GetMaxNumberOfRetries_WhenNoAttributeAndNoMasterConfig_Uses3()
+    public void GetMaxNumberOfRetries_WhenNoAttributeAndNoMasterConfig_UsesJobMasterDefault()
     {
         JobUtil.GetMaxNumberOfRetries(typeof(MasterHandlerNoAttributes), maxNumberOfRetries: null, masterConfig: null)
-            .Should().Be(3);
+            .Should().Be(JobMasterDefaults.MaxRetryCount);
     }
 
     [Fact]
