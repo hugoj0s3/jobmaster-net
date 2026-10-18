@@ -187,8 +187,19 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
                $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
     }
 
-    private static HashSet<string> ToClusterIdSet(IEnumerable<string?> configuredClusterIds) =>
-        new HashSet<string>(configuredClusterIds.Where(x => !string.IsNullOrEmpty(x)).Select(x => x!), StringComparer.OrdinalIgnoreCase);
+    private static HashSet<string> ToClusterIdSet(IEnumerable<string?> configuredClusterIds)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var clusterId in configuredClusterIds)
+        {
+            if (!string.IsNullOrEmpty(clusterId))
+            {
+                result.Add(clusterId!);
+            }
+        }
+
+        return result;
+    }
 
     public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
     {
