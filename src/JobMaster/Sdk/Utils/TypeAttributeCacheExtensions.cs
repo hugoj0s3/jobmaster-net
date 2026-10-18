@@ -10,9 +10,10 @@ namespace JobMaster.Sdk.Utils;
 /// fixed at compile time, so they're resolved once per (type, attribute type, inherit) and reused.
 /// <para>
 /// Cached instances are shared between callers, so they must never be mutated after reading (some, like
-/// <c>JobMasterMetadataAttribute</c>, have setters only to support named attribute arguments). Use
-/// plain reflection for assembly-wide scans (startup validation, discovery), which would otherwise fill the cache
-/// with every type in the AppDomain.
+/// <c>JobMasterMetadataAttribute</c>, have setters only to support named attribute arguments).
+/// All type-attribute lookups go through here, startup included. The AppDomain-wide startup scans (e.g.
+/// <c>RecurringScheduleAttribute</c> discovery, IoC registration) add one entry per scanned type for the process
+/// lifetime; a no-match entry shares a single empty array, so each costs only its dictionary slot.
 /// </para>
 /// </summary>
 internal static class TypeAttributeCacheExtensions
@@ -44,6 +45,11 @@ internal static class TypeAttributeCacheExtensions
 
     private static Attribute[] Get(Type type, Type attributeType, bool inherit)
     {
-        return Cache.GetOrAdd((type, attributeType, inherit), static key => Attribute.GetCustomAttributes(key.Type, key.AttributeType, key.Inherit));
+        return Cache.GetOrAdd((type, attributeType, inherit), static key =>
+        {
+            var attributes = Attribute.GetCustomAttributes(key.Type, key.AttributeType, key.Inherit);
+            // Startup's AppDomain-wide scans cache a (mostly empty) result for every type; share one empty array.
+            return attributes.Length == 0 ? Array.Empty<Attribute>() : attributes;
+        });
     }
 }

@@ -4,6 +4,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
@@ -689,6 +690,85 @@ public class JobMasterSchedulerTests
 
         explicitCluster.Recurring.Should().ContainSingle();
         configCluster.Recurring.Should().BeEmpty();
+    }
+
+    // Cluster ids are matched ignoring case, but what's stored must use the configured casing.
+
+    [Fact]
+    public void OnceNow_WhenAttributeClusterIdDiffersInCase_SchedulesOnConfiguredClusterWithItsCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<UpperCaseClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+    }
+
+    [Fact]
+    public void OnceNow_WhenExplicitClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>(clusterId: "C-EXPLICIT");
+
+        ctx.ClusterId.Should().Be("c-explicit");
+        explicitCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be("c-explicit");
+    }
+
+    [Fact]
+    public void TryCancelJob_WhenClusterIdDiffersInCase_FindsCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        var jobId = Guid.NewGuid();
+        schedulerMock.Setup(x => x.CancelJob(jobId)).Returns(true);
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        JobMasterClusterConnectionConfig.Create("c-cancel", "repo", "cnn");
+        JobMasterClusterAwareComponentFactories.AddFactory("c-cancel", factoryMock.Object);
+
+        JobMasterScheduler.Instance.TryCancelJob(jobId, clusterId: "C-Cancel").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ComponentFactories_LookupIgnoresCase()
+    {
+        // Callers such as the API's /{clusterId}/... routes pass the raw id straight to GetFactory.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var factory = new Mock<IJobMasterClusterAwareComponentFactory>().Object;
+        JobMasterClusterAwareComponentFactories.AddFactory("c-factory", factory);
+
+        JobMasterClusterAwareComponentFactories.GetFactory("C-Factory").Should().BeSameAs(factory);
+        JobMasterClusterAwareComponentFactories.TryGetFactory("C-FACTORY").Should().BeSameAs(factory);
+    }
+
+    [Fact]
+    public void StaticCollection_WhenProfileClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        JobMasterClusterConnectionConfig.Create("c-profile", "repo", "cnn", isDefault: true);
+
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", "C-PROFILE", workerLane: null);
+        var definition = new RecurringScheduleDefinitionCollection(profile, "c-profile")
+            .Add(typeof(TestJobMasterHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("c-profile");
+        definition.Id.Should().StartWith("c-profile:");
+    }
+
+    [JobMasterClusterId("C-ATTR")]
+    private sealed class UpperCaseClusterIdAttrHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
     private sealed class ScheduledCapture

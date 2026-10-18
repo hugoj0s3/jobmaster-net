@@ -40,10 +40,7 @@ internal class Job : JobMasterBaseModel
         string? workerLane = null)
     {
         var metadataDictionary = writableMetadata?.ToDictionary() ?? new Dictionary<string, object?>();
-        var jobHandlerTypeAttributes = jobHandlerType
-            .GetCachedAttributes<JobMasterMetadataAttribute>(inherit: false)
-            .Select(attr => attr.ToKeyValuePair())
-            .ToDictionary(x => x.Key, x => x.Value);
+        var jobHandlerTypeAttributes = JobUtil.GetHandlerMetadata(jobHandlerType);
 
         var finalMetadataAttribute = JobMasterDictionaryUtils.Merge(jobHandlerTypeAttributes, metadataDictionary);
 

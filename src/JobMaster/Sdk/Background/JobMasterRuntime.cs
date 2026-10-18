@@ -565,9 +565,8 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
                 foreach (var handlerType in handlerTypes)
                 {
-                    var p = handlerType.GetCustomAttributes(false)
-                        .OfType<JobMasterPriorityAttribute>()
-                        .FirstOrDefault()?.Priority ?? JobMasterPriority.Medium;
+                    // Inherited, like JobUtil.GetJobMasterPriority -- a base class's [JobMasterPriority] applies.
+                    var p = handlerType.GetCachedAttribute<JobMasterPriorityAttribute>()?.Priority ?? JobMasterPriority.Medium;
 
                     if (clusterDefinition.DisabledPriorities.Contains(p))
                     {
@@ -710,7 +709,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     return Array.Empty<Type>();
                 }
             })
-            .Where(t => !t.IsAbstract && t.GetCustomAttributes<RecurringScheduleAttribute>().Any())
+            .Where(t => !t.IsAbstract && t.GetCachedAttributes<RecurringScheduleAttribute>().Any())
             .ToList();
 
         foreach (var handlerType in handlerTypesWithScheduleAttributes)
@@ -727,7 +726,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 throw new InvalidOperationException($"Invalid synthesized ProfileId for {handlerType.FullName}.");
 
             var collection = new RecurringScheduleDefinitionCollection(info, defaultClusterId);
-            foreach (var attr in handlerType.GetCustomAttributes<RecurringScheduleAttribute>())
+            foreach (var attr in handlerType.GetCachedAttributes<RecurringScheduleAttribute>())
             {
                 collection.Add(handlerType, attr.ExpressionTypeId, attr.Expression);
             }
@@ -757,7 +756,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
 
         // Upsert each desired (one-by-one)
-        foreach (var byCluster in allDefinitions.GroupBy(x => x.ClusterId))
+        foreach (var byCluster in allDefinitions.GroupBy(x => x.ClusterId, StringComparer.OrdinalIgnoreCase))
         {
             var clusterId = byCluster.Key;
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);

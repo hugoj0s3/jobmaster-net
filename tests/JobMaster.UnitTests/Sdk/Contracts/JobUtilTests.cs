@@ -178,6 +178,78 @@ public class JobUtilTests
             .Should().Be(JobMasterPriority.Medium);
     }
 
+    // Classic attributes are inherited from a base class (like JobDefinitionConfigAttribute); a derived class's own
+    // attribute wins. [JobMasterMetadata] (AllowMultiple) is merged across the hierarchy, derived key wins.
+
+    [Fact]
+    public void ClassicAttributes_AreInheritedFromBaseClass()
+    {
+        var t = typeof(DerivedHandlerInheritingAll);
+
+        JobUtil.GetClusterId(t, clusterId: null).Should().Be("base-cluster");
+        JobUtil.GetJobMasterPriority(t, priority: null).Should().Be(JobMasterPriority.High);
+        JobUtil.GetWorkerLane(t, workerLane: null).Should().Be("base-lane");
+        JobUtil.GetTimeout(t, timeout: null, masterConfig: null).Should().Be(TimeSpan.FromSeconds(17));
+        JobUtil.GetMaxNumberOfRetries(t, maxNumberOfRetries: null, masterConfig: null).Should().Be(4);
+    }
+
+    [Fact]
+    public void ClassicAttributes_DerivedClassAttributeOverridesBase()
+    {
+        var t = typeof(DerivedHandlerOverriding);
+
+        JobUtil.GetClusterId(t, clusterId: null).Should().Be("derived-cluster");
+        JobUtil.GetJobMasterPriority(t, priority: null).Should().Be(JobMasterPriority.Low);
+        JobUtil.GetWorkerLane(t, workerLane: null).Should().Be("base-lane");
+    }
+
+    [Fact]
+    public void MetadataAttribute_IsInheritedFromBaseClass()
+    {
+        var job = Job.New("cluster", typeof(DerivedHandlerInheritingAll));
+
+        job.Metadata!.ToReadable().GetStringValue("base-key").Should().Be("base-value");
+    }
+
+    [Fact]
+    public void MetadataAttribute_DerivedKeyOverridesBaseAndOtherKeysMerge()
+    {
+        var metadata = JobUtil.GetHandlerMetadata(typeof(DerivedHandlerOverriding));
+
+        metadata["base-key"].Should().Be("derived-value");
+        metadata["derived-only"].Should().Be("x");
+        metadata["base-only"].Should().Be("y");
+    }
+
+    [Fact]
+    public void MetadataAttribute_CallMetadataOverridesInheritedAttribute()
+    {
+        var job = Job.New("cluster", typeof(DerivedHandlerOverriding),
+            writableMetadata: WritableMetadata.New().SetStringValue("base-key", "from-call"));
+
+        job.Metadata!.ToReadable().GetStringValue("base-key").Should().Be("from-call");
+    }
+
+    [JobMasterClusterId("base-cluster")]
+    [JobMasterPriority(JobMasterPriority.High)]
+    [JobMasterWorkerLane("base-lane")]
+    [JobMasterTimeout(17)]
+    [JobMasterMaxNumberOfRetries(4)]
+    [JobMasterMetadata("base-key", "base-value")]
+    [JobMasterMetadata("base-only", "y")]
+    private abstract class BaseHandlerWithAttributes : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class DerivedHandlerInheritingAll : BaseHandlerWithAttributes;
+
+    [JobMasterClusterId("derived-cluster")]
+    [JobMasterPriority(JobMasterPriority.Low)]
+    [JobMasterMetadata("base-key", "derived-value")]
+    [JobMasterMetadata("derived-only", "x")]
+    private sealed class DerivedHandlerOverriding : BaseHandlerWithAttributes;
+
     [JobMasterDefinitionId("defid")]
     private class MasterHandlerWithDefinitionId : IJobMasterHandler
     {

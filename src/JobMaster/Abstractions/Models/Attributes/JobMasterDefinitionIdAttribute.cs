@@ -52,7 +52,7 @@ public class JobMasterDefinitionIdAttribute : Attribute
         }
         
         var byDefinitionIdAttribute = types.FirstOrDefault(x =>
-            x.GetCustomAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId);
+            x.GetCachedAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId);
         if (byDefinitionIdAttribute is not null)
         {
             JobDefinitionIdMap.TryAdd(jobdefinitionId, byDefinitionIdAttribute);

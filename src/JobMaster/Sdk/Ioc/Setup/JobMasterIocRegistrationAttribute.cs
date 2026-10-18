@@ -1,5 +1,6 @@
 using System.Reflection;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
 
@@ -84,6 +85,6 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
     {
         return AppDomain.CurrentDomain.GetAssemblies()
             .SelectMany(a => a.GetTypes())
-            .Where(t => t.GetCustomAttribute<JobMasterIocRegistrationAttribute>() != null);
+            .Where(t => t.GetCachedAttribute<JobMasterIocRegistrationAttribute>() != null);
     }
 }

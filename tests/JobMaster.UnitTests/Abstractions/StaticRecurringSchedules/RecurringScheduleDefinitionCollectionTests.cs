@@ -122,6 +122,60 @@ public class RecurringScheduleDefinitionCollectionTests
         definitions.Select(x => x.ClusterId).Should().BeEquivalentTo("default-cluster", "attr-cluster");
     }
 
+    // Worker lane: same precedence as cluster id (profile → handler → none), resolved at registration.
+
+    [Fact]
+    public void Add_WhenProfileHasNoWorkerLane_UsesHandlerAttributeLane()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(LaneAttrHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.WorkerLane.Should().Be("attr-lane");
+    }
+
+    [Fact]
+    public void Add_WhenProfileHasWorkerLane_ProfileWinsOverHandlerAttribute()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: "profile-lane");
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(LaneAttrHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.WorkerLane.Should().Be("profile-lane");
+    }
+
+    [Fact]
+    public void Add_WhenProfileHasNoWorkerLane_UsesHandlerDefinitionConfigLane()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(AdvancedHandlerWithCluster), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.WorkerLane.Should().Be("config-lane");
+    }
+
+    [Fact]
+    public void Add_WhenNeitherProfileNorHandlerHasWorkerLane_LeavesItNull()
+    {
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", clusterId: null, workerLane: null);
+
+        var definition = new RecurringScheduleDefinitionCollection(profile, "default-cluster")
+            .Add(typeof(PlainHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.WorkerLane.Should().BeNull();
+    }
+
     [Fact]
     public void ProfileInfo_WhenClusterIdBlank_TreatsAsNotSet()
     {
@@ -144,7 +198,13 @@ public class RecurringScheduleDefinitionCollectionTests
 
     private sealed class FakeDefinitionWithClusterAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
     {
-        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("advanced-cluster-defid", clusterId: "config-cluster");
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("advanced-cluster-defid", clusterId: "config-cluster", workerLane: "config-lane");
+    }
+
+    [JobMasterWorkerLane("attr-lane")]
+    private sealed class LaneAttrHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
     [FakeDefinitionWithClusterAttribute]

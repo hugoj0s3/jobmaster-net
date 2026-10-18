@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Utils;
 
@@ -151,9 +152,14 @@ public sealed class RecurringScheduleDefinitionCollection
         }
 
         var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
-        // Profile ClusterId → handler (JobDefinitionConfigAttribute / [JobMasterClusterId]) → default.
-        // Must be resolved here, not at spawn time like the lane: the schedule itself is stored on this cluster.
-        var clusterId = JobUtil.GetClusterId(handlerType, this.profile.ClusterId) ?? defaultClusterId;
+        // Profile → handler (JobDefinitionConfigAttribute / attribute) → default, for both cluster and lane.
+        // Cluster must be resolved here: the schedule itself is stored on that cluster. Matched ignoring case; the
+        // configured casing is what goes into the schedule id and onto master.
+        var clusterId = JobMasterClusterConnectionConfig.ToConfiguredClusterId(
+            JobUtil.GetClusterId(handlerType, this.profile.ClusterId) ?? defaultClusterId);
+        // Lane resolved here too (not per occurrence) so the stored schedule shows it. Static schedules are upserted
+        // on every startup, so a changed handler attribute still takes effect on the next deploy.
+        var workerLane = JobUtil.GetWorkerLane(handlerType, this.profile.WorkerLane);
         lock (unique)
         {
             var id = GenerateUniqueId(clusterId, handlerType, defId);
@@ -168,7 +174,7 @@ public sealed class RecurringScheduleDefinitionCollection
                 startAfter: startAfter,
                 endBefore: endBefore,
                 metadata: metadata,
-                workerLane: this.profile.WorkerLane);
+                workerLane: workerLane);
 
             this.Add(definition);
             return this;
@@ -223,7 +229,7 @@ public sealed class RecurringScheduleDefinitionCollection
         // Prefer attribute TypeId if present; else use short type name
         if (string.IsNullOrWhiteSpace(defId))
         {
-            defId = handler.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? handler.Name;
+            defId = handler.GetCachedAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? handler.Name;
         }
 
         var defSubId = defId!;

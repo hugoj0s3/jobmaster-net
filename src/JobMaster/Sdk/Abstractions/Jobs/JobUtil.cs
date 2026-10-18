@@ -30,7 +30,7 @@ internal static class JobUtil
 
             if (timeout is null)
             {
-                var timeoutInSeconds = jobHandlerType.GetCachedAttributes<JobMasterTimeoutAttribute>(inherit: false).FirstOrDefault()?.TimeoutInSeconds;
+                var timeoutInSeconds = jobHandlerType.GetCachedAttributes<JobMasterTimeoutAttribute>(inherit: true).FirstOrDefault()?.TimeoutInSeconds;
 
                 timeout = timeoutInSeconds.HasValue ?
                     System.TimeSpan.FromSeconds(timeoutInSeconds.Value) :
@@ -48,7 +48,7 @@ internal static class JobUtil
     {
         return workerLane
                ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.WorkerLane
-               ?? jobHandlerType.GetCachedAttributes<JobMasterWorkerLaneAttribute>(inherit: false).FirstOrDefault()?.WorkerLane;
+               ?? jobHandlerType.GetCachedAttributes<JobMasterWorkerLaneAttribute>(inherit: true).FirstOrDefault()?.WorkerLane;
     }
 
     /// <summary>
@@ -59,7 +59,37 @@ internal static class JobUtil
     {
         return clusterId
                ?? JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.ClusterId
-               ?? jobHandlerType.GetCachedAttributes<JobMasterClusterIdAttribute>(inherit: false).FirstOrDefault()?.ClusterId;
+               ?? jobHandlerType.GetCachedAttributes<JobMasterClusterIdAttribute>(inherit: true).FirstOrDefault()?.ClusterId;
+    }
+
+    /// <summary>
+    /// <see cref="JobMasterMetadataAttribute"/> values from the handler and its base classes. Walked from the
+    /// top-most base down, so a derived class's key overrides the same key on a base class -- explicit rather than
+    /// relying on reflection's (unspecified) inherited-attribute order. Duplicate keys on one class still throw.
+    /// </summary>
+    public static IDictionary<string, object?> GetHandlerMetadata(Type jobHandlerType)
+    {
+        var hierarchy = new Stack<Type>();
+        for (var type = jobHandlerType; type != null && type != typeof(object); type = type.BaseType)
+        {
+            hierarchy.Push(type);
+        }
+
+        var result = new Dictionary<string, object?>();
+        while (hierarchy.Count > 0)
+        {
+            var declared = hierarchy.Pop()
+                .GetCachedAttributes<JobMasterMetadataAttribute>(inherit: false)
+                .Select(attr => attr.ToKeyValuePair())
+                .ToDictionary(x => x.Key, x => x.Value);
+
+            foreach (var kv in declared)
+            {
+                result[kv.Key] = kv.Value;
+            }
+        }
+
+        return result;
     }
 
     public static int GetMaxNumberOfRetries(Type jobHandlerType, int? maxNumberOfRetries, ClusterConfigurationModel? masterConfig)
@@ -68,7 +98,7 @@ internal static class JobUtil
         if (maxNumberOfRetries is null)
         {
             result = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.MaxNumberOfRetries
-                     ?? jobHandlerType.GetCachedAttributes<JobMasterMaxNumberOfRetriesAttribute>(inherit: false).FirstOrDefault()?.MaxNumberOfRetries
+                     ?? jobHandlerType.GetCachedAttributes<JobMasterMaxNumberOfRetriesAttribute>(inherit: true).FirstOrDefault()?.MaxNumberOfRetries
                      ?? masterConfig?.DefaultMaxOfRetryCount ?? JobMasterDefaults.MaxRetryCount;
         }
         else
@@ -84,7 +114,7 @@ internal static class JobUtil
         if (priority is null)
         {
             priority = JobDefinitionConfigAttribute.TryGetAppliedConfig(jobHandlerType)?.Priority
-                        ?? jobHandlerType.GetCachedAttributes<JobMasterPriorityAttribute>(inherit: false).FirstOrDefault()?.Priority
+                        ?? jobHandlerType.GetCachedAttributes<JobMasterPriorityAttribute>(inherit: true).FirstOrDefault()?.Priority
                         ?? JobMasterPriority.Medium;
         }
 

@@ -5,11 +5,50 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
+> Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
+
+#### Breaking (attribute inheritance)
+- **What changed (Hugo's call):** the classic single-value handler attributes are now read with `inherit: true` in the five `JobUtil.Get*` lookups. Before, `GetCustomAttributes(false)` ignored a base class's `[JobMasterClusterId]`/`[JobMasterPriority]`/`[JobMasterWorkerLane]`/`[JobMasterTimeout]`/`[JobMasterMaxNumberOfRetries]`.
+- **Why:** the old behavior was inconsistent.
+  - `JobDefinitionConfigAttribute` (`TryGetAppliedConfig`) and `[JobMasterDefinitionId]` (`GetJobDefinitionId`) were already inherited.
+  - The validator's "don't mix families" check already read with `GetCustomAttribute` (inherited), while its cluster-id check went through `JobUtil` (not inherited).
+  - None of these attributes set `Inherited = false`, so their declarations already advertised inheritance.
+- **Override semantics:** `AllowMultiple = false` means a derived class's own attribute shadows the base one; reflection returns only the nearest.
+- **Also aligned:** `PreValidation`'s disabled-priority startup check now reads `[JobMasterPriority]` inherited too, through the type-filtered `GetCachedAttribute<JobMasterPriorityAttribute>()`. Otherwise an inherited disabled priority would pass startup and only fail when scheduling. (That check's wider scoping problem is Plan0.0.12Alpha item 13.)
+- **`[JobMasterMetadata]` is inherited too** (Hugo, after first keeping it `inherit: false`). It's `AllowMultiple = true`, so `inherit: true` returns base and derived entries together, and the old `.ToDictionary` would have thrown on a shared key.
+  - New `JobUtil.GetHandlerMetadata` walks from the top-most base down to the handler, reading each class's own attributes (cached, `inherit: false`), and overwrites per level. So derived-wins is explicit, not dependent on reflection's unspecified inherited-attribute order (observed derived-first).
+  - The same key twice on a single class still throws, as before.
+  - `Job.New` uses it; recurring occurrences get it through `Job.FromRecurringSchedule` → `Job.New`.
+- **Open, not changed:** in `Job.FromRecurringSchedule`, `Merge(recurringMetadata, handlerMetadata)` makes the handler's `[JobMasterMetadata]` override the schedule's own metadata. One-off jobs do the opposite: call metadata wins.
+  - The existing test `JobTests.FromRecurringSchedule_CopiesSchedulingAndMergesMetadataWithJobWinning` asserts this on purpose.
+  - It still contradicts `recurring-schedule.md`'s "configuration in a profile / `RecurringAsync` overrides handler attributes", and the same test's priority/timeout/lane go the other way (the schedule wins).
+  - A swap was tried and reverted pending Hugo's decision.
+- **Tests:**
+  - `JobUtilTests`: inheritance of all five attributes, derived-overrides-base, metadata inherited, derived metadata key overrides base and unique keys merge, call metadata overrides attribute.
+  - Classic-attribute inheritance mutation-checked in both directions.
+  - 695/695 pass.
+- **Docs:** `jobmaster-doc` `job-configuration.md` "Attributes" section.
+
+#### Fixed (case-insensitive cluster ids)
+- **The mismatch** (found in review): `JobMasterClusterConnectionConfig.TryGet`/`Equals`/`GetHashCode` and the new startup validators all matched cluster ids with `OrdinalIgnoreCase`, and `PreValidation` already rejects ids that differ only in case. But `JobMasterClusterAwareComponentFactories`' dictionary was case-sensitive. So `[JobMasterClusterId("Billing")]` against `"billing"` passed validation, then `OnceNow<T>()` threw `KeyNotFoundException`. For a static profile, `BootstrapStaticRecurringSchedules` threw after `worker.StartAsync()`, the exact failure the new check was meant to prevent.
+- **Decision (Hugo):** make everything case-insensitive rather than tightening the check to `Ordinal`.
+  - The factories dictionary now uses `StringComparer.OrdinalIgnoreCase`. This matters for raw-id callers like the API routes.
+  - The bootstrap `GroupBy` gets the same comparer.
+- **Stored ids must use the configured casing,** not whatever the caller or attribute wrote. Otherwise a job would land in master with `ClusterId = "Billing"`, splitting lock keys (`JobMasterLockKeys`) and static-schedule ids (`{clusterId}:{profile}:{def}`), and missing case-sensitive DB filters (Postgres).
+  - New `internal JobMasterClusterConnectionConfig.ToConfiguredClusterId(id)`: the configured `ClusterId` for a case-insensitive match, else the input unchanged.
+  - It's applied at the two resolution points: `JobMasterScheduler.ResolveClusterId` (all scheduling plus Cancel/ReSchedule) and `RecurringScheduleDefinitionCollection.Add` (static schedules).
+- **Tests:** 5 new `JobMasterSchedulerTests` cover attribute, explicit, cancel and static-profile casing, plus a raw factory lookup. Mutation-checked: removing the normalization fails 3 of them, and making the factories case-sensitive fails the factory test. 690/690 pass.
+
 #### Performance
 - **Handler attribute lookups are cached per type** (Hugo's idea), via the new internal `Sdk\Utils\TypeAttributeCacheExtensions`: `GetCachedAttribute<T>(inherit)` and `GetCachedAttributes<T>(inherit)`.
-  - **Where it's used:** only on the per-job path, namely `JobUtil.GetTimeout/GetWorkerLane/GetClusterId/GetMaxNumberOfRetries/GetJobMasterPriority`, `Job.New`'s `[JobMasterMetadata]` read, `JobDefinitionConfigAttribute.TryGetAppliedConfig` and `JobMasterDefinitionIdAttribute.GetJobDefinitionId`.
+  - **Hot-path callers** (the reason for it): `JobUtil.GetTimeout/GetWorkerLane/GetClusterId/GetMaxNumberOfRetries/GetJobMasterPriority/GetHandlerMetadata`, `JobDefinitionConfigAttribute.TryGetAppliedConfig` and `JobMasterDefinitionIdAttribute.GetJobDefinitionId`. Startup uses it too; see "Cache scope" below.
   - **`TryGetConfig`'s static-`Config` reflection** is cached per definition type as well.
-  - **Startup scans** (validator, runtime bootstrap, IoC registration) deliberately keep plain reflection, so the cache doesn't fill with every type in the AppDomain.
+  - **Cache scope** (revised after review; an earlier version of this entry wrongly said startup scans use plain reflection):
+    - **Hugo's call:** every type-attribute lookup goes through the helpers, startup included. That covers the validator (`TryGetConfig`, `GetJobDefinitionId`, `ValidateClusterIds`, the mixing and multiple-definition checks), `PreValidation`'s priority check, `RecurringScheduleAttribute` discovery, `RecurringScheduleDefinitionCollection`'s id generation, `GetJobHandlerTypeFromId` and `JobMasterIocRegistrationAttribute` discovery.
+    - Assembly-level lookups (`JobMasterApiAssemblyInfo`) aren't type attributes and are unchanged.
+    - **Why:** the validator and runtime must resolve through the same code to stay in agreement. A plain-reflection copy is how they drift, as with the cluster-id case mismatch.
+    - **Cost:** the AppDomain-wide scans add one entry per scanned type for the process lifetime. A no-match result now shares `Array.Empty<Attribute>()`, so each such entry is just its dictionary slot.
+    - **Semantics:** the single-attribute call sites switched from `GetCustomAttribute<T>()` use attributes with `AllowMultiple = false` or a `!= null` check, so "first match" equals the old result.
   - **Measured on the real `Job.New(clusterId, handlerType)`** (Release, 200k calls, scratch benchmark against HEAD vs. the working tree):
 
     | Handler | HEAD | cached |
@@ -21,9 +60,9 @@
     The remainder is the `Job` allocation itself.
   - **Semantics:**
     - The cache is keyed by (type, attribute type, inherit) and filled with the type-filtered `Attribute.GetCustomAttributes(type, attrType, inherit)`.
-    - `JobUtil` keeps its `inherit: false` + first-match behavior.
+    - `JobUtil` kept its `inherit: false` + first-match behavior when the cache went in. It later switched to `inherit: true`; see "Breaking (attribute inheritance)".
     - **Deliberate difference (Hugo's call):** `GetCachedAttribute` returns the first match instead of throwing `AmbiguousMatchException` like `GetCustomAttribute<T>()` did. The old throw ran on the per-job path and inside `GetJobHandlerTypeFromId`'s scan of every handler, so one handler with two `JobDefinitionConfigAttribute` subclasses would break lookup for all jobs. It also crashed `DefaultRuntimeValidatorSetup` mid-scan, through `GetJobDefinitionId` and the mixing check.
-    - The "one definition attribute per handler" rule is now a startup validation error instead: `ValidateSingleDefinitionAttribute`. The mixing check also switched to the non-throwing `GetCustomAttributes<JobDefinitionConfigAttribute>().Any()`.
+    - The "one definition attribute per handler" rule is now a startup validation error instead: `ValidateSingleDefinitionAttribute`. The mixing check also switched to the non-throwing `GetCachedAttributes<JobDefinitionConfigAttribute>().Any()`.
   - **Bug caught during implementation:** the first version cached *all* attributes per type with `GetCustomAttributes(inherit)`, which instantiates unrelated attributes.
     - That broke 4 `JobsExecutionEngineTests` simulations: `GetJobHandlerTypeFromId` scans every handler type, and a test handler's `[JobMasterMaxNumberOfRetries(11)]` constructor throws.
     - In a real app, one handler with a bad attribute anywhere in the AppDomain would have broken handler lookup for every job.
@@ -50,26 +89,30 @@
   - The scheduler methods already matched.
   - Internal constructors and factories (`Job.New`, `StaticRecurringScheduleDefinition`, the private `NewJob`/`NewRecurSchedule`) were left alone.
 
-  Every moved parameter swapped places with one of a different type, so a positional caller gets a compile error, never a silent rebind. The only exception is a literal `null`.
+  Every moved option swapped places with one of a different type, so a non-null positional option gets a compile error. **Exception (found in review, accepted by Hugo):**
+  - **What breaks:** both date parameters moved one slot right, because `clusterId` was inserted before them (scheduler `Recurring*`, extensions, Advanced) or `metadata` moved ahead of them (collection `Add`/`Add<Th>`). An old positional call that passes `null` for `startAfter` and a date for `endBefore`, e.g. `Recurring(config, expr, data, null, end)` or `Add<H>(expr, null, null, null, null, null, end)`, still compiles, but binds `startAfter = end`, `endBefore = null`. The schedule stays idle until the intended end, then runs forever.
+  - **The rejected fix:** putting the dates before `metadata` would have restored their old positions everywhere except the config `Recurring` overload.
+  - **Hugo's call:** keep the canonical order. There are no known external users yet, so the risk is accepted and documented in `ChangeLog.md`. No call site in this repo or the doc examples passes the dates positionally.
+  - **A `startAfter >= endBefore` check wouldn't catch it,** because the swapped call leaves `endBefore` null.
   - **Not moved:** the config `Once*` overloads already ended in `(msgData, clusterId)`. `Cancel*`/`ReSchedule*` take `clusterId` as their only optional parameter.
   - **Placement:** after the payload, not before it (Hugo's choice between the two), so the common positional `OnceNowAsync<T>(msg)` keeps compiling.
-  - **Why nothing can silently misbind:** the slot `clusterId` took was previously `JobMasterPriority?`, so any non-null positional argument now fails to compile, and only a literal `null` rebinds.
+  - **Misbinding:** the slot `clusterId` took was previously `JobMasterPriority?`, so a non-null positional option now fails to compile. The exception is the date pair: a `null` start plus a positional end date shifts into `startAfter` (see the exception note above).
   - **Docs:** XML `<param>` order and every `cref` signature were updated to match.
   - **Verification:** solution plus all target apps build with 0 errors, and nothing in the repo needed a call-site change (every caller uses named arguments). 676/676 unit tests pass. One unrelated flake seen once, `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound`, reads `DateTime.UtcNow` twice; it passed 3/3 on rerun.
   - `tests/TargetTestClusterIdApp` was also added to `JobMaster.sln` under `tests`, alongside the other target apps.
 
 #### Added
 - **Cluster id via attribute / `JobDefinitionConfig`** (Plan0.0.12Alpha item 1). The resolution order matches the other job settings: explicit → applied config → individual attribute → default.
-  - **New public API:** `JobMasterClusterIdAttribute` (`Abstractions\Models\Attributes\`), and `JobDefinitionConfig.ClusterId`, added as the last optional constructor parameter so existing calls still compile.
+  - **New public API:** `JobMasterClusterIdAttribute` (`Abstractions\Models\Attributes\`), and `JobDefinitionConfig.ClusterId`, as the **first** optional constructor parameter: `(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)`. This is breaking for positional callers; see "Breaking" above.
   - **`JobUtil.GetClusterId(Type, string?)`:** explicit → `JobDefinitionConfigAttribute.TryGetAppliedConfig(t)?.ClusterId` → `[JobMasterClusterId]`. It returns `null` instead of the default cluster, like `GetWorkerLane`, because each caller has its own default. The scheduler uses `JobMasterClusterConnectionConfig.Default`, while the static-recurring collection uses the `defaultClusterId` it was constructed with.
   - **`JobMasterScheduler`:**
     - The cluster is resolved once, in `NewJob`/`NewJob<T>`/`NewRecurSchedule`/`NewRecurSchedule<T>`. The `<T>` overloads use `GetClusterId(typeof(T), clusterId)`; the config overloads use `clusterId ?? config.ClusterId`.
     - `EnsureCanSave(...)` lost its `string? clusterId` parameter and now reads the resolved `ClusterId` from the raw model.
     - Bug this avoids: the old signature re-resolved the raw argument, so with an attribute cluster it would have checked disabled priorities and the scheduler component against the **default** cluster while saving to the attribute cluster. `JobMasterSchedulerTests.OnceNow_WhenAttributeClusterHasPriorityDisabled_ValidatesAgainstAttributeCluster` guards it.
     - `ApplyOverrides` now carries `config.ClusterId` through when it rebuilds the config for per-call overrides.
-  - **Static recurring:** the cluster has to be resolved at registration, not at spawn time like the lane, because the schedule itself is stored on that cluster.
+  - **Static recurring:** the cluster has to be resolved at registration, because the schedule itself is stored on that cluster. (The static lane later moved to registration too, for consistency; see "Static worker lane resolved at registration" below.)
     - `StaticRecurringSchedulesProfileInfo.ClusterId` is now `string?`, with blank normalized to `null`. `null` means "the profile declared none". `IsValid` only checks the format when a value is set. Hugo chose this over a separate `HasExplicitClusterId` flag.
-    - `RecurringScheduleDefinitionCollection.Add(Type, ...)` resolves `JobUtil.GetClusterId(handlerType, profile.ClusterId) ?? defaultClusterId`, giving profile → handler → default. That value is passed into `GenerateUniqueId`, which is prefixed with the cluster id, and into `EnsureUnique`. Neither re-derives it from the profile any more.
+    - `RecurringScheduleDefinitionCollection.Add(Type, ...)` resolves `ToConfiguredClusterId(JobUtil.GetClusterId(handlerType, profile.ClusterId) ?? defaultClusterId)`, giving profile → handler → default, normalized to the configured casing. That value is passed into `GenerateUniqueId`, which is prefixed with the cluster id, and into `EnsureUnique`. Neither re-derives it from the profile any more.
     - `JobMasterRuntime.BootstrapStaticRecurringSchedules` now passes the raw profile `ClusterId`, plus the global default, to the collection. The synthesized `[...Schedule]`-attribute profiles pass `clusterId: null`, so handler attributes are respected there too; before, they were hard-wired to the default cluster.
     - One profile can now span several clusters, so the disabled-priority check and the upsert loop iterate over all definitions grouped by `def.ClusterId` instead of by `cfg.info.ClusterId`.
   - **`DefaultRuntimeValidatorSetup`:**
@@ -82,6 +125,12 @@
       - It then threw `KeyNotFoundException` from `JobMasterClusterAwareComponentFactories.GetFactory` in the upsert loop. That loop runs in `StartAsync` **after** `worker.StartAsync()`, so the workers kept running, `Started` stayed `false`, and the profile's schedules were never registered.
       - The tests use plain types with the same static members rather than real profile implementations, so the runtime's assembly-wide profile discovery never picks them up.
   - **Not changed (decided):** `CancelJob`/`ReSchedule`/`CancelRecurring` still fall back to the default cluster. They only receive an id, so there is no handler type to look up. This is documented in the `IJobMasterScheduler` XML docs. The `clusterId` param docs on the scheduling methods, on `IJobMasterSchedulerAdvanced`, and on `IStaticRecurringSchedulesProfile.ClusterId` were updated to the new precedence.
+  - **Static worker lane resolved at registration** (Hugo's change, for consistency with cluster id). `RecurringScheduleDefinitionCollection.Add` now stores `JobUtil.GetWorkerLane(handlerType, profile.WorkerLane)` (profile → handler config/attribute → none) instead of `profile.WorkerLane` alone.
+    - **End result unchanged:** occurrences used to resolve the handler lane per occurrence through `Job.FromRecurringSchedule` → `GetWorkerLane(handler, schedule.WorkerLane)` and now just get the stored lane.
+    - **But the stored static schedule now shows its real lane** in the API and dashboard.
+    - **Nothing is lost:** static schedules are upserted every startup (`RecurringScheduleRawModel.UpdateStaticFromDefinition` sets `WorkerLane`), so a changed handler attribute still takes effect on the next deploy.
+    - **Dynamic `RecurringAsync` schedules are unchanged** and still resolve the lane per occurrence.
+    - Covered by 4 new `RecurringScheduleDefinitionCollectionTests`.
   - **Tests:**
     - `JobUtilTests`: `GetClusterId` for each precedence case.
     - `JobMasterSchedulerTests`: jobs sync/async, dynamic recurring, Advanced `TDefinition` and config-object overloads, override preservation, and resolved-cluster validation.

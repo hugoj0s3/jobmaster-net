@@ -521,7 +521,8 @@ public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanc
     {
         if (clusterId != null)
         {
-            return clusterId;
+            // Matched ignoring case, but the job/schedule must carry the configured casing.
+            return JobMasterClusterConnectionConfig.ToConfiguredClusterId(clusterId);
         }
 
         if (JobMasterClusterConnectionConfig.Default == null)

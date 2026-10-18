@@ -6,6 +6,7 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background;
 
@@ -79,13 +80,13 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
 
         var handlerTypesMixingDefinitionAttributeFamilies = handlerTypes
             .Select(x => x.Type)
-            .Where(t => t.GetCustomAttributes<JobDefinitionConfigAttribute>().Any() &&
-                        (t.GetCustomAttribute<JobMasterDefinitionIdAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterTimeoutAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterPriorityAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterWorkerLaneAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null ||
-                         t.GetCustomAttribute<JobMasterClusterIdAttribute>() != null))
+            .Where(t => t.GetCachedAttributes<JobDefinitionConfigAttribute>().Any() &&
+                        (t.GetCachedAttribute<JobMasterDefinitionIdAttribute>() != null ||
+                         t.GetCachedAttribute<JobMasterTimeoutAttribute>() != null ||
+                         t.GetCachedAttribute<JobMasterPriorityAttribute>() != null ||
+                         t.GetCachedAttribute<JobMasterWorkerLaneAttribute>() != null ||
+                         t.GetCachedAttribute<JobMasterMaxNumberOfRetriesAttribute>() != null ||
+                         t.GetCachedAttribute<JobMasterClusterIdAttribute>() != null))
             .ToList();
 
         if (handlerTypesMixingDefinitionAttributeFamilies.Any())
@@ -146,7 +147,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
     internal static string? ValidateSingleDefinitionAttribute(IEnumerable<Type> handlerTypes)
     {
         var invalid = handlerTypes
-            .Where(t => t.GetCustomAttributes<JobDefinitionConfigAttribute>().Count() > 1)
+            .Where(t => t.GetCachedAttributes<JobDefinitionConfigAttribute>().Count() > 1)
             .ToList();
 
         if (!invalid.Any())

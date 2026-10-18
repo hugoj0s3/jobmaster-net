@@ -34,8 +34,18 @@
 
   The same change applies to the sync versions and to the `Recurring`/`RecurringAsync` extensions for `NaturalCronExpr`, `TimeSpan`, Cronos and NCrontab.
   - **Unaffected calls:** calls that pass these parameters by name (`clusterId: "..."`, `priority: ...`) keep working, and so do calls that pass only the payload positionally, such as `OnceNowAsync<T>(msg)`.
-  - **Calls that break:** a call passing `priority` or a later parameter positionally, `new JobDefinitionConfig("id", JobMasterPriority.High)`, or a static `Add<Th>(...)` passing `startAfter`/`endBefore`/`metadata` positionally now fails to compile. Switch it to named arguments.
-  - **The one silent change:** a literal `null` passed in that position now fills `clusterId`, which has no effect.
+  - **Calls that fail to compile:** a call passing `priority` or a later option positionally with a non-null value, such as `new JobDefinitionConfig("id", JobMasterPriority.High)`, **except a positional end date, see below**. Switch it to named arguments.
+  - ⚠️ **Calls that still compile but change meaning: an end date passed positionally after a `null` start date becomes the start date.** These calls skip `startAfter` with `null` and pass `endBefore` positionally:
+    - `Recurring`/`RecurringAsync<T>` and the NaturalCron/`TimeSpan`/Cronos/NCrontab extensions;
+    - the `Advanced` overloads, e.g. `Recurring(config, expr, data, null, endDate)`;
+    - static `collection.Add`/`Add<Th>`, e.g. `Add<H>(expr, null, null, null, null, null, endDate)`.
+
+    The date now lands in `startAfter` and `endBefore` stays `null`, so the schedule stays idle until the date it should have stopped, then runs forever. Pass the dates by name (`startAfter:` / `endBefore:`), and check existing positional calls before upgrading.
+  - **Harmless:** any other literal `null` passed positionally now fills a different optional parameter, such as `clusterId`, and has no effect.
+- ⚠️ **Handler attributes are now inherited from base classes:** `[JobMasterClusterId]`, `[JobMasterPriority]`, `[JobMasterWorkerLane]`, `[JobMasterTimeout]` and `[JobMasterMaxNumberOfRetries]`.
+  - **Before:** they were only read from the handler class itself, and an attribute on a base class was ignored, unlike `JobDefinitionConfigAttribute`, which was already inherited.
+  - **Now:** a base class's attribute applies, and a handler's own attribute overrides it. If a handler's base class carries one of these attributes, its jobs now pick that setting up.
+  - **`[JobMasterMetadata]` is inherited too.** Its keys are merged across the hierarchy: a handler's key overrides the same key on a base class, and metadata passed when scheduling a one-off job still overrides both.
 
 ### Added
 
@@ -60,10 +70,16 @@
   - an `IStaticRecurringSchedulesProfile`'s `ClusterId`. Previously this only failed after the workers had already started, with a `KeyNotFoundException` while registering the profile's schedules.
 
   Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
-- **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this failed while scheduling or executing, and it could make handler lookup fail for unrelated jobs. It's now a clear validation error at startup.
+- **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this surfaced as a raw `AmbiguousMatchException`, usually crashing startup and otherwise failing scheduling, execution or handler lookup for unrelated jobs. It's now a clear validation error at startup that names the handler.
+- **Static recurring schedules now store their resolved worker lane.** A static schedule whose lane comes from the handler (`[JobMasterWorkerLane]` or its `JobDefinitionConfig`) now shows that lane in the API and dashboard. It used to show none. Jobs already ran on the right lane, so execution is unchanged.
+
+### Performance
+
+- **Faster scheduling for handlers configured with attributes.** Handler attribute lookups are now cached per type. Creating a job for a handler using the classic attributes went from about 31 µs to 1.7 µs, with about 85% less memory allocated per job.
 
 ### Fixed
 
+- **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
 - **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
 
 ### Notes
