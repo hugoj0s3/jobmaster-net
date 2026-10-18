@@ -78,8 +78,8 @@ public class JobTests
         var job = Job.New(clusterId, typeof(JobMasterHandlerForTestNoAttributes));
 
         job.Priority.Should().Be(JobMasterPriority.Medium);
-        job.Timeout.Should().Be(TimeSpan.FromMinutes(5));
-        job.MaxNumberOfRetries.Should().Be(3);
+        job.Timeout.Should().Be(JobMasterDefaults.DefaultJobTimeout);
+        job.MaxNumberOfRetries.Should().Be(JobMasterDefaults.MaxRetryCount);
         job.WorkerLane.Should().BeNull();
         job.JobDefinitionId.Should().Be(typeof(JobMasterHandlerForTestNoAttributes).FullName);
     }
@@ -270,8 +270,8 @@ public class JobTests
         job.ClusterId.Should().Be(clusterId);
         job.JobDefinitionId.Should().Be("orders.process.bare");
         job.Priority.Should().Be(JobMasterPriority.Medium);
-        job.Timeout.Should().Be(TimeSpan.FromMinutes(5));
-        job.MaxNumberOfRetries.Should().Be(3);
+        job.Timeout.Should().Be(JobMasterDefaults.DefaultJobTimeout);
+        job.MaxNumberOfRetries.Should().Be(JobMasterDefaults.MaxRetryCount);
         job.WorkerLane.Should().BeNull();
         job.Metadata.Should().NotBeNull();
         job.Metadata!.ToDictionary().Should().BeEmpty();

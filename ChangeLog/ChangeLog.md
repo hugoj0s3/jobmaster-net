@@ -6,6 +6,88 @@
 
 ---
 
+## JobMaster 0.0.12-alpha
+
+### Breaking changes
+
+- ⚠️ **Optional parameters now follow one order everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`.**
+  - **`clusterId`** moves from last to right after the payload in every scheduling method, and to right after the id in `JobDefinitionConfig`.
+  - **`JobDefinitionConfig`:** `workerLane` also moves before `timeout`.
+  - **`RecurringScheduleDefinitionCollection.Add`** and the `Add<Th>` extensions (NaturalCron, `TimeSpan`, Cronos, NCrontab): `metadata` moves before `startAfter`/`endBefore`. These take no `clusterId`/`workerLane`, because those come from the profile.
+
+  New signatures:
+
+  ```csharp
+  // IJobMasterScheduler / IJobMasterSchedulerAdvanced (TDefinition overloads)
+  OnceNowAsync<T>(msgData, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+  OnceAtAsync<T>(dateTime, msgData, clusterId, priority, ...)      // OnceAfter<T> likewise
+  RecurringAsync<T>(expression, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+
+  // IJobMasterSchedulerAdvanced (JobDefinitionConfig overloads)
+  RecurringAsync(config, expression, data, clusterId, startAfter, endBefore)   // Once* already ended in (msgData, clusterId)
+
+  new JobDefinitionConfig(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+
+  // Static profiles
+  collection.Add<Th>(expressionType, expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+  ```
+
+  The same change applies to the sync versions and to the `Recurring`/`RecurringAsync` extensions for `NaturalCronExpr`, `TimeSpan`, Cronos and NCrontab.
+  - **Unaffected calls:** calls that pass these parameters by name (`clusterId: "..."`, `priority: ...`) keep working, and so do calls that pass only the payload positionally, such as `OnceNowAsync<T>(msg)`.
+  - **Calls that fail to compile:** a call passing `priority` or a later option positionally with a non-null value, such as `new JobDefinitionConfig("id", JobMasterPriority.High)`, **except a positional end date, see below**. Switch it to named arguments.
+  - ⚠️ **Calls that still compile but change meaning: an end date passed positionally after a `null` start date becomes the start date.** These calls skip `startAfter` with `null` and pass `endBefore` positionally:
+    - `Recurring`/`RecurringAsync<T>` and the NaturalCron/`TimeSpan`/Cronos/NCrontab extensions;
+    - the `Advanced` overloads, e.g. `Recurring(config, expr, data, null, endDate)`;
+    - static `collection.Add`/`Add<Th>`, e.g. `Add<H>(expr, null, null, null, null, null, endDate)`.
+
+    The date now lands in `startAfter` and `endBefore` stays `null`, so the schedule stays idle until the date it should have stopped, then runs forever. Pass the dates by name (`startAfter:` / `endBefore:`), and check existing positional calls before upgrading.
+  - **Harmless:** any other literal `null` passed positionally now fills a different optional parameter, such as `clusterId`, and has no effect.
+- ⚠️ **Handler attributes are now inherited from base classes:** `[JobMasterClusterId]`, `[JobMasterPriority]`, `[JobMasterWorkerLane]`, `[JobMasterTimeout]` and `[JobMasterMaxNumberOfRetries]`.
+  - **Before:** they were only read from the handler class itself, and an attribute on a base class was ignored, unlike `JobDefinitionConfigAttribute`, which was already inherited.
+  - **Now:** a base class's attribute applies, and a handler's own attribute overrides it. If a handler's base class carries one of these attributes, its jobs now pick that setting up.
+  - **`[JobMasterMetadata]` is inherited too.** Its keys are merged across the hierarchy: a handler's key overrides the same key on a base class, and metadata passed when scheduling a one-off job still overrides both.
+
+### Added
+
+- **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
+  1. the `clusterId` passed to the call;
+  2. `ClusterId` from the handler's `JobDefinitionConfigAttribute` config, or from the `JobDefinitionConfig` you pass to an `Advanced` method;
+  3. `[JobMasterClusterId]` on the handler;
+  4. the default cluster.
+
+  ```csharp
+  [JobMasterClusterId("billing-cluster")]
+  public sealed class InvoiceHandler : IJobMasterHandler { ... }
+
+  await scheduler.OnceNowAsync<InvoiceHandler>(); // goes to "billing-cluster"
+  ```
+
+  This applies to one-off jobs, dynamic recurring schedules, the `Advanced` overloads, and static recurring schedules (both profiles and `[...Schedule]` attributes on the handler). For static schedules, the profile's own `ClusterId` still comes first; a profile that leaves it empty now uses each handler's cluster. Handler-level schedule attributes, which used to always go to the default cluster, now follow `[JobMasterClusterId]` too.
+- **Startup validation for unknown cluster ids.** Startup now fails when any of these names a cluster that isn't configured:
+  - a handler's `[JobMasterClusterId]`;
+  - a `JobDefinitionConfig.ClusterId` on an applied definition attribute;
+  - the `Config.ClusterId` of any `IStaticJobDefinitionConfig` type, even one only used for publishing;
+  - an `IStaticRecurringSchedulesProfile`'s `ClusterId`. Previously this only failed after the workers had already started, with a `KeyNotFoundException` while registering the profile's schedules.
+
+  Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
+- **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this surfaced as a raw `AmbiguousMatchException`, usually crashing startup and otherwise failing scheduling, execution or handler lookup for unrelated jobs. It's now a clear validation error at startup that names the handler.
+- **Static recurring schedules now store their resolved worker lane.** A static schedule whose lane comes from the handler (`[JobMasterWorkerLane]` or its `JobDefinitionConfig`) now shows that lane in the API and dashboard. It used to show none. Jobs already ran on the right lane, so execution is unchanged.
+
+### Performance
+
+- **Faster scheduling for handlers configured with attributes.** Handler attribute lookups are now cached per type. Creating a job for a handler using the classic attributes went from about 31 µs to 1.7 µs, with about 85% less memory allocated per job.
+
+### Fixed
+
+- **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
+- **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
+
+### Notes
+
+- `CancelJob`/`TryCancelJob`, `CancelRecurring`/`TryCancelRecurringAsync` and `ReSchedule` only receive an id, so they don't look up the handler's cluster. For a job or schedule on a non-default cluster, pass `clusterId` explicitly; it's available from `JobContext.ClusterId` / `RecurringScheduleContext.ClusterId`.
+
+---
+
 ## JobMaster 0.0.11-alpha.3
 
 ### Added

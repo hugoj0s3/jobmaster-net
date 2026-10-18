@@ -40,11 +40,7 @@ internal class Job : JobMasterBaseModel
         string? workerLane = null)
     {
         var metadataDictionary = writableMetadata?.ToDictionary() ?? new Dictionary<string, object?>();
-        var jobHandlerTypeAttributes = jobHandlerType.
-            GetCustomAttributes(false)
-            .OfType<JobMasterMetadataAttribute>()
-            .Select(attr => attr.ToKeyValuePair())
-            .ToDictionary(x => x.Key, x => x.Value);
+        var jobHandlerTypeAttributes = JobUtil.GetHandlerMetadata(jobHandlerType);
 
         var finalMetadataAttribute = JobMasterDictionaryUtils.Merge(jobHandlerTypeAttributes, metadataDictionary);
 
@@ -127,8 +123,8 @@ internal class Job : JobMasterBaseModel
         var job = NewBase(clusterId, data, scheduledAt, triggerSourceType, sourceId);
         job.JobDefinitionId = config.JobDefinitionId;
         job.Priority = config.Priority ?? JobMasterPriority.Medium;
-        job.Timeout = config.Timeout ?? masterConfig?.DefaultJobTimeout ?? TimeSpan.FromMinutes(5);
-        job.MaxNumberOfRetries = JobUtil.ValidateMaxNumberOfRetries(config.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? 3);
+        job.Timeout = config.Timeout ?? masterConfig?.DefaultJobTimeout ?? JobMasterDefaults.DefaultJobTimeout;
+        job.MaxNumberOfRetries = JobUtil.ValidateMaxNumberOfRetries(config.MaxNumberOfRetries ?? masterConfig?.DefaultMaxOfRetryCount ?? JobMasterDefaults.MaxRetryCount);
         job.Metadata = config.Metadata ?? new Metadata();
         job.WorkerLane = config.WorkerLane;
 

@@ -1,0 +1,24 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "cluster-id-default",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ClusterIdDefault;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    },
+    {
+      "ClusterId": "cluster-id-target",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ClusterIdTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    }
+  ]
+}

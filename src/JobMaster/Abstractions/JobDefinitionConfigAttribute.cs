@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using System.Reflection;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions;
 
@@ -33,10 +35,14 @@ public abstract class JobDefinitionConfigAttribute : Attribute
     /// </summary>
     internal static bool TryGetConfig(Type definitionType, out JobDefinitionConfig? config)
     {
-        config = definitionType.GetProperty("Config", BindingFlags.Public | BindingFlags.Static)
-            ?.GetValue(null) as JobDefinitionConfig;
+        // Cached per type: Config is a fixed static identity (see class remarks), and the reflection lookup is on
+        // the per-job scheduling path via TryGetAppliedConfig.
+        config = ConfigByType.GetOrAdd(definitionType, static t =>
+            t.GetProperty("Config", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as JobDefinitionConfig);
         return config is not null;
     }
+
+    private static readonly ConcurrentDictionary<Type, JobDefinitionConfig?> ConfigByType = new();
 
     /// <summary>
     /// Like <see cref="TryGetConfig"/>, but throws instead of returning <c>false</c> when
@@ -61,7 +67,7 @@ public abstract class JobDefinitionConfigAttribute : Attribute
     /// </summary>
     internal static JobDefinitionConfig? TryGetAppliedConfig(Type handlerType)
     {
-        var attr = handlerType.GetCustomAttribute<JobDefinitionConfigAttribute>();
+        var attr = handlerType.GetCachedAttribute<JobDefinitionConfigAttribute>();
         return attr is null ? null : GetConfig(attr.GetType());
     }
 }

@@ -252,6 +252,16 @@ internal class JobMasterClusterConnectionConfig
             .FirstOrDefault(c => string.Equals(c.ClusterId, clusterId, StringComparison.OrdinalIgnoreCase));
     }
 
+    /// <summary>
+    /// The configured cluster's own <see cref="ClusterId"/> (its registered casing) for a case-insensitive match,
+    /// or <paramref name="clusterId"/> unchanged when no cluster matches. Cluster ids are looked up ignoring case,
+    /// but what gets stored (jobs, schedules, lock keys, static schedule ids) must always use the configured casing.
+    /// </summary>
+    internal static string ToConfiguredClusterId(string clusterId)
+    {
+        return TryGet(clusterId, includeNotReady: true)?.ClusterId ?? clusterId;
+    }
+
     public static JobMasterClusterConnectionConfig Get(string clusterId, bool includeNotReady = false)
     {
         var config = TryGet(clusterId, includeNotReady);

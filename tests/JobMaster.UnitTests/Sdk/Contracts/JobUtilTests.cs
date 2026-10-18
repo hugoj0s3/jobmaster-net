@@ -72,10 +72,10 @@ public class JobUtilTests
     }
 
     [Fact]
-    public void GetTimeout_WhenNoTimeoutAttributeAndNoMasterConfig_Uses5Minutes()
+    public void GetTimeout_WhenNoTimeoutAttributeAndNoMasterConfig_UsesJobMasterDefault()
     {
         JobUtil.GetTimeout(typeof(MasterHandlerNoAttributes), timeout: null, masterConfig: null)
-            .Should().Be(TimeSpan.FromMinutes(5));
+            .Should().Be(JobMasterDefaults.DefaultJobTimeout);
     }
 
     [Fact]
@@ -94,6 +94,31 @@ public class JobUtilTests
     public void GetWorkerLane_WhenNoAttributeAndNoOverride_ReturnsNull()
     {
         JobUtil.GetWorkerLane(typeof(MasterHandlerNoAttributes), workerLane: null).Should().BeNull();
+    }
+
+    [Fact]
+    public void GetClusterId_WhenExplicitProvided_UsesProvidedValue()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithClusterId), clusterId: "explicit").Should().Be("explicit");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenAttributePresent_UsesAttribute()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithClusterId), clusterId: null).Should().Be("attr-cluster");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenJobDefinitionConfigAttributePresent_UsesConfigOverIndividualAttribute()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerWithConfigAndIndividualAttributes), clusterId: null)
+            .Should().Be("config-cluster");
+    }
+
+    [Fact]
+    public void GetClusterId_WhenNoAttributeAndNoOverride_ReturnsNull()
+    {
+        JobUtil.GetClusterId(typeof(MasterHandlerNoAttributes), clusterId: null).Should().BeNull();
     }
 
     [Fact]
@@ -119,10 +144,10 @@ public class JobUtilTests
     }
 
     [Fact]
-    public void GetMaxNumberOfRetries_WhenNoAttributeAndNoMasterConfig_Uses3()
+    public void GetMaxNumberOfRetries_WhenNoAttributeAndNoMasterConfig_UsesJobMasterDefault()
     {
         JobUtil.GetMaxNumberOfRetries(typeof(MasterHandlerNoAttributes), maxNumberOfRetries: null, masterConfig: null)
-            .Should().Be(3);
+            .Should().Be(JobMasterDefaults.MaxRetryCount);
     }
 
     [Fact]
@@ -153,6 +178,78 @@ public class JobUtilTests
             .Should().Be(JobMasterPriority.Medium);
     }
 
+    // Classic attributes are inherited from a base class (like JobDefinitionConfigAttribute); a derived class's own
+    // attribute wins. [JobMasterMetadata] (AllowMultiple) is merged across the hierarchy, derived key wins.
+
+    [Fact]
+    public void ClassicAttributes_AreInheritedFromBaseClass()
+    {
+        var t = typeof(DerivedHandlerInheritingAll);
+
+        JobUtil.GetClusterId(t, clusterId: null).Should().Be("base-cluster");
+        JobUtil.GetJobMasterPriority(t, priority: null).Should().Be(JobMasterPriority.High);
+        JobUtil.GetWorkerLane(t, workerLane: null).Should().Be("base-lane");
+        JobUtil.GetTimeout(t, timeout: null, masterConfig: null).Should().Be(TimeSpan.FromSeconds(17));
+        JobUtil.GetMaxNumberOfRetries(t, maxNumberOfRetries: null, masterConfig: null).Should().Be(4);
+    }
+
+    [Fact]
+    public void ClassicAttributes_DerivedClassAttributeOverridesBase()
+    {
+        var t = typeof(DerivedHandlerOverriding);
+
+        JobUtil.GetClusterId(t, clusterId: null).Should().Be("derived-cluster");
+        JobUtil.GetJobMasterPriority(t, priority: null).Should().Be(JobMasterPriority.Low);
+        JobUtil.GetWorkerLane(t, workerLane: null).Should().Be("base-lane");
+    }
+
+    [Fact]
+    public void MetadataAttribute_IsInheritedFromBaseClass()
+    {
+        var job = Job.New("cluster", typeof(DerivedHandlerInheritingAll));
+
+        job.Metadata!.ToReadable().GetStringValue("base-key").Should().Be("base-value");
+    }
+
+    [Fact]
+    public void MetadataAttribute_DerivedKeyOverridesBaseAndOtherKeysMerge()
+    {
+        var metadata = JobUtil.GetHandlerMetadata(typeof(DerivedHandlerOverriding));
+
+        metadata["base-key"].Should().Be("derived-value");
+        metadata["derived-only"].Should().Be("x");
+        metadata["base-only"].Should().Be("y");
+    }
+
+    [Fact]
+    public void MetadataAttribute_CallMetadataOverridesInheritedAttribute()
+    {
+        var job = Job.New("cluster", typeof(DerivedHandlerOverriding),
+            writableMetadata: WritableMetadata.New().SetStringValue("base-key", "from-call"));
+
+        job.Metadata!.ToReadable().GetStringValue("base-key").Should().Be("from-call");
+    }
+
+    [JobMasterClusterId("base-cluster")]
+    [JobMasterPriority(JobMasterPriority.High)]
+    [JobMasterWorkerLane("base-lane")]
+    [JobMasterTimeout(17)]
+    [JobMasterMaxNumberOfRetries(4)]
+    [JobMasterMetadata("base-key", "base-value")]
+    [JobMasterMetadata("base-only", "y")]
+    private abstract class BaseHandlerWithAttributes : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class DerivedHandlerInheritingAll : BaseHandlerWithAttributes;
+
+    [JobMasterClusterId("derived-cluster")]
+    [JobMasterPriority(JobMasterPriority.Low)]
+    [JobMasterMetadata("base-key", "derived-value")]
+    [JobMasterMetadata("derived-only", "x")]
+    private sealed class DerivedHandlerOverriding : BaseHandlerWithAttributes;
+
     [JobMasterDefinitionId("defid")]
     private class MasterHandlerWithDefinitionId : IJobMasterHandler
     {
@@ -167,6 +264,12 @@ public class JobUtilTests
 
     [JobMasterWorkerLane("lane1")]
     private class MasterHandlerWithWorkerLane : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    [JobMasterClusterId("attr-cluster")]
+    private class MasterHandlerWithClusterId : IJobMasterHandler
     {
         public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
@@ -201,12 +304,14 @@ public class JobUtilTests
             priority: JobMasterPriority.Critical,
             timeout: TimeSpan.FromSeconds(21),
             maxNumberOfRetries: 6,
-            workerLane: "config-lane");
+            workerLane: "config-lane",
+            clusterId: "config-cluster");
     }
 
     [FakeDefinitionAttribute]
     [JobMasterTimeout(99)]
     [JobMasterWorkerLane("individual-lane")]
+    [JobMasterClusterId("individual-cluster")]
     [JobMasterMaxNumberOfRetries(9)]
     [JobMasterPriority(JobMasterPriority.Low)]
     private class MasterHandlerWithConfigAndIndividualAttributes : IJobMasterHandler

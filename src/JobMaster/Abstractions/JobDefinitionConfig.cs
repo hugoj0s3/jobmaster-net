@@ -17,37 +17,42 @@ public class JobDefinitionConfig
     /// </param>
     public JobDefinitionConfig(
         string jobDefinitionId,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
+        string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        string? workerLane = null,
         IWritableMetadata? metadata = null)
     {
         if (string.IsNullOrWhiteSpace(jobDefinitionId))
             throw new ArgumentException("JobDefinitionId is required.", nameof(jobDefinitionId));
 
         JobDefinitionId = jobDefinitionId;
+        ClusterId = clusterId;
         Priority = priority;
+        WorkerLane = workerLane;
         Timeout = timeout;
         MaxNumberOfRetries = maxNumberOfRetries;
-        WorkerLane = workerLane;
         Metadata = metadata;
     }
 
     /// <summary>Stable, human-readable ID identifying the job definition.</summary>
     public string JobDefinitionId { get; }
 
+    /// <summary>Routes the job to a specific cluster. Falls back to the default cluster if unset.</summary>
+    public string? ClusterId { get; }
+
     /// <summary>Execution priority. Falls back to <see cref="JobMasterPriority.Medium"/> if unset.</summary>
     public JobMasterPriority? Priority { get; }
+
+    /// <summary>Routes the job to a dedicated worker lane. Falls back to the default lane if unset.</summary>
+    public string? WorkerLane { get; }
 
     /// <summary>Maximum execution time. Falls back to the cluster default if unset.</summary>
     public TimeSpan? Timeout { get; }
 
     /// <summary>Max retries on failure. Falls back to the cluster default if unset.</summary>
     public int? MaxNumberOfRetries { get; }
-
-    /// <summary>Routes the job to a dedicated worker lane. Falls back to the default lane if unset.</summary>
-    public string? WorkerLane { get; }
 
     /// <summary>Optional key-value metadata passed to the handler.</summary>
     public IWritableMetadata? Metadata { get; }

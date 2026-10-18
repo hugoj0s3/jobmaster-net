@@ -63,6 +63,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.Cronos", "src\Pro
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "JobMaster.NCrontab", "src\Providers\JobMaster.NCrontab\JobMaster.NCrontab.csproj", "{CD695E4B-89A0-42F4-886B-0C999D6E25B4}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TargetTestClusterIdApp", "tests\TargetTestClusterIdApp\TargetTestClusterIdApp.csproj", "{5285CFCA-D5E8-43B6-8A06-D55887939440}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -373,6 +375,18 @@ Global
 		{CD695E4B-89A0-42F4-886B-0C999D6E25B4}.Release|x64.Build.0 = Release|Any CPU
 		{CD695E4B-89A0-42F4-886B-0C999D6E25B4}.Release|x86.ActiveCfg = Release|Any CPU
 		{CD695E4B-89A0-42F4-886B-0C999D6E25B4}.Release|x86.Build.0 = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|x64.Build.0 = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Debug|x86.Build.0 = Debug|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|x64.ActiveCfg = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|x64.Build.0 = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|x86.ActiveCfg = Release|Any CPU
+		{5285CFCA-D5E8-43B6-8A06-D55887939440}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -405,5 +419,6 @@ Global
 		{08BE469C-06A7-4896-9F0B-632F44E671BF} = {E6D4C1B1-642D-442A-AD7F-AA240580968C}
 		{CC9BC9BA-7C17-4193-8330-C9C7A807504E} = {E6D4C1B1-642D-442A-AD7F-AA240580968C}
 		{560B68EA-EED1-468A-B37D-E3F4E6EA0FAB} = {E6D4C1B1-642D-442A-AD7F-AA240580968C}
+		{5285CFCA-D5E8-43B6-8A06-D55887939440} = {B5E6056F-5D2E-4171-B0C9-23C8FD0B0D20}
 	EndGlobalSection
 EndGlobal

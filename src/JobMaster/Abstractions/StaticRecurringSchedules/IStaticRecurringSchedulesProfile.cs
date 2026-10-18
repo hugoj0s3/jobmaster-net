@@ -15,7 +15,9 @@ public interface IStaticRecurringSchedulesProfile
     static abstract string ProfileId { get; }
 
     /// <summary>
-    /// The cluster this profile is scoped to. An empty string targets the default (single) cluster.
+    /// The cluster this profile is scoped to; takes precedence over each handler's own cluster id.
+    /// An empty string lets each schedule use its handler's <c>[JobMasterClusterId]</c> /
+    /// <c>JobDefinitionConfig.ClusterId</c>, then the default cluster.
     /// Override when running multiple clusters in the same process.
     /// </summary>
     static virtual string ClusterId => string.Empty;

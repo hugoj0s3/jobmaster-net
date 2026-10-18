@@ -9,7 +9,7 @@ open decisions (settle before coding), tasks, and done criteria.
 
 | #  | Item                                                  | Size  | Breaking | Depends on |
 |----|-------------------------------------------------------|-------|----------|------------|
-| 1  | Cluster id via attribute / `JobDefinitionConfig`      | S     | No       | –          |
+| 1  | Cluster id via attribute / `JobDefinitionConfig`      | S     | **Yes** (param order, attribute inheritance) | – |
 | 2  | NaturalCron upgrade + string overloads                | S     | No       | –          |
 | 3  | Cronos/NCrontab colliding method names                | S     | No (obsolete) | 2     |
 | 4  | `GetJobHandlerTypeFromId` single-scan cache           | XS    | No       | –          |
@@ -18,8 +18,11 @@ open decisions (settle before coding), tasks, and done criteria.
 | 7  | Master flush safety net (`ConfirmOnMasterAsync`)      | M/L   | No       | 6          |
 | 8  | Hybrid agent connection                               | L     | No       | own sub-plan file first |
 | 9  | Reminders cleanup                                     | XS    | –        | 1–8        |
-| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9        |
+| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13 |
 | 11 | Docs restructure + `presenting.md`                    | M     | –        | 10         |
+| 12 | Case-insensitive metadata/message-data keys + worker lanes | M | **Yes** | 1          |
+| 13 | Disabled-priority validation scoped per cluster       | S/M   | Maybe (stricter recurring check) | 1 |
+| 14 | Startup type scans: one pass + safe `GetTypes`        | S     | No       | 1 (13 adds a scan user) |
 
 ---
 
@@ -39,7 +42,7 @@ back to the default cluster — same pattern as worker lane.
 
 **Design.**
 - New `JobMasterClusterIdAttribute(string clusterId)` next to `JobMasterWorkerLaneAttribute`.
-- New `JobDefinitionConfig.ClusterId` (optional ctor param, last position so existing calls compile).
+- New `JobDefinitionConfig.ClusterId`, the first optional ctor param, right after the id. **Decided:** a documented breaking change. In every scheduling method `clusterId` also moves from last to right after the payload (`msgData`/`data`).
 - New `JobUtil.GetClusterId(Type handlerType, string? clusterId)`: explicit → applied
   `JobDefinitionConfigAttribute` config → `[JobMasterClusterId]` → default cluster.
 - `JobMasterScheduler`: `NewJob<T>`/`NewRecurSchedule<T>` use `GetClusterId(typeof(T), …)`; config-based
@@ -60,16 +63,18 @@ back to the default cluster — same pattern as worker lane.
 - Startup validation (hard rule): an attribute/`JobDefinitionConfig` cluster id that isn't registered must
   fail in `DefaultRuntimeValidatorSetup`, not at first schedule call. Also add `JobMasterClusterIdAttribute`
   to the "don't mix with `JobDefinitionConfigAttribute`" check there.
-- `CancelJob`/`ReSchedule`/`CancelRecurring` still take `clusterId` and default otherwise — a job scheduled
-  to an attribute cluster can't be cancelled without passing the id. Accept + document, or out of scope?
-  (Item 6's result exposes `Context.ClusterId`, which helps.)
+- ~~`CancelJob`/`ReSchedule`/`CancelRecurring` cluster fallback~~ — **decided:** accepted and documented
+  (XML docs). They act by id only, so a non-default cluster must be passed explicitly.
 
 **Tasks.**
-- [ ] Attribute + `JobDefinitionConfig.ClusterId` + `ApplyOverrides` carries it through.
-- [ ] `JobUtil.GetClusterId`; wire into `JobMasterScheduler` (all `Once*`/`Recurring*`, sync + async, both families).
-- [ ] Static recurring: `RecurringScheduleDefinitionCollection` respects handler attribute per decided precedence.
-- [ ] Validator: unknown cluster id + attribute-family mixing.
-- [ ] Unit tests: precedence matrix (explicit / definition config / attribute / default) for jobs, dynamic
+- [x] Attribute + `JobDefinitionConfig.ClusterId` + `ApplyOverrides` carries it through.
+- [x] `JobUtil.GetClusterId`; wire into `JobMasterScheduler` (all `Once*`/`Recurring*`, sync + async, both families).
+- [x] Static recurring: `RecurringScheduleDefinitionCollection` respects handler attribute per decided precedence.
+      (`StaticRecurringSchedulesProfileInfo.ClusterId` is now nullable = "profile declared none"; bootstrap
+      validates/upserts per definition's `ClusterId`, since one profile can now span clusters.)
+- [x] Validator: unknown cluster id (handler types + every `IStaticJobDefinitionConfig` implementation,
+      incl. publisher-only ones) + attribute-family mixing.
+- [x] Unit tests: precedence matrix (explicit / definition config / attribute / default) for jobs, dynamic
       recurring, static recurring, and the Advanced `TDefinition` overloads; validator failures.
 
 **Done when.** Precedence matrix tests green; full unit suite green.
@@ -372,3 +377,218 @@ There are two reminder files: [ChangeLog/reminders.md](ChangeLog/reminders.md) a
 
 - [ ] Restructure around standalone mode first: install → first job → recurring → dashboard, then distributed.
 - [ ] Create `presenting.md` (reference for a later article).
+
+---
+
+## 12. Case-insensitive metadata and message-data keys, and worker lanes
+
+**Goal.** Match ignoring case everywhere, consistent with cluster ids (item 1):
+- **Metadata and message-data (`MsgData`) keys:** `"Category"` and `"category"` are the same key for overrides, for
+  reads (`TryGetStringValue("CATEGORY")`) and for API/DB filters.
+- **Worker lanes:** `"Billing"` and `"billing"` are the same lane in every comparison, API filter and DB query, not just
+  in bucket routing.
+
+**Current state (found during item 1).**
+- In memory, keys are case-sensitive. `KeyValueBag` (behind `Metadata`/`WritableMetadata`), `JobUtil.GetHandlerMetadata`
+  and `JobMasterDictionaryUtils.Merge` all use a plain `Dictionary<string, object?>`.
+  - So a derived `[JobMasterMetadata("category", ...)]` does **not** override a base `"Category"`; the job gets both
+    keys.
+  - Call metadata only overrides an attribute key when the case matches exactly.
+- DB metadata filters (API `metadata` filter, e.g. the scenario tests' `TestIdentifier`) compare the key with a plain
+  SQL `=` on the generic-record key column. Not verified yet, but by provider defaults:
+  - Postgres: case-sensitive.
+  - SQL Server / MySQL: case-insensitive default collations.
+  - RavenDB: case-insensitive string equality.
+  - So the same filter likely behaves differently per provider.
+- **Worker lanes are only partly case-insensitive.**
+  - Already ignoring case:
+    - bucket routing (`MasterBucketService.FilterApplicableBuckets`, `OrdinalIgnoreCase`), so
+      `[JobMasterWorkerLane("Billing")]` reaches a `"billing"` worker;
+    - `PreValidation`, which rejects two spellings of one lane across a cluster's workers (`NormalizeId`).
+  - Still exact or DB-dependent:
+    - **Bug:** API `GET /workers` filters lanes with `Ordinal` (`WorkersEndpoints.cs:37`), while `/workers/count`
+      uses `OrdinalIgnoreCase` (`:79`). So with `?workerLane=Billing` the list is empty while the count isn't.
+    - `MasterBucketService` bucket query filter: `b.WorkerLane == criteria.WorkerLane`.
+    - SQL job/recurring-schedule queries `WorkerLane = @WorkerLane`, which depend on collation (same issue as metadata
+      filters; check RavenDB too).
+    - `AssignJobsToBucketsRunner.BucketFailureKey` (`{cluster}_{lane}_{priority}`): separate no-bucket fallback timers
+      per spelling.
+    - Standalone drainer lanes in `JobMasterRuntime` (`.Distinct()` over existing buckets): could start two drainers
+      for buckets left under two spellings, e.g. after a lane's case changed between deployments.
+  - Jobs store the lane spelling from the attribute or call. Unlike cluster ids it can't be normalized to a configured
+    spelling, because a publisher-only app has no workers and so no lane registry. "Case-insensitive" for lanes means
+    every comparison and DB filter ignores case, with no normalization.
+
+**Design (to settle).**
+- **Decided (Hugo):** message data too, not just metadata. Both sit on `KeyValueBag`, so the comparer goes there
+  once and no metadata-only switch is needed.
+- `KeyValueBag` → `StringComparer.OrdinalIgnoreCase`, including the `KeyValueBag(IDictionary)` constructor, which today
+  wraps whatever dictionary it's handed (e.g. one deserialized from storage). It must copy into an ignore-case
+  dictionary instead. Watch for an incoming dictionary that already holds two spellings of one key.
+- Check every other path that builds or reads message data or metadata without `KeyValueBag`: serialization round-trips
+  (master/agent storage, NATS/RavenDB documents) and the API/Dashboard models. Keys must come back as written, while
+  lookups ignore case.
+- `GetHandlerMetadata` / `Merge` use the same comparer, so derived-overrides-base works across casing.
+- DB filters: make every provider match keys case-insensitively, e.g. `lower()`/`ILIKE` on Postgres, and confirm
+  SQL Server/MySQL/RavenDB.
+- Which casing is stored when two spellings collide: probably the last writer's casing, as with "last wins" values.
+- Worker lanes: `OrdinalIgnoreCase` for every in-memory comparison, key and `Distinct`/`GroupBy`. DB lane filters
+  ignore case on every provider, with the same per-provider approach as metadata filters. Check that the lane indexes
+  (`idx_*_cluster_status_worker_lane`, `idx_*_cluster_worker_lane`) still get used if a filter switches to
+  `lower(...)`, e.g. Postgres may need an expression index or a case-insensitive (`citext`/collation) column.
+
+**Open decisions.**
+- Recurring metadata precedence (also found in item 1). `Job.FromRecurringSchedule` merges
+  `Merge(recurringMetadata, handlerMetadata)`, so the handler's `[JobMasterMetadata]` overrides the schedule's own
+  metadata. One-off jobs are the opposite: call metadata wins.
+  - `JobTests.FromRecurringSchedule_CopiesSchedulingAndMergesMetadataWithJobWinning` asserts this on purpose.
+  - But it contradicts `recurring-schedule.md` ("configuration in a profile / `RecurringAsync` overrides handler
+    attributes") and the same test's priority/timeout/lane, where the schedule wins.
+  - Decide here, since it's the same merge code.
+
+**Tasks.**
+- [ ] Verify the current per-provider DB filter behavior first: a RepoConformance test, metadata filter with a
+      different-case key, against all providers.
+- [ ] Case-insensitive comparer in `KeyValueBag` (metadata + message data) / `GetHandlerMetadata` / `Merge`.
+- [ ] Provider filter changes so all providers agree; RepoConformance test asserting case-insensitive matching on each.
+- [ ] Unit tests: derived `"category"` overrides base `"Category"`; metadata and message-data reads ignore case; call
+      metadata overrides an attribute across casing; storage round-trips keep the original key spelling.
+- [ ] Worker lanes:
+  - [ ] Fix `GET /workers` (`Ordinal` → `OrdinalIgnoreCase`) so it matches `/workers/count`, with an API test.
+  - [ ] Make the other in-memory lane comparisons and keys ignore case: `MasterBucketService` query filter,
+        `BucketFailureKey`, standalone drainer `Distinct`.
+  - [ ] Make provider lane filters ignore case for jobs and recurring schedules. Add a RepoConformance test per
+        provider, and confirm the lane indexes are still used.
+  - [ ] Unit tests: a job with lane `"Billing"` is found and filtered under `"billing"` everywhere.
+- [ ] Docs (`job-configuration.md` Message Data + Metadata + Worker Lane sections) + ChangeLog breaking entry.
+
+**Done when.** The case-insensitive tests (keys and lanes) are green on every provider, plus the full unit suite.
+
+---
+
+## 13. Disabled-priority validation scoped per cluster
+
+**Goal.** A priority disabled on one cluster (`DisablePriority(...)`) only affects jobs and schedules that go to that
+cluster. Each check uses the fully resolved priority: explicit, then `JobDefinitionConfig`, then `[JobMasterPriority]`
+(inherited, item 1), then Medium.
+
+**Current state (found during item 1).** Scenario: cluster-b disables Critical, the default cluster allows it.
+- **Startup, `JobMasterRuntime.PreValidation` (the `DisabledPriorities` block): wrong scope in both directions.**
+  - False positive: for every cluster with disabled priorities it loops over every handler in the AppDomain, with no
+    cluster filter. A `[JobMasterPriority(Critical)]` handler that only targets the default cluster fails startup
+    because of cluster-b. Predates item 1, but `[JobMasterClusterId]` now makes it scopable.
+  - False negative: it only reads `[JobMasterPriority]`, not `JobDefinitionConfig.Priority`. A definition-config
+    handler with `priority: Critical` aimed at cluster-b passes startup.
+- **One-off scheduling, `JobMasterScheduler.EnsureCanSave`: correct.** It validates against the job's resolved cluster
+  (fixed in item 1) and throws `InvalidOperationException` at the call, including for explicit `clusterId:` routing.
+- **Recurring: not checked when priority comes from the handler.**
+  - `EnsureCanSave` (recurring) and the static bootstrap check (`BootstrapStaticRecurringSchedules`) only validate an
+    explicit `Priority`. A null priority is resolved per occurrence by design.
+  - `RecurringSchedulePlanner` has no priority check.
+  - An occurrence that resolves to a disabled priority finds no bucket (`BucketQty` is forced to 0 for disabled
+    priorities), waits `NoBucketFallbackThreshold` (2.5 min), then runs in the fallback bucket. Nothing fails; every
+    occurrence is silently delayed.
+- Medium can't be disabled (`ClusterDefinition.DisablePriority` throws), so the "no priority anywhere → Medium" default
+  is always allowed.
+
+**Design.**
+- Startup: per handler, resolve its default cluster (`JobUtil.GetClusterId(t, null) ?? default cluster`) and its
+  priority (`JobUtil.GetJobMasterPriority(t, null)`, which covers `JobDefinitionConfig`). Fail only if that priority is
+  disabled on **that** cluster.
+  - Move the check into `DefaultRuntimeValidatorSetup` as a testable `internal static` helper, like
+    `ValidateClusterIds`, so errors are aggregated instead of thrown one at a time.
+  - Explicit `clusterId:` routing stays covered by `EnsureCanSave`.
+- Static recurring: validate each definition's resolved priority (explicit, else the handler's) against its resolved
+  cluster at bootstrap. Better: before workers start, which ties into the item-1 lesson about bootstrap failures
+  after `worker.StartAsync()`.
+
+**Open decisions.**
+- Dynamic recurring schedules with a handler-resolved priority:
+  - fail at registration (`RecurringAsync`) by resolving the handler priority up front for the check, without storing
+    it, so per-occurrence resolution is kept;
+  - fail or warn when planned;
+  - or keep the delay-then-fallback and only log a warning.
+  - Registration-time failure is the most consistent with one-off jobs.
+- Is a definition-only `IStaticJobDefinitionConfig` (publisher side, no handler) with a disabled priority on its own
+  `ClusterId` also a startup error? It would match item 1's cluster-id validator scope.
+
+**Tasks.**
+- [ ] Per-cluster startup validation helper + unit tests:
+  - Critical handler on the default cluster with Critical disabled only on cluster-b → OK.
+  - The same handler with `[JobMasterClusterId("cluster-b")]` → error.
+  - `JobDefinitionConfig` priority checked.
+  - Inherited `[JobMasterPriority]` checked.
+- [ ] Remove the old all-handlers loop from `PreValidation`.
+- [ ] Static recurring: resolved-priority check per definition cluster.
+- [ ] Dynamic recurring: implement the decided behavior + tests.
+- [ ] Docs (`cluster-configuration.md` DisablePriority section, `job-configuration.md` priority warning) + ChangeLog.
+
+**Done when.** The per-cluster priority tests and the full unit suite are green.
+
+---
+
+## 14. Startup type scans: one pass and a safe `GetTypes`
+
+**Goal.** Startup enumerates the AppDomain's types once per scanning component instead of once per check, and an
+assembly whose types can't be loaded never crashes startup.
+
+**Current state (found in the item-1 review).**
+- `DefaultRuntimeValidatorSetup.ValidateAsync` builds `assemblies` once, but runs `assemblies.SelectMany(a => a.GetTypes())`
+  four times. `GetTypes()` allocates a fresh array on every call.
+  - Missing-`Config` `IStaticJobDefinitionConfig` check.
+  - `IJobMasterHandler` types: duplicate ids, single-definition and mixing checks.
+  - `IStaticJobDefinitionConfig` types again, for `ValidateClusterIds` (added in item 1).
+  - `IStaticRecurringSchedulesProfile` types, for `ValidateStaticProfileClusterIds` (added in item 1).
+- Type-load failures are handled three different ways:
+  - **Unprotected**, so a `ReflectionTypeLoadException` (e.g. an assembly with a missing dependency) fails startup: the
+    four validator scans, `ClusterConfigBuilder` (runtime-setup and handler registration),
+    `JobMasterIocRegistrationAttribute`, and `JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId`.
+  - **Bare `catch` → `Array.Empty<Type>()`**, which drops the whole assembly, including its loadable types:
+    `JobMasterRuntime` (disabled-priority check, profile discovery, `RecurringScheduleAttribute` discovery) and
+    `ConnectionOptionsBinderFactory`.
+  - **`ReflectionTypeLoadException.Types` minus nulls**, which keeps the loadable types: `JobMasterRuntimeSingleton`
+    and `SqlGenerator`.
+- `JobMasterRuntime` runs its own scans at startup too (the same three as above), so even after the validator fix the
+  AppDomain is still walked several times per startup.
+
+**Design.**
+- **Decided (Hugo):** a new internal static class, `TypeDiscovery`, that caches the discovered types. Every startup scan
+  (the validator, `JobMasterRuntime`, IoC registration, `GetJobHandlerTypeFromId`) reads from it, so the AppDomain is
+  walked once per process.
+- **Cache per assembly, not one global list.** Use a `ConcurrentDictionary<Assembly, Type[]>` and re-read
+  `AppDomain.CurrentDomain.GetAssemblies()` on every call. That list is cheap; `GetTypes()` is the expensive part.
+  - A single frozen snapshot would miss assemblies loaded after the first scan: lazy-loaded handler assemblies, or a
+    handler assembly first touched after `AddJobMaster` ran. Today's scans see those, because each scan re-reads the
+    AppDomain.
+  - The per-assembly cache sees them on the next call and still never calls `GetTypes()` twice on the same assembly.
+  - An assembly's types never change once it's loaded, so the cache never needs invalidating.
+- **Safe load:** catch `ReflectionTypeLoadException` and keep `ex.Types` without nulls, as `JobMasterRuntimeSingleton`
+  does.
+- **One assembly filter** (`!IsDynamic && Location != ""`), applied inside `TypeDiscovery`.
+  - Check the call sites that don't filter today (`JobMasterRuntime`'s scans, `GetJobHandlerTypeFromId`). Applying
+    the filter there excludes single-file/in-memory assemblies (empty `Location`), so confirm none of them depend on
+    those.
+- Optional typed shortcuts, e.g. `ConcreteTypesAssignableTo<T>()`, each cached once as well. These would cover the
+  common `typeof(I).IsAssignableFrom(t) && !IsInterface && !IsAbstract` filter used at most call sites.
+- Validator: keep the early return after the missing-`Config` check. Reading from the cache doesn't call `GetConfig`,
+  so that ordering reason still holds.
+
+**Open decisions.**
+- Should a type-load failure be logged, so an assembly whose types silently partly disappear is still visible? The
+  per-assembly cache would log it once per assembly.
+- Typed shortcuts in this PR, or just the raw cached `GetTypes()`?
+
+**Tasks.**
+- [ ] `TypeDiscovery` with a per-assembly cache and safe load. Unit tests:
+  - `GetTypes()` called once per assembly across repeated calls;
+  - an assembly loaded after the first call is picked up;
+  - a `ReflectionTypeLoadException` keeps the loadable types.
+- [ ] Move every listed call site onto it: the validator's four scans, `JobMasterRuntime`'s three,
+      `ClusterConfigBuilder`, `JobMasterIocRegistrationAttribute`, `GetJobHandlerTypeFromId`,
+      `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, and `SqlGenerator` (`JobMaster.SqlBase` already
+      has `InternalsVisibleTo`).
+- [ ] Coordinate with item 4: `GetJobHandlerTypeFromId`'s id→type map can be built from `TypeDiscovery`.
+- [ ] Internal ChangeLog. No docs change.
+
+**Done when.** No startup call site calls `Assembly.GetTypes()` directly, each assembly's types are read once per
+process, and the full unit suite is green.

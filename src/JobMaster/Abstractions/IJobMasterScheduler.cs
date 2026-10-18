@@ -24,20 +24,20 @@ public interface IJobMasterScheduler
     /// Schedules <typeparamref name="T"/> to run immediately.
     /// </summary>
     /// <param name="msgData">Optional payload passed to the handler.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>[JobMasterClusterId]</c> attribute, then the default cluster.</param>
     /// <param name="priority">Execution priority. Falls back to <c>[JobMasterPriority]</c> attribute, then <see cref="JobMasterPriority.Medium"/>.</param>
     /// <param name="workerLane">Routes the job to a dedicated worker lane. Falls back to <c>[JobMasterWorkerLane]</c> attribute, then null (default lane).</param>
     /// <param name="timeout">Maximum execution time. Falls back to <c>[JobMasterTimeout]</c> attribute, then the cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries on failure. Falls back to <c>[JobMasterMaxNumberOfRetries]</c> attribute, then the cluster default.</param>
     /// <param name="metadata">Optional key-value metadata passed to the handler.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
     JobContext OnceNow<T>(
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Schedules <typeparamref name="T"/> to run at the specified UTC date and time.
@@ -47,12 +47,12 @@ public interface IJobMasterScheduler
     JobContext OnceAt<T>(
         DateTime dateTime,
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Schedules <typeparamref name="T"/> to run after the specified delay from now.
@@ -62,44 +62,44 @@ public interface IJobMasterScheduler
     JobContext OnceAfter<T>(
         TimeSpan after,
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceNow{T}"/>.</summary>
     Task<JobContext> OnceNowAsync<T>(
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAt{T}"/>.</summary>
     Task<JobContext> OnceAtAsync<T>(
         DateTime scheduledAt,
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAfter{T}"/>.</summary>
     Task<JobContext> OnceAfterAsync<T>(
         TimeSpan after,
         IWriteableMessageData? msgData = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
-        IWritableMetadata? metadata = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to <paramref name="expression"/>.
@@ -107,6 +107,7 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="expression">Compiled recurrence expression controlling the firing cadence.</param>
     /// <param name="data">Optional payload passed to the handler on each firing.</param>
+    /// <param name="clusterId">Target cluster ID. Falls back to <c>[JobMasterClusterId]</c> attribute, then the default cluster.</param>
     /// <param name="priority">Execution priority for each fired job. Falls back to <c>[JobMasterPriority]</c> attribute, then <see cref="JobMasterPriority.Medium"/>.</param>
     /// <param name="workerLane">Routes fired jobs to a dedicated worker lane. Falls back to <c>[JobMasterWorkerLane]</c> attribute, then null (default lane).</param>
     /// <param name="timeout">Maximum execution time per fired job. Falls back to <c>[JobMasterTimeout]</c> attribute, then the cluster default.</param>
@@ -114,31 +115,30 @@ public interface IJobMasterScheduler
     /// <param name="metadata">Optional key-value metadata passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
     /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
     RecurringScheduleContext Recurring<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        DateTime? endBefore = null) where T : IJobMasterHandler;
 
-    /// <summary>Async version of <see cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.</summary>
+    /// <summary>Async version of <see cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        DateTime? endBefore = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Creates or updates a recurring schedule using a raw expression type ID and expression string.
@@ -147,40 +147,44 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="expressionTypeId">The ID of the recurrence expression compiler to use.</param>
     /// <param name="expression">The raw recurrence expression string interpreted by the compiler.</param>
-    /// <inheritdoc cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)" select="param[@name!='expressionTypeId' and @name!='expression']"/>
+    /// <inheritdoc cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)" select="param[@name!='expressionTypeId' and @name!='expression']"/>
     RecurringScheduleContext Recurring<T>(
         string expressionTypeId,
         string expression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        DateTime? endBefore = null) where T : IJobMasterHandler;
 
-    /// <summary>Async version of <see cref="Recurring{T}(string, string, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.</summary>
+    /// <summary>Async version of <see cref="Recurring{T}(string, string, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.</summary>
     Task<RecurringScheduleContext> RecurringAsync<T>(
         string expressionTypeId,
         string expression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler;
+        DateTime? endBefore = null) where T : IJobMasterHandler;
 
     /// <summary>
     /// Cancels the one-time job with the given ID.
     /// Returns <c>true</c> if the job was found and successfully cancelled.
     /// </summary>
     /// <param name="jobId">ID of the job to cancel.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the job was scheduled on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
+    /// </param>
     Task<bool> CancelJobAsync(Guid jobId, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="CancelJobAsync"/>.</summary>
@@ -191,7 +195,11 @@ public interface IJobMasterScheduler
     /// Returns <c>true</c> if the schedule was found and successfully cancelled.
     /// </summary>
     /// <param name="id">ID of the recurring schedule to cancel.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the schedule was created on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for schedules on a non-default cluster (see <see cref="RecurringScheduleContext.ClusterId"/>).
+    /// </param>
     Task<bool> TryCancelRecurringAsync(Guid id, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="TryCancelRecurringAsync"/>.</summary>
@@ -204,7 +212,11 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="jobId">ID of the job to reschedule.</param>
     /// <param name="scheduledAt">New UTC execution time.</param>
-    /// <param name="clusterId">Target cluster ID. When null, the default cluster is used.</param>
+    /// <param name="clusterId">
+    /// Cluster the job was scheduled on. When null, the default cluster is used — the handler's
+    /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
+    /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
+    /// </param>
     Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="ReScheduleAsync"/>.</summary>

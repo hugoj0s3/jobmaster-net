@@ -4,6 +4,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
@@ -488,6 +489,341 @@ public class JobMasterSchedulerTests
         scheduled!.Priority.Should().BeNull();
         scheduled.Timeout.Should().BeNull();
         scheduled.MaxNumberOfRetries.Should().BeNull();
+    }
+
+    // Cluster id precedence: explicit → JobDefinitionConfig.ClusterId / [JobMasterClusterId] → default cluster.
+
+    [Fact]
+    public void OnceNow_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OnceNowAsync_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = await JobMasterScheduler.Instance.OnceNowAsync<ClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenExplicitClusterIdAndAttribute_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdAttrHandler>(clusterId: "c-explicit");
+
+        ctx.ClusterId.Should().Be("c-explicit");
+        explicitCluster.Jobs.Should().ContainSingle();
+        attrCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenHandlerHasDefinitionConfigClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdDefinitionHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenAttributeClusterHasPriorityDisabled_ValidatesAgainstAttributeCluster()
+    {
+        // Guards against validating against the raw (null → default) clusterId argument instead of the
+        // resolved one: the default cluster allows Medium, only the attribute cluster disables it.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false,
+            disabledPriorities: new HashSet<JobMasterPriority> { JobMasterPriority.Medium });
+
+        JobMasterScheduler.Instance
+            .Invoking(s => s.OnceNow<ClusterIdAttrHandler>())
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage($"*Medium*disabled*{ClusterIdAttrHandler.ClusterId}*");
+        attrCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Recurring<ClusterIdAttrHandler>(new NeverRecursCompiledExpr());
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Recurring.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        defaultCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Recurring_WhenExplicitClusterIdAndAttribute_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        JobMasterScheduler.Instance.Recurring<ClusterIdAttrHandler>(new NeverRecursCompiledExpr(), clusterId: "c-explicit");
+
+        explicitCluster.Recurring.Should().ContainSingle();
+        attrCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>();
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_PerCallOverrideKeepsConfigCluster()
+    {
+        // A per-call override (here priority) rebuilds the config in ApplyOverrides — the ClusterId must survive.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>(priority: JobMasterPriority.Critical);
+
+        configCluster.Jobs.Should().ContainSingle().Which.Priority.Should().Be(JobMasterPriority.Critical);
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>(clusterId: "c-explicit");
+
+        explicitCluster.Jobs.Should().ContainSingle();
+        configCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithConfigObjectClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster("c-config-obj", isDefault: false);
+
+        var config = new JobDefinitionConfig("orders.process", clusterId: "c-config-obj");
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow(config);
+
+        ctx.ClusterId.Should().Be("c-config-obj");
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithConfigObjectWithoutClusterId_UsesDefaultCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow(new JobDefinitionConfig("orders.process"));
+
+        ctx.ClusterId.Should().Be("c-default");
+        defaultCluster.Jobs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithDefinitionAttributeClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.Recurring<ClusterIdDefinitionAttribute>(new NeverRecursCompiledExpr());
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Recurring.Should().ContainSingle();
+        defaultCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithConfigObjectClusterId_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster("c-config-obj", isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var config = new JobDefinitionConfig("orders.recur", clusterId: "c-config-obj");
+        JobMasterScheduler.Instance.Advanced.Recurring(config, new NeverRecursCompiledExpr(), clusterId: "c-explicit");
+
+        explicitCluster.Recurring.Should().ContainSingle();
+        configCluster.Recurring.Should().BeEmpty();
+    }
+
+    // Cluster ids are matched ignoring case, but what's stored must use the configured casing.
+
+    [Fact]
+    public void OnceNow_WhenAttributeClusterIdDiffersInCase_SchedulesOnConfiguredClusterWithItsCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<UpperCaseClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+    }
+
+    [Fact]
+    public void OnceNow_WhenExplicitClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>(clusterId: "C-EXPLICIT");
+
+        ctx.ClusterId.Should().Be("c-explicit");
+        explicitCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be("c-explicit");
+    }
+
+    [Fact]
+    public void TryCancelJob_WhenClusterIdDiffersInCase_FindsCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        var jobId = Guid.NewGuid();
+        schedulerMock.Setup(x => x.CancelJob(jobId)).Returns(true);
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        JobMasterClusterConnectionConfig.Create("c-cancel", "repo", "cnn");
+        JobMasterClusterAwareComponentFactories.AddFactory("c-cancel", factoryMock.Object);
+
+        JobMasterScheduler.Instance.TryCancelJob(jobId, clusterId: "C-Cancel").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ComponentFactories_LookupIgnoresCase()
+    {
+        // Callers such as the API's /{clusterId}/... routes pass the raw id straight to GetFactory.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var factory = new Mock<IJobMasterClusterAwareComponentFactory>().Object;
+        JobMasterClusterAwareComponentFactories.AddFactory("c-factory", factory);
+
+        JobMasterClusterAwareComponentFactories.GetFactory("C-Factory").Should().BeSameAs(factory);
+        JobMasterClusterAwareComponentFactories.TryGetFactory("C-FACTORY").Should().BeSameAs(factory);
+    }
+
+    [Fact]
+    public void StaticCollection_WhenProfileClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        JobMasterClusterConnectionConfig.Create("c-profile", "repo", "cnn", isDefault: true);
+
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", "C-PROFILE", workerLane: null);
+        var definition = new RecurringScheduleDefinitionCollection(profile, "c-profile")
+            .Add(typeof(TestJobMasterHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("c-profile");
+        definition.Id.Should().StartWith("c-profile:");
+    }
+
+    [JobMasterClusterId("C-ATTR")]
+    private sealed class UpperCaseClusterIdAttrHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class ScheduledCapture
+    {
+        public List<JobRawModel> Jobs { get; } = new();
+        public List<RecurringScheduleRawModel> Recurring { get; } = new();
+    }
+
+    private static ScheduledCapture RegisterCluster(string clusterId, bool isDefault, ISet<JobMasterPriority>? disabledPriorities = null)
+    {
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "cnn", isDefault);
+        if (disabledPriorities != null)
+        {
+            clusterCfg.SetDisabledPriorities(disabledPriorities);
+        }
+
+        var capture = new ScheduledCapture();
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add);
+        schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(capture.Jobs.Add)
+            .Returns(Task.CompletedTask);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add);
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+        return capture;
+    }
+
+    [JobMasterClusterId(ClusterId)]
+    private sealed class ClusterIdAttrHandler : IJobMasterHandler
+    {
+        public const string ClusterId = "c-attr";
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class ClusterIdDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
+    {
+        public const string ClusterId = "c-config";
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("cluster-defid", clusterId: ClusterId);
+    }
+
+    [ClusterIdDefinitionAttribute]
+    private sealed class ClusterIdDefinitionHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
     private sealed class TestDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig

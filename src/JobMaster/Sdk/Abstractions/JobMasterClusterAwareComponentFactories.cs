@@ -5,7 +5,9 @@ namespace JobMaster.Sdk.Abstractions;
 internal static class JobMasterClusterAwareComponentFactories
 {
     private static readonly object StaticLock = new();
-    private static IDictionary<string, IJobMasterClusterAwareComponentFactory> factories = new Dictionary<string, IJobMasterClusterAwareComponentFactory>();
+    // Case-insensitive, like JobMasterClusterConnectionConfig.TryGet: cluster ids are matched ignoring case everywhere.
+    private static IDictionary<string, IJobMasterClusterAwareComponentFactory> factories =
+        new Dictionary<string, IJobMasterClusterAwareComponentFactory>(StringComparer.OrdinalIgnoreCase);
     
     public static IJobMasterClusterAwareComponentFactory GetFactory(string clusterId)
     {
