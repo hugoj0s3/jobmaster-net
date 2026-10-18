@@ -8,6 +8,35 @@
 
 ## JobMaster 0.0.12-alpha
 
+### Breaking changes
+
+- ⚠️ **Optional parameters now follow one order everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`.**
+  - **`clusterId`** moves from last to right after the payload in every scheduling method, and to right after the id in `JobDefinitionConfig`.
+  - **`JobDefinitionConfig`:** `workerLane` also moves before `timeout`.
+  - **`RecurringScheduleDefinitionCollection.Add`** and the `Add<Th>` extensions (NaturalCron, `TimeSpan`, Cronos, NCrontab): `metadata` moves before `startAfter`/`endBefore`. These take no `clusterId`/`workerLane`, because those come from the profile.
+
+  New signatures:
+
+  ```csharp
+  // IJobMasterScheduler / IJobMasterSchedulerAdvanced (TDefinition overloads)
+  OnceNowAsync<T>(msgData, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+  OnceAtAsync<T>(dateTime, msgData, clusterId, priority, ...)      // OnceAfter<T> likewise
+  RecurringAsync<T>(expression, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+
+  // IJobMasterSchedulerAdvanced (JobDefinitionConfig overloads)
+  RecurringAsync(config, expression, data, clusterId, startAfter, endBefore)   // Once* already ended in (msgData, clusterId)
+
+  new JobDefinitionConfig(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+
+  // Static profiles
+  collection.Add<Th>(expressionType, expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+  ```
+
+  The same change applies to the sync versions and to the `Recurring`/`RecurringAsync` extensions for `NaturalCronExpr`, `TimeSpan`, Cronos and NCrontab.
+  - **Unaffected calls:** calls that pass these parameters by name (`clusterId: "..."`, `priority: ...`) keep working, and so do calls that pass only the payload positionally, such as `OnceNowAsync<T>(msg)`.
+  - **Calls that break:** a call passing `priority` or a later parameter positionally, `new JobDefinitionConfig("id", JobMasterPriority.High)`, or a static `Add<Th>(...)` passing `startAfter`/`endBefore`/`metadata` positionally now fails to compile. Switch it to named arguments.
+  - **The one silent change:** a literal `null` passed in that position now fills `clusterId`, which has no effect.
+
 ### Added
 
 - **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:

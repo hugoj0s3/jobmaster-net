@@ -16,14 +16,14 @@ public static class TimeSpanIntervalCompiledExprExtensions
         this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = new TimeSpanIntervalCompiledExpr
         {
@@ -31,24 +31,24 @@ public static class TimeSpanIntervalCompiledExprExtensions
             Expression = timeSpan.ToString()
         };
         
-        return await scheduler.RecurringAsync<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return await scheduler.RecurringAsync<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
     
     /// <summary>
-    /// Synchronous version of <see cref="RecurringAsync{T}(IJobMasterScheduler, TimeSpan, IWriteableMessageData, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?, string)"/>.
+    /// Synchronous version of <see cref="RecurringAsync{T}(IJobMasterScheduler, TimeSpan, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.
     /// </summary>
     public static RecurringScheduleContext Recurring<T>(
         this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = new TimeSpanIntervalCompiledExpr
         {
@@ -56,7 +56,7 @@ public static class TimeSpanIntervalCompiledExprExtensions
             Expression = timeSpan.ToString()
         };
         
-        return scheduler.Recurring<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return scheduler.Recurring<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
     
     /// <summary>Adds a fixed-interval recurring schedule definition to <paramref name="collection"/>.</summary>
@@ -67,11 +67,11 @@ public static class TimeSpanIntervalCompiledExprExtensions
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null) where Th : class, IJobMasterHandler
+        DateTime? endBefore = null) where Th : class, IJobMasterHandler
     {
-        collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, timeSpan.ToString(), defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        collection.Add<Th>(TimeSpanIntervalExprCompiler.TypeId, timeSpan.ToString(), defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
         return collection;
     }
 }

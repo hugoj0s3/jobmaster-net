@@ -39,7 +39,7 @@ back to the default cluster — same pattern as worker lane.
 
 **Design.**
 - New `JobMasterClusterIdAttribute(string clusterId)` next to `JobMasterWorkerLaneAttribute`.
-- New `JobDefinitionConfig.ClusterId` (optional ctor param, last position so existing calls compile).
+- New `JobDefinitionConfig.ClusterId`, the first optional ctor param, right after the id. **Decided:** a documented breaking change. In every scheduling method `clusterId` also moves from last to right after the payload (`msgData`/`data`).
 - New `JobUtil.GetClusterId(Type handlerType, string? clusterId)`: explicit → applied
   `JobDefinitionConfigAttribute` config → `[JobMasterClusterId]` → default cluster.
 - `JobMasterScheduler`: `NewJob<T>`/`NewRecurSchedule<T>` use `GetClusterId(typeof(T), …)`; config-based

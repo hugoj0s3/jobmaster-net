@@ -45,9 +45,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="timeout">Maximum execution time per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
     /// <param name="endBefore">UTC date after which no jobs fire.</param>
-    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
@@ -55,15 +55,15 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
         where Th : class, IJobMasterHandler
-        => Add(typeof(Th), expressionType, expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        => Add(typeof(Th), expressionType, expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
 
     /// <summary>
     /// Adds a recurring schedule for <paramref name="handlerType"/> using a text-based recurrence expression.
-    /// Non-generic counterpart of <see cref="Add{Th}(string, string, string?, JobMasterPriority?, TimeSpan?, int?, DateTime?, DateTime?, IWritableMetadata?)"/>
+    /// Non-generic counterpart of <see cref="Add{Th}(string, string, string?, JobMasterPriority?, TimeSpan?, int?, IWritableMetadata?, DateTime?, DateTime?)"/>
     /// for callers that only have a <see cref="Type"/> at hand (e.g. reflection-driven registration).
     /// </summary>
     /// <param name="handlerType">The job handler type. Must implement <see cref="IJobMasterHandler"/>.</param>
@@ -73,9 +73,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="timeout">Maximum execution time per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
     /// <param name="endBefore">UTC date after which no jobs fire.</param>
-    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         string expressionType,
@@ -84,12 +84,12 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
     {
         var compiled = RecurrenceExprCompiler.Compile(expressionType, expression);
-        return Add(handlerType, compiled, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        return Add(handlerType, compiled, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
 
     /// <summary>
@@ -100,24 +100,24 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence.</param>
     /// <param name="timeout">Maximum execution time per occurrence.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
     /// <param name="endBefore">UTC date after which no jobs fire.</param>
-    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
         where Th : class, IJobMasterHandler
-        => Add(typeof(Th), compiledExpr, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        => Add(typeof(Th), compiledExpr, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
 
     /// <summary>
     /// Adds a recurring schedule for <paramref name="handlerType"/> using a pre-compiled recurrence expression.
-    /// Non-generic counterpart of <see cref="Add{Th}(IRecurrenceCompiledExpr, string?, JobMasterPriority?, TimeSpan?, int?, DateTime?, DateTime?, IWritableMetadata?)"/>
+    /// Non-generic counterpart of <see cref="Add{Th}(IRecurrenceCompiledExpr, string?, JobMasterPriority?, TimeSpan?, int?, IWritableMetadata?, DateTime?, DateTime?)"/>
     /// for callers that only have a <see cref="Type"/> at hand (e.g. reflection-driven registration).
     /// </summary>
     /// <param name="handlerType">The job handler type. Must implement <see cref="IJobMasterHandler"/>.</param>
@@ -126,9 +126,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence.</param>
     /// <param name="timeout">Maximum execution time per occurrence.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
+    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
     /// <param name="endBefore">UTC date after which no jobs fire.</param>
-    /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         IRecurrenceCompiledExpr compiledExpr,
@@ -136,9 +136,9 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
     {
         if (!typeof(IJobMasterHandler).IsAssignableFrom(handlerType))
         {

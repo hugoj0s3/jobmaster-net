@@ -1,0 +1,25 @@
+{
+  "containerName": "pg-cluster-id",
+  "dockerfilePath": "tests/TargetTestClusterIdApp/Dockerfile",
+  "networkAlias": "pg-cluster-id",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "cluster-id-default",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ClusterIdDefault;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    },
+    {
+      "ClusterId": "cluster-id-target",
+      "Standalone": true,
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ClusterIdTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

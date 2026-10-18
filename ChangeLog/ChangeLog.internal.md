@@ -5,6 +5,26 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
+#### Breaking
+- **`clusterId` moved from last to right after the payload** (Hugo's call; it's an alpha, so documented instead of shimmed). Applies to:
+  - every `Once*`/`Recurring*` overload in `IJobMasterScheduler` and the `TDefinition` overloads of `IJobMasterSchedulerAdvanced`, plus their explicit and implicit implementations in `JobMasterScheduler`;
+  - the config `Recurring`/`RecurringAsync` overloads, which become `(config, expr, data, clusterId, startAfter, endBefore)`;
+  - the `Recurring`/`RecurringAsync` extensions in `NaturalCronExprExtensions`, `TimeSpanIntervalCompiledExprExtensions`, `CronosExprExtensions` and `NCrontabExprExtensions`, including their forwarding calls.
+
+  Hugo then fixed one canonical order for optional parameters everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`, with `startAfter`/`endBefore` after them where present. As a result:
+  - `JobDefinitionConfig` becomes `(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)`, with the property order matching.
+  - `RecurringScheduleDefinitionCollection.Add` (4 overloads) and the 4 extension `Add<Th>` methods move `metadata` before `startAfter`/`endBefore`, including forwarding calls, crefs and `<param>` order.
+  - The scheduler methods already matched.
+  - Internal constructors and factories (`Job.New`, `StaticRecurringScheduleDefinition`, the private `NewJob`/`NewRecurSchedule`) were left alone.
+
+  Every moved parameter swapped places with one of a different type, so a positional caller gets a compile error, never a silent rebind. The only exception is a literal `null`.
+  - **Not moved:** the config `Once*` overloads already ended in `(msgData, clusterId)`. `Cancel*`/`ReSchedule*` take `clusterId` as their only optional parameter.
+  - **Placement:** after the payload, not before it (Hugo's choice between the two), so the common positional `OnceNowAsync<T>(msg)` keeps compiling.
+  - **Why nothing can silently misbind:** the slot `clusterId` took was previously `JobMasterPriority?`, so any non-null positional argument now fails to compile, and only a literal `null` rebinds.
+  - **Docs:** XML `<param>` order and every `cref` signature were updated to match.
+  - **Verification:** solution plus all target apps build with 0 errors, and nothing in the repo needed a call-site change (every caller uses named arguments). 676/676 unit tests pass. One unrelated flake seen once, `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound`, reads `DateTime.UtcNow` twice; it passed 3/3 on rerun.
+  - `tests/TargetTestClusterIdApp` was also added to `JobMaster.sln` under `tests`, alongside the other target apps.
+
 #### Added
 - **Cluster id via attribute / `JobDefinitionConfig`** (Plan0.0.12Alpha item 1). The resolution order matches the other job settings: explicit → applied config → individual attribute → default.
   - **New public API:** `JobMasterClusterIdAttribute` (`Abstractions\Models\Attributes\`), and `JobDefinitionConfig.ClusterId`, added as the last optional constructor parameter so existing calls still compile.
@@ -35,6 +55,10 @@
     - `RecurringScheduleDefinitionCollectionTests`: profile wins, handler attribute, definition config, default, and one profile spanning clusters.
     - New `DefaultRuntimeValidatorSetupTests`.
     - 676/676 unit tests pass.
+    - New scenario test `ClusterIdTest/PostgresPure` with its own `tests/TargetTestClusterIdApp`. A separate app is needed because a cluster id on a handler, definition or profile that isn't configured fails startup validation, so these handlers can't live in the shared schedule or recurring apps.
+      - One container runs a default and a target standalone cluster. These paths pass no `clusterId` and must reach the target cluster: one-off via `[JobMasterClusterId]`, one-off via an Advanced definition's `Config.ClusterId`, static recurring via `[JobMasterClusterId]` + `[TimeSpanIntervalSchedule]`, and static recurring via a profile's `ClusterId`. A plain handler is the control and must reach the default cluster.
+      - Each path is checked two ways: the `JobContext.ClusterId` the handler recorded (`ExecutionRecord` gained an optional `ClusterId`), and the API (jobs and schedules on the expected cluster, none on the other).
+      - Passes. It also fails as expected when `JobUtil.GetClusterId` is mutated to ignore the attribute and definition.
 
 ### JobMaster 0.0.11-alpha.3
 #### Added

@@ -17,18 +17,18 @@ public static class NaturalCronExprExtensions
         this IJobMasterScheduler scheduler,
         NaturalCronExpr naturalCronExpr,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = new NaturalCronCompiledExpr(naturalCronExpr.Expression, naturalCronExpr);
         
-        return await scheduler.RecurringAsync<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return await scheduler.RecurringAsync<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
     
     /// <summary>Synchronous version of <see cref="RecurringAsync{T}"/>.</summary>
@@ -36,18 +36,18 @@ public static class NaturalCronExprExtensions
         this IJobMasterScheduler scheduler,
         NaturalCronExpr naturalCronExpr,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = new NaturalCronCompiledExpr(naturalCronExpr.Expression, naturalCronExpr);
         
-        return scheduler.Recurring<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return scheduler.Recurring<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
     
     /// <summary>Adds a NaturalCron-based recurring schedule definition to <paramref name="collection"/>.</summary>
@@ -58,11 +58,11 @@ public static class NaturalCronExprExtensions
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null) where Th : class, IJobMasterHandler
+        DateTime? endBefore = null) where Th : class, IJobMasterHandler
     {
-        collection.Add<Th>(NaturalCronExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        collection.Add<Th>(NaturalCronExprCompiler.TypeId, naturalCronExpr.Expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
         return collection;
     }
 }

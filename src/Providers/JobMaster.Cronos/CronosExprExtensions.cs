@@ -16,34 +16,34 @@ public static class CronosExprExtensions
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = RecurrenceExprCompiler.Compile(CronosExprCompiler.TypeId, cronExpression);
-        return await scheduler.RecurringAsync<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return await scheduler.RecurringAsync<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
 
     public static RecurringScheduleContext Recurring<T>(
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
+        string? clusterId = null,
         JobMasterPriority? priority = null,
         string? workerLane = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
         IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        string? clusterId = null) where T : IJobMasterHandler
+        DateTime? endBefore = null) where T : IJobMasterHandler
     {
         var compiledExpr = RecurrenceExprCompiler.Compile(CronosExprCompiler.TypeId, cronExpression);
-        return scheduler.Recurring<T>(compiledExpr, data, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore, clusterId);
+        return scheduler.Recurring<T>(compiledExpr, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
 
     public static RecurringScheduleDefinitionCollection Add<Th>(
@@ -53,12 +53,12 @@ public static class CronosExprExtensions
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null) where Th : class, IJobMasterHandler
+        DateTime? endBefore = null) where Th : class, IJobMasterHandler
     {
         var compiledExpr = RecurrenceExprCompiler.Compile(CronosExprCompiler.TypeId, cronExpression);
-        collection.Add<Th>(compiledExpr, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        collection.Add<Th>(compiledExpr, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
         return collection;
     }
 }

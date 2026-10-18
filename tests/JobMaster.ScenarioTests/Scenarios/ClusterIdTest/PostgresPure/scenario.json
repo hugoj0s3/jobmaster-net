@@ -1,0 +1,7 @@
+{
+  "scenarioName": "cluster-id-postgres-pure",
+  "phases": [
+    { "name": "phase-1", "containers": ["pg-cluster-id"] }
+  ],
+  "api": { "container": "api" }
+}
