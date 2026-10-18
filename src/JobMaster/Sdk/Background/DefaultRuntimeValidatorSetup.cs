@@ -143,7 +143,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         IEnumerable<Type> staticJobDefinitionConfigTypes,
         IEnumerable<string?> configuredClusterIds)
     {
-        var configured = ToConfiguredSet(configuredClusterIds);
+        var configured = ToClusterIdSet(configuredClusterIds);
 
         var declared = handlerTypes
             .Select(t => (Type: t, ClusterId: JobUtil.GetClusterId(t, clusterId: null)))
@@ -171,7 +171,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
     /// </summary>
     internal static string? ValidateStaticProfileClusterIds(IEnumerable<Type> profileTypes, IEnumerable<string?> configuredClusterIds)
     {
-        var configured = ToConfiguredSet(configuredClusterIds);
+        var configured = ToClusterIdSet(configuredClusterIds);
 
         var unknown = profileTypes
             .Select(t => (Type: t, ClusterId: (string?)t.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)))
@@ -187,7 +187,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
                $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
     }
 
-    private static HashSet<string> ToConfiguredSet(IEnumerable<string?> configuredClusterIds) =>
+    private static HashSet<string> ToClusterIdSet(IEnumerable<string?> configuredClusterIds) =>
         new HashSet<string>(configuredClusterIds.Where(x => !string.IsNullOrEmpty(x)).Select(x => x!), StringComparer.OrdinalIgnoreCase);
 
     public Task OnBeforeStartAsync(IServiceProvider mainServiceProvider)
