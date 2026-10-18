@@ -143,7 +143,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         IEnumerable<Type> staticJobDefinitionConfigTypes,
         IEnumerable<string?> configuredClusterIds)
     {
-        var configured = ToClusterIdSet(configuredClusterIds);
+        var configuredClusterIdSet = ToClusterIdSet(configuredClusterIds);
 
         var declared = handlerTypes
             .Select(t => (Type: t, ClusterId: JobUtil.GetClusterId(t, clusterId: null)))
@@ -151,7 +151,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
                 .Select(t => (Type: t, ClusterId: JobDefinitionConfigAttribute.GetConfig(t).ClusterId)));
 
         var unknown = declared
-            .Where(x => x.ClusterId != null && !configured.Contains(x.ClusterId))
+            .Where(x => x.ClusterId != null && !configuredClusterIdSet.Contains(x.ClusterId))
             .ToList();
 
         if (!unknown.Any())
@@ -171,11 +171,11 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
     /// </summary>
     internal static string? ValidateStaticProfileClusterIds(IEnumerable<Type> profileTypes, IEnumerable<string?> configuredClusterIds)
     {
-        var configured = ToClusterIdSet(configuredClusterIds);
+        var configuredClusterIdSet = ToClusterIdSet(configuredClusterIds);
 
         var unknown = profileTypes
             .Select(t => (Type: t, ClusterId: (string?)t.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)))
-            .Where(x => !string.IsNullOrWhiteSpace(x.ClusterId) && !configured.Contains(x.ClusterId!))
+            .Where(x => !string.IsNullOrWhiteSpace(x.ClusterId) && !configuredClusterIdSet.Contains(x.ClusterId!))
             .ToList();
 
         if (!unknown.Any())
