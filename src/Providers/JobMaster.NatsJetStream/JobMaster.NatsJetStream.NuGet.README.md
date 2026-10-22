@@ -7,6 +7,8 @@
 # JobMaster.NatsJetStream
 ### NATS JetStream transport provider for JobMaster .Net.
 
+📚 [Documentation](https://docs.jobmaster.hugoj0s3.dev)
+
 This package provides the NATS JetStream implementation for the **JobMaster .Net** engine's **Agent (Transport) layer only**. 
 
 > **Note:** NATS JetStream can only be used as a transport layer. You must use a database provider (PostgreSQL, SQL Server, or MySQL) for the Master (Coordination) layer.

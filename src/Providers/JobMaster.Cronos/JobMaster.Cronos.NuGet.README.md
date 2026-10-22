@@ -7,6 +7,8 @@
 # JobMaster.Cronos
 ### Standard cron expression support for JobMaster .Net, powered by [Cronos](https://github.com/HangfireIO/Cronos).
 
+📚 [Documentation](https://docs.jobmaster.hugoj0s3.dev)
+
 This package adds a `Cronos` recurrence provider for **JobMaster .Net** recurring schedules, letting you use familiar 5-field (`* * * * *`) or 6-field-with-seconds (`* * * * * *`) cron syntax instead of `TimeSpan` intervals or `NaturalCron` expressions.
 
 ## 📦 Installation

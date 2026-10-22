@@ -7,6 +7,8 @@
 # JobMaster.Postgres
 ### PostgreSQL storage provider for JobMaster .Net.
 
+📚 [Documentation](https://docs.jobmaster.hugoj0s3.dev)
+
 This package provides the PostgreSQL implementation for the **JobMaster .Net** engine, supporting both the Master (Coordination) and Agent (Transport) layers.
 
 ## 📦 Installation

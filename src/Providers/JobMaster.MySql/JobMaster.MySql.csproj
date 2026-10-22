@@ -10,10 +10,10 @@
         <Company>Hugo Silva</Company>
         <Copyright>Copyright 2026 Hugo Silva</Copyright>
         <Description>JobMaster is a framework designed to manage and execute background tasks across a distributed cluster. This package provides MySQL integration.</Description>
-        <PackageProjectUrl>https://docs.jobmaster.hugoj0s3.dev/</PackageProjectUrl>
+        <PackageProjectUrl>https://docs.jobmaster.hugoj0s3.dev</PackageProjectUrl>
         <RepositoryUrl>https://github.com/hugoj0s3/jobmaster-net</RepositoryUrl>
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
-        <PackageTags>background-jobs, distributed-systems, scheduler, dotnet</PackageTags>
+        <PackageTags>background-jobs, distributed-systems, scheduler, dotnet, job-scheduler, distributed, csharp, cron</PackageTags>
 
         <PackageReadmeFile>JobMaster.MySql.NuGet.README.md</PackageReadmeFile>
 
