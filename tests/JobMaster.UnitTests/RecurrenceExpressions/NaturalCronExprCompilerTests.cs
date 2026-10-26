@@ -27,8 +27,8 @@ public class NaturalCronExprCompilerTests
         compiler.TryCompile("not a natural cron expression").Should().BeNull();
     }
 
-    // NaturalCron PR #8 (1.0.2): occurrences without a tz rule came back as Unspecified. JobMaster reads the
-    // wall-clock result and converts it to UTC itself, so the planner's result must be the right UTC instant.
+    // NaturalCron PR #8 (1.0.2) fixed the Kind of its UTC methods, which JobMaster doesn't call. JobMaster reads the
+    // wall-clock result and converts it to UTC itself, so this pins the equivalent guarantee on that path.
     [Fact]
     public void GetNextOccurrence_NoTzRule_ConvertsToExpectedUtcInstant()
     {

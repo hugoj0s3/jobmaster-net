@@ -6,7 +6,6 @@ using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Cronos;
 using JobMaster.NCrontab;
 using JobMaster.RecurrenceExpressions.NaturalCron;
-using Microsoft.Extensions.DependencyInjection;
 using Moq;
 
 namespace JobMaster.UnitTests.RecurrenceExpressions;
@@ -14,9 +13,11 @@ namespace JobMaster.UnitTests.RecurrenceExpressions;
 // Every provider namespace is imported, so the prefixed string overloads are also checked to resolve unambiguously.
 public class StringExprExtensionsTests
 {
+    // The factory is process-wide: don't replace a compiler another test class may have registered.
     static StringExprExtensionsTests()
     {
-        new ServiceCollection().AddJobMasterCronos().AddJobMasterNCrontab();
+        RecurrenceCompilerFactory.RegisterCompiler(new CronosExprCompiler(), replaceIfExists: false);
+        RecurrenceCompilerFactory.RegisterCompiler(new NCrontabExprCompiler(), replaceIfExists: false);
     }
 
     [Fact]
@@ -67,7 +68,7 @@ public class StringExprExtensionsTests
 
         var act = () => scheduler.Object.NaturalCronRecurring<PlainHandler>("not a natural cron expression");
 
-        act.Should().Throw<Exception>();
+        act.Should().Throw<ArgumentException>();
         scheduler.Invocations.Should().BeEmpty();
     }
 

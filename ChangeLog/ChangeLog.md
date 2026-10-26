@@ -83,6 +83,12 @@
 
 - **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.
 
+  > **Existing NaturalCron schedules may fire at different times.** 1.1.0 fixes occurrence bugs, so some existing expressions now produce different dates. For example, `every monday at 08:00` used to fire on Tuesday and now fires on Monday. Check the release notes against your expressions before upgrading.
+  >
+  > - **Occurrences already planned keep their old date.** The next corrected occurrence is computed after it. A weekly schedule can therefore fire once on the old day and then on the corrected day less than a week later.
+  > - **Upgrade every worker in the cluster together.** While old and new versions run side by side, whichever worker plans a schedule decides its next date. That can make a schedule alternate between the old and the corrected day.
+  > - **If a downstream process depends on the old day,** change the expression to say what you want before upgrading.
+
 ### Deprecated
 
 - **Cronos and NCrontab string methods renamed with a provider prefix.** Methods that take a raw expression string are now named after their provider, like the new NaturalCron ones, since a plain string doesn't say which syntax it is. Use the prefixed names instead:

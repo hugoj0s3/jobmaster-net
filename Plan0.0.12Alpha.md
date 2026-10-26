@@ -93,7 +93,9 @@ back to the default cluster — same pattern as worker lane.
       next-occurrence semantics). (→ 1.1.0: no API change; PR #8 only touched the UTC methods JobMaster doesn't
       call; 1.1.0's occurrence fixes do change results — see ChangeLog.)
 - [x] Bump version; build; adjust `NaturalCronExprCompiler`/`NaturalCronCompiledExpr` if the API moved. (No change needed.)
-- [x] Add a regression unit test for the specific case PR #8 fixed. (Plus one for a 1.1.0 fix, verified to fail on 1.0.1.)
+- [x] Add a regression unit test for the specific case PR #8 fixed. (PR #8's fix is in UTC methods JobMaster doesn't
+      call, so it can't be exercised through JobMaster; the test pins the equivalent guarantee on JobMaster's own
+      `TryGetNextOccurrenceInTz` + UTC-conversion path. Plus one for a 1.1.0 fix, verified to fail on 1.0.1.)
 - [x] Existing `NaturalCronExprExtensions` methods take `NaturalCronExpr`, not `string`, so they don't collide
       and keep their names. Only the **new** string-taking overloads (from the reminder) get the prefixed
       name: `NaturalCronRecurringAsync<T>(string)`/`NaturalCronRecurring<T>(string)`/`NaturalCronAdd<Th>(string)`.

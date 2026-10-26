@@ -71,8 +71,7 @@ public static class NCrontabExprExtensions
         DateTime? startAfter = null,
         DateTime? endBefore = null) where Th : class, IJobMasterHandler
     {
-        var compiledExpr = RecurrenceExprCompiler.Compile(NCrontabExprCompiler.TypeId, ncrontabExpression);
-        collection.Add<Th>(compiledExpr, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
+        collection.Add<Th>(NCrontabExprCompiler.TypeId, ncrontabExpression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
         return collection;
     }
 

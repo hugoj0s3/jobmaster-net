@@ -71,8 +71,7 @@ public static class CronosExprExtensions
         DateTime? startAfter = null,
         DateTime? endBefore = null) where Th : class, IJobMasterHandler
     {
-        var compiledExpr = RecurrenceExprCompiler.Compile(CronosExprCompiler.TypeId, cronExpression);
-        collection.Add<Th>(compiledExpr, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
+        collection.Add<Th>(CronosExprCompiler.TypeId, cronExpression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
         return collection;
     }
 
