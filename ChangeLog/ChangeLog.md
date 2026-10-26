@@ -72,6 +72,28 @@
   Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
 - **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this surfaced as a raw `AmbiguousMatchException`, usually crashing startup and otherwise failing scheduling, execution or handler lookup for unrelated jobs. It's now a clear validation error at startup that names the handler.
 - **Static recurring schedules now store their resolved worker lane.** A static schedule whose lane comes from the handler (`[JobMasterWorkerLane]` or its `JobDefinitionConfig`) now shows that lane in the API and dashboard. It used to show none. Jobs already ran on the right lane, so execution is unchanged.
+- **NaturalCron from a plain string:** `NaturalCronRecurringAsync<T>(string)`, `NaturalCronRecurring<T>(string)` and, for static profiles, `NaturalCronAdd<Th>(string)`. Before, you had to parse a `NaturalCronExpr` first or pass `NaturalCronExprCompiler.TypeId` yourself. An invalid expression throws at the call.
+
+  ```csharp
+  await scheduler.NaturalCronRecurringAsync<ReportHandler>("every day at 09:00");
+  collection.NaturalCronAdd<ReportHandler>("every monday at 08:00");
+  ```
+
+### Changed
+
+- **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.
+
+### Deprecated
+
+- **Cronos and NCrontab string methods renamed with a provider prefix.** `Recurring<T>`, `RecurringAsync<T>` and `Add<Th>` taking a cron string had the same names in `JobMaster.Cronos` and `JobMaster.NCrontab`, so a file importing both namespaces couldn't call either. Use the prefixed names instead:
+
+  | Old (obsolete) | `JobMaster.Cronos` | `JobMaster.NCrontab` |
+  |:---|:---|:---|
+  | `RecurringAsync<T>(string)` | `CronosRecurringAsync<T>` | `NCrontabRecurringAsync<T>` |
+  | `Recurring<T>(string)` | `CronosRecurring<T>` | `NCrontabRecurring<T>` |
+  | `Add<Th>(string)` | `CronosAdd<Th>` | `NCrontabAdd<Th>` |
+
+  The old names still work, with an obsolete warning, and will be removed in a later release.
 
 ### Performance
 

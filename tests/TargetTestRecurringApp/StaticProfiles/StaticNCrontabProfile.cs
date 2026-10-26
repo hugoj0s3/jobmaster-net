@@ -16,7 +16,7 @@ public class StaticNCrontabProfile : IStaticRecurringSchedulesProfile
 
     public static void Config(RecurringScheduleDefinitionCollection collection)
     {
-        collection.Add<RecurringTickHandler>(
+        collection.NCrontabAdd<RecurringTickHandler>(
             "*/6 * * * *",
             metadata: WritableMetadata.New().SetStringValue("TestIdentifier", TestIdentifier));
     }

@@ -36,8 +36,10 @@ builder.Services.AddJobMasterCluster(config => { ... });
 ```csharp
 using JobMaster.NCrontab;
 
-await scheduler.RecurringAsync<MyHandler>("*/5 * * * *"); // every 5 minutes
+await scheduler.NCrontabRecurringAsync<MyHandler>("*/5 * * * *"); // every 5 minutes
 ```
+
+Static profiles use `collection.NCrontabAdd<MyHandler>("*/5 * * * *")`.
 
 ### Attribute-based static schedules
 

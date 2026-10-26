@@ -7,6 +7,20 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### NaturalCron 1.1.0 + prefixed cron string methods (Plan0.0.12Alpha items 2 and 3)
+- **NaturalCron `1.0.1` → `1.1.0`** in `JobMaster.csproj`. It builds with no code change: `TryParse`, `Parse` and `TryGetNextOccurrenceInTz` keep their signatures and the "base time is wall-clock in that tz" semantics.
+  - **PR #8 (shipped in 1.0.2)** makes the *UTC* occurrence methods return `DateTimeKind.Utc`. JobMaster never called those: `NaturalCronCompiledExpr` uses `TryGetNextOccurrenceInTz`, and the planner converts with `TimeZoneUtils.ConvertDateTimeTzToUtc`, which ignores the incoming `Kind`. So the fix doesn't change JobMaster's results. `NaturalCronExprCompilerTests.GetNextOccurrence_NoTzRule_ConvertsToExpectedUtcInstant` pins the equivalent guarantee on JobMaster's own path.
+  - **1.1.0's occurrence fixes do change JobMaster's results** (user-facing note in `ChangeLog.md`). `GetNextOccurrence_EveryWeekdayAtTime_ReturnsThatWeekday` is the regression test. Verified: it fails on 1.0.1 (Tuesday) and passes on 1.1.0.
+  - **Not adopted:** custom keywords (`NaturalCronCustomKeywords`) are process-global, so each process that compiles an expression needs them configured. That includes the publisher, at `RecurringAsync`, the static bootstrap and the planner's workers. No JobMaster-side wiring was added.
+- **New `NaturalCronExprExtensions` string overloads:** `NaturalCronRecurringAsync<T>`/`NaturalCronRecurring<T>` compile through `RecurrenceExprCompiler.Compile(NaturalCronExprCompiler.TypeId, ...)`. `NaturalCronAdd<Th>` goes through the collection's `(TypeId, string)` overload, the same path as the existing `NaturalCronExpr` `Add<Th>`. The existing `NaturalCronExpr` overloads keep their names: they don't collide.
+- **`CronosExprExtensions`/`NCrontabExprExtensions`:** new `Cronos*`/`NCrontab*`-prefixed `RecurringAsync`/`Recurring`/`Add`. The old names are `[Obsolete]` and forward to the prefixed ones in the same class. As decided, the two classes' identical bodies are deduped only once the obsoletes are removed.
+  - **Updated callers:** `TargetTestRecurringApp`'s `StaticCronosProfile`/`StaticNCrontabProfile`, and both packages' NuGet READMEs. Samples and benchmarks didn't use them.
+  - The core `IJobMasterScheduler.Recurring<T>(string expressionTypeId, string expression, ...)` instance methods still win over the obsolete extensions, so `TargetTestRecurringApp/Program.cs`, which imports both namespaces, was unaffected.
+- **Tests:**
+  - `NaturalCronExprCompilerTests` (5), including a `tz Asia/Tokyo` expression evaluated in `America/New_York`: the expression's zone wins, unlike Cronos/NCrontab, which ignore time zones.
+  - `StringExprExtensionsTests` (5): the file imports both cron namespaces, so the prefixed methods are proven to resolve without ambiguity. It also checks that each prefixed method forwards its own provider's compiled expression to the scheduler and collection, that an invalid NaturalCron string throws before reaching the scheduler, and that the obsolete `Add` still forwards.
+  - 709/709 unit tests pass and the full solution builds with 0 errors. Scenario tests were not rerun.
+
 #### Breaking (attribute inheritance)
 - **What changed (Hugo's call):** the classic single-value handler attributes are now read with `inherit: true` in the five `JobUtil.Get*` lookups. Before, `GetCustomAttributes(false)` ignored a base class's `[JobMasterClusterId]`/`[JobMasterPriority]`/`[JobMasterWorkerLane]`/`[JobMasterTimeout]`/`[JobMasterMaxNumberOfRetries]`.
 - **Why:** the old behavior was inconsistent.
