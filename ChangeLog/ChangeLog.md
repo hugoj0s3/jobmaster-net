@@ -46,6 +46,7 @@
   - **Before:** they were only read from the handler class itself, and an attribute on a base class was ignored, unlike `JobDefinitionConfigAttribute`, which was already inherited.
   - **Now:** a base class's attribute applies, and a handler's own attribute overrides it. If a handler's base class carries one of these attributes, its jobs now pick that setting up.
   - **`[JobMasterMetadata]` is inherited too.** Its keys are merged across the hierarchy: a handler's key overrides the same key on a base class, and metadata passed when scheduling a one-off job still overrides both.
+- **`JobMasterScheduler` is now `internal`.** The concrete class was public by mistake; it's bootstrap plumbing behind `IJobMasterScheduler`. Inject `IJobMasterScheduler` (or `IJobMasterSchedulerAdvanced`) from DI instead of using `JobMasterScheduler.Instance`.
 
 ### Added
 

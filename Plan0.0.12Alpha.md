@@ -143,10 +143,12 @@ path (`JobsExecutionEngine`, `RecurringSchedulePlanner`).
 the change seems to have been lost. Redo it first.
 
 **Tasks.**
-- [ ] Make `JobMasterScheduler` internal again; rebuild solution.
-- [ ] Grep for other concrete classes that only exist for `BootstrapBlueprintDefinitions` / DI bootstrap and are
-      public; make internal where nothing outside `InternalsVisibleTo` uses them.
-- [ ] Note any public→internal change in ChangeLog (technically breaking).
+- [x] Make `JobMasterScheduler` internal again; rebuild solution.
+- [x] Grep for other concrete classes that only exist for `BootstrapBlueprintDefinitions` / DI bootstrap and are
+      public; make internal where nothing outside `InternalsVisibleTo` uses them. (None left: `JobMasterRuntime`,
+      `JobMasterRuntimeSingleton`, `DefaultJobMasterMessageJsonSerializer` were already internal; the remaining
+      public classes are user-facing API.)
+- [x] Note any public→internal change in ChangeLog (technically breaking).
 
 ---
 

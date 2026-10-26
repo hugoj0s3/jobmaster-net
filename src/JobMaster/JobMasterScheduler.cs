@@ -15,7 +15,7 @@ namespace JobMaster;
 /// Singleton implementation of <see cref="IJobMasterScheduler"/>.
 /// Prefer injecting <see cref="IJobMasterScheduler"/> from the DI container over using <see cref="Instance"/> directly.
 /// </summary>
-public class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanced
+internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdvanced
 {
     private static IJobMasterRuntime JobMasterRuntime => JobMasterRuntimeSingleton.Instance;
 
