@@ -36,8 +36,10 @@ builder.Services.AddJobMasterCluster(config => { ... });
 ```csharp
 using JobMaster.Cronos;
 
-await scheduler.RecurringAsync<MyHandler>("*/5 * * * *"); // every 5 minutes
+await scheduler.CronosRecurringAsync<MyHandler>("*/5 * * * *"); // every 5 minutes
 ```
+
+Static profiles use `collection.CronosAdd<MyHandler>("*/5 * * * *")`.
 
 ### Attribute-based static schedules
 
