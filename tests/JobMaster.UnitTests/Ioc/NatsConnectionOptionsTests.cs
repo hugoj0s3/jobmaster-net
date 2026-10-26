@@ -13,8 +13,7 @@ public class NatsConnectionOptionsTests
 {
     static NatsConnectionOptionsTests()
     {
-        // Force the NatsJetStream assembly to load before the binder factory
-        // initializes its static discovery scan.
+        // Force the NatsJetStream assembly to load so the binder factory's assembly scan can find its binder.
         _ = typeof(NatsJetStreamConnectionOptionsBinder);
     }
 
