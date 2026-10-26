@@ -13,7 +13,10 @@
   - **1.1.0's occurrence fixes do change JobMaster's results** (user-facing note in `ChangeLog.md`). `GetNextOccurrence_EveryWeekdayAtTime_ReturnsThatWeekday` is the regression test. Verified: it fails on 1.0.1 (Tuesday) and passes on 1.1.0.
   - **Not adopted:** custom keywords (`NaturalCronCustomKeywords`) are process-global, so each process that compiles an expression needs them configured. That includes the publisher, at `RecurringAsync`, the static bootstrap and the planner's workers. No JobMaster-side wiring was added.
 - **New `NaturalCronExprExtensions` string overloads:** `NaturalCronRecurringAsync<T>`/`NaturalCronRecurring<T>` compile through `RecurrenceExprCompiler.Compile(NaturalCronExprCompiler.TypeId, ...)`. `NaturalCronAdd<Th>` goes through the collection's `(TypeId, string)` overload, the same path as the existing `NaturalCronExpr` `Add<Th>`. The existing `NaturalCronExpr` overloads keep their names: they don't collide.
-- **`CronosExprExtensions`/`NCrontabExprExtensions`:** new `Cronos*`/`NCrontab*`-prefixed `RecurringAsync`/`Recurring`/`Add`. The old names are `[Obsolete]` and forward to the prefixed ones in the same class. As decided, the two classes' identical bodies are deduped only once the obsoletes are removed.
+- **`CronosExprExtensions`/`NCrontabExprExtensions`:** new `Cronos*`/`NCrontab*`-prefixed `RecurringAsync`/`Recurring`/`Add`.
+  - **Convention (Hugo):** a method that takes a raw expression string carries its provider's name, since a plain string doesn't say which syntax it is. The NaturalCron string overloads follow the same rule.
+  - **Docs and messages:** don't present the prefixes as a fix for using Cronos and NCrontab together, because nobody is expected to reference both.
+  - The old names are `[Obsolete]` and forward to the prefixed ones in the same class. As decided, the two classes' identical bodies are deduped only once the obsoletes are removed.
   - **Updated callers:** `TargetTestRecurringApp`'s `StaticCronosProfile`/`StaticNCrontabProfile`, and both packages' NuGet READMEs. Samples and benchmarks didn't use them.
   - The core `IJobMasterScheduler.Recurring<T>(string expressionTypeId, string expression, ...)` instance methods still win over the obsolete extensions, so `TargetTestRecurringApp/Program.cs`, which imports both namespaces, was unaffected.
 - **Tests:**

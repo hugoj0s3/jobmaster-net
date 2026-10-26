@@ -11,14 +11,14 @@ namespace JobMaster.Cronos;
 /// <see cref="JobMasterCronosServiceCollectionExtensions.AddJobMasterCronos"/> to have been called first.
 /// </summary>
 /// <remarks>
-/// Method names are prefixed with <c>Cronos</c> so they don't collide with the identically-shaped NCrontab
-/// extensions when both <c>JobMaster.Cronos</c> and <c>JobMaster.NCrontab</c> are referenced.
+/// Methods taking a raw expression string are prefixed with their provider name, since a plain string doesn't say
+/// which syntax it is.
 /// </remarks>
 public static class CronosExprExtensions
 {
     private const string ObsoleteMessage =
-        "Ambiguous when JobMaster.NCrontab is also referenced. Use the Cronos-prefixed method instead " +
-        "(CronosRecurringAsync, CronosRecurring, CronosAdd).";
+        "Use the Cronos-prefixed method instead (CronosRecurringAsync, CronosRecurring, CronosAdd). " +
+        "Methods taking a raw expression string are prefixed with their provider name.";
 
     /// <summary>
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to the Cronos cron

@@ -11,8 +11,7 @@ using Moq;
 
 namespace JobMaster.UnitTests.RecurrenceExpressions;
 
-// Both JobMaster.Cronos and JobMaster.NCrontab are imported on purpose: the prefixed string overloads must resolve
-// without ambiguity when both packages are referenced (the unprefixed ones don't, which is why they're obsolete).
+// Every provider namespace is imported, so the prefixed string overloads are also checked to resolve unambiguously.
 public class StringExprExtensionsTests
 {
     static StringExprExtensionsTests()

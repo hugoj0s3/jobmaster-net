@@ -85,7 +85,7 @@
 
 ### Deprecated
 
-- **Cronos and NCrontab string methods renamed with a provider prefix.** `Recurring<T>`, `RecurringAsync<T>` and `Add<Th>` taking a cron string had the same names in `JobMaster.Cronos` and `JobMaster.NCrontab`, so a file importing both namespaces couldn't call either. Use the prefixed names instead:
+- **Cronos and NCrontab string methods renamed with a provider prefix.** Methods that take a raw expression string are now named after their provider, like the new NaturalCron ones, since a plain string doesn't say which syntax it is. Use the prefixed names instead:
 
   | Old (obsolete) | `JobMaster.Cronos` | `JobMaster.NCrontab` |
   |:---|:---|:---|
