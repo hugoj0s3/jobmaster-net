@@ -76,14 +76,14 @@ app.MapPost("/schedule-now", async (ScheduleNowRequest req, IJobMasterScheduler 
         return Results.BadRequest("Count must be at least 1.");
     }
 
-    var tasks = new List<Task<JobContext>>(req.Count);
+    var tasks = new List<Task<JobScheduleReceipt>>(req.Count);
     for (var i = 0; i < req.Count; i++)
     {
         tasks.Add(scheduler.OnceNowAsync<NoOpBenchmarkHandler>());
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
 });
 
 app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterScheduler scheduler) =>
@@ -94,14 +94,14 @@ app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterSchedu
     }
 
     var delay = TimeSpan.FromMinutes(req.DelayMinutes);
-    var tasks = new List<Task<JobContext>>(req.Count);
+    var tasks = new List<Task<JobScheduleReceipt>>(req.Count);
     for (var i = 0; i < req.Count; i++)
     {
         tasks.Add(scheduler.OnceAfterAsync<NoOpBenchmarkHandler>(delay));
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
 });
 
 await app.Services.StartJobMasterRuntimeAsync();

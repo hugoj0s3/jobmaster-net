@@ -54,7 +54,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         return Results.BadRequest("QtyJobs must be at least 1.");
     }
 
-    var jobs = new List<JobContext>();
+    var jobs = new List<JobScheduleReceipt>();
     for (var i = 0; i < req.QtyJobs; i++)
     {
         var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
@@ -67,7 +67,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         }));
     }
 
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
 });
 
 await app.Services.StartJobMasterRuntimeAsync();

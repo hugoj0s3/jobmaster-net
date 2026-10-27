@@ -10,6 +10,12 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     void Add(JobRawModel jobRaw);
 
     /// <summary>
+    /// Inserts each job that isn't on master yet; existing rows are left untouched. Unlike
+    /// <see cref="IMasterJobIntakeService"/>, no status rule: used by the scheduler's ConfirmOnMaster.
+    /// </summary>
+    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
+
+    /// <summary>
     /// When <paramref name="throttler"/> is omitted, routes through the general per-cluster
     /// operation throttler. Pass an explicit throttler (e.g. <see cref="AcquireThrottler"/>, or a
     /// caller-owned instance) to isolate this update from unrelated operations competing for the

@@ -24,7 +24,7 @@ public static class NCrontabExprExtensions
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to the NCrontab cron
     /// expression <paramref name="ncrontabExpression"/>. Throws if the expression can't be parsed.
     /// </summary>
-    public static async Task<RecurringScheduleContext> NCrontabRecurringAsync<T>(
+    public static async Task<RecurringScheduleReceipt> NCrontabRecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         string ncrontabExpression,
         IWriteableMessageData? data = null,
@@ -42,7 +42,7 @@ public static class NCrontabExprExtensions
     }
 
     /// <summary>Synchronous version of <see cref="NCrontabRecurringAsync{T}"/>.</summary>
-    public static RecurringScheduleContext NCrontabRecurring<T>(
+    public static RecurringScheduleReceipt NCrontabRecurring<T>(
         this IJobMasterScheduler scheduler,
         string ncrontabExpression,
         IWriteableMessageData? data = null,
@@ -77,7 +77,7 @@ public static class NCrontabExprExtensions
 
     /// <summary>Obsolete: use <see cref="NCrontabRecurringAsync{T}"/>.</summary>
     [Obsolete(ObsoleteMessage)]
-    public static Task<RecurringScheduleContext> RecurringAsync<T>(
+    public static Task<RecurringScheduleReceipt> RecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         string ncrontabExpression,
         IWriteableMessageData? data = null,
@@ -93,7 +93,7 @@ public static class NCrontabExprExtensions
 
     /// <summary>Obsolete: use <see cref="NCrontabRecurring{T}"/>.</summary>
     [Obsolete(ObsoleteMessage)]
-    public static RecurringScheduleContext Recurring<T>(
+    public static RecurringScheduleReceipt Recurring<T>(
         this IJobMasterScheduler scheduler,
         string ncrontabExpression,
         IWriteableMessageData? data = null,

@@ -397,3 +397,34 @@ ever referenced the concrete type — every other consumer (samples, benchmarks,
 Since this was a plain oversight rather than a deliberate choice, worth a quick audit of any other
 DI-bootstrap-only concrete classes in the SDK for the same public/internal slip, rather than assuming
 `JobMasterScheduler` was the only one.
+
+## Review whether `JobMasterDefaults` should stay public
+
+Raised 2026-10-26 while adding `ConfirmOnMasterTimeout`/`StopTimeout` (Plan 0.0.12 items 6/7). No code outside
+`InternalsVisibleTo` uses it (scenario-test and benchmark matches are comments only). It's public only because
+public selector/receipt XML docs `cref` it and users may reuse values (e.g. `MinDataRetentionTtl`). Decide whether
+that's worth the public surface; making it internal means stating values inline in those docs + a ChangeLog
+breaking entry.
+
+## Bulk master calls should partition by `GetMasterMaxBatchSize` before calling
+
+Raised 2026-10-26 (Plan 0.0.12 item 7). Standard: callers split with
+`list.Partition(OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(clusterId))` and make one bulk call per
+partition (as `AssignJobsToBucketsRunner`, `HeldOnMasterDeadlineTimeoutJobsRunner`, `JobsExecutionEngine`,
+`PollingDrainProcessingJobsRunner` and the new `ConfirmOnMaster` path do). These callers of
+`BulkInsertIfNotExistsAsync` only bound the list by their query limit (`TransferBatchSize`) and pass it whole, so
+the repository chunks it inside one transaction (SQL) or one session (RavenDB):
+- `MigrateJobsRunner` (`intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs)`)
+- `MigrateRecurringSchedulesRunner`
+- `DeleteOldFinalJobsRunner` (archive-then-delete)
+- `DeleteOldInactiveRecurringSchedulesRunner` (archive-then-delete)
+
+Fix: partition before the intake/archive call. For jobs, executions and logs have to be split along with their jobs.
+
+## `JobMasterLogger`'s final flush on `Dispose` never runs
+
+Found 2026-10-26 (Plan 0.0.12 item 7). The per-cluster component containers are built in
+`ClusterIocRegistration.BuildFactory` and registered in the main container as *instances*, which MS DI never
+disposes, and `JobMasterRuntime.Stop()` has no caller. So `JobMasterLogger.Dispose()` (and its "FORCE Final
+Flush") doesn't run on host shutdown: up to 15s / 100 buffered log rows are lost. Item 7 added
+`StopJobMasterRuntimeAsync()`; the logger flush could hook into the same path.

@@ -55,7 +55,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
     
-    public async Task ScheduleAsync(JobRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(JobRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -71,11 +71,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.MarkAsHeldOnMaster();
             await masterJobsService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
@@ -126,7 +127,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
     }
 
-    public void Schedule(RecurringScheduleRawModel rawModel)
+    public BucketModel? Schedule(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -142,14 +143,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             masterRecurringSchedulesService.Add(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public void Schedule(JobRawModel job)
+    public BucketModel? Schedule(JobRawModel job)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -165,14 +167,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             job.MarkAsHeldOnMaster();
             masterJobsService.Add(job);
-            return;
+            return null;
         }
 
         job.AssignSavePendingJobToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public async Task ScheduleAsync(RecurringScheduleRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -187,11 +190,42 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             await masterRecurringSchedulesService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
+    }
+
+    public async Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs)
+    {
+        // Held on master, not PendingSave: if this insert beats the agent's save, the agent sees a duplicate and
+        // drops its message, so master's assign runner (OnMaster only) must be able to pick the row up.
+        foreach (var job in jobs)
+        {
+            job.MarkAsHeldOnMaster();
+        }
+
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
+        {
+            await masterJobsService.BulkInsertIfNotExistsAsync(partition.ToList());
+        }
+    }
+
+    public async Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        foreach (var schedule in schedules)
+        {
+            schedule.Active();
+        }
+
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in schedules.Partition(maxBatchSize))
+        {
+            await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(partition.ToList());
+        }
     }
 
     public async Task<bool> CancelJobAsync(Guid jobId)

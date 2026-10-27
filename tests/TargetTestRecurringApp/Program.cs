@@ -55,10 +55,10 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
 {
     var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
 
-    RecurringScheduleContext context;
+    RecurringScheduleReceipt receipt;
     if (string.Equals(handlerType, "tick", StringComparison.OrdinalIgnoreCase))
     {
-        context = await scheduler.RecurringAsync<RecurringTickHandler>(
+        receipt = await scheduler.RecurringAsync<RecurringTickHandler>(
             req.ExpressionTypeId, req.Expression, metadata: metadata, clusterId: req.ClusterId);
     }
     else if (string.Equals(handlerType, "advanced-tick", StringComparison.OrdinalIgnoreCase))
@@ -66,7 +66,7 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         // Scheduled via IJobMasterScheduler.Advanced.RecurringAsync<TDefinition>() instead of the
         // classic handler-typed overload -- proves the JobDefinitionConfigAttribute path end-to-end
         // for recurring schedules too, not just in-process/mocked.
-        context = await scheduler.Advanced.RecurringAsync<AdvancedTickDefinitionAttribute>(
+        receipt = await scheduler.Advanced.RecurringAsync<AdvancedTickDefinitionAttribute>(
             req.ExpressionTypeId, req.Expression, metadata: metadata, clusterId: req.ClusterId);
     }
     else
@@ -74,7 +74,7 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         return Results.BadRequest($"Unknown handlerType '{handlerType}'. Expected 'tick' or 'advanced-tick'.");
     }
 
-    return Results.Ok(new RecurringScheduleResponse(context.Id));
+    return Results.Ok(new RecurringScheduleResponse(receipt.GetRecurringScheduleContext().Id));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>

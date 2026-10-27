@@ -56,7 +56,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
 
     var priority = (JobMasterPriority?)req.Priority;
 
-    var tasks = new List<Task<JobContext>>();
+    var tasks = new List<Task<JobScheduleReceipt>>();
     for (var i = 0; i < req.QtyJobs; i++)
     {
         var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
@@ -69,14 +69,14 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
 });
 
 app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
 {
     var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
-    var context = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
-    return Results.Ok(new RecurringScheduleResponse(context.Id));
+    var receipt = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
+    return Results.Ok(new RecurringScheduleResponse(receipt.GetRecurringScheduleContext().Id));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
@@ -91,7 +91,7 @@ app.Run();
 
 return;
 
-static Task<JobContext> ScheduleHandler(
+static Task<JobScheduleReceipt> ScheduleHandler(
     string handlerType,
     IJobMasterScheduler scheduler,
     IWritableMetadata metadata,
@@ -121,7 +121,7 @@ static Task<JobContext> ScheduleHandler(
     };
 }
 
-static Task<RecurringScheduleContext> RecurringScheduleHandler(
+static Task<RecurringScheduleReceipt> RecurringScheduleHandler(
     string handlerType,
     IJobMasterScheduler scheduler,
     string expressionTypeId,

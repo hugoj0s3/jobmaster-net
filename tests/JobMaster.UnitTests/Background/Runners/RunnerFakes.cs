@@ -217,7 +217,7 @@ internal static class RunnerFakes
 
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
-
+        public Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs) => throw new NotImplementedException();
         public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
         {
             var idx = Jobs.FindIndex(j => j.Id == jobRaw.Id);
@@ -848,6 +848,7 @@ internal static class RunnerFakes
             Schedules.Add(scheduleRaw);
         }
 
+        public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules) => throw new NotImplementedException();
         public void UpsertStatic(StaticRecurringScheduleDefinition definition) => throw new NotImplementedException();
         public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();
         public Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();

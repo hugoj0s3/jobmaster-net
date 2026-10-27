@@ -9,6 +9,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
@@ -42,6 +43,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.Schedule(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -84,7 +86,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.ScheduleAsync(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
-            .Returns(Task.CompletedTask)
+            .ReturnsAsync((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -204,6 +206,7 @@ public class JobMasterSchedulerTests
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -246,6 +249,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -287,6 +291,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -336,6 +341,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -378,6 +384,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -421,6 +428,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -472,6 +480,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -791,12 +800,12 @@ public class JobMasterSchedulerTests
         configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
 
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
-        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add).Returns((BucketModel?)null);
         schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(capture.Jobs.Add)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((BucketModel?)null);
         schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
-            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add);
+            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add).Returns((BucketModel?)null);
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
         factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);

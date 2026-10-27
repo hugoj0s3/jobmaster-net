@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
@@ -6,12 +7,17 @@ namespace JobMaster.Sdk.Abstractions.Services;
 
 internal interface IJobMasterSchedulerClusterAware : IJobMasterClusterAwareService
 {
-    void Schedule(RecurringScheduleRawModel rawModel);
-    void Schedule(JobRawModel job);
+    // Schedule*: the bucket it was handed to on the agent transport, or null when it was stored on master.
+    BucketModel? Schedule(RecurringScheduleRawModel rawModel);
+    BucketModel? Schedule(JobRawModel job);
 
-    Task ScheduleAsync(RecurringScheduleRawModel rawModel);
-    Task ScheduleAsync(JobRawModel job);
+    Task<BucketModel?> ScheduleAsync(RecurringScheduleRawModel rawModel);
+    Task<BucketModel?> ScheduleAsync(JobRawModel job);
     Task BulkScheduleAsync(List<JobRawModel> jobs);
+
+    // ConfirmOnMaster: saves each model on master (held on master / active) if it isn't there yet.
+    Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs);
+    Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules);
     Task<bool> CancelJobAsync(Guid jobId);
     bool CancelJob(Guid id);
     Task<bool> CancelRecurringAsync(Guid id);

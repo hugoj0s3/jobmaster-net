@@ -1,4 +1,5 @@
-﻿using JobMaster.Sdk.Abstractions.Extensions;
+﻿using JobMaster.Sdk.Abstractions.Exceptions;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -37,7 +38,18 @@ internal class RecurringScheduleSavePendingOperation
         }
 
         schedule.Active();
-        await workerClusterOperations.ExecWithRetryAsync(o => o.Upsert(schedule));
+        try
+        {
+            await workerClusterOperations.ExecWithRetryAsync(o => o.Upsert(schedule));
+        }
+        catch (JobMasterDuplicationException e)
+        {
+            // Already saved, e.g. by ConfirmOnMasterAsync. Same as the job save path's AlreadyExists;
+            // rethrowing would make the runner re-queue it forever.
+            logger.Warn("Recurring schedule duplication detected", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
+            return;
+        }
+
         recentlyInsertedQueue.Enqueue(schedule.Id);
     }
 

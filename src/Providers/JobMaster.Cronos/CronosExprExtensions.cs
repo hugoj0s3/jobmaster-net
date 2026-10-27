@@ -24,7 +24,7 @@ public static class CronosExprExtensions
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to the Cronos cron
     /// expression <paramref name="cronExpression"/>. Throws if the expression can't be parsed.
     /// </summary>
-    public static async Task<RecurringScheduleContext> CronosRecurringAsync<T>(
+    public static async Task<RecurringScheduleReceipt> CronosRecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
@@ -42,7 +42,7 @@ public static class CronosExprExtensions
     }
 
     /// <summary>Synchronous version of <see cref="CronosRecurringAsync{T}"/>.</summary>
-    public static RecurringScheduleContext CronosRecurring<T>(
+    public static RecurringScheduleReceipt CronosRecurring<T>(
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
@@ -77,7 +77,7 @@ public static class CronosExprExtensions
 
     /// <summary>Obsolete: use <see cref="CronosRecurringAsync{T}"/>.</summary>
     [Obsolete(ObsoleteMessage)]
-    public static Task<RecurringScheduleContext> RecurringAsync<T>(
+    public static Task<RecurringScheduleReceipt> RecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
@@ -93,7 +93,7 @@ public static class CronosExprExtensions
 
     /// <summary>Obsolete: use <see cref="CronosRecurring{T}"/>.</summary>
     [Obsolete(ObsoleteMessage)]
-    public static RecurringScheduleContext Recurring<T>(
+    public static RecurringScheduleReceipt Recurring<T>(
         this IJobMasterScheduler scheduler,
         string cronExpression,
         IWriteableMessageData? data = null,
