@@ -15,7 +15,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 4  | `GetJobHandlerTypeFromId` single-scan cache           | XS    | No       | –          |
 | 5  | Bootstrap-plumbing public/internal audit              | XS    | Maybe    | –          |
 | 6  | `JobScheduleReceipt` scheduler contract               | M     | **Yes**  | 1          |
-| 7  | Master flush safety net (`ConfirmOnMasterAsync`)      | M/L   | No       | 6          |
+| 7  | Confirm on master, explicit (`ConfirmOnMasterAsync`)  | S     | No       | 6          |
 | 8  | Hybrid agent connection                               | L     | No       | own sub-plan file first |
 | 9  | Reminders cleanup                                     | XS    | –        | 1–8        |
 | 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13 |
@@ -157,135 +157,97 @@ the change seems to have been lost. Redo it first.
 **Goal.** Tell the caller *where* the job landed: accepted by the transport (agent, pending save to master) or
 already stored on master.
 
-**Current state.** Every scheduling method returns `JobContext` / `RecurringScheduleContext`.
-`JobMasterSchedulerClusterAware.Schedule*` returns `void`/`Task` and internally takes one of two paths:
-- bucket found → `AssignSavePendingJobToBucket` + `agentJobsDispatcherService.AddSavePendingJob…`
-  → **AcceptedOnTransport**
-- `ClusterMode.Migrating` / no bucket / bucket without `AgentWorkerId` → `MarkAsHeldOnMaster` + master add
-  → **StoredOnMaster**
+**Was.** Every scheduling method returned `JobContext` / `RecurringScheduleContext`, and
+`JobMasterSchedulerClusterAware.Schedule*` returned `void`/`Task` while taking one of two paths:
+- bucket found → `AssignSavePendingJobToBucket` + `agentJobsDispatcherService.AddSavePendingJob…` → **AcceptedOnTransport**
+- `ClusterMode.Migrating` / no bucket / bucket without `AgentWorkerId` → `MarkAsHeldOnMaster` + master add → **StoredOnMaster**
 
-**Design.**
+**Design (implemented).**
 ```csharp
-// AcceptedOnTransport: stored on the agent transport only — lost only if the transport is gone for good
-//                      before the save to master (item 7's safety net closes most of that window).
-// StoredOnMaster:      persisted on master.
 public enum ScheduleReceiptStatus { AcceptedOnTransport, StoredOnMaster }
-
-// Confirmed: master has the row.
-// Unknown:   timed out or master error — it may still commit afterwards. Never "not on master": a failure
-//            doesn't prove the row isn't there (e.g. network error after commit). Calling again is safe —
-//            the write is insert-if-not-exists by job id, so a retry can't duplicate.
-public enum MasterConfirmationResult { Confirmed, Unknown }
 
 public sealed class JobScheduleReceipt
 {
-    public ScheduleReceiptStatus Status { get; }
-    public string? BucketId { get; }        // null when StoredOnMaster
-    public string? AgentWorkerId { get; }   // null when StoredOnMaster
-    public JobContext Context { get; }
+    internal readonly JobRawModel model;                    // kept for ConfirmOnMasterAsync (item 7)
+    internal JobScheduleReceipt(ScheduleReceiptStatus status, JobRawModel model);
 
-    // Forces the save to master and waits (see item 7).
-    // Not recommended on the hot path — documented as such.
-    public Task<MasterConfirmationResult> ConfirmOnMasterAsync(TimeSpan? timeout = null);
+    public ScheduleReceiptStatus Status { get; }
+    public string ClusterId { get; }
+    public string? BucketId { get; }                        // null when StoredOnMaster
+    public string? AgentWorkerId { get; }                   // null when StoredOnMaster
+    public string? AgentConnectionId { get; }               // null when StoredOnMaster
+    public JobContext GetJobContext();                      // built on demand from the model
+    public Task ConfirmOnMasterAsync();                     // item 7
 }
 
-public sealed class RecurringScheduleReceipt { /* same shape, RecurringScheduleContext Context */ }
+public sealed class RecurringScheduleReceipt { /* same shape, GetRecurringScheduleContext() */ }
 ```
-- Naming decided: "Receipt" (accepted, not necessarily on master yet); `AgentWorkerId` matches
-  `BucketModel`/`JobRawModel`; no `CancellationToken` — `IJobMasterScheduler` has none anywhere, timeout only.
-- `ConfirmOnMasterAsync` returns `MasterConfirmationResult`, not `bool` (feedback from Reddit thread): a `bool`
-  `false` would read as "not on master" when it really means "unknown". The receipt stays immutable —
-  `Status` keeps the value from scheduling time; the confirmation is a separate answer.
-- Sync methods return `JobScheduleReceipt`; async return `Task<JobScheduleReceipt>` — same type for both.
-- `IJobMasterSchedulerClusterAware.Schedule*` returns the status/bucket/worker info so `JobMasterScheduler`
-  can build the receipt.
-- Until item 7 lands, `ConfirmOnMasterAsync` on `StoredOnMaster` returns `Confirmed` immediately; on
-  `AcceptedOnTransport` it needs item 7's mechanism — so ship 6 and 7 in the same release.
+- `JobMasterSchedulerClusterAware.Schedule*` returns `BucketModel?`: the bucket it was handed to, `null` = stored on
+  master. `JobMasterScheduler` turns it into the receipt (`ToReceipt(rawModel, bucket)`).
+- Receipt fields are captured in the constructor, so later changes to the model (item 7) don't change what the
+  receipt shows. Hot-path cost: one receipt object per call, nothing else.
+- Sync methods return the receipt, async return `Task<receipt>`; no `CancellationToken` (the scheduler has none).
 
-**Decided.** Hard break — no `[Obsolete]` shims for the old `JobContext`-returning methods. Documented as a
-breaking change (ChangeLog + docs migration note: `var ctx = scheduler.OnceNow<T>()` → `….Context`).
-
-**Open decisions.**
-- `ConfirmOnMasterAsync` default timeout value.
+**Decided.** Hard break, no `[Obsolete]` shims. ChangeLog + docs migration note:
+`var ctx = scheduler.OnceNow<T>()` → `scheduler.OnceNow<T>().GetJobContext()`.
 
 **Tasks.**
-- [ ] Types + XML docs.
-- [ ] `IJobMasterScheduler`, `IJobMasterSchedulerAdvanced`, `JobMasterScheduler` (all overloads).
-- [ ] `IJobMasterSchedulerClusterAware` returns path info.
-- [ ] Extension classes: NaturalCron / Cronos / NCrontab.
-- [ ] Callers: JobMaster.Api, samples, benchmarks, scenario-test apps.
+- [x] Types + XML docs.
+- [x] `IJobMasterScheduler`, `IJobMasterSchedulerAdvanced`, `JobMasterScheduler` (all overloads).
+- [x] `IJobMasterSchedulerClusterAware` returns the bucket.
+- [x] Extension classes: NaturalCron / TimeSpan / Cronos / NCrontab.
+- [x] Callers: benchmarks, scenario-test apps (JobMaster.Api and samples don't use the return value).
 - [ ] Unit tests: both statuses for jobs + recurring (Migrating mode, no bucket, normal bucket).
 - [ ] ChangeLog breaking-change entry.
 
 ---
 
-## 7. Flush into master as safety net
+## 7. Confirm on master (explicit, on demand)
 
-**Goal.** Close the durability gap where a job accepted on the transport is lost if the agent dies before the
-normal agent→master sync. Supersedes the "Cluster-aware bulk persistence" idea in
-[src/JobMaster/Reminders.md](src/JobMaster/Reminders.md).
+**Goal.** Let a caller who needs it make sure a job or recurring schedule is saved on master, instead of only on
+the agent transport (lost if the transport dies before the agent's save to master).
 
-**Design (in `JobMasterSchedulerClusterAware`).**
-- Keep an in-memory `AcceptedJobs` buffer of private DTOs `{ JobRawModel, CreatedAt, ConfirmationRequested,
-  TaskCompletionSource }` for every `AcceptedOnTransport` job. Same for recurring schedules (separate buffer/DTO).
-- Background timer, adaptive:
-  - normal: every 5 s, check `ShouldFlush()`;
-  - if any `ConfirmationRequested` or the backlog is large: every 50 ms until drained.
-```csharp
-// Both thresholds derived from the retention floor so they can't drift apart (10 min today).
-static readonly TimeSpan SoftFlushAge = JobMasterDefaults.MinDataRetentionTtl * 0.5;  // 5 min
-static readonly TimeSpan MaxBufferAge = JobMasterDefaults.MinDataRetentionTtl * 0.75; // 7.5 min, hard deadline
+**Dropped: automatic flush.** The first design kept every `AcceptedOnTransport` item in an in-memory buffer and
+flushed it to master on an adaptive background timer (soft/hard age thresholds, shutdown drain, `ProcessExit` hook).
+It was built and reverted: too complex, and it cost memory and work on every scheduling call. Jobs nobody confirms
+keep today's behavior; the "Cluster-aware bulk persistence" idea in [src/JobMaster/Reminders.md](src/JobMaster/Reminders.md)
+stays open.
 
-bool ShouldFlush() =>
-       AcceptedJobs.Any(x => x.ConfirmationRequested)
-    || AcceptedJobs.Count(x => x.CreatedAt < now - SoftFlushAge) >= 100
-    || AcceptedJobs.Any(x => x.CreatedAt < now - MaxBufferAge); // deadline → fast (50 ms) mode until drained
+**Design (implemented).** Nothing happens unless the user calls it.
+- `receipt.ConfirmOnMasterAsync()` on both receipts, and `scheduler.Advanced.ConfirmOnMasterAsync(receipts)` (jobs /
+  recurring overloads) on `IJobMasterSchedulerAdvanced`: kept under Advanced on purpose, so it's less visible.
+  All return `Task`.
+- `StoredOnMaster` receipts: no call to master. The rest are grouped by cluster (ignoring case), then
+  `JobMasterSchedulerClusterAware.Confirm*OnMasterAsync`:
+  - job → `MarkAsHeldOnMaster()`, schedule → `Active()`;
+  - `Partition(GetMasterMaxBatchSize)`, one `BulkInsertIfNotExistsAsync` per partition (new master-service methods
+    over the existing repository methods from the archive feature; no status rule).
+- Why held on master / Active: every agent save inserts first and treats a duplicate as already handled. If the
+  confirm wins, the agent drops its message, so the row must be one master's own runners pick up
+  (`AssignJobsToBucketsRunner` only takes `OnMaster`). A `PendingSave` row would never run.
+- Fixed: the recurring save path (`RecurringScheduleSavePendingOperation`) rethrew `JobMasterDuplicationException`
+  and the runner re-queued it forever; now treated as already saved, like the job path.
+- A master error is thrown; calling again is safe (existing rows are left untouched).
 
-const int FlushBatchSize = 500;
-// batch = order by ConfirmationRequested desc, CreatedAt asc; take FlushBatchSize
-// BulkInsertIfNotExists(batch) on master; remove from buffer; complete TCSs
-```
-- `ConfirmOnMasterAsync` = set `ConfirmationRequested = true`, kick the timer, await the TCS (with timeout).
-
-**Why `MaxBufferAge` = 7.5 min prevents resurrecting purged rows (verified in code).**
-- Jobs are purged by `FinalizedAt <= now - DataRetentionTtl` (`SqlMasterJobsRepository.PurgeFinalizedAsync`);
-  recurring schedules by `TerminatedAt <= now - DataRetentionTtl` (`PurgeTerminatedAsync`).
-- `ClusterDefinition.SetDataRetentionTtl` throws for any positive TTL below `MinDataRetentionTtl` (10 min).
-- `FinalizedAt`/`TerminatedAt` ≥ `CreatedAt`, so the earliest possible purge is `CreatedAt + 10 min`.
-  Flushing every buffered item before `CreatedAt + 7.5 min` means insert-if-not-exists can never recreate a
-  purged row — no tombstone check needed. The 2.5 min margin absorbs flush latency and normal clock skew
-  (`CreatedAt` is the scheduler's clock; `FinalizedAt`/purge cutoff are other machines' clocks — document it).
-- Same cap applies to the recurring-schedule buffer.
-
-**Master unavailable at the deadline.** Keep retrying while the item is younger than `MinDataRetentionTtl`.
-Past that, still insert but log a warning — a purge in that window requires master to have been up and
-processing, which contradicts master being down. Never silently drop (that loses the job the safety net
-exists to protect).
-
-**Open decisions / risks — settle before coding.**
-- **Double write cost.** Every accepted job eventually gets an insert-if-not-exists on master even though the
-  normal sync already saved most of them. Need a bulk "insert where id not exists" per provider (Postgres
-  `ON CONFLICT DO NOTHING`, SQL Server `MERGE`/`WHERE NOT EXISTS`, MySQL `INSERT IGNORE`, RavenDB
-  conditional put). Measure on the benchmark before/after.
-- **Never overwrite.** Insert-if-not-exists must not touch a row the normal sync already advanced
-  (Assigned/Running/Succeeded…). Purge resurrection is handled by `MaxBufferAge` above.
-- **Memory bound.** At benchmark rates (250k jobs) a 5–7.5 min buffer is large. Need a max size + behavior
-  when full (force flush / backpressure).
-- **Process crash** loses the buffer — this is a safety net for agent loss, not process loss. Document.
-- **Shutdown.** Graceful stop must drain the buffer to master.
-- Where the cluster-mode switch to Migrating/Archived leaves buffered jobs (flush immediately?).
+**Decided.**
+- Not recommended unless the caller needs the guarantee: a confirmed job may start later, since it's picked up from
+  master instead of the short-circuit straight to its bucket. Documented in the XML docs.
+- No late-confirm guard: JobMaster is at-least-once. Confirming a receipt after data retention purged an
+  already-finished job inserts it again and it runs again; accepted and documented (only possible with a
+  `DataRetentionTtl` set, default is no purge).
+- No `MasterConfirmationResult` / timeout: one database call per partition; success or exception.
+- Standard: partition by `GetMasterMaxBatchSize` before any bulk master call. Callers that don't yet (migrate +
+  archive runners) are in [ChangeLog/reminders.md](ChangeLog/reminders.md).
 
 **Tasks.**
-- [ ] Repository: bulk insert-if-not-exists for master jobs + recurring schedules (all providers) +
-      RepoConformance tests.
-- [ ] Buffer + timer + `ConfirmOnMasterAsync` wiring for jobs and recurring.
-- [ ] Shutdown drain.
-- [ ] Unit tests: `ShouldFlush` thresholds, ordering, batch size, confirm path, timeout.
-- [ ] Unit test guarding the invariant: `SoftFlushAge < MaxBufferAge < JobMasterDefaults.MinDataRetentionTtl`.
-- [ ] Unit test: master down past the deadline → keeps retrying, warns after `MinDataRetentionTtl`, never drops.
-- [ ] Docs: clock-skew note + "safety net for agent loss, not process crash".
-- [ ] Scenario test: kill agent transport after accept → job still reaches master and executes.
-- [ ] Benchmark comparison (PostgresPure + PostgresNats) to quantify overhead.
+- [x] `BulkInsertIfNotExistsAsync` on `IMasterJobsService` / `IMasterRecurringSchedulesService`.
+- [x] Confirm methods (receipts, Advanced batch, cluster-aware) + partitioning.
+- [x] Recurring duplicate fix.
+- [ ] Unit tests: StoredOnMaster skipped; AcceptedOnTransport marked held/Active and inserted; grouping across
+      clusters; partitioning; recurring duplicate no longer re-queued.
+- [ ] RepoConformance: `BulkInsertIfNotExistsAsync` with non-final (`OnMaster` / `Active`) rows, all providers.
+- [ ] Scenario test: confirm right after scheduling → job reaches master and executes once.
+- [ ] ChangeLog (added) + docs.
 
 ---
 
@@ -365,8 +327,8 @@ hybrid?" first, split it, and call the lookup with the right role's repo type �
 There are two reminder files: [ChangeLog/reminders.md](ChangeLog/reminders.md) and
 [src/JobMaster/Reminders.md](src/JobMaster/Reminders.md).
 
-- [ ] Remove items finished by this release (3, 4, 5, hybrid sketch → replaced by item 8, cluster-aware bulk
-      persistence → replaced by item 7).
+- [ ] Remove items finished by this release (3, 4, 5, hybrid sketch → replaced by item 8). Keep
+      "Cluster-aware bulk persistence": item 7 dropped the automatic flush, so that gap is still open.
 - [ ] Re-check older items against code (e.g. `AcquireAndFetchAsync` deadlock part, RavenDB timeout).
 - [ ] Decide whether to merge the two files into one.
 
