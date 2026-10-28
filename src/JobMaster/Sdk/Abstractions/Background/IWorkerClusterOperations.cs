@@ -27,7 +27,6 @@ internal interface IWorkerClusterOperations : IJobMasterClusterAwareService
     void MarkBucketAsLost(BucketModel bucket);
     Task<int> CountActiveCoordinatorWorkersAsync();
     Task<int> CountWorkersAsync();
-    void CancelRecurringSchedule(Guid id);
     
     Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200);
     Task ExecWithRetryAsync(Func<IWorkerClusterOperations, Task> func, int maxRetries = 5, int millisecondsToDelay = 200);

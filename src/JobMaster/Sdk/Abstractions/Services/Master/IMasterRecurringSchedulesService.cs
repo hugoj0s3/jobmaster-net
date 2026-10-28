@@ -10,6 +10,16 @@ internal interface IMasterRecurringSchedulesService : IJobMasterClusterAwareServ
     void Update(RecurringScheduleRawModel scheduleRaw);
     Task AddAsync(RecurringScheduleRawModel scheduleRaw);
     void Add(RecurringScheduleRawModel scheduleRaw);
+
+    /// <summary>
+    /// Inserts each schedule that isn't on master yet; existing rows are left untouched. Unlike
+    /// <see cref="IMasterRecurringScheduleIntakeService"/>, no status rule: used by the scheduler's ConfirmOnMaster.
+    /// Returns the ids actually inserted.
+    /// </summary>
+    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
+
+    /// <summary>Returns which of <paramref name="recurringScheduleIds"/> exist on master.</summary>
+    Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds);
     void UpsertStatic(StaticRecurringScheduleDefinition definition);
     IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria);
     Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria);

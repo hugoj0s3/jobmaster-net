@@ -187,6 +187,17 @@ WHERE {Col(x => x.ClusterId)} = @ClusterId
         return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = recurringScheduleId });
     }
 
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds)
+    {
+        if (recurringScheduleIds.Count == 0) return new List<Guid>();
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var inIds = sql.InClauseFor(Col(x => x.Id), "@Ids");
+        var sqlText = $"SELECT {Col(x => x.Id)} FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {inIds}";
+        var existing = await conn.QueryAsync<Guid>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Ids = recurringScheduleIds.ToList() });
+        return existing.ToList();
+    }
+
     public void Update(RecurringScheduleRawModel scheduleRaw)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);
@@ -516,12 +527,13 @@ FROM schedules_page s
         }
     }
 
-    public virtual async Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    public virtual async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
     {
-        if (schedules.Count == 0) return;
+        if (schedules.Count == 0) return new List<Guid>();
 
         var t = TableName();
         var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
+        var insertedIds = new List<Guid>();
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
         using var tx = conn.BeginTransaction(IsolationLevel.ReadCommitted);
@@ -541,6 +553,8 @@ FROM schedules_page s
 
                 if (newSchedules.Count > 0)
                 {
+                    insertedIds.AddRange(newSchedules.Select(s => s.Id));
+
                     var newEntries = newSchedules
                         .Select(s => genericUtil.MapToSqlEntry(SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(s).Metadata!))
                         .ToList();
@@ -559,6 +573,7 @@ FROM schedules_page s
                 }
             }
             tx.Commit();
+            return insertedIds;
         }
         catch
         {

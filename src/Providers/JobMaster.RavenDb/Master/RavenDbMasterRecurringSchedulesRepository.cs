@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.RavenDb.Connections;
 using JobMaster.Sdk.Abstractions;
@@ -461,13 +462,14 @@ update {{
         return totalDeleted;
     }
 
-    public async Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
     {
-        if (schedules.Count == 0) return;
+        if (schedules.Count == 0) return new List<Guid>();
 
         try
         {
-            await InternalBulkInsertIfNotExistsAsync(schedules);
+            var inserted = await InternalBulkInsertIfNotExistsAsync(schedules);
+            return inserted.Select(s => s.Id).ToList();
         }
         catch (ConcurrencyException ex)
         {
@@ -476,12 +478,24 @@ update {{
                 JobMasterLogCategory.RecurringSchedule,
                 exception: ex);
 
-            var (_, failedSchedules) = await BulkInsertFallbackPerPartitionAsync(schedules);
+            var (succeededSchedules, failedSchedules) = await BulkInsertFallbackPerPartitionAsync(schedules);
+            var insertedIds = succeededSchedules.Select(s => s.Id).ToList();
             if (failedSchedules.Count > 0)
             {
-                await BulkInsertFallbackPerRowAsync(failedSchedules);
+                insertedIds.AddRange(await BulkInsertFallbackPerRowAsync(failedSchedules));
             }
+
+            return insertedIds;
         }
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds)
+    {
+        if (recurringScheduleIds.Count == 0) return new List<Guid>();
+
+        using var session = store.OpenAsyncSession();
+        var docs = await session.LoadAsync<RavenDbRecurringScheduleDocument>(recurringScheduleIds.Select(DocumentId));
+        return recurringScheduleIds.Where(id => docs[DocumentId(id)] != null).ToList();
     }
 
     // Pure "insert if not present" unit, no exception handling -- reused at every fallback granularity.
@@ -540,8 +554,10 @@ update {{
         return (succeededSchedules, failedSchedules);
     }
 
-    private async Task BulkInsertFallbackPerRowAsync(IList<RecurringScheduleRawModel> schedules)
+    private async Task<IList<Guid>> BulkInsertFallbackPerRowAsync(IList<RecurringScheduleRawModel> schedules)
     {
+        var insertedIds = new ConcurrentBag<Guid>();
+
         await JobMasterParallelUtil.ForEachAsync(
             schedules,
             new ParallelOptions { MaxDegreeOfParallelism = PerRowSessionMaxDegreeOfParallelism },
@@ -549,13 +565,16 @@ update {{
             {
                 try
                 {
-                    await InternalBulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+                    var saved = await InternalBulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+                    foreach (var s in saved) insertedIds.Add(s.Id);
                 }
                 catch (ConcurrencyException)
                 {
                     // Already exists now -- leave untouched, matches "insert if not exists" semantics.
                 }
             });
+
+        return insertedIds.ToList();
     }
 
     // ==================== WHERE builder ====================

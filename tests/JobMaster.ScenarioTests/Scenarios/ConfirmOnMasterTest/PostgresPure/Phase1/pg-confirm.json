@@ -1,0 +1,32 @@
+{
+  "containerName": "pg-confirm",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-confirm",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "confirm-dist",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ConfirmDist;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        {
+          "Name": "pg-confirm-agent-1",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ConfirmAgent1;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        },
+        {
+          "Name": "pg-confirm-agent-2",
+          "RepositoryType": "Postgres",
+          "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ConfirmAgent2;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "pg-confirm-agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "pg-confirm-agent-2" }
+      ]
+    }
+  ]
+}

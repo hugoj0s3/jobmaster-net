@@ -86,6 +86,32 @@ public class MasterRecurringSchedulesServiceTests
         repo.Verify(x => x.BulkUpdateStaticDefinitionLastEnsuredByStaticIds(It.IsAny<IList<string>>(), It.IsAny<DateTime>()), Times.Never);
     }
 
+    [Fact]
+    public async Task BulkInsertIfNotExistsAsync_WhenSameIdTwice_SendsItOnce()
+    {
+        var clusterId = NewClusterId();
+        var clusterConfig = CreateClusterConfig(clusterId);
+        var repo = new Mock<IMasterRecurringSchedulesRepository>(MockBehavior.Strict);
+        var raw = new RecurringScheduleRawModel(clusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobDefinitionId = "job-def",
+            Expression = "* * * * *",
+            ExpressionTypeId = "cron",
+            CreatedAt = DateTime.UtcNow,
+        };
+        IList<RecurringScheduleRawModel>? sent = null;
+        repo.Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .Callback<IList<RecurringScheduleRawModel>>(schedules => sent = schedules)
+            .ReturnsAsync(new List<Guid> { raw.Id });
+
+        var sut = new MasterRecurringSchedulesService(new Mock<IMasterDistributedLockerService>().Object, clusterConfig, repo.Object, new Mock<IJobMasterLogger>().Object, new Mock<IKnownExceptionIdentifier>().Object);
+
+        await sut.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { raw, raw });
+
+        sent!.Select(s => s.Id).Should().Equal(raw.Id);
+    }
+
     private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)

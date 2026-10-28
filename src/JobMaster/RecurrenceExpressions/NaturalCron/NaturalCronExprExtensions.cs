@@ -14,7 +14,7 @@ public static class NaturalCronExprExtensions
     /// <summary>
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to <paramref name="naturalCronExpr"/>.
     /// </summary>
-    public static async Task<RecurringScheduleContext> RecurringAsync<T>(
+    public static async Task<RecurringScheduleReceipt> RecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         NaturalCronExpr naturalCronExpr,
         IWriteableMessageData? data = null,
@@ -33,7 +33,7 @@ public static class NaturalCronExprExtensions
     }
     
     /// <summary>Synchronous version of <see cref="RecurringAsync{T}"/>.</summary>
-    public static RecurringScheduleContext Recurring<T>(
+    public static RecurringScheduleReceipt Recurring<T>(
         this IJobMasterScheduler scheduler,
         NaturalCronExpr naturalCronExpr,
         IWriteableMessageData? data = null,
@@ -71,7 +71,7 @@ public static class NaturalCronExprExtensions
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> according to the raw NaturalCron
     /// expression <paramref name="naturalCronExpression"/>. Throws if the expression can't be parsed.
     /// </summary>
-    public static async Task<RecurringScheduleContext> NaturalCronRecurringAsync<T>(
+    public static async Task<RecurringScheduleReceipt> NaturalCronRecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         string naturalCronExpression,
         IWriteableMessageData? data = null,
@@ -89,7 +89,7 @@ public static class NaturalCronExprExtensions
     }
 
     /// <summary>Synchronous version of <see cref="NaturalCronRecurringAsync{T}"/>.</summary>
-    public static RecurringScheduleContext NaturalCronRecurring<T>(
+    public static RecurringScheduleReceipt NaturalCronRecurring<T>(
         this IJobMasterScheduler scheduler,
         string naturalCronExpression,
         IWriteableMessageData? data = null,

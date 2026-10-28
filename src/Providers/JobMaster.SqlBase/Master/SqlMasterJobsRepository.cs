@@ -282,7 +282,18 @@ WHERE cluster_id = @ClusterId AND {inClause}";
         var sqlText = $"SELECT 1 FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {Col(x => x.Id)} = @Id";
         return await conn.ExecuteScalarAsync<bool>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, Id = jobId });
     }
-    
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<Guid>();
+
+        using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
+        var inIds = sql.InClauseFor(Col(x => x.Id), "@JobIds");
+        var sqlText = $"SELECT {Col(x => x.Id)} FROM {TableName()} WHERE {Col(x => x.ClusterId)} = @ClusterId AND {inIds}";
+        var existing = await conn.QueryAsync<Guid>(sqlText, new { ClusterId = ClusterConnConfig.ClusterId, JobIds = jobIds.ToList() });
+        return existing.ToList();
+    }
+
     public IList<JobRawModel> Query(JobQueryCriteria queryCriteria)
     {
         using var conn = connManager.Open(connString, additionalConnConfig);

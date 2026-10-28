@@ -11,7 +11,9 @@ public interface IScheduleClient
         int? priority = null,
         bool? injectFailure = null,
         int? maxNumberOfRetries = null,
+        bool? confirmOnMaster = null,
         CancellationToken ct = default);
 }
 
-public sealed record ScheduleClientResult(List<Guid> JobIds);
+// AcceptedOnTransportCount: only returned by TargetTestScheduleApp (0 when the app doesn't send it).
+public sealed record ScheduleClientResult(List<Guid> JobIds, int AcceptedOnTransportCount = 0);

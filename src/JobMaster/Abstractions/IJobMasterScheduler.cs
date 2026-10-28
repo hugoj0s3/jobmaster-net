@@ -10,6 +10,10 @@ namespace JobMaster.Abstractions;
 /// Per-call parameters (<c>priority</c>, <c>workerLane</c>, <c>timeout</c>, <c>maxNumberOfRetries</c>, <c>metadata</c>)
 /// take precedence over any attribute-level defaults declared on the handler class.
 /// </para>
+/// <para>
+/// Every scheduling call returns a receipt (<see cref="JobScheduleReceipt"/> / <see cref="RecurringScheduleReceipt"/>)
+/// with the scheduled <c>Context</c> and where it was stored (<see cref="ScheduleReceiptStatus"/>).
+/// </para>
 /// </summary>
 public interface IJobMasterScheduler
 {
@@ -30,7 +34,7 @@ public interface IJobMasterScheduler
     /// <param name="timeout">Maximum execution time. Falls back to <c>[JobMasterTimeout]</c> attribute, then the cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries on failure. Falls back to <c>[JobMasterMaxNumberOfRetries]</c> attribute, then the cluster default.</param>
     /// <param name="metadata">Optional key-value metadata passed to the handler.</param>
-    JobContext OnceNow<T>(
+    JobScheduleReceipt OnceNow<T>(
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
         JobMasterPriority? priority = null,
@@ -44,7 +48,7 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="dateTime">UTC date and time when the job should execute.</param>
     /// <inheritdoc cref="OnceNow{T}" select="param[@name!='dateTime']"/>
-    JobContext OnceAt<T>(
+    JobScheduleReceipt OnceAt<T>(
         DateTime dateTime,
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
@@ -59,7 +63,7 @@ public interface IJobMasterScheduler
     /// </summary>
     /// <param name="after">How long to wait before executing the job.</param>
     /// <inheritdoc cref="OnceNow{T}" select="param[@name!='after']"/>
-    JobContext OnceAfter<T>(
+    JobScheduleReceipt OnceAfter<T>(
         TimeSpan after,
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
@@ -70,7 +74,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceNow{T}"/>.</summary>
-    Task<JobContext> OnceNowAsync<T>(
+    Task<JobScheduleReceipt> OnceNowAsync<T>(
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
         JobMasterPriority? priority = null,
@@ -80,7 +84,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAt{T}"/>.</summary>
-    Task<JobContext> OnceAtAsync<T>(
+    Task<JobScheduleReceipt> OnceAtAsync<T>(
         DateTime scheduledAt,
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
@@ -91,7 +95,7 @@ public interface IJobMasterScheduler
         IWritableMetadata? metadata = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="OnceAfter{T}"/>.</summary>
-    Task<JobContext> OnceAfterAsync<T>(
+    Task<JobScheduleReceipt> OnceAfterAsync<T>(
         TimeSpan after,
         IWriteableMessageData? msgData = null,
         string? clusterId = null,
@@ -115,7 +119,7 @@ public interface IJobMasterScheduler
     /// <param name="metadata">Optional key-value metadata passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
     /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
-    RecurringScheduleContext Recurring<T>(
+    RecurringScheduleReceipt Recurring<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
         string? clusterId = null,
@@ -128,7 +132,7 @@ public interface IJobMasterScheduler
         DateTime? endBefore = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.</summary>
-    Task<RecurringScheduleContext> RecurringAsync<T>(
+    Task<RecurringScheduleReceipt> RecurringAsync<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,
         string? clusterId = null,
@@ -148,7 +152,7 @@ public interface IJobMasterScheduler
     /// <param name="expressionTypeId">The ID of the recurrence expression compiler to use.</param>
     /// <param name="expression">The raw recurrence expression string interpreted by the compiler.</param>
     /// <inheritdoc cref="Recurring{T}(IRecurrenceCompiledExpr, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)" select="param[@name!='expressionTypeId' and @name!='expression']"/>
-    RecurringScheduleContext Recurring<T>(
+    RecurringScheduleReceipt Recurring<T>(
         string expressionTypeId,
         string expression,
         IWriteableMessageData? data = null,
@@ -162,7 +166,7 @@ public interface IJobMasterScheduler
         DateTime? endBefore = null) where T : IJobMasterHandler;
 
     /// <summary>Async version of <see cref="Recurring{T}(string, string, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.</summary>
-    Task<RecurringScheduleContext> RecurringAsync<T>(
+    Task<RecurringScheduleReceipt> RecurringAsync<T>(
         string expressionTypeId,
         string expression,
         IWriteableMessageData? data = null,

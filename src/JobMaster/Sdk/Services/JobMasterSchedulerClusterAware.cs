@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using JobMaster.Abstractions.Models;
@@ -55,7 +55,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
     
-    public async Task ScheduleAsync(JobRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(JobRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -71,11 +71,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.MarkAsHeldOnMaster();
             await masterJobsService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
@@ -126,7 +127,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
     }
 
-    public void Schedule(RecurringScheduleRawModel rawModel)
+    public BucketModel? Schedule(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -142,14 +143,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             masterRecurringSchedulesService.Add(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public void Schedule(JobRawModel job)
+    public BucketModel? Schedule(JobRawModel job)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -165,14 +167,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             job.MarkAsHeldOnMaster();
             masterJobsService.Add(job);
-            return;
+            return null;
         }
 
         job.AssignSavePendingJobToBucket(bucket);
         agentJobsDispatcherService.AddSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public async Task ScheduleAsync(RecurringScheduleRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -187,11 +190,91 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             await masterRecurringSchedulesService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
         await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
+    }
+
+    public async Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs)
+    {
+        var config = masterClusterConfigurationService.GetFresh();
+        if (config?.ClusterMode == ClusterMode.Archived)
+        {
+            throw new InvalidOperationException("Cluster mode is archived");
+        }
+
+        // Held on master, not PendingSave: if this insert beats the agent's save, the agent sees a duplicate and
+        // drops its message, so master's assign runner (OnMaster only) must be able to pick the row up.
+        foreach (var job in jobs)
+        {
+            job.MarkAsHeldOnMaster();
+        }
+
+        var notInserted = new List<Guid>();
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
+        {
+            var batch = partition.ToList();
+            var inserted = new HashSet<Guid>(await masterJobsService.BulkInsertIfNotExistsAsync(batch));
+            notInserted.AddRange(batch.Select(j => j.Id).Where(id => !inserted.Contains(id)));
+        }
+
+        // Not inserted means already on master (e.g. the agent saved it first) or a failed row the repository
+        // didn't throw for (RavenDB's per-row fallback logs and continues), so check.
+        var unConfirmed = new List<Guid>();
+        foreach (var partition in notInserted.Partition(maxBatchSize))
+        {
+            var ids = partition.ToList();
+            var existing = new HashSet<Guid>(await masterJobsService.QueryExistingIdsAsync(ids));
+            unConfirmed.AddRange(ids.Where(id => !existing.Contains(id)));
+        }
+
+        if (unConfirmed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{unConfirmed.Count} job(s) could not be saved on master: {string.Join(", ", unConfirmed)}. Calling ConfirmOnMasterAsync again is safe.");
+        }
+    }
+
+    public async Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        var config = masterClusterConfigurationService.GetFresh();
+        if (config?.ClusterMode == ClusterMode.Archived)
+        {
+            throw new InvalidOperationException("Cluster mode is archived");
+        }
+
+        foreach (var schedule in schedules)
+        {
+            schedule.Active();
+        }
+
+        var notInserted = new List<Guid>();
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in schedules.Partition(maxBatchSize))
+        {
+            var batch = partition.ToList();
+            var inserted = new HashSet<Guid>(await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(batch));
+            notInserted.AddRange(batch.Select(s => s.Id).Where(id => !inserted.Contains(id)));
+        }
+
+        // Same check as ConfirmJobsOnMasterAsync: not inserted must mean already on master.
+        var unConfirmed = new List<Guid>();
+        foreach (var partition in notInserted.Partition(maxBatchSize))
+        {
+            var ids = partition.ToList();
+            var existing = new HashSet<Guid>(await masterRecurringSchedulesService.QueryExistingIdsAsync(ids));
+            unConfirmed.AddRange(ids.Where(id => !existing.Contains(id)));
+        }
+
+        if (unConfirmed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{unConfirmed.Count} recurring schedule(s) could not be saved on master: {string.Join(", ", unConfirmed)}. Calling ConfirmOnMasterAsync again is safe.");
+        }
     }
 
     public async Task<bool> CancelJobAsync(Guid jobId)
