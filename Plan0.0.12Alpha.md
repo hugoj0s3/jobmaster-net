@@ -18,11 +18,14 @@ open decisions (settle before coding), tasks, and done criteria.
 | 7  | Confirm on master, explicit (`ConfirmOnMasterAsync`)  | S     | No       | 6          |
 | 8  | Hybrid agent connection                               | L     | No       | own sub-plan file first |
 | 9  | Reminders cleanup                                     | XS    | –        | 1–8        |
-| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13 |
+| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13, 15–17 |
 | 11 | Docs restructure + `presenting.md`                    | M     | –        | 10         |
 | 12 | Case-insensitive metadata/message-data keys + worker lanes | M | **Yes** | 1          |
 | 13 | Disabled-priority validation scoped per cluster       | S/M   | Maybe (stricter recurring check) | 1 |
 | 14 | Startup type scans: one pass + safe `GetTypes`        | S     | No       | 1 (13 adds a scan user) |
+| 15 | Consistent cancel / reschedule method names           | XS    | No (obsolete aliases) | – |
+| 16 | `CancelAsync` on receipts (follow-up to 15)           | S     | No       | 6, 7, 15   |
+| 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
 
 ---
 
@@ -176,11 +179,11 @@ public sealed class JobScheduleReceipt
     public string? BucketId { get; }                        // null when StoredOnMaster
     public string? AgentWorkerId { get; }                   // null when StoredOnMaster
     public string? AgentConnectionId { get; }               // null when StoredOnMaster
-    public JobContext GetJobContext();                      // built on demand from the model
+    public JobContext Context { get; }                      // built from the model on first read, then cached
     public Task ConfirmOnMasterAsync();                     // item 7
 }
 
-public sealed class RecurringScheduleReceipt { /* same shape, GetRecurringScheduleContext() */ }
+public sealed class RecurringScheduleReceipt { /* same shape, Context is a RecurringScheduleContext */ }
 ```
 - `JobMasterSchedulerClusterAware.Schedule*` returns `BucketModel?`: the bucket it was handed to, `null` = stored on
   master. `JobMasterScheduler` turns it into the receipt (`ToReceipt(rawModel, bucket)`).
@@ -189,7 +192,7 @@ public sealed class RecurringScheduleReceipt { /* same shape, GetRecurringSchedu
 - Sync methods return the receipt, async return `Task<receipt>`; no `CancellationToken` (the scheduler has none).
 
 **Decided.** Hard break, no `[Obsolete]` shims. ChangeLog + docs migration note:
-`var ctx = scheduler.OnceNow<T>()` → `scheduler.OnceNow<T>().GetJobContext()`.
+`var ctx = scheduler.OnceNow<T>()` → `scheduler.OnceNow<T>().Context`.
 
 **Tasks.**
 - [x] Types + XML docs.
@@ -197,8 +200,8 @@ public sealed class RecurringScheduleReceipt { /* same shape, GetRecurringSchedu
 - [x] `IJobMasterSchedulerClusterAware` returns the bucket.
 - [x] Extension classes: NaturalCron / TimeSpan / Cronos / NCrontab.
 - [x] Callers: benchmarks, scenario-test apps (JobMaster.Api and samples don't use the return value).
-- [ ] Unit tests: both statuses for jobs + recurring (Migrating mode, no bucket, normal bucket).
-- [ ] ChangeLog breaking-change entry.
+- [x] Unit tests: both statuses for jobs + recurring (Migrating mode, no bucket, normal bucket).
+- [x] ChangeLog breaking-change entry.
 
 ---
 
@@ -226,7 +229,10 @@ stays open.
   confirm wins, the agent drops its message, so the row must be one master's own runners pick up
   (`AssignJobsToBucketsRunner` only takes `OnMaster`). A `PendingSave` row would never run.
 - Fixed: the recurring save path (`RecurringScheduleSavePendingOperation`) rethrew `JobMasterDuplicationException`
-  and the runner re-queued it forever; now treated as already saved, like the job path.
+  and the runner re-queued it forever; now treated as already saved, like the job path, and still enqueued for the
+  recently-inserted fast path (so a schedule confirmed before the agent's save is still planned within ~1s).
+- Not-inserted ids are checked with a bulk `QueryExistingIdsAsync`; any id neither inserted nor on master throws
+  (covers RavenDB's per-row fallback that logs and continues). Archived cluster → throws before writing.
 - A master error is thrown; calling again is safe (existing rows are left untouched).
 
 **Decided.**
@@ -243,11 +249,14 @@ stays open.
 - [x] `BulkInsertIfNotExistsAsync` on `IMasterJobsService` / `IMasterRecurringSchedulesService`.
 - [x] Confirm methods (receipts, Advanced batch, cluster-aware) + partitioning.
 - [x] Recurring duplicate fix.
-- [ ] Unit tests: StoredOnMaster skipped; AcceptedOnTransport marked held/Active and inserted; grouping across
-      clusters; partitioning; recurring duplicate no longer re-queued.
-- [ ] RepoConformance: `BulkInsertIfNotExistsAsync` with non-final (`OnMaster` / `Active`) rows, all providers.
-- [ ] Scenario test: confirm right after scheduling → job reaches master and executes once.
-- [ ] ChangeLog (added) + docs.
+- [x] Unit tests: StoredOnMaster skipped; AcceptedOnTransport marked held/Active and inserted; grouping across
+      clusters; partitioning; neither-inserted-nor-existing throws; archived throws; recurring duplicate no longer
+      re-queued and still enqueued.
+- [x] RepoConformance: `BulkInsertIfNotExistsAsync` with non-final (`OnMaster` / `Active`) rows returning only the
+      inserted ids, and `QueryExistingIdsAsync`, all providers.
+- [x] Scenario test: confirm right after scheduling → job reaches master and executes once
+      (`ConfirmOnMasterTest/PostgresPure`, jobs + recurring).
+- [x] ChangeLog (added). Docs: item 10.
 
 ---
 
@@ -560,3 +569,180 @@ assembly whose types can't be loaded never crashes startup.
 
 **Done when.** No startup call site calls `Assembly.GetTypes()` directly, each assembly's types are read once per
 process, and the full unit suite is green.
+
+---
+
+## 15. Consistent cancel / reschedule method names
+
+**Goal.** The cancel and reschedule methods on `IJobMasterScheduler` follow one naming rule. Found 2026-10-27 while
+reviewing how cancel works (Hugo: "totally inconsistent").
+
+**Current state.** All return `bool` ("did it happen"), but the `Try` prefix is random and the casing/parameter
+names differ:
+
+| Today | Job | Recurring |
+|---|---|---|
+| async | `CancelJobAsync(Guid jobId, ...)` | `TryCancelRecurringAsync(Guid id, ...)` |
+| sync | `TryCancelJob(Guid id, ...)` | `CancelRecurring(Guid id, ...)` |
+| reschedule | `ReScheduleAsync` / `ReSchedule(Guid jobId, DateTime scheduledAt, ...)` | – |
+
+- `ReSchedule` uses a capital S, but "reschedule" is one word (`Reschedule`).
+- Sibling bug: the sync `JobMasterSchedulerClusterAware.CancelJob` calls `masterJobsService.UpdateAsync(jobEntity)`
+  without `await`, so it returns `true` before the write and a failure (e.g. version conflict) is lost. Fix in the
+  same PR: call the sync `Update`.
+
+**Design (proposed).** Drop `Try` everywhere: the `bool` is the whole result, there's no `out` value, and
+`ReSchedule` already has no `Try`. In this codebase `Try` means "returns `T?`" (`TryGetX`).
+
+```csharp
+Task<bool> CancelJobAsync(Guid jobId, string? clusterId = null);
+bool       CancelJob(Guid jobId, string? clusterId = null);
+Task<bool> CancelRecurringAsync(Guid recurringScheduleId, string? clusterId = null);
+bool       CancelRecurring(Guid recurringScheduleId, string? clusterId = null);
+Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+bool       Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+```
+
+- `TryCancelJob`, `TryCancelRecurringAsync`, `ReScheduleAsync`, `ReSchedule` stay as `[Obsolete]` forwarders (same
+  approach as the Cronos/NCrontab renames in item 3); removed in a later release.
+- Same names on the internal `IJobMasterSchedulerClusterAware`, and `JobRawModel.CanReSchedule` / `ReSchedule` →
+  `CanReschedule` / `Reschedule` (internal, no shim needed).
+- Parameter renames (`id` → `jobId` / `recurringScheduleId`) only break callers passing the name (`id: ...`);
+  ChangeLog note.
+
+**Open decisions.**
+- Confirm "drop `Try`" vs "`Try` everywhere" (the latter would also rename `ReSchedule` → `TryReschedule`).
+- Cancel doesn't check `ClusterMode.Archived`, reschedule does. Align (throw on archived for cancel too), or leave?
+
+**Tasks.**
+- [ ] Rename on `IJobMasterScheduler` + `JobMasterScheduler`, `[Obsolete]` forwarders for the old names.
+- [ ] Rename on `IJobMasterSchedulerClusterAware` / `JobMasterSchedulerClusterAware` and the `JobRawModel` helpers.
+- [ ] Fix the sync `CancelJob` (await / sync `Update`).
+- [ ] Callers: `TargetTestScheduleApp`, `TargetTestRecurringApp`, `samples/JobMaster.SampleWeb`, unit tests; check
+      `JobMaster.Api`.
+- [ ] Unit tests: new names, obsolete forwarders forward, sync `CancelJob` persists before returning.
+- [ ] ChangeLog (deprecated + note on parameter names) + docs (item 10).
+
+**Follow-up.** `CancelAsync` on the receipts is item 16 (separate PR, uses this item's naming).
+
+**Done when.** One naming rule across all six methods, old names compile with an obsolete warning, and the unit suite
+is green.
+
+---
+
+## 16. `CancelAsync` on receipts (follow-up to 15)
+
+**Goal.** Cancel a just-scheduled job or recurring schedule from its receipt, including when it's still only on the
+agent transport (`AcceptedOnTransport`), where today's cancel by id finds nothing on master and returns `false` while
+the item runs moments later.
+
+**Current state (2026-10-27).**
+- Cancel by id is master-only: `GetAsync` → `TryToCancel` → version-checked `UpdateAsync`.
+  - Not on master yet → `false`, the item runs.
+  - Job `OnMaster` → cancelled, never assigned.
+  - Job `InBucket` → cancelled; the worker's version-checked `PreEnqueue` update conflicts, reloads, sees `Cancelled`
+    and drops it (`JobsExecutionEngine.PreEnqueue`).
+  - Job within 5s of onboarding (`IsWithinOnboardingWindow`) → `false` even though found.
+  - Queued / running / final → `false`.
+- Cancel by id falls back to the default cluster when `clusterId` isn't passed; the receipt knows `ClusterId`.
+- `RecurringScheduleCancellingLock` is checked by the recurring save path but never set anywhere (unfinished
+  "cancel before the agent saved it" path); the job save path has no equivalent.
+
+**Design (proposed).**
+```csharp
+public Task<bool> CancelAsync();   // on JobScheduleReceipt and RecurringScheduleReceipt
+```
+- `StoredOnMaster` → the normal cancel by id on the receipt's `ClusterId`.
+- `AcceptedOnTransport` → **insert it already cancelled**: `BulkInsertIfNotExistsAsync` with the model in
+  `Cancelled` / `Canceled` (final) status.
+  - Inserted → done (`true`). The agent's later save hits the duplicate and drops its message (same path as item 7;
+    the recurring duplicate fix covers schedules).
+  - Not inserted (already on master) → the normal cancel by id.
+  - Preferred over "confirm, then cancel": one write instead of two, and no window where the row is `OnMaster` and
+    the assign runner could pick it up between the steps. Final rows are already inserted this way by the archive
+    path.
+- Returns `true` when the item is now cancelled; `false` when it's already queued/running/final, or inside the
+  onboarding window.
+- Throws for an archived cluster, like confirm (`GetFresh()`).
+- Remove the dead `RecurringScheduleCancellingLock` check, or keep it only if this design needs it (it shouldn't).
+
+**Open decisions.**
+- The 5s onboarding window still makes a receipt cancel return `false` right after the agent hands the job to a
+  worker. Find out why the window exists before relaxing it (the `PreEnqueue` version check may already make it
+  unnecessary); verify, don't assume.
+- Batch version on `IJobMasterSchedulerAdvanced` (`CancelAsync(IEnumerable<receipt>)`), like confirm? Only if there's a
+  real use case.
+- A late cancel (after data retention purged a finished job) would insert a `Cancelled` row: harmless (final, purged
+  again), but document it.
+
+**Tasks.**
+- [ ] Receipt `CancelAsync` for jobs and recurring schedules; cluster-aware implementation (insert-cancelled, then
+      fall back to cancel by id).
+- [ ] Unit tests: `StoredOnMaster` → cancel by id; `AcceptedOnTransport` + not on master → inserted cancelled;
+      already on master → cancel by id; archived throws.
+- [ ] RepoConformance: `BulkInsertIfNotExistsAsync` with `Cancelled` / `Canceled` rows (if not already covered by the
+      archive tests).
+- [ ] Scenario test: schedule through an agent and cancel from the receipt right away → never runs; same for a
+      recurring schedule → never fires.
+- [ ] ChangeLog (added) + docs (item 10).
+
+**Done when.** A receipt cancel issued right after scheduling reliably prevents the run when it returns `true`, the
+agent's late save never revives it, and unit + scenario tests are green.
+
+---
+
+## 17. Base64 ids in logs (messages + API `ReferenceId`)
+
+**Goal.** An id copied from the dashboard (base64url, 22 chars) finds the matching logs, and log output shows ids in
+the same format as the rest of the API/dashboard. Easier investigation from the dashboard (Hugo, 2026-10-27).
+
+**Current state.** Three formats for the same Guid:
+
+| Where | Format |
+|---|---|
+| API responses / dashboard URLs (`ApiJobModel.Id`, `SourceId`, `ApiJobExecution.JobId`, recurring `Id`, `ApiLogItem.Id`) | base64url (`ToBase64()`) |
+| Stored log `ReferenceId` (`JobMasterLoggerExtensions` Guid overloads) | `"N"` (32 hex, no dashes) |
+| Ids interpolated in log message text (`$"JobId={job.Id}"`) | `"D"` (with dashes) |
+
+- `ApiLogItem.ReferenceId` is returned raw (`"N"`), unlike every other id in the API.
+- API input already accepts any format: `ReferenceGuid` → `ParseFlexible()` → `"N"`. The dashboard queries with the
+  base64 id (`ReferenceGuid: jid`); the dashboard doesn't display `referenceId` yet.
+- Keyword search on the message text can't find a base64 id pasted from the dashboard (messages hold `"D"`).
+- The archive / migrate / cleanup runners query job-execution logs by `ToString("N")`.
+- `GuidBase64Extensions` (`ToBase64`, `ParseFlexible`) is internal to `JobMaster.Api`.
+
+**Design (proposed).**
+1. **Core helpers:** move `ToBase64` / `ParseFlexible` into `JobMaster` (internal + `InternalsVisibleTo`, or public if
+   users should format ids the same way), so the SDK can use them. `JobMaster.Api` uses the core ones.
+2. **Log message text:** job, recurring-schedule and execution ids in log messages are formatted with `ToBase64()`
+   from now on. Only log messages: lock keys, document ids, SQL, exception messages used for control flow stay as
+   they are. Mechanical change across the logging call sites (`JobsExecutionEngine`, `WorkerClusterOperations`,
+   `JobSavePendingOperation`, runners, NATS runners, …).
+3. **`ReferenceId` at the API boundary:** `ApiLogItem.FromDomain` returns `ReferenceId` as base64 when it parses as a
+   Guid; non-Guid references (cluster, bucket, worker ids) unchanged. Storage stays `"N"`: no data migration, old rows
+   keep working, the runners' `"N"` lookups are untouched, and `ReferenceGuid` input already accepts base64.
+
+**Rejected:** storing `ReferenceId` as base64 too. One format end to end, but needs a migration (or dual-format
+queries) for existing rows and changes to every runner that queries by `"N"`, while the API is the only place users
+see it.
+
+**Open decisions.**
+- **Keyword search for old logs (optional):** when the keyword parses as a Guid in any format, also match the other
+  two forms (`N`, `D`, base64), so a dashboard id still finds messages written before this change. Worth it, or accept
+  that only new logs match?
+- Core helpers internal or public?
+- Exceptions whose message includes an id (e.g. Confirm's "could not be saved on master: {ids}"): base64 too, for the
+  same reason?
+
+**Tasks.**
+- [ ] Move `GuidBase64Extensions` to core; `JobMaster.Api` uses it.
+- [ ] Log messages: job / schedule / execution ids via `ToBase64()`.
+- [ ] `ApiLogItem.ReferenceId` → base64 for Guid references. Update its XML doc.
+- [ ] (If decided) keyword search matches all three Guid forms.
+- [ ] Tests: `ApiLogItem.FromDomain` (Guid → base64, non-Guid unchanged); API test querying logs with the returned
+      `ReferenceId`; helper round-trip tests.
+- [ ] ChangeLog: API `ReferenceId` format change + log message id format.
+- [ ] Dashboard: if it starts showing `referenceId`, link it to the job/schedule page (ids now match).
+
+**Done when.** Ids in log messages and `ApiLogItem.ReferenceId` match the base64 ids the dashboard shows, existing
+logs are still found by `ReferenceGuid`, and tests are green.

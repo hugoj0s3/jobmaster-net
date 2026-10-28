@@ -766,6 +766,66 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(Array.Empty<RecurringScheduleRawModel>());
     }
 
+    [Fact]
+    public async Task BulkInsertIfNotExists_ShouldInsert_ActiveSchedules_AndReturnOnlyInsertedIds()
+    {
+        // ConfirmOnMaster path: Active rows, and the return value must tell which were inserted.
+        var def = "defBulkInsertActive-" + JobMasterRandomUtil.NewGuid4();
+
+        var existing = NewSchedule(def);
+        await Fixture.MasterRecurringSchedules.AddAsync(existing);
+
+        var new1 = NewSchedule(def);
+        var new2 = NewSchedule(def);
+
+        var inserted = await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(new[] { Clone(existing), new1, new2 });
+
+        Assert.Equal(new[] { new1.Id, new2.Id }.OrderBy(x => x), inserted.OrderBy(x => x));
+        Assert.Equal(RecurringScheduleStatus.Active, (await Fixture.MasterRecurringSchedules.GetAsync(new1.Id))!.Status);
+        Assert.Equal(RecurringScheduleStatus.Active, (await Fixture.MasterRecurringSchedules.GetAsync(new2.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_ShouldReturnOnlyIdsOnMaster()
+    {
+        var def = "defQueryExistingIds-" + JobMasterRandomUtil.NewGuid4();
+        var s1 = NewSchedule(def);
+        var s2 = NewSchedule(def);
+        await Fixture.MasterRecurringSchedules.AddAsync(s1);
+        await Fixture.MasterRecurringSchedules.AddAsync(s2);
+        var missing = JobMasterRandomUtil.NewGuid4();
+
+        var existing = await Fixture.MasterRecurringSchedules.QueryExistingIdsAsync(new[] { s1.Id, missing, s2.Id });
+
+        Assert.Equal(new[] { s1.Id, s2.Id }.OrderBy(x => x), existing.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_ShouldIgnore_OtherClusterIds()
+    {
+        // Same database and tables, another cluster: its rows must not count as existing here.
+        var def = "defQueryExistingIdsOther-" + JobMasterRandomUtil.NewGuid4();
+        var mine = NewSchedule(def);
+        await Fixture.MasterRecurringSchedules.AddAsync(mine);
+
+        var otherClusterId = Fixture.OtherClusterMasterRecurringSchedules.ClusterConnConfig.ClusterId;
+        var others = Clone(NewSchedule(def), otherClusterId);
+        await Fixture.OtherClusterMasterRecurringSchedules.AddAsync(others);
+        Assert.NotNull(await Fixture.OtherClusterMasterRecurringSchedules.GetAsync(others.Id));
+
+        var existing = await Fixture.MasterRecurringSchedules.QueryExistingIdsAsync(new[] { mine.Id, others.Id });
+
+        Assert.Equal(new[] { mine.Id }, existing);
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_EmptyList_ShouldReturnEmpty()
+    {
+        var existing = await Fixture.MasterRecurringSchedules.QueryExistingIdsAsync(Array.Empty<Guid>());
+
+        Assert.Empty(existing);
+    }
+
     internal virtual RecurringScheduleRawModel NewSchedule(string? jobDefinitionId = null)
     {
         var now = DateTime.UtcNow;
@@ -826,9 +886,9 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expected.HostId?.HostDisplayName, actual.HostId?.HostDisplayName);
     }
 
-    private static RecurringScheduleRawModel Clone(RecurringScheduleRawModel s)
+    private static RecurringScheduleRawModel Clone(RecurringScheduleRawModel s, string? clusterId = null)
     {
-        return new RecurringScheduleRawModel(s.ClusterId)
+        return new RecurringScheduleRawModel(clusterId ?? s.ClusterId)
         {
             Id = s.Id,
             Expression = s.Expression,

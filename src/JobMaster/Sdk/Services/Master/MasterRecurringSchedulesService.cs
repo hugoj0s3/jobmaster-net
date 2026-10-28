@@ -89,10 +89,16 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         });
     }
 
-    public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
     {
-        if (schedules.Count == 0) return Task.CompletedTask;
-        return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(schedules));
+        if (schedules.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(schedules));
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds)
+    {
+        if (recurringScheduleIds.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.QueryExistingIdsAsync(recurringScheduleIds));
     }
 
     public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)

@@ -84,10 +84,16 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         });
     }
 
-    public Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
     {
-        if (jobs.Count == 0) return Task.CompletedTask;
-        return operationThrottler.ExecAsync(() => masterJobsRepository.BulkInsertIfNotExistsAsync(jobs, Array.Empty<JobExecution>()));
+        if (jobs.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.BulkInsertIfNotExistsAsync(jobs, Array.Empty<JobExecution>()));
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.QueryExistingIdsAsync(jobIds));
     }
 
     public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)

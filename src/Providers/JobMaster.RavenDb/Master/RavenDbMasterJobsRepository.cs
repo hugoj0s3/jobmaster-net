@@ -228,6 +228,15 @@ internal sealed class RavenDbMasterJobsRepository : JobMasterClusterAwareReposit
         return await session.Advanced.ExistsAsync(DocumentId(jobId));
     }
 
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<Guid>();
+
+        using var session = store.OpenAsyncSession();
+        var docs = await session.LoadAsync<RavenDbJobDocument>(jobIds.Select(DocumentId));
+        return jobIds.Where(id => docs[DocumentId(id)] != null).ToList();
+    }
+
     // ==================== Get ====================
 
     public JobRawModel? Get(Guid jobId)

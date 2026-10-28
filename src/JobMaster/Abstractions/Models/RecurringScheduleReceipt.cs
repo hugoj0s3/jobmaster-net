@@ -10,6 +10,7 @@ namespace JobMaster.Abstractions.Models;
 public sealed class RecurringScheduleReceipt
 {
     internal readonly RecurringScheduleRawModel model;
+    private RecurringScheduleContext? context;
 
     internal RecurringScheduleReceipt(
         ScheduleReceiptStatus status,
@@ -42,13 +43,23 @@ public sealed class RecurringScheduleReceipt
     public string? AgentConnectionId { get; }
 
     /// <summary>The recurring schedule.</summary>
-    public RecurringScheduleContext GetRecurringScheduleContext() => RecurringScheduleConvertUtil.ToContext(model);
+    public RecurringScheduleContext Context => context ??= RecurringScheduleConvertUtil.ToContext(model);
 
     /// <summary>
     /// Makes sure the schedule is saved on master, saving it now if it isn't there yet. When it returns, the schedule
     /// is on master. Returns right away when <see cref="Status"/> is <see cref="ScheduleReceiptStatus.StoredOnMaster"/>.
-    /// Not recommended unless you need that guarantee; see
-    /// <see cref="IJobMasterSchedulerAdvanced.ConfirmOnMasterAsync(IEnumerable{JobScheduleReceipt})"/>.
+    /// <para>
+    /// Rarely needed: if your agent connections are healthy, you don't need to call it at all. A confirmed schedule's
+    /// first run can be delayed by up to about 10 minutes, so avoid it for schedules that recur at short intervals
+    /// (under 10 minutes). To confirm many schedules, use
+    /// <see cref="IJobMasterSchedulerAdvanced.ConfirmOnMasterAsync(IEnumerable{RecurringScheduleReceipt})"/>.
+    /// </para>
+    /// <para>
+    /// If it throws, the schedule may or may not be saved; calling it again is safe and never creates a second copy.
+    /// Confirming after the cluster's data retention has removed a cancelled or finished schedule saves it again as
+    /// active. Be careful calling it when the data retention is short: the shorter it is, the more likely a late
+    /// confirm brings a removed schedule back.
+    /// </para>
     /// </summary>
     public Task ConfirmOnMasterAsync()
     {

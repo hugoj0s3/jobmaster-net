@@ -67,7 +67,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         }));
     }
 
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
 });
 
 await app.Services.StartJobMasterRuntimeAsync();

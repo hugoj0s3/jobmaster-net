@@ -83,7 +83,7 @@ app.MapPost("/schedule-now", async (ScheduleNowRequest req, IJobMasterScheduler 
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
 });
 
 app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterScheduler scheduler) =>
@@ -101,7 +101,7 @@ app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterSchedu
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
 });
 
 await app.Services.StartJobMasterRuntimeAsync();

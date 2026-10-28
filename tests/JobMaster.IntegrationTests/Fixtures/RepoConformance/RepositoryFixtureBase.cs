@@ -15,6 +15,10 @@ public abstract class RepositoryFixtureBase : IAsyncLifetime
     internal abstract IMasterDistributedLockerRepository MasterDistributedLocker { get; set; }
     internal abstract IMasterLogsRepository MasterLogs { get; set; }
 
+    // A second cluster on the same database/tables (never started), to prove queries are scoped to their own cluster.
+    internal abstract IMasterJobsRepository OtherClusterMasterJobs { get; set; }
+    internal abstract IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; }
+
     internal abstract IAgentRawMessagesDispatcherRepository AgentMessages { get;set;  }
     public abstract Task InitializeAsync();
 

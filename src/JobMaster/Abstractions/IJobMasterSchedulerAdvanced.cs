@@ -293,21 +293,36 @@ public interface IJobMasterSchedulerAdvanced
     /// When it returns, all of them are on master. Receipts can come from different clusters. Jobs that were already
     /// <see cref="ScheduleReceiptStatus.StoredOnMaster"/> need no call to master.
     /// <para>
-    /// Not recommended unless you need that guarantee: a confirmed job may start later than it would otherwise,
-    /// because it's picked up from master instead of going straight to its worker. Prefer one batch call over
-    /// many single <see cref="JobScheduleReceipt.ConfirmOnMasterAsync"/> calls.
+    /// Rarely needed: if your agent connections are healthy, you don't need to call it at all. A confirmed job can
+    /// start later than it would otherwise, because it's picked up from master instead of going straight to its
+    /// worker. Prefer one batch call over many single <see cref="JobScheduleReceipt.ConfirmOnMasterAsync"/> calls.
     /// </para>
     /// <para>
     /// If it throws, some jobs may or may not be saved; calling it again is safe and never creates a second copy.
     /// JobMaster runs jobs at least once: confirming a receipt after the cluster's data retention has removed an
-    /// already-finished job saves it again, and it runs again.
+    /// already-finished job saves it again, and it runs again. Be careful calling it when the data retention is short:
+    /// the shorter it is, the more likely a late confirm runs a job twice.
     /// </para>
     /// </summary>
     /// <param name="receipts">Receipts returned by the scheduling calls.</param>
     Task ConfirmOnMasterAsync(IEnumerable<JobScheduleReceipt> receipts);
 
     /// <summary>
-    /// Same as <see cref="ConfirmOnMasterAsync(IEnumerable{JobScheduleReceipt})"/>, for recurring schedules.
+    /// Makes sure every schedule in <paramref name="receipts"/> is saved on master, saving it now if it isn't there
+    /// yet. When it returns, all of them are on master. Receipts can come from different clusters. Schedules that
+    /// were already <see cref="ScheduleReceiptStatus.StoredOnMaster"/> need no call to master.
+    /// <para>
+    /// Rarely needed: if your agent connections are healthy, you don't need to call it at all. A confirmed schedule's
+    /// first run can be delayed by up to about 10 minutes, so avoid it for schedules that recur at short intervals
+    /// (under 10 minutes). Prefer one batch call over many single
+    /// <see cref="RecurringScheduleReceipt.ConfirmOnMasterAsync"/> calls.
+    /// </para>
+    /// <para>
+    /// If it throws, some schedules may or may not be saved; calling it again is safe and never creates a second
+    /// copy. Confirming a receipt after the cluster's data retention has removed a cancelled or finished schedule
+    /// saves it again as active. Be careful calling it when the data retention is short: the shorter it is, the more
+    /// likely a late confirm brings a removed schedule back.
+    /// </para>
     /// </summary>
     /// <param name="receipts">Receipts returned by the recurring scheduling calls.</param>
     Task ConfirmOnMasterAsync(IEnumerable<RecurringScheduleReceipt> receipts);

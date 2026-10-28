@@ -49,6 +49,12 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
     public const string SqlServerTablePrefix = "JMSqlServerTests_";
     public const string SqlServerAgentConnectionName = "Agent-SqlServer-1";
 
+    // Second cluster per provider on the same database + table prefix (same tables), registered on a separate,
+    // never-started ServiceCollection after the runtime starts -- only used to write rows with another cluster_id.
+    public const string PostgresOtherClusterId = "RT-Postgres-2";
+    public const string MySqlOtherClusterId = "RT-MySql-2";
+    public const string SqlServerOtherClusterId = "RT-SqlServer-2";
+
     private static readonly TaskCompletionSource<RepoConformanceBootstrap> InstanceSource =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
@@ -61,6 +67,7 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
     private MySqlContainer mySql = null!;
     private MsSqlContainer sqlServer = null!;
     private ServiceProvider serviceProvider = null!;
+    private ServiceProvider otherClustersServiceProvider = null!;
 
     public RepoConformanceBootstrap()
     {
@@ -142,6 +149,31 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
             serviceProvider = services.BuildServiceProvider();
             await serviceProvider.StartJobMasterRuntimeAsync();
 
+            // After the start: the runtime validates every registered cluster, and these must never run.
+            var otherServices = new ServiceCollection();
+            otherServices.AddJobMasterCluster(PostgresOtherClusterId, cfg =>
+            {
+                cfg.UsePostgresForMaster(postgres.GetConnectionString(), tablePrefix: PostgresTablePrefix);
+                cfg.AddAgentConnectionConfig(PostgresAgentConnectionName)
+                    .UsePostgresForAgent(postgres.GetConnectionString(), tablePrefix: PostgresTablePrefix);
+                cfg.Mode(ClusterMode.Active);
+            });
+            otherServices.AddJobMasterCluster(MySqlOtherClusterId, cfg =>
+            {
+                cfg.UseMySqlForMaster(mySql.GetConnectionString(), tablePrefix: MySqlTablePrefix);
+                cfg.AddAgentConnectionConfig(MySqlAgentConnectionName)
+                    .UseMySqlForAgent(mySql.GetConnectionString(), tablePrefix: MySqlTablePrefix);
+                cfg.Mode(ClusterMode.Active);
+            });
+            otherServices.AddJobMasterCluster(SqlServerOtherClusterId, cfg =>
+            {
+                cfg.UseSqlServerForMaster(sqlServerConnectionString, tablePrefix: SqlServerTablePrefix);
+                cfg.AddAgentConnectionConfig(SqlServerAgentConnectionName)
+                    .UseSqlServerForAgent(sqlServerConnectionString, tablePrefix: SqlServerTablePrefix);
+                cfg.Mode(ClusterMode.Active);
+            });
+            otherClustersServiceProvider = otherServices.BuildServiceProvider();
+
             started = true;
         }
         finally
@@ -153,6 +185,7 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
     public async Task DisposeAsync()
     {
         if (serviceProvider != null) await serviceProvider.DisposeAsync();
+        if (otherClustersServiceProvider != null) await otherClustersServiceProvider.DisposeAsync();
         if (postgres != null) await postgres.DisposeAsync();
         if (mySql != null) await mySql.DisposeAsync();
         if (sqlServer != null) await sqlServer.DisposeAsync();

@@ -217,7 +217,9 @@ internal static class RunnerFakes
 
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
-        public Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs) => throw new NotImplementedException();
+        public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs) => throw new NotImplementedException();
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds) =>
+            Task.FromResult<IList<Guid>>(jobIds.Where(id => Jobs.Any(j => j.Id == id)).ToList());
         public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
         {
             var idx = Jobs.FindIndex(j => j.Id == jobRaw.Id);
@@ -384,6 +386,9 @@ internal static class RunnerFakes
             foreach (var j in toRemove) Jobs.Remove(j);
             return Task.FromResult(toRemove.Count);
         }
+
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds) =>
+            Task.FromResult<IList<Guid>>(jobIds.Where(id => Jobs.Any(j => j.Id == id)).ToList());
 
         public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions)
         {
@@ -564,14 +569,20 @@ internal static class RunnerFakes
             return Task.FromResult(toRemove.Count);
         }
 
-        public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+        public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
         {
+            var insertedIds = new List<Guid>();
             foreach (var schedule in schedules)
             {
-                if (!Schedules.Any(s => s.Id == schedule.Id)) Schedules.Add(schedule);
+                if (Schedules.Any(s => s.Id == schedule.Id)) continue;
+                Schedules.Add(schedule);
+                insertedIds.Add(schedule.Id);
             }
-            return Task.CompletedTask;
+            return Task.FromResult<IList<Guid>>(insertedIds);
         }
+
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds) =>
+            Task.FromResult<IList<Guid>>(recurringScheduleIds.Where(id => Schedules.Any(s => s.Id == id)).ToList());
 
         public void Add(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
         public Task AddAsync(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
@@ -848,7 +859,9 @@ internal static class RunnerFakes
             Schedules.Add(scheduleRaw);
         }
 
-        public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules) => throw new NotImplementedException();
+        public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules) => throw new NotImplementedException();
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds) =>
+            Task.FromResult<IList<Guid>>(recurringScheduleIds.Where(id => Schedules.Any(s => s.Id == id)).ToList());
         public void UpsertStatic(StaticRecurringScheduleDefinition definition) => throw new NotImplementedException();
         public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();
         public Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();

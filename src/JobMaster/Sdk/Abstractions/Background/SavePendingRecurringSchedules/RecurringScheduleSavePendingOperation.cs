@@ -45,9 +45,8 @@ internal class RecurringScheduleSavePendingOperation
         catch (JobMasterDuplicationException e)
         {
             // Already saved, e.g. by ConfirmOnMasterAsync. Same as the job save path's AlreadyExists;
-            // rethrowing would make the runner re-queue it forever.
+            // rethrowing would make the runner re-queue it forever. Still enqueued below so it gets the fast path.
             logger.Warn("Recurring schedule duplication detected", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
-            return;
         }
 
         recentlyInsertedQueue.Enqueue(schedule.Id);

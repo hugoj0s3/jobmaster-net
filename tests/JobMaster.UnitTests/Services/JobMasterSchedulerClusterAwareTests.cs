@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Services;
@@ -73,8 +74,9 @@ public class JobMasterSchedulerClusterAwareTests
 
         var job = NewJob(clusterId);
 
-        sut.Schedule(job);
+        var result = sut.Schedule(job);
 
+        result.Should().BeSameAs(bucket);
         dispatcher.Verify();
         buckets.Verify();
         jobs.Verify(x => x.Add(It.IsAny<JobRawModel>()), Times.Never);
@@ -119,8 +121,9 @@ public class JobMasterSchedulerClusterAwareTests
 
         var job = NewJob(clusterId);
 
-        sut.Schedule(job);
+        var result = sut.Schedule(job);
 
+        result.Should().BeNull();
         jobs.Verify();
         dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
@@ -205,8 +208,9 @@ public class JobMasterSchedulerClusterAwareTests
             masterConfig.Object,
             new Mock<IJobMasterLogger>().Object);
 
-        await sut.ScheduleAsync(NewJob(clusterId));
+        var result = await sut.ScheduleAsync(NewJob(clusterId));
 
+        result.Should().BeNull();
         jobs.Verify();
         dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
@@ -375,11 +379,233 @@ public class JobMasterSchedulerClusterAwareTests
             masterConfig.Object,
             new Mock<IJobMasterLogger>().Object);
 
-        sut.Schedule(NewJob(clusterId));
+        var result = sut.Schedule(NewJob(clusterId));
 
+        result.Should().BeNull();
         jobs.Verify();
         dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
+
+    [Fact]
+    public async Task ScheduleAsyncRecurring_WhenBucketAvailable_ReturnsBucket()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var bucket = NewBucket(clusterId);
+        mocks.Buckets
+            .Setup(x => x.SelectBucketAsync(It.IsAny<TimeSpan?>(), JobMasterPriority.Medium, null))
+            .ReturnsAsync(bucket);
+        mocks.Dispatcher
+            .Setup(x => x.AddSavePendingRecurAsync(It.IsAny<RecurringScheduleRawModel>(), It.IsAny<OperationThrottler>()))
+            .ReturnsAsync("recur-id");
+
+        var result = await mocks.CreateSut().ScheduleAsync(NewRecurring(clusterId));
+
+        result.Should().BeSameAs(bucket);
+    }
+
+    [Fact]
+    public async Task ScheduleAsyncRecurring_WhenBucketMissing_AddsActiveOnMaster_AndReturnsNull()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        mocks.Buckets
+            .Setup(x => x.SelectBucketAsync(It.IsAny<TimeSpan?>(), JobMasterPriority.Medium, null))
+            .ReturnsAsync((BucketModel?)null);
+        mocks.Recurs
+            .Setup(x => x.AddAsync(It.Is<RecurringScheduleRawModel>(m => m.Status == RecurringScheduleStatus.Active)))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
+
+        var result = await mocks.CreateSut().ScheduleAsync(NewRecurring(clusterId));
+
+        result.Should().BeNull();
+        mocks.Recurs.Verify();
+    }
+
+    [Fact]
+    public async Task ConfirmJobsOnMasterAsync_MarksHeldOnMaster_AndSkipsExistenceCheckWhenAllInserted()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var jobList = new List<JobRawModel> { NewJob(clusterId), NewJob(clusterId) };
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .ReturnsAsync((IList<JobRawModel> batch) => batch.Select(j => j.Id).ToList());
+
+        await mocks.CreateSut().ConfirmJobsOnMasterAsync(jobList);
+
+        jobList.Should().OnlyContain(j => j.Status == JobMasterJobStatus.OnMaster);
+        mocks.Jobs.Verify(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ConfirmJobsOnMasterAsync_WhenNotInsertedButAlreadyOnMaster_Succeeds()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var inserted = NewJob(clusterId);
+        var alreadyThere = NewJob(clusterId);
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .ReturnsAsync(new List<Guid> { inserted.Id });
+        mocks.Jobs
+            .Setup(x => x.QueryExistingIdsAsync(It.Is<IList<Guid>>(ids => ids.SequenceEqual(new[] { alreadyThere.Id }))))
+            .ReturnsAsync(new List<Guid> { alreadyThere.Id })
+            .Verifiable();
+
+        await mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { inserted, alreadyThere });
+
+        mocks.Jobs.Verify();
+    }
+
+    [Fact]
+    public async Task ConfirmJobsOnMasterAsync_WhenNeitherInsertedNorOnMaster_Throws()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var missing = NewJob(clusterId);
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .ReturnsAsync(new List<Guid>());
+        mocks.Jobs
+            .Setup(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()))
+            .ReturnsAsync(new List<Guid>());
+
+        var act = () => mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { missing });
+
+        (await act.Should().ThrowAsync<InvalidOperationException>())
+            .Which.Message.Should().Contain(missing.Id.ToString());
+    }
+
+    [Fact]
+    public async Task ConfirmJobsOnMasterAsync_PartitionsByMasterMaxBatchSize()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(clusterId);
+        var jobList = Enumerable.Range(0, maxBatchSize * 2 + 1).Select(_ => NewJob(clusterId)).ToList();
+        var batches = new List<IList<JobRawModel>>();
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(batches.Add)
+            .ReturnsAsync((IList<JobRawModel> batch) => batch.Select(j => j.Id).ToList());
+
+        await mocks.CreateSut().ConfirmJobsOnMasterAsync(jobList);
+
+        batches.Should().HaveCount(3);
+        batches.Should().OnlyContain(b => b.Count <= maxBatchSize);
+        batches.SelectMany(b => b).Should().BeEquivalentTo(jobList);
+    }
+
+    [Fact]
+    public async Task ConfirmJobsOnMasterAsync_WhenClusterArchived_ThrowsWithoutWriting()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Archived); // strict mocks: any write fails the test
+
+        var act = () => mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { NewJob(clusterId) });
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Cluster mode is archived");
+    }
+
+    [Fact]
+    public async Task ConfirmRecurringSchedulesOnMasterAsync_MarksActive_AndInserts()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var schedules = new List<RecurringScheduleRawModel> { NewRecurring(clusterId), NewRecurring(clusterId) };
+        mocks.Recurs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .ReturnsAsync((IList<RecurringScheduleRawModel> batch) => batch.Select(s => s.Id).ToList());
+
+        await mocks.CreateSut().ConfirmRecurringSchedulesOnMasterAsync(schedules);
+
+        schedules.Should().OnlyContain(s => s.Status == RecurringScheduleStatus.Active);
+        mocks.Recurs.Verify(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ConfirmRecurringSchedulesOnMasterAsync_WhenNeitherInsertedNorOnMaster_Throws()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var alreadyThere = NewRecurring(clusterId);
+        var missing = NewRecurring(clusterId);
+        mocks.Recurs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .ReturnsAsync(new List<Guid>());
+        mocks.Recurs
+            .Setup(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()))
+            .ReturnsAsync(new List<Guid> { alreadyThere.Id });
+
+        var act = () => mocks.CreateSut().ConfirmRecurringSchedulesOnMasterAsync(
+            new List<RecurringScheduleRawModel> { alreadyThere, missing });
+
+        var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
+        thrown.Which.Message.Should().Contain(missing.Id.ToString()).And.NotContain(alreadyThere.Id.ToString());
+    }
+
+    [Fact]
+    public async Task ConfirmRecurringSchedulesOnMasterAsync_WhenClusterArchived_ThrowsWithoutWriting()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Archived);
+
+        var act = () => mocks.CreateSut().ConfirmRecurringSchedulesOnMasterAsync(
+            new List<RecurringScheduleRawModel> { NewRecurring(clusterId) });
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Cluster mode is archived");
+    }
+
+    private sealed class Mocks
+    {
+        private readonly JobMasterClusterConnectionConfig clusterConfig;
+
+        public Mock<IAgentJobsDispatcherService> Dispatcher { get; } = new(MockBehavior.Strict);
+        public Mock<IMasterBucketsService> Buckets { get; } = new(MockBehavior.Strict);
+        public Mock<IMasterJobsService> Jobs { get; } = new(MockBehavior.Strict);
+        public Mock<IMasterRecurringSchedulesService> Recurs { get; } = new(MockBehavior.Strict);
+        public Mock<IMasterDistributedLockerService> Locker { get; } = new(MockBehavior.Strict);
+        public Mock<IMasterClusterConfigurationService> MasterConfig { get; } = new(MockBehavior.Strict);
+
+        public Mocks(string clusterId, ClusterMode mode)
+        {
+            clusterConfig = CreateClusterConfigWithActiveAgent(clusterId, agentName: "a");
+            var model = new ClusterConfigurationModel(clusterId) { ClusterMode = mode, MaxMessageByteSize = 1024 * 1024 };
+            MasterConfig.Setup(x => x.Get()).Returns(model);
+            MasterConfig.Setup(x => x.GetFresh()).Returns(model);
+        }
+
+        public JobMasterSchedulerClusterAware CreateSut() => new(
+            clusterConfig,
+            Dispatcher.Object,
+            Buckets.Object,
+            Jobs.Object,
+            Recurs.Object,
+            Locker.Object,
+            MasterConfig.Object,
+            new Mock<IJobMasterLogger>().Object);
+    }
+
+    private static BucketModel NewBucket(string clusterId) => new(clusterId)
+    {
+        Id = $"{clusterId}.bucket",
+        Name = $"{clusterId}.bucket",
+        AgentConnectionId = new AgentConnectionId(clusterId, "a"),
+        AgentWorkerId = "w",
+        Status = BucketStatus.Active,
+        Priority = JobMasterPriority.Medium,
+    };
+
+    private static RecurringScheduleRawModel NewRecurring(string clusterId) => new(clusterId)
+    {
+        Id = JobMasterRandomUtil.NewGuid4(),
+        JobDefinitionId = "def",
+        MsgData = "{}",
+        CreatedAt = DateTime.UtcNow,
+        Priority = JobMasterPriority.Medium,
+    };
 
     private static JobRawModel NewJob(string clusterId)
     {

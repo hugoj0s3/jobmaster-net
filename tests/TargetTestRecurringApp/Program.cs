@@ -74,7 +74,7 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         return Results.BadRequest($"Unknown handlerType '{handlerType}'. Expected 'tick' or 'advanced-tick'.");
     }
 
-    return Results.Ok(new RecurringScheduleResponse(receipt.GetRecurringScheduleContext().Id));
+    return Results.Ok(new RecurringScheduleResponse(receipt.Context.Id));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>

@@ -10,6 +10,7 @@ namespace JobMaster.Abstractions.Models;
 public sealed class JobScheduleReceipt
 {
     internal readonly JobRawModel model;
+    private JobContext? context;
 
     internal JobScheduleReceipt(
         ScheduleReceiptStatus status, 
@@ -42,16 +43,22 @@ public sealed class JobScheduleReceipt
     public string? AgentConnectionId { get; }
 
     /// <summary>The scheduled job.</summary>
-    public JobContext GetJobContext() => JobConvertUtil.ToJobContext(model);
+    public JobContext Context => context ??= JobConvertUtil.ToJobContext(model);
 
     /// <summary>
     /// Makes sure the job is saved on master, saving it now if it isn't there yet. When it returns, the job is on
     /// master. Returns right away when <see cref="Status"/> is <see cref="ScheduleReceiptStatus.StoredOnMaster"/>.
     /// <para>
-    /// Not recommended unless you need that guarantee: a confirmed job may start later than it would otherwise,
-    /// because it's picked up from master instead of going straight to its worker. To confirm many jobs, use
-    /// <see cref="IJobMasterSchedulerAdvanced.ConfirmOnMasterAsync(IEnumerable{JobScheduleReceipt})"/>, which also explains
-    /// what happens on errors and when confirming late.
+    /// Rarely needed: if your agent connections are healthy, you don't need to call it at all. A confirmed job can
+    /// start later than it would otherwise, because it's picked up from master instead of going straight to its
+    /// worker. To confirm many jobs, use
+    /// <see cref="IJobMasterSchedulerAdvanced.ConfirmOnMasterAsync(IEnumerable{JobScheduleReceipt})"/>.
+    /// </para>
+    /// <para>
+    /// If it throws, the job may or may not be saved; calling it again is safe and never creates a second copy.
+    /// JobMaster runs jobs at least once: confirming after the cluster's data retention has removed an
+    /// already-finished job saves it again, and it runs again. Be careful calling it when the data retention is short:
+    /// the shorter it is, the more likely a late confirm runs the job twice.
     /// </para>
     /// </summary>
     public Task ConfirmOnMasterAsync()

@@ -69,14 +69,26 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.GetJobContext().Id).ToList()));
+    if (req.ConfirmOnMaster == true)
+    {
+        await scheduler.Advanced.ConfirmOnMasterAsync(jobs);
+    }
+
+    return Results.Ok(new ScheduleResponse(
+        jobs.Select(j => j.Context.Id).ToList(),
+        jobs.Count(j => j.Status == ScheduleReceiptStatus.AcceptedOnTransport)));
 });
 
 app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
 {
     var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
     var receipt = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
-    return Results.Ok(new RecurringScheduleResponse(receipt.GetRecurringScheduleContext().Id));
+    if (req.ConfirmOnMaster == true)
+    {
+        await receipt.ConfirmOnMasterAsync();
+    }
+
+    return Results.Ok(new RecurringScheduleResponse(receipt.Context.Id, receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
