@@ -645,8 +645,8 @@ the item runs moments later.
   - Job within 5s of onboarding (`IsWithinOnboardingWindow`) → `false` even though found.
   - Queued / running / final → `false`.
 - Cancel by id falls back to the default cluster when `clusterId` isn't passed; the receipt knows `ClusterId`.
-- `RecurringScheduleCancellingLock` is checked by the recurring save path but never set anywhere (unfinished
-  "cancel before the agent saved it" path); the job save path has no equivalent.
+- Nothing cancels an item that isn't on master yet. The unfinished `RecurringScheduleCancellingLock` check (never set)
+  was removed in items 6+7.
 
 **Design (proposed).**
 ```csharp
@@ -664,7 +664,6 @@ public Task<bool> CancelAsync();   // on JobScheduleReceipt and RecurringSchedul
 - Returns `true` when the item is now cancelled; `false` when it's already queued/running/final, or inside the
   onboarding window.
 - Throws for an archived cluster, like confirm (`GetFresh()`).
-- Remove the dead `RecurringScheduleCancellingLock` check, or keep it only if this design needs it (it shouldn't).
 
 **Open decisions.**
 - The 5s onboarding window still makes a receipt cancel return `false` right after the agent hands the job to a

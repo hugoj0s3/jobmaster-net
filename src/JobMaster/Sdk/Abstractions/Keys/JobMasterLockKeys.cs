@@ -6,9 +6,6 @@ internal class JobMasterLockKeys : JobMasterKeyManager
     {
     }
 
-    public string RecurringScheduleCancellingLock(Guid recurringScheduleId) => 
-        CreateKey($"RecurringScheduleCancelling:{recurringScheduleId:N}");
-
     public string BucketAssignerLock(int lockId) => CreateKey($"BucketAssignerLock:{lockId}");
     public string BucketAssignerImminentLock(string windowKey) => CreateKey($"BucketAssignerImminent:{windowKey}");
     

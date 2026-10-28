@@ -370,16 +370,6 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
         return workers.Count(x => x.Status() == AgentWorkerStatus.Active);
     }
-    
-    public void CancelRecurringSchedule(Guid id)
-    {
-        var recurringScheduleRawModel = masterRecurringSchedulesService.Get(id);
-
-        if (recurringScheduleRawModel?.TryToCancel() == true)
-        {
-            masterRecurringSchedulesService.Update(recurringScheduleRawModel);
-        }
-    }
 
     public async Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200)
     {

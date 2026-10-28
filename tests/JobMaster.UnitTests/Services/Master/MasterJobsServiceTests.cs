@@ -133,6 +133,22 @@ public class MasterJobsServiceTests
 
     // ── helpers ──────────────────────────────────────────────────────────────────────────────────────
 
+    [Fact]
+    public async Task BulkInsertIfNotExistsAsync_WhenSameIdTwice_SendsItOnce()
+    {
+        var clusterId = NewClusterId();
+        var repo = new Mock<IMasterJobsRepository>(MockBehavior.Strict);
+        var job = NewJob(clusterId, JobMasterJobStatus.OnMaster);
+        IList<JobRawModel>? sent = null;
+        repo.Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>(), It.IsAny<IList<JobExecution>>()))
+            .Callback<IList<JobRawModel>, IList<JobExecution>>((jobs, _) => sent = jobs)
+            .ReturnsAsync(new List<Guid> { job.Id });
+
+        await CreateSut(clusterId, repo.Object).BulkInsertIfNotExistsAsync(new List<JobRawModel> { job, job });
+
+        sent!.Select(j => j.Id).Should().Equal(job.Id);
+    }
+
     private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";
 
     private static JobMasterClusterConnectionConfig CreateClusterConfig(string clusterId)
