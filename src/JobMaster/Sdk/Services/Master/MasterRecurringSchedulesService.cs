@@ -89,6 +89,21 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         });
     }
 
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        if (schedules.Count == 0) return new List<Guid>();
+
+        // The same id twice in one bulk insert is a duplicate key.
+        var distinctSchedules = schedules.DistinctBy(s => s.Id).ToList();
+        return await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(distinctSchedules));
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds)
+    {
+        if (recurringScheduleIds.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.QueryExistingIdsAsync(recurringScheduleIds));
+    }
+
     public async Task UpdateAsync(RecurringScheduleRawModel scheduleRaw)
     {
         try

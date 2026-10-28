@@ -172,8 +172,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
             }
 
-            masterConfigService.Save(modelToSave);
-
+            // Validate before saving: a failed check must not leave master marked as Archived.
             if (modelToSave.ClusterMode == ClusterMode.Archived)
             {
                 var jobsRepo = componentFactory.GetMasterRepository<IMasterJobsRepository>();
@@ -212,6 +211,8 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     }
                 }
             }
+
+            masterConfigService.Save(modelToSave);
 
             if (!isStandalone)
             {

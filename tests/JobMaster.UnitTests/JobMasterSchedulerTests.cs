@@ -9,6 +9,8 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
@@ -42,6 +44,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.Schedule(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -84,7 +87,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.ScheduleAsync(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
-            .Returns(Task.CompletedTask)
+            .ReturnsAsync((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -204,6 +207,7 @@ public class JobMasterSchedulerTests
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -246,6 +250,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -287,6 +292,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -336,6 +342,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -378,6 +385,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -421,6 +429,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -472,6 +481,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -765,6 +775,213 @@ public class JobMasterSchedulerTests
         definition.Id.Should().StartWith("c-profile:");
     }
 
+    // Receipts (item 6) and ConfirmOnMaster (item 7).
+
+    [Fact]
+    public void OnceNow_WhenStoredOnMaster_ReturnsStoredOnMasterReceipt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Returns((BucketModel?)null);
+
+        var receipt = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>();
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.StoredOnMaster);
+        receipt.ClusterId.Should().Be("c-receipt");
+        receipt.BucketId.Should().BeNull();
+        receipt.AgentWorkerId.Should().BeNull();
+        receipt.AgentConnectionId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OnceNowAsync_WhenAcceptedOnTransport_ReturnsReceiptWithBucket()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        var bucket = NewBucket("c-receipt");
+        Guid? scheduledId = null;
+        schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(m =>
+            {
+                m.AssignSavePendingJobToBucket(bucket);
+                scheduledId = m.Id;
+            })
+            .ReturnsAsync(bucket);
+
+        var receipt = await JobMasterScheduler.Instance.OnceNowAsync<TestJobMasterHandler>();
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.AcceptedOnTransport);
+        receipt.BucketId.Should().Be(bucket.Id);
+        receipt.AgentWorkerId.Should().Be(bucket.AgentWorkerId);
+        receipt.AgentConnectionId.Should().Be(bucket.AgentConnectionId!.IdValue);
+        receipt.Context.Id.Should().Be(scheduledId!.Value);
+    }
+
+    [Fact]
+    public void Recurring_WhenStoredOnMaster_ReturnsStoredOnMasterReceipt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>())).Returns((BucketModel?)null);
+
+        var receipt = JobMasterScheduler.Instance.Recurring<TestJobMasterHandler>(new NeverRecursCompiledExpr());
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.StoredOnMaster);
+        receipt.AgentConnectionId.Should().BeNull();
+    }
+
+    [Fact]
+    public void Recurring_WhenAcceptedOnTransport_ReturnsReceiptWithBucket()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        var bucket = NewBucket("c-receipt");
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(m => m.AssignPendingRecurringScheduleToBucket(bucket))
+            .Returns(bucket);
+
+        var receipt = JobMasterScheduler.Instance.Recurring<TestJobMasterHandler>(new NeverRecursCompiledExpr());
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.AcceptedOnTransport);
+        receipt.BucketId.Should().Be(bucket.Id);
+        receipt.AgentConnectionId.Should().Be(bucket.AgentConnectionId!.IdValue);
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_Jobs_SkipsStoredOnMaster_AndGroupsByClusterIgnoringCase()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var clusterA = RegisterMockCluster("c-a", isDefault: true);
+        var clusterB = RegisterMockCluster("c-b", isDefault: false);
+        var sentToA = new List<IList<JobRawModel>>();
+        var sentToB = new List<IList<JobRawModel>>();
+        clusterA.Setup(x => x.ConfirmJobsOnMasterAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(sentToA.Add)
+            .Returns(Task.CompletedTask);
+        clusterB.Setup(x => x.ConfirmJobsOnMasterAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(sentToB.Add)
+            .Returns(Task.CompletedTask);
+
+        var a1 = NewJobModel("c-a");
+        var a2 = NewJobModel("C-A");
+        var stored = NewJobModel("c-a");
+        var b1 = NewJobModel("c-b");
+
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, a1),
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, a2),
+            new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, stored),
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, b1),
+        });
+
+        sentToA.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { a1, a2 });
+        sentToB.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { b1 });
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_RecurringSchedules_SkipsStoredOnMaster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var sent = new List<IList<RecurringScheduleRawModel>>();
+        cluster.Setup(x => x.ConfirmRecurringSchedulesOnMasterAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .Callback<IList<RecurringScheduleRawModel>>(sent.Add)
+            .Returns(Task.CompletedTask);
+
+        var accepted = NewRecurringModel("c-a");
+        var stored = NewRecurringModel("c-a");
+
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, accepted),
+            new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, stored),
+        });
+
+        sent.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { accepted });
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_WhenAllStoredOnMaster_NeverCallsMaster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterMockCluster("c-a", isDefault: true); // strict mock: any confirm call fails the test
+
+        await new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewJobModel("c-a")).ConfirmOnMasterAsync();
+        await new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewRecurringModel("c-a")).ConfirmOnMasterAsync();
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewJobModel("c-a")),
+        });
+    }
+
+    [Fact]
+    public async Task ReceiptConfirmOnMasterAsync_WhenAcceptedOnTransport_ConfirmsThatJob()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.ConfirmJobsOnMasterAsync(It.Is<IList<JobRawModel>>(l => l.Count == 1 && l[0] == job)))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
+
+        await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).ConfirmOnMasterAsync();
+
+        cluster.Verify();
+    }
+
+    private static Mock<IJobMasterSchedulerClusterAware> RegisterMockCluster(string clusterId, bool isDefault)
+    {
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "cnn", isDefault);
+        clusterCfg.AddAgentConnectionString(name: "a", connectionString: "cnn-agent", repositoryTypeId: "repo-agent");
+        clusterCfg.MarkAsReady();
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+        return schedulerMock;
+    }
+
+    private static BucketModel NewBucket(string clusterId) => new(clusterId)
+    {
+        Id = $"{clusterId}.bucket",
+        Name = $"{clusterId}.bucket",
+        AgentConnectionId = new AgentConnectionId(clusterId, "a"),
+        AgentWorkerId = "w",
+        Status = BucketStatus.Active,
+        Priority = JobMasterPriority.Medium,
+    };
+
+    private static JobRawModel NewJobModel(string clusterId) => new(clusterId)
+    {
+        Id = Guid.NewGuid(),
+        JobDefinitionId = "def",
+        TriggerSourceType = JobMasterTriggerSourceType.Once,
+        Priority = JobMasterPriority.Medium,
+        ScheduledAt = DateTime.UtcNow,
+        NextPlanExecutionAt = DateTime.UtcNow,
+        Status = JobMasterJobStatus.PendingSave,
+        Timeout = TimeSpan.FromSeconds(5),
+        MsgData = "{}",
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    private static RecurringScheduleRawModel NewRecurringModel(string clusterId) => new(clusterId)
+    {
+        Id = Guid.NewGuid(),
+        JobDefinitionId = "def",
+        MsgData = "{}",
+        CreatedAt = DateTime.UtcNow,
+        Priority = JobMasterPriority.Medium,
+    };
+
     [JobMasterClusterId("C-ATTR")]
     private sealed class UpperCaseClusterIdAttrHandler : IJobMasterHandler
     {
@@ -791,12 +1008,12 @@ public class JobMasterSchedulerTests
         configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
 
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
-        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add).Returns((BucketModel?)null);
         schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(capture.Jobs.Add)
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((BucketModel?)null);
         schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
-            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add);
+            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add).Returns((BucketModel?)null);
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
         factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);

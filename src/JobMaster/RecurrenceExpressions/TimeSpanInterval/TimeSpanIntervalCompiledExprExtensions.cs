@@ -12,7 +12,7 @@ public static class TimeSpanIntervalCompiledExprExtensions
     /// <summary>
     /// Creates or updates a recurring schedule that fires <typeparamref name="T"/> every <paramref name="timeSpan"/> interval.
     /// </summary>
-    public static async Task<RecurringScheduleContext> RecurringAsync<T>(
+    public static async Task<RecurringScheduleReceipt> RecurringAsync<T>(
         this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,
@@ -37,7 +37,7 @@ public static class TimeSpanIntervalCompiledExprExtensions
     /// <summary>
     /// Synchronous version of <see cref="RecurringAsync{T}(IJobMasterScheduler, TimeSpan, IWriteableMessageData, string, JobMasterPriority?, string, TimeSpan?, int?, IWritableMetadata, DateTime?, DateTime?)"/>.
     /// </summary>
-    public static RecurringScheduleContext Recurring<T>(
+    public static RecurringScheduleReceipt Recurring<T>(
         this IJobMasterScheduler scheduler,
         TimeSpan timeSpan,
         IWriteableMessageData? data = null,

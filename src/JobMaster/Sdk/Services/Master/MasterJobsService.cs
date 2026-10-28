@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -82,6 +83,21 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
                 throw;
             }
         });
+    }
+
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0) return new List<Guid>();
+
+        // The same id twice in one bulk insert is a duplicate key.
+        var distinctJobs = jobs.DistinctBy(j => j.Id).ToList();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.BulkInsertIfNotExistsAsync(distinctJobs, Array.Empty<JobExecution>()));
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.QueryExistingIdsAsync(jobIds));
     }
 
     public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)

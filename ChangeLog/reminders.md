@@ -397,3 +397,75 @@ ever referenced the concrete type — every other consumer (samples, benchmarks,
 Since this was a plain oversight rather than a deliberate choice, worth a quick audit of any other
 DI-bootstrap-only concrete classes in the SDK for the same public/internal slip, rather than assuming
 `JobMasterScheduler` was the only one.
+
+## Review whether `JobMasterDefaults` should stay public
+
+Raised 2026-10-26 while adding `ConfirmOnMasterTimeout`/`StopTimeout` (Plan 0.0.12 items 6/7). No code outside
+`InternalsVisibleTo` uses it (scenario-test and benchmark matches are comments only). It's public only because
+public selector/receipt XML docs `cref` it and users may reuse values (e.g. `MinDataRetentionTtl`). Decide whether
+that's worth the public surface; making it internal means stating values inline in those docs + a ChangeLog
+breaking entry.
+
+## Bulk master calls should partition by `GetMasterMaxBatchSize` before calling
+
+Raised 2026-10-26 (Plan 0.0.12 item 7). Standard: callers split with
+`list.Partition(OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(clusterId))` and make one bulk call per
+partition (as `AssignJobsToBucketsRunner`, `HeldOnMasterDeadlineTimeoutJobsRunner`, `JobsExecutionEngine`,
+`PollingDrainProcessingJobsRunner` and the new `ConfirmOnMaster` path do). These callers of
+`BulkInsertIfNotExistsAsync` only bound the list by their query limit (`TransferBatchSize`) and pass it whole, so
+the repository chunks it inside one transaction (SQL) or one session (RavenDB):
+- `MigrateJobsRunner` (`intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs)`)
+- `MigrateRecurringSchedulesRunner`
+- `DeleteOldFinalJobsRunner` (archive-then-delete)
+- `DeleteOldInactiveRecurringSchedulesRunner` (archive-then-delete)
+
+Fix: partition before the intake/archive call. For jobs, executions and logs have to be split along with their jobs.
+
+## SQL `BulkInsertIfNotExistsAsync` races with concurrent inserts of the same id (duplicate key → rollback)
+
+Found 2026-10-27 (Plan 0.0.12 item 7, ConfirmOnMaster review). `SqlMasterJobsRepository` /
+`SqlMasterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync` check then insert under READ COMMITTED:
+1. Pre-read existing ids (`genericUtil.BuildQueryExistingIdsSql`).
+2. Guarded `INSERT ... SELECT ... WHERE NOT EXISTS` (ANSI-portable, not atomic with the insert).
+3. Metadata entries for every id step 1 called "new", with no guard at all.
+
+If another writer commits the same id in between (agent's save racing `ConfirmOnMasterAsync`, or two confirms of the
+same receipts), steps 2 or 3 hit the primary key: duplicate key error, the whole transaction rolls back (the other
+rows of that partition included). No corruption, nothing written twice; calling again succeeds since the re-read
+sees the row. Deadlocks between the same writers have the same outcome. If the agent loses, its save already
+treats the duplicate as "already saved"; if Confirm loses, the user gets the raw DB exception.
+
+Fix directions (not implemented, rare race, JobMaster is at-least-once):
+- Short term: a Deadlock + DuplicateKey retry policy around `BulkInsertIfNotExistsAsync` in `MasterJobsService` /
+  `MasterRecurringSchedulesService` (a few attempts, jittered). The existing `RetryDeadlockPolicy` is not enough: it
+  only retries `JobMasterKnownExceptionId.Deadlock`, so the race (`DuplicateKey`) still fails. Either a new policy
+  or `RetryDeadlockPolicy` taking the set of retryable ids. `MasterJobsService` has no policy field yet.
+- Proper: atomic per-provider insert-if-absent for jobs and metadata (Postgres `ON CONFLICT DO NOTHING`, MySQL
+  `INSERT IGNORE` / `ON DUPLICATE KEY`, SQL Server `MERGE`/`UPDLOCK, HOLDLOCK`), and derive "new" ids from what
+  was actually inserted instead of the pre-read.
+
+Related: `BuildQueryExistingIdsSql` (step 1) has no `cluster_id` filter, so a same-DB migrate can see another
+cluster's row as existing and skip copying its metadata/executions/logs.
+
+## RavenDB jobs `BulkInsertIfNotExistsAsync` swallows per-row errors, so archive-then-delete can lose jobs
+
+Found 2026-10-27 (Plan 0.0.12 item 7). `RavenDbMasterJobsRepository.BulkInsertIfNotExistsAsync` falls back
+batch → partitions → per-row; the per-row step catches any non-`ConcurrencyException` error, logs it and continues
+("Deliberately swallowed"). The method then returns normally with that row missing.
+
+`ConfirmOnMasterAsync` is safe (it compares the returned inserted ids and checks existence for the rest). But
+`DeleteOldFinalJobsRunner` ignores the result: `archiveService.BulkInsertIfNotExistsAsync(candidates, ...)` then
+`jobsRepo.DeleteByIdsAsync(purgedIds)` deletes every candidate, so a job whose archive insert failed is deleted from
+the source and never archived. `DeleteOldInactiveRecurringSchedulesRunner` has the same shape (its RavenDB per-row
+fallback only catches `ConcurrencyException`, so less exposed, but it also ignores the result).
+
+Fix direction (not implemented): delete only ids that are confirmed on the archive (inserted ∪ `QueryExistingIdsAsync`
+of the rest), same check as `ConfirmOnMasterAsync`; or make the per-row fallback rethrow non-concurrency errors.
+
+## `JobMasterLogger`'s final flush on `Dispose` never runs
+
+Found 2026-10-26 (Plan 0.0.12 item 7). The per-cluster component containers are built in
+`ClusterIocRegistration.BuildFactory` and registered in the main container as *instances*, which MS DI never
+disposes, and `JobMasterRuntime.Stop()` has no caller. So `JobMasterLogger.Dispose()` (and its "FORCE Final
+Flush") doesn't run on host shutdown: up to 15s / 100 buffered log rows are lost. Item 7 added
+`StopJobMasterRuntimeAsync()`; the logger flush could hook into the same path.

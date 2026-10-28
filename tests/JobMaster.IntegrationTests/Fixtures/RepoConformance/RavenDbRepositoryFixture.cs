@@ -35,6 +35,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 {
     private const string ClusterIdValue = "RT-RavenDb-1";
+    private const string OtherClusterIdValue = "RT-RavenDb-2";
     private const string AgentConnectionName = "AgentForRepoTests-RavenDb-1";
 
     private RavenDbContainer container = null!;
@@ -53,6 +54,10 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
 
     internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
+
+    internal override IMasterJobsRepository OtherClusterMasterJobs { get; set; } = null!;
+
+    internal override IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; } = null!;
 
     // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
     // only registers the master side of UseRavenDb, so RegisterForAgent never runs and there's no
@@ -94,6 +99,14 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
                 .UseRavenDb(agentConnectionString);
             cfg.Mode(ClusterMode.Active);
         });
+        // Same master database, another cluster id: only used to prove queries are scoped to their own cluster.
+        services.AddJobMasterCluster(OtherClusterIdValue, cfg =>
+        {
+            cfg.UseRavenDb(connectionString);
+            cfg.AddAgentConnectionConfig(AgentConnectionName)
+                .UseRavenDb(agentConnectionString);
+            cfg.Mode(ClusterMode.Active);
+        });
         serviceProvider = services.BuildServiceProvider();
 
         // Deliberately no StartJobMasterRuntimeAsync() call -- see the class doc above.
@@ -103,6 +116,10 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
         MasterJobs = factory.GetMasterRepository<IMasterJobsRepository>();
         MasterRecurringSchedules = factory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
+
+        var otherFactory = JobMasterClusterAwareComponentFactories.GetFactory(OtherClusterIdValue);
+        OtherClusterMasterJobs = otherFactory.GetMasterRepository<IMasterJobsRepository>();
+        OtherClusterMasterRecurringSchedules = otherFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
 
         ConnectionString = connectionString;
         // ClusterServiceProvider, not the fixture's own outer serviceProvider -- ClusterIocRegistration

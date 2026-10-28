@@ -7,6 +7,52 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Schedule receipts + ConfirmOnMaster (Plan0.0.12Alpha items 6 and 7)
+- **Receipts (item 6, breaking).** `JobScheduleReceipt` / `RecurringScheduleReceipt` are returned by every
+  `Once*`/`Recurring*` method and extension.
+  - Built from the raw model (`internal readonly model`): fields captured in the constructor, `Context` built on
+    first read and cached. `JobContext` is read-only for users, so sharing the cached instance is safe.
+  - `IJobMasterSchedulerClusterAware.Schedule*` returns `BucketModel?`: the bucket it was handed to, `null` when it
+    went to master (no bucket, Migrating mode). `JobMasterScheduler.ToReceipt` maps that to `StoredOnMaster` /
+    `AcceptedOnTransport`. Hot-path cost: one receipt per call.
+- **ConfirmOnMaster (item 7).** Explicit and on demand only. A first design (in-memory buffer flushed on an
+  adaptive timer + shutdown drain) was built and reverted as too complex and not free on the hot path.
+  - `JobScheduleReceipt.ConfirmOnMasterAsync()` → `Advanced.ConfirmOnMasterAsync(receipts)`: skips
+    `StoredOnMaster`, groups by cluster (`OrdinalIgnoreCase`), calls
+    `JobMasterSchedulerClusterAware.ConfirmJobsOnMasterAsync` / `ConfirmRecurringSchedulesOnMasterAsync`.
+  - Those throw for an `Archived` cluster (`GetFresh()`), mark jobs `MarkAsHeldOnMaster()` / schedules `Active()`,
+    then partition by `GetMasterMaxBatchSize` and call `BulkInsertIfNotExistsAsync` per partition (new
+    `IMasterJobsService` / `IMasterRecurringSchedulesService` methods over the existing repository methods).
+  - **Why held on master / Active:** every agent save inserts first and treats a duplicate as already handled. If
+    the confirm wins, the agent drops its message, so the row must be one master's runners pick up
+    (`AssignJobsToBucketsRunner` only takes `OnMaster`); a `PendingSave` row would never run.
+  - **Verification:** the repositories' `BulkInsertIfNotExistsAsync` now both return the inserted ids (recurring used
+    to return nothing). Ids not inserted are checked with a new bulk, cluster-scoped `QueryExistingIdsAsync`; any id
+    neither inserted nor existing throws. This covers RavenDB jobs' per-row fallback, which logs and continues on
+    non-concurrency errors.
+  - No late-confirm guard: JobMaster is at-least-once; a confirm after data retention purged a finished job
+    re-inserts it and it runs again. Documented.
+- **Fixed:** `RecurringScheduleSavePendingOperation` rethrew `JobMasterDuplicationException`, so the runner re-queued
+  an already-saved schedule forever. Now logged as a warning and treated as saved, like the job path, and still
+  enqueued on `IRecentlyInsertedRecurringScheduleQueue` so a schedule confirmed before the agent's save keeps the
+  ~1s fast planning path instead of waiting for `ScheduleRecurringJobsRunner`.
+- **Deferred to [reminders.md](reminders.md):** SQL check-then-insert race in `BulkInsertIfNotExistsAsync`
+  (duplicate key / deadlock → rollback; needs a Deadlock + DuplicateKey retry policy), the unscoped
+  `BuildQueryExistingIdsSql`, partitioning in the migrate/archive runners, and RavenDB's swallowed per-row errors in
+  archive-then-delete.
+- **Tests:**
+  - Unit (729/729): receipt status and fields for jobs + recurring; confirm skips `StoredOnMaster`, groups by
+    cluster ignoring case, marks held/Active, partitions, only checks existence for not-inserted ids, throws for
+    missing ids and for an archived cluster; recurring duplicate still enqueued.
+  - RepoConformance (all 4 providers): `BulkInsertIfNotExistsAsync` with non-final rows returns only inserted ids;
+    `QueryExistingIdsAsync`, including `QueryExistingIds_ShouldIgnore_OtherClusterIds`. For that, each fixture now has
+    a second, never-started cluster on the same database/tables (`RT-<Provider>-2`, exposed as
+    `OtherClusterMasterJobs` / `OtherClusterMasterRecurringSchedules`). Mutation-checked: dropping the SQL
+    `cluster_id` filter fails it on all 3 SQL providers. Full suites: SQL 450 passed / 9 skipped, RavenDB 156 / 3.
+  - Scenario `ConfirmOnMasterTest/PostgresPure` (distributed cluster, 2 agent connections): 300 confirmed jobs on
+    master as soon as the request returns and each runs once; a confirmed recurring schedule is on master straight
+    away and keeps firing (no duplicates). Passed (about 7 minutes including image builds).
+
 #### NaturalCron 1.1.0 + prefixed cron string methods (Plan0.0.12Alpha items 2 and 3)
 - **NaturalCron `1.0.1` → `1.1.0`** in `JobMaster.csproj`. It builds with no code change: `TryParse`, `Parse` and `TryGetNextOccurrenceInTz` keep their signatures and the "base time is wall-clock in that tz" semantics.
   - **PR #8 (shipped in 1.0.2)** makes the *UTC* occurrence methods return `DateTimeKind.Utc`. JobMaster never called those: `NaturalCronCompiledExpr` uses `TryGetNextOccurrenceInTz`, and the planner converts with `TimeZoneUtils.ConvertDateTimeTzToUtc`, which ignores the incoming `Kind`. So the fix doesn't change JobMaster's results. `NaturalCronExprCompilerTests.GetNextOccurrence_NoTzRule_ConvertsToExpectedUtcInstant` pins the equivalent guarantee on JobMaster's own path.

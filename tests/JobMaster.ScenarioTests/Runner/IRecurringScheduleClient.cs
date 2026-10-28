@@ -8,6 +8,7 @@ public interface IRecurringScheduleClient
         string expression,
         string testIdentifier,
         string? clusterId = null,
+        bool? confirmOnMaster = null,
         CancellationToken ct = default);
 
     Task CancelRecurringAsync(
@@ -16,4 +17,5 @@ public interface IRecurringScheduleClient
         CancellationToken ct = default);
 }
 
-public sealed record RecurringScheduleClientResult(Guid RecurringScheduleId);
+// AcceptedOnTransport: only returned by TargetTestScheduleApp (false when the app doesn't send it).
+public sealed record RecurringScheduleClientResult(Guid RecurringScheduleId, bool AcceptedOnTransport = false);

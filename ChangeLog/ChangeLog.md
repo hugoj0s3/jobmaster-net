@@ -47,6 +47,21 @@
   - **Now:** a base class's attribute applies, and a handler's own attribute overrides it. If a handler's base class carries one of these attributes, its jobs now pick that setting up.
   - **`[JobMasterMetadata]` is inherited too.** Its keys are merged across the hierarchy: a handler's key overrides the same key on a base class, and metadata passed when scheduling a one-off job still overrides both.
 - **`JobMasterScheduler` is now `internal`.** The concrete class was public by mistake; it's bootstrap plumbing behind `IJobMasterScheduler`. Inject `IJobMasterScheduler` (or `IJobMasterSchedulerAdvanced`) from DI instead of using `JobMasterScheduler.Instance`.
+- ⚠️ **Scheduling methods now return a receipt instead of the context.** Every `Once*` / `Recurring*` method (sync and async, `Advanced` overloads, and the NaturalCron/`TimeSpan`/Cronos/NCrontab extensions) returns a `JobScheduleReceipt` or `RecurringScheduleReceipt`. The context you used to get is on `Context`:
+
+  ```csharp
+  // Before
+  var ctx = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  // Now
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  var ctx = receipt.Context;
+  ```
+
+  The receipt also tells you where the job or schedule was when the call returned:
+  - `Status`: `StoredOnMaster` (saved on the master database) or `AcceptedOnTransport` (handed to an agent connection, which saves it on master shortly after).
+  - `ClusterId`, and for `AcceptedOnTransport` also `BucketId`, `AgentWorkerId` and `AgentConnectionId`.
+
+  The receipt doesn't change afterwards: `Status` keeps the value from scheduling time.
 
 ### Added
 
@@ -79,6 +94,20 @@
   await scheduler.NaturalCronRecurringAsync<ReportHandler>("every day at 09:00");
   collection.NaturalCronAdd<ReportHandler>("every monday at 08:00");
   ```
+- **Confirm on master: `receipt.ConfirmOnMasterAsync()` and `scheduler.Advanced.ConfirmOnMasterAsync(receipts)`.** Makes sure a job or recurring schedule is saved on master, saving it now if it isn't there yet. When it returns, it's on master. Receipts that are already `StoredOnMaster` need no call to master. The batch version takes receipts from any cluster.
+
+  ```csharp
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  await receipt.ConfirmOnMasterAsync();
+
+  // Many at once (preferred over many single calls)
+  await scheduler.Advanced.ConfirmOnMasterAsync(receipts);
+  ```
+
+  Rarely needed: if your agent connections are healthy, you don't need it. Things to know before using it:
+  - A confirmed job can start later than it would otherwise, because it's picked up from master instead of going straight to its worker. A confirmed recurring schedule's first run can be delayed by up to about 10 minutes, so avoid it for schedules that recur at short intervals.
+  - If it throws, some items may or may not be saved. Calling it again is safe and never creates a second copy.
+  - JobMaster runs jobs at least once. Confirming after the cluster's data retention has removed an already-finished job saves it again, and it runs again; a removed cancelled or finished schedule comes back as active. Be careful using it when the data retention is short.
 
 ### Changed
 

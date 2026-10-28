@@ -21,6 +21,8 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
     internal override IMasterGenericRecordRepository MasterGenericRecords { get; set; } = null!;
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
     internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
+    internal override IMasterJobsRepository OtherClusterMasterJobs { get; set; } = null!;
+    internal override IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; } = null!;
 
     internal override IAgentRawMessagesDispatcherRepository AgentMessages { get;  set; } = null!;
 
@@ -38,6 +40,10 @@ public class SqlServerRepositoryFixture : RepositoryFixtureBase
         MasterGenericRecords = factory.GetMasterRepository<IMasterGenericRecordRepository>();
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
+
+        var otherFactory = JobMasterClusterAwareComponentFactories.GetFactory(RepoConformanceBootstrap.SqlServerOtherClusterId);
+        OtherClusterMasterJobs = otherFactory.GetMasterRepository<IMasterJobsRepository>();
+        OtherClusterMasterRecurringSchedules = otherFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
 
         var agentConfig = JobMasterClusterConnectionConfig
             .Get(ClusterId, includeNotReady: true)
