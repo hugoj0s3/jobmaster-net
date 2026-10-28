@@ -693,6 +693,8 @@ agent's late save never revives it, and unit + scenario tests are green.
 
 ## 17. Base64 ids in logs (messages + API `ReferenceId`)
 
+**Status: noted for later** (Hugo, 2026-10-27), not scheduled yet.
+
 **Goal.** An id copied from the dashboard (base64url, 22 chars) finds the matching logs, and log output shows ids in
 the same format as the rest of the API/dashboard. Easier investigation from the dashboard (Hugo, 2026-10-27).
 
