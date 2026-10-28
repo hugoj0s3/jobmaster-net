@@ -16,6 +16,7 @@ public sealed class JobScheduleReceipt
         ScheduleReceiptStatus status, 
         JobRawModel model)
     {
+        JobId = model.Id;
         Status = status;
         BucketId = model.BucketId;
         AgentWorkerId = model.AgentWorkerId;
@@ -23,6 +24,9 @@ public sealed class JobScheduleReceipt
         AgentConnectionId = model.AgentConnectionId?.IdValue;
         this.model = model;
     }
+
+    /// <summary>Id of the scheduled job.</summary>
+    public Guid JobId { get; }
 
     /// <summary>Where the job was stored when the scheduling call returned.</summary>
     public ScheduleReceiptStatus Status { get; }

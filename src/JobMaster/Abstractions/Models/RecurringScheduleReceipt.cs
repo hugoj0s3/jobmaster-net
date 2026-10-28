@@ -16,6 +16,7 @@ public sealed class RecurringScheduleReceipt
         ScheduleReceiptStatus status,
         RecurringScheduleRawModel model)
     {
+        RecurringScheduleId = model.Id;
         Status = status;
         BucketId = model.BucketId;
         AgentWorkerId = model.AgentWorkerId;
@@ -23,6 +24,9 @@ public sealed class RecurringScheduleReceipt
         AgentConnectionId = model.AgentConnectionId?.IdValue;
         this.model = model;
     }
+
+    /// <summary>Id of the recurring schedule.</summary>
+    public Guid RecurringScheduleId { get; }
 
     /// <summary>Where the schedule was stored when the scheduling call returned.</summary>
     public ScheduleReceiptStatus Status { get; }
