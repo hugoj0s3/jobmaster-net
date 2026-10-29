@@ -462,6 +462,20 @@ fallback only catches `ConcurrencyException`, so less exposed, but it also ignor
 Fix direction (not implemented): delete only ids that are confirmed on the archive (inserted ∪ `QueryExistingIdsAsync`
 of the rest), same check as `ConfirmOnMasterAsync`; or make the per-row fallback rethrow non-concurrency errors.
 
+## The archived check before a master write can't close the archived race
+
+Raised 2026-10-28 (Plan 0.0.12 item 7). Every scheduling path in `JobMasterSchedulerClusterAware`, `ConfirmOnMasterAsync`
+included, checks `GetFresh()` for `ClusterMode.Archived` and only then writes. The check isn't atomic with the write, so
+a cluster archived in between can always end up with a job on master. The order only decides who notices:
+- Check before the save (current): the job is saved held on master in an archived cluster, nothing runs it, and the
+  caller is told it succeeded. The job is silently lost.
+- Check after the save: the caller gets an exception, so the job isn't silently lost, but it's still stored on the
+  archived cluster (the window stays open for that job).
+
+No ordering makes it safe; noted so it isn't mistaken for a gap that a reorder fixes. Fix planned as a safety net
+instead: Plan 0.0.12 item 18 (strict Active → Migrating → Archived flow + archived clusters migrate strays to the
+stored `MigrateTo` target).
+
 ## `JobMasterLogger`'s final flush on `Dispose` never runs
 
 Found 2026-10-26 (Plan 0.0.12 item 7). The per-cluster component containers are built in
