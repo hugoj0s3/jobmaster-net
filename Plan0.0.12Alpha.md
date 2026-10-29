@@ -18,7 +18,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 7  | Confirm on master, explicit (`ConfirmOnMasterAsync`)  | S     | No       | 6          |
 | 8  | Hybrid agent connection                               | L     | No       | own sub-plan file first |
 | 9  | Reminders cleanup                                     | XS    | –        | 1–8        |
-| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13, 15–17 |
+| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13, 15–18 |
 | 11 | Docs restructure + `presenting.md`                    | M     | –        | 10         |
 | 12 | Case-insensitive metadata/message-data keys + worker lanes | M | **Yes** | 1          |
 | 13 | Disabled-priority validation scoped per cluster       | S/M   | Maybe (stricter recurring check) | 1 |
@@ -26,6 +26,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 15 | Consistent cancel / reschedule method names           | XS    | No (obsolete aliases) | – |
 | 16 | `CancelAsync` on receipts (follow-up to 15)           | S     | No       | 6, 7, 15   |
 | 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
+| 18 | Archived safety net: strict mode flow + stray sweeper | S/M   | **Yes** (Active → Archived refused) | – |
 
 ---
 
@@ -747,3 +748,66 @@ see it.
 
 **Done when.** Ids in log messages and `ApiLogItem.ReferenceId` match the base64 ids the dashboard shows, existing
 logs are still found by `ReferenceGuid`, and tests are green.
+
+---
+
+## 18. Archived safety net: strict mode flow + stray sweeper
+
+**Goal.** A job or recurring schedule that lands on a cluster after it became Archived is never silently lost: it's
+moved to the active cluster and runs there, or, when that's impossible, it's logged as Critical.
+
+**Current state (2026-10-28).**
+- Every scheduling path in `JobMasterSchedulerClusterAware` (`ConfirmOnMasterAsync` included) checks `GetFresh()` for
+  `Archived`, then writes. The check isn't atomic with the write, so a cluster archived in between can always get a
+  held job (see reminder "The archived check before a master write can't close the archived race"). No ordering of
+  the check fixes it.
+- An archived cluster runs only heartbeat + cleanup runners (`LoadArchivedRunnersAsync`): no buckets, no agent
+  connections, no execution. A stray held job is stuck forever, and the caller was told it succeeded.
+- Startup refuses to save `Archived` while unfinished jobs/schedules exist (`JobMasterRuntime`, before
+  `masterConfigService.Save`), but never looks at the stored mode: an idle Active cluster can go straight to Archived.
+- `TargetActiveClusterId` survives Migrating → Archived only by accident: line 165 keeps the stored value when the
+  config has none, and the line 441 validation checks the configured definition, not the stored model.
+
+**Design (proposed).**
+1. **Strict flow.** Allowed: a new cluster (nothing stored) starts as Archived; Migrating → Archived; Archived →
+   Archived (restart). Active → Archived throws ("switch to Migrating (`MigrateTo`) first"). Checked with the existing
+   non-final check, before `Save`, so a refused transition leaves master untouched.
+2. **Keep the target.** On Migrating → Archived the stored `TargetActiveClusterId` is kept on purpose (comment +
+   test). Configuring `MigrateTo` on an archived cluster stays invalid; only the stored value carries over. With (1),
+   every archived cluster that ever accepted writes has a target.
+3. **Sweeper.** `LoadArchivedRunnersAsync` also starts `MigrateJobsRunner` and `MigrateRecurringSchedulesRunner`:
+   - target stored and reachable → strays (held jobs, active schedules) move there and run normally;
+   - no target (started as Archived) or target not registered in the archive process → Critical log per stray;
+   - other unfinished statuses (shouldn't happen, no buckets) → Critical log.
+   Reuses the existing "nothing else advances an `OnMaster` job, so migrate it" mechanism; the archived cluster never
+   executes anything.
+
+**Rejected.**
+- Running strays through the fallback bucket on the archived cluster: needs agent connections, buckets and an
+  execution worker, all forbidden on Archived, and archive deployments usually don't have the handlers.
+- Per-job `jm-migrate-to-cluster-id` metadata stamped while Migrating: a write per job on the hot path, carries nothing
+  the cluster doesn't already know (one target per cluster), and is most likely missing on exactly the strays (writers
+  that read the mode just before the switch, or a cached `Get()`).
+- Checking the mode after the write too: with the sweeper the stray still runs, so an exception would mislead.
+
+**Open decisions.**
+- Archived → Active / Archived → Migrating: allowed today. Restrict too, or leave?
+- Archive process must register the target cluster for the sweeper to move strays (same requirement as
+  `MigrateJobsRunner`). Validate at startup (warn/throw when a target is stored but not registered), or only log per
+  stray?
+- Sweeper interval on archived clusters: same as Migrating, or slower (strays are rare)?
+
+**Tasks.**
+- [ ] `JobMasterRuntime`: read the stored mode before line 166 overwrites it; throw on Active → Archived.
+- [ ] Comment at line 165: stored `TargetActiveClusterId` kept on purpose for archived strays.
+- [ ] `LoadArchivedRunnersAsync`: start the migrate runners; Critical log when there's no target / unreachable / other
+      unfinished status.
+- [ ] Unit tests: Active → Archived throws; Migrating → Archived ok; new → Archived ok; Archived → Archived ok; target
+      survives Migrating → Archived.
+- [ ] Scenario test: Migrating → Archived, insert a held job (and an active schedule) straight onto the archived
+      cluster → moved to the active cluster and runs.
+- [ ] Update the reminder (fix lives here) and the ChangeLog (breaking: Active → Archived refused; added: safety net).
+- [ ] Docs (item 10): mode flow Active → Migrating → Archived.
+
+**Done when.** Active → Archived is refused, an archived cluster with a stored target moves strays to it and they run,
+strays with no way out are logged as Critical, and unit + scenario tests are green.
