@@ -288,7 +288,7 @@ internal class JobRawModel : JobMasterBaseModel
         PartitionLockExpiresAt = null;
     }
     
-    public void ReSchedule(DateTime scheduledAt)
+    public void Reschedule(DateTime scheduledAt)
     {
         if (!this.Status.IsFinalStatus())
         {
@@ -310,7 +310,7 @@ internal class JobRawModel : JobMasterBaseModel
         this.NumberOfFailures = 0;
     }
     
-    public bool CanReSchedule()
+    public bool CanReschedule()
     {
         if (!this.Status.IsFinalStatus())
         {

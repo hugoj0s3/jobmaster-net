@@ -93,7 +93,7 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
 {
-    var cancelled = await scheduler.TryCancelRecurringAsync(id, clusterId);
+    var cancelled = await scheduler.CancelRecurringAsync(id, clusterId);
     return cancelled ? Results.Ok() : Results.NotFound();
 });
 

@@ -558,6 +558,26 @@ public class JobMasterSchedulerClusterAwareTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Cluster mode is archived");
     }
 
+    [Fact]
+    public void CancelJob_PersistsWithSyncUpdate_BeforeReturning()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var job = NewJob(clusterId);
+        job.Status = JobMasterJobStatus.OnMaster;
+        job.ScheduledAt = DateTime.UtcNow.AddHours(1); // outside the onboarding window
+        job.NextPlanExecutionAt = job.ScheduledAt;
+        mocks.Jobs.Setup(x => x.Get(job.Id)).Returns(job);
+        mocks.Jobs
+            .Setup(x => x.Update(It.Is<JobRawModel>(m => m.Id == job.Id && m.Status == JobMasterJobStatus.Cancelled), null, null))
+            .Verifiable();
+
+        mocks.CreateSut().CancelJob(job.Id).Should().BeTrue();
+
+        mocks.Jobs.Verify();
+        mocks.Jobs.Verify(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()), Times.Never);
+    }
+
     private sealed class Mocks
     {
         private readonly JobMasterClusterConnectionConfig clusterConfig;

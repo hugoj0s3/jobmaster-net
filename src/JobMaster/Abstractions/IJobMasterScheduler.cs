@@ -192,22 +192,22 @@ public interface IJobMasterScheduler
     Task<bool> CancelJobAsync(Guid jobId, string? clusterId = null);
 
     /// <summary>Synchronous version of <see cref="CancelJobAsync"/>.</summary>
-    bool TryCancelJob(Guid id, string? clusterId = null);
+    bool CancelJob(Guid jobId, string? clusterId = null);
 
     /// <summary>
     /// Cancels the recurring schedule with the given ID, stopping future firings.
     /// Returns <c>true</c> if the schedule was found and successfully cancelled.
     /// </summary>
-    /// <param name="id">ID of the recurring schedule to cancel.</param>
+    /// <param name="recurringScheduleId">ID of the recurring schedule to cancel.</param>
     /// <param name="clusterId">
     /// Cluster the schedule was created on. When null, the default cluster is used — the handler's
     /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
     /// known), so pass it explicitly for schedules on a non-default cluster (see <see cref="RecurringScheduleContext.ClusterId"/>).
     /// </param>
-    Task<bool> TryCancelRecurringAsync(Guid id, string? clusterId = null);
+    Task<bool> CancelRecurringAsync(Guid recurringScheduleId, string? clusterId = null);
 
-    /// <summary>Synchronous version of <see cref="TryCancelRecurringAsync"/>.</summary>
-    bool CancelRecurring(Guid id, string? clusterId = null);
+    /// <summary>Synchronous version of <see cref="CancelRecurringAsync"/>.</summary>
+    bool CancelRecurring(Guid recurringScheduleId, string? clusterId = null);
 
     /// <summary>
     /// Changes the scheduled execution time of a one-time job.
@@ -221,8 +221,8 @@ public interface IJobMasterScheduler
     /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
     /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
     /// </param>
-    Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+    Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 
-    /// <summary>Synchronous version of <see cref="ReScheduleAsync"/>.</summary>
-    bool ReSchedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+    /// <summary>Synchronous version of <see cref="RescheduleAsync"/>.</summary>
+    bool Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 }

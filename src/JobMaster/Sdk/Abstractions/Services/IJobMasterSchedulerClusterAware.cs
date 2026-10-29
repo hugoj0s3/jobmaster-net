@@ -19,9 +19,9 @@ internal interface IJobMasterSchedulerClusterAware : IJobMasterClusterAwareServi
     Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs);
     Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules);
     Task<bool> CancelJobAsync(Guid jobId);
-    bool CancelJob(Guid id);
-    Task<bool> CancelRecurringAsync(Guid id);
-    bool CancelRecurring(Guid id);
-    Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt);
-    bool ReSchedule(Guid jobId, DateTime scheduledAt);
+    bool CancelJob(Guid jobId);
+    Task<bool> CancelRecurringAsync(Guid recurringScheduleId);
+    bool CancelRecurring(Guid recurringScheduleId);
+    Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt);
+    bool Reschedule(Guid jobId, DateTime scheduledAt);
 }

@@ -62,6 +62,16 @@
   - `ClusterId`, and for `AcceptedOnTransport` also `BucketId`, `AgentWorkerId` and `AgentConnectionId`.
 
   The receipt doesn't change afterwards: `Status` keeps the value from scheduling time.
+- **Cancel and reschedule methods renamed to one rule.** No `Try` prefix, and "reschedule" is one word:
+
+  | Old | New |
+  |:---|:---|
+  | `TryCancelJob(id, ...)` | `CancelJob(jobId, ...)` |
+  | `TryCancelRecurringAsync(id, ...)` | `CancelRecurringAsync(recurringScheduleId, ...)` |
+  | `CancelRecurring(id, ...)` | `CancelRecurring(recurringScheduleId, ...)` |
+  | `ReScheduleAsync` / `ReSchedule` | `RescheduleAsync` / `Reschedule` |
+
+  `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
 
 ### Added
 
@@ -138,11 +148,12 @@
 ### Fixed
 
 - **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
+- **The synchronous `CancelJob` now saves the cancellation before returning.** It returned `true` without waiting for the database write, so a failed write (for example a concurrent update) was silently lost and the job could still run.
 - **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
 
 ### Notes
 
-- `CancelJob`/`TryCancelJob`, `CancelRecurring`/`TryCancelRecurringAsync` and `ReSchedule` only receive an id, so they don't look up the handler's cluster. For a job or schedule on a non-default cluster, pass `clusterId` explicitly; it's available from `JobContext.ClusterId` / `RecurringScheduleContext.ClusterId`.
+- `CancelJob`/`CancelJobAsync`, `CancelRecurring`/`CancelRecurringAsync` and `Reschedule`/`RescheduleAsync` only receive an id, so they don't look up the handler's cluster. For a job or schedule on a non-default cluster, pass `clusterId` explicitly; it's available from `JobContext.ClusterId` / `RecurringScheduleContext.ClusterId`.
 
 ---
 

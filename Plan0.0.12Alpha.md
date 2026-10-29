@@ -604,8 +604,7 @@ Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId =
 bool       Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 ```
 
-- `TryCancelJob`, `TryCancelRecurringAsync`, `ReScheduleAsync`, `ReSchedule` stay as `[Obsolete]` forwarders (same
-  approach as the Cronos/NCrontab renames in item 3); removed in a later release.
+- **Decided (Hugo):** drop `Try`, and a plain rename: no `[Obsolete]` forwarders for the old names.
 - Same names on the internal `IJobMasterSchedulerClusterAware`, and `JobRawModel.CanReSchedule` / `ReSchedule` →
   `CanReschedule` / `Reschedule` (internal, no shim needed).
 - Parameter renames (`id` → `jobId` / `recurringScheduleId`) only break callers passing the name (`id: ...`);
@@ -616,13 +615,14 @@ bool       Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null
 - Cancel doesn't check `ClusterMode.Archived`, reschedule does. Align (throw on archived for cancel too), or leave?
 
 **Tasks.**
-- [ ] Rename on `IJobMasterScheduler` + `JobMasterScheduler`, `[Obsolete]` forwarders for the old names.
-- [ ] Rename on `IJobMasterSchedulerClusterAware` / `JobMasterSchedulerClusterAware` and the `JobRawModel` helpers.
-- [ ] Fix the sync `CancelJob` (await / sync `Update`).
-- [ ] Callers: `TargetTestScheduleApp`, `TargetTestRecurringApp`, `samples/JobMaster.SampleWeb`, unit tests; check
-      `JobMaster.Api`.
-- [ ] Unit tests: new names, obsolete forwarders forward, sync `CancelJob` persists before returning.
-- [ ] ChangeLog (deprecated + note on parameter names) + docs (item 10).
+- [x] Rename on `IJobMasterScheduler` + `JobMasterScheduler`.
+- [x] Rename on `IJobMasterSchedulerClusterAware` / `JobMasterSchedulerClusterAware` and the `JobRawModel` helpers.
+- [x] Fix the sync `CancelJob` (sync `Update`).
+- [x] Callers: `TargetTestScheduleApp`, `TargetTestRecurringApp`, unit tests. (`SampleWeb` already used
+      `CancelRecurring`; `JobMaster.Api` doesn't call them.)
+- [x] Unit tests: renamed test, sync `CancelJob` persists with sync `Update` before returning.
+- [x] ChangeLog (breaking rename + parameter names, fixed sync `CancelJob`). Docs: item 10.
+- [ ] Archived check for cancel (open decision above): not changed yet.
 
 **Follow-up.** `CancelAsync` on the receipts is item 16 (separate PR, uses this item's naming).
 

@@ -731,7 +731,7 @@ public class JobMasterSchedulerTests
     }
 
     [Fact]
-    public void TryCancelJob_WhenClusterIdDiffersInCase_FindsCluster()
+    public void CancelJob_WhenClusterIdDiffersInCase_FindsCluster()
     {
         using var _ = new StaticStateScope(new FakeRuntime(started: true));
         RegisterCluster("c-default", isDefault: true);
@@ -744,7 +744,7 @@ public class JobMasterSchedulerTests
         JobMasterClusterConnectionConfig.Create("c-cancel", "repo", "cnn");
         JobMasterClusterAwareComponentFactories.AddFactory("c-cancel", factoryMock.Object);
 
-        JobMasterScheduler.Instance.TryCancelJob(jobId, clusterId: "C-Cancel").Should().BeTrue();
+        JobMasterScheduler.Instance.CancelJob(jobId, clusterId: "C-Cancel").Should().BeTrue();
     }
 
     [Fact]
