@@ -24,6 +24,9 @@ register the exact, full callback URL. Worth a line in the OAuth setup docs.
 
 ## `JobMasterRuntime.StartAsync` validation is still split across two places
 
+**2026-10-30: scheduled as Plan 0.0.12 item 19** (all startup validation before anything starts), together with the
+static-schedule checks that throw after the workers are running.
+
 Raised 2026-07-19 while working on the Migrating-mode PR. Point 1 (validation must fully complete
 before any `OnBeforeStartAsync` side effects run) was fixed as part of that PR — `PreValidation()` now
 runs right after the `ValidateAsync` loop and before `OnBeforeStartAsync`.
