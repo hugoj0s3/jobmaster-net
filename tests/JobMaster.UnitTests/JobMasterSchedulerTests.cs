@@ -592,6 +592,55 @@ public class JobMasterSchedulerTests
     }
 
     [Fact]
+    public void Recurring_WhenHandlerPriorityIsDisabled_Throws_WithoutSaving()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        // No explicit priority: each run would resolve the handler's [JobMasterPriority(Critical)].
+        JobMasterScheduler.Instance
+            .Invoking(s => s.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr()))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("*Critical*disabled*");
+
+        cluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RecurringAsync_WhenHandlerPriorityIsDisabled_Throws()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        var act = () => JobMasterScheduler.Instance.RecurringAsync<CriticalPriorityHandler>(new NeverRecursCompiledExpr());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Critical*disabled*");
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerPriorityIsDisabled_ButExplicitPriorityAllowed_Schedules()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        JobMasterScheduler.Instance.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr(), priority: JobMasterPriority.High);
+
+        cluster.Recurring.Should().ContainSingle().Which.Priority.Should().Be(JobMasterPriority.High);
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerPriorityAllowed_DoesNotStoreIt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.VeryLow });
+
+        JobMasterScheduler.Instance.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr());
+
+        // Checked only: still resolved from the handler on each run.
+        cluster.Recurring.Should().ContainSingle().Which.Priority.Should().BeNull();
+    }
+
+    [Fact]
     public void Recurring_WhenExplicitClusterIdAndAttribute_ExplicitWins()
     {
         using var _ = new StaticStateScope(new FakeRuntime(started: true));

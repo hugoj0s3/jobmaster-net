@@ -3,6 +3,7 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.StaticRecurringSchedules;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
@@ -110,6 +111,16 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
             result.Add(unknownClusterIdError);
         }
 
+        var disabledPriorityError = ValidateDisabledPriorities(
+            handlerTypes.Select(x => x.Type),
+            staticJobDefinitionConfigTypes,
+            BootstrapBlueprintDefinitions.Clusters,
+            JobMasterClusterConnectionConfig.Default?.ClusterId);
+        if (disabledPriorityError != null)
+        {
+            result.Add(disabledPriorityError);
+        }
+
         // Same discovery as JobMasterRuntime.BootstrapStaticRecurringSchedules — without this, an unknown profile
         // ClusterId only surfaces there as a KeyNotFoundException, after the workers have already started.
         var staticProfileTypes = assemblies
@@ -189,6 +200,52 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         return "Job handlers / IStaticJobDefinitionConfig implementations declare a cluster id (JobMasterClusterId / " +
                "JobDefinitionConfig.ClusterId) that is not configured: " +
                $"{string.Join(", ", unknown.Select(x => $"{x.Type.FullName} ('{x.ClusterId}')"))}";
+    }
+
+    /// <summary>
+    /// Returns an error when a handler's resolved priority (<see cref="JobDefinitionConfig.Priority"/> or inherited
+    /// <see cref="JobMasterPriorityAttribute"/>, else Medium) is disabled on the handler's own cluster (its cluster id,
+    /// else <paramref name="defaultClusterId"/>), or an <see cref="IStaticJobDefinitionConfig"/>'s priority is disabled
+    /// on its <see cref="JobDefinitionConfig.ClusterId"/>; <c>null</c> when all are fine. Only the item's own cluster
+    /// counts: a priority disabled on another cluster doesn't matter. Explicit <c>clusterId:</c> routing is checked
+    /// at the scheduling call; unknown cluster ids are reported by <see cref="ValidateClusterIds"/>.
+    /// </summary>
+    internal static string? ValidateDisabledPriorities(
+        IEnumerable<Type> handlerTypes,
+        IEnumerable<Type> staticJobDefinitionConfigTypes,
+        IEnumerable<ClusterDefinition> clusters,
+        string? defaultClusterId)
+    {
+        var clusterList = clusters.ToList();
+        if (!clusterList.Any(c => c.DisabledPriorities.Any()))
+        {
+            return null;
+        }
+
+        var declared = handlerTypes
+            .Select(t => (Type: t,
+                ClusterId: JobUtil.GetClusterId(t, clusterId: null) ?? defaultClusterId,
+                Priority: JobUtil.GetJobMasterPriority(t, priority: null)))
+            .Concat(staticJobDefinitionConfigTypes
+                .Select(t => (Type: t, Config: JobDefinitionConfigAttribute.GetConfig(t)))
+                .Select(x => (x.Type,
+                    ClusterId: x.Config.ClusterId ?? defaultClusterId,
+                    Priority: x.Config.Priority ?? JobMasterPriority.Medium)));
+
+        var invalid = declared
+            .Select(x => (x.Type, x.ClusterId, x.Priority, Cluster: clusterList.FirstOrDefault(c =>
+                string.Equals(c.ClusterId, x.ClusterId, StringComparison.OrdinalIgnoreCase))))
+            .Where(x => x.Cluster != null && x.Cluster.DisabledPriorities.Contains(x.Priority))
+            .ToList();
+
+        if (!invalid.Any())
+        {
+            return null;
+        }
+
+        return "Job handlers / IStaticJobDefinitionConfig implementations use a priority that is disabled on their " +
+               "cluster (DisablePriority): " +
+               $"{string.Join(", ", invalid.Select(x => $"{x.Type.FullName} ({x.Priority} on '{x.Cluster!.ClusterId}')"))}";
     }
 
     /// <summary>

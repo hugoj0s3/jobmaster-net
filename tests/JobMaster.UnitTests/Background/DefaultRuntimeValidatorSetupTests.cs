@@ -2,6 +2,7 @@ using FluentAssertions;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Background;
 
 namespace JobMaster.UnitTests.Background;
@@ -116,6 +117,135 @@ public class DefaultRuntimeValidatorSetupTests
         DefaultRuntimeValidatorSetup.ValidateSingleDefinitionAttribute(new[] { typeof(ConfigClusterHandler), typeof(PlainHandler) })
             .Should().BeNull();
     }
+
+    [Fact]
+    public void ValidateDisabledPriorities_WhenDisabledOnlyOnAnotherCluster_ReturnsNull()
+    {
+        // Critical handler on the default cluster; only cluster-b disables Critical.
+        DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+                new[] { typeof(CriticalHandler) },
+                Type.EmptyTypes,
+                Clusters(("default", false), ("cluster-b", true)),
+                defaultClusterId: "default")
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_WhenDisabledOnHandlerCluster_ReturnsError()
+    {
+        var error = DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+            new[] { typeof(CriticalClusterBHandler) },
+            Type.EmptyTypes,
+            Clusters(("default", false), ("CLUSTER-B", true)),
+            defaultClusterId: "default");
+
+        error.Should().NotBeNull();
+        error.Should().Contain(typeof(CriticalClusterBHandler).FullName).And.Contain("Critical on 'CLUSTER-B'");
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_WhenHandlerHasNoCluster_UsesDefaultCluster()
+    {
+        DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+                new[] { typeof(CriticalHandler) },
+                Type.EmptyTypes,
+                Clusters(("default", true)),
+                defaultClusterId: "default")
+            .Should().Contain(typeof(CriticalHandler).FullName);
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_ChecksDefinitionConfigPriority()
+    {
+        DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+                new[] { typeof(CriticalConfigHandler) },
+                Type.EmptyTypes,
+                Clusters(("default", false), ("cluster-b", true)),
+                defaultClusterId: "default")
+            .Should().Contain(typeof(CriticalConfigHandler).FullName);
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_ChecksInheritedPriorityAttribute()
+    {
+        DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+                new[] { typeof(InheritedCriticalHandler) },
+                Type.EmptyTypes,
+                Clusters(("default", true)),
+                defaultClusterId: "default")
+            .Should().Contain(typeof(InheritedCriticalHandler).FullName);
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_ChecksDefinitionOnlyConfig()
+    {
+        // Publisher side: the definition type is never applied to a handler in this app.
+        var error = DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+            Type.EmptyTypes,
+            new[] { typeof(CriticalClusterBDefinitionAttribute) },
+            Clusters(("default", false), ("cluster-b", true)),
+            defaultClusterId: "default");
+
+        error.Should().Contain(typeof(CriticalClusterBDefinitionAttribute).FullName);
+    }
+
+    [Fact]
+    public void ValidateDisabledPriorities_WhenClusterUnknown_ReturnsNull()
+    {
+        // Reported by ValidateClusterIds instead.
+        DefaultRuntimeValidatorSetup.ValidateDisabledPriorities(
+                new[] { typeof(CriticalClusterBHandler) },
+                Type.EmptyTypes,
+                Clusters(("default", true)),
+                defaultClusterId: "default")
+            .Should().BeNull();
+    }
+
+    // Each cluster disables Critical or nothing.
+    private static IEnumerable<ClusterDefinition> Clusters(params (string ClusterId, bool DisablesCritical)[] clusters) =>
+        clusters.Select(c =>
+        {
+            var cluster = new ClusterDefinition { ClusterId = c.ClusterId };
+            if (c.DisablesCritical)
+            {
+                cluster.DisablePriority(JobMasterPriority.Critical);
+            }
+
+            return cluster;
+        }).ToList();
+
+    [JobMasterPriority(JobMasterPriority.Critical)]
+    private sealed class CriticalHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    [JobMasterPriority(JobMasterPriority.Critical)]
+    [JobMasterClusterId("cluster-b")]
+    private sealed class CriticalClusterBHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class CriticalClusterBDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
+    {
+        public static JobDefinitionConfig Config { get; } =
+            new JobDefinitionConfig("validator-critical-defid", priority: JobMasterPriority.Critical, clusterId: "cluster-b");
+    }
+
+    [CriticalClusterBDefinitionAttribute]
+    private sealed class CriticalConfigHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    [JobMasterPriority(JobMasterPriority.Critical)]
+    private abstract class CriticalBaseHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class InheritedCriticalHandler : CriticalBaseHandler;
 
     [ConfigClusterDefinitionAttribute]
     [NoClusterDefinitionAttribute]

@@ -18,7 +18,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 7  | Confirm on master, explicit (`ConfirmOnMasterAsync`)  | S     | No       | 6          |
 | 8  | Hybrid agent connection                               | L     | No       | own sub-plan file first |
 | 9  | Reminders cleanup                                     | XS    | –        | 1–8        |
-| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13, 15–18 |
+| 10 | Docs update (jobmaster-doc)                           | M     | –        | 1–9, 12, 13, 15–19 |
 | 11 | Docs restructure + `presenting.md`                    | M     | –        | 10         |
 | 12 | Case-insensitive metadata/message-data keys + worker lanes | M | **Yes** | 1          |
 | 13 | Disabled-priority validation scoped per cluster       | S/M   | Maybe (stricter recurring check) | 1 |
@@ -27,6 +27,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 16 | `CancelAsync` on receipts (follow-up to 15)           | S     | No       | 6, 7, 15   |
 | 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
 | 18 | Archived safety net: strict mode flow + stray sweeper | S/M   | **Yes** (Active → Archived refused) | – |
+| 19 | Startup: validate everything before anything starts   | M     | No (errors move earlier) | 13 (its static check moves here) |
 
 ---
 
@@ -129,14 +130,17 @@ same convention as item 2's new NaturalCron string overloads). Old Cronos/NCront
 ## 4. `JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` re-scans assemblies
 
 **Current state.** On a cache miss it scans all assemblies but caches only the requested id. Called on the hot
-path (`JobsExecutionEngine`, `RecurringSchedulePlanner`).
+path (`JobsExecutionEngine`, `RecurringSchedulePlanner`). Since item 13 also from `JobUtil.GetHandlerPriority`
+(`Recurring<T>` / `RecurringAsync<T>` without a priority, and the static-schedule bootstrap). A miss is never cached, so
+on a publisher-only app with no handler for that id, every such call rescans everything. Done together with item 14
+(Hugo, 2026-10-30).
 
 **Tasks.**
 - [ ] On first miss, build the full id→type map from one scan (via `GetJobDefinitionId`, same as
       `DefaultRuntimeValidatorSetup`); thread-safe publish (build then swap).
 - [ ] Decide behavior for an id still missing after the full map exists (assemblies loaded later?) — rescan
-      once, or treat as not found.
-- [ ] Unit tests: N distinct types → 1 scan; unknown id → null.
+      once, or treat as not found. Must not rescan on every call (publisher-only `GetHandlerPriority` case).
+- [ ] Unit tests: N distinct types → 1 scan; unknown id → null; repeated unknown id → no rescan each call.
 
 ---
 
@@ -480,26 +484,26 @@ cluster. Each check uses the fully resolved priority: explicit, then `JobDefinit
   cluster at bootstrap. Better: before workers start, which ties into the item-1 lesson about bootstrap failures
   after `worker.StartAsync()`.
 
-**Open decisions.**
-- Dynamic recurring schedules with a handler-resolved priority:
-  - fail at registration (`RecurringAsync`) by resolving the handler priority up front for the check, without storing
-    it, so per-occurrence resolution is kept;
-  - fail or warn when planned;
-  - or keep the delay-then-fallback and only log a warning.
-  - Registration-time failure is the most consistent with one-off jobs.
-- Is a definition-only `IStaticJobDefinitionConfig` (publisher side, no handler) with a disabled priority on its own
-  `ClusterId` also a startup error? It would match item 1's cluster-id validator scope.
+**Decided (Hugo, 2026-10-29).**
+- Dynamic recurring with a handler-resolved priority: **fail at registration** (`Recurring<T>` / `RecurringAsync<T>`).
+  The handler priority is resolved for the check only, not stored, so each run still resolves it.
+- A definition-only `IStaticJobDefinitionConfig` with a priority disabled on its own `ClusterId` **is a startup
+  error**, like item 1's cluster-id validator.
 
 **Tasks.**
-- [ ] Per-cluster startup validation helper + unit tests:
+- [x] Per-cluster startup validation helper (`DefaultRuntimeValidatorSetup.ValidateDisabledPriorities`) + unit tests:
   - Critical handler on the default cluster with Critical disabled only on cluster-b → OK.
   - The same handler with `[JobMasterClusterId("cluster-b")]` → error.
   - `JobDefinitionConfig` priority checked.
   - Inherited `[JobMasterPriority]` checked.
-- [ ] Remove the old all-handlers loop from `PreValidation`.
-- [ ] Static recurring: resolved-priority check per definition cluster.
-- [ ] Dynamic recurring: implement the decided behavior + tests.
-- [ ] Docs (`cluster-configuration.md` DisablePriority section, `job-configuration.md` priority warning) + ChangeLog.
+  - Definition-only config checked; unknown cluster skipped.
+- [x] Remove the old all-handlers loop from `PreValidation`.
+- [x] Static recurring: resolved-priority check per definition cluster (`Priority ?? JobUtil.GetHandlerPriority`).
+      Still at bootstrap after the workers start, like before; no unit test (private bootstrap path).
+- [x] Dynamic recurring: `EnsureCanSave` resolves `Priority ?? GetHandlerPriority` + tests. The definition-config path
+      on a publisher-only app has no handler, so it keeps checking only an explicit / config priority.
+- [x] ChangeLog. Docs (`cluster-configuration.md` DisablePriority section, `job-configuration.md` priority warning):
+      item 10.
 
 **Done when.** The per-cluster priority tests and the full unit suite are green.
 
@@ -565,7 +569,8 @@ assembly whose types can't be loaded never crashes startup.
       `ClusterConfigBuilder`, `JobMasterIocRegistrationAttribute`, `GetJobHandlerTypeFromId`,
       `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, and `SqlGenerator` (`JobMaster.SqlBase` already
       has `InternalsVisibleTo`).
-- [ ] Coordinate with item 4: `GetJobHandlerTypeFromId`'s id→type map can be built from `TypeDiscovery`.
+- [ ] Do item 4 in the same PR: `GetJobHandlerTypeFromId`'s id→type map built from `TypeDiscovery`, covering the
+      item 13 caller `JobUtil.GetHandlerPriority` (repeated misses must not rescan).
 - [ ] Internal ChangeLog. No docs change.
 
 **Done when.** No startup call site calls `Assembly.GetTypes()` directly, each assembly's types are read once per
@@ -819,3 +824,72 @@ moved to the active cluster and runs there, or, when that's impossible, it's log
 
 **Done when.** Active → Archived is refused, an archived cluster with a stored target moves strays to it and they run,
 strays with no way out are logged as Critical, and unit + scenario tests are green.
+
+---
+
+## 19. Startup: validate everything before anything starts
+
+**Goal.** Every configuration error fails `StartJobMasterRuntimeAsync` before anything has side effects: no worker
+running, nothing written to the databases. All errors are reported together, in the one "failed validation" list.
+Raised by Hugo 2026-10-30 ("all the validation, if possible, should be before the start"), after item 13 showed the
+static-schedule priority check throws once the workers are already running.
+
+**Current state (2026-10-30, `JobMasterRuntime.StartAsync`).** Order today:
+1. `ValidateAsync` of every `IJobMasterRuntimeSetup` (aggregated list), then `PreValidation()` (throws on the first).
+2. `OnBeforeStartAsync` (provisioning).
+3. Per-cluster loop: save agent connections, cluster config, worker registrations (`CreateAsync`).
+4. `worker.StartAsync()` for each worker.
+5. `BootstrapStaticRecurringSchedules`: read profiles and `[RecurringSchedule]` attributes, save the schedules.
+
+**A. Thrown after the workers are running (step 5).** All configuration errors:
+- Static schedule priority disabled on its cluster (item 13 extended it to the handler's priority).
+- Profile problems: missing `ProfileId`; invalid `ProfileId` / `ClusterId` (`StaticRecurringSchedulesProfileInfo.IsValid`);
+  missing `Config(...)`; the profile's own `Config(...)` throwing.
+- `[RecurringSchedule]` on a class that isn't an `IJobMasterHandler`.
+- Definition errors from `RecurringScheduleDefinitionCollection.Add`: duplicate static schedule id on a cluster,
+  `MaxNumberOfRetries` above the maximum, missing expression / expression type, invalid definition id or schedule id.
+- Precedent: the unknown profile `ClusterId` used to fail here too; item 1 moved it to
+  `DefaultRuntimeValidatorSetup.ValidateStaticProfileClusterIds`.
+
+**B. Thrown before the workers start, but after side effects (step 3).** Earlier clusters in the loop (and
+`OnBeforeStartAsync`) have already written:
+- Agent connection fingerprint changed with `ProtectConnectionChanges` (already in `reminders.md`, "validation is still
+  split", point 2).
+- Archived cluster still holding unfinished jobs / schedules (needs a DB query).
+- "Agent connection … not found" (step 3) and `CreateAsync`'s "Cluster … not found": look unreachable because
+  `PreValidation` guarantees both; confirm, then remove or keep as asserts.
+
+**Out of scope.** Infrastructure failures (DB / transport down) while starting workers one by one: earlier workers keep
+running, no rollback. Not validation.
+
+**Design (proposed).**
+1. **Static schedules (A):** build the static definitions once, during validation: discover profiles + attribute
+   handlers, invoke `Config`, collect every definition. Each error above becomes an entry in the validation list
+   (a profile's `Config` throwing is caught and reported with the profile name). The bootstrap in step 5 reuses the
+   built definitions to save them; it no longer reads or validates. Testable `internal static` helpers in
+   `DefaultRuntimeValidatorSetup`, like the item 1 / item 13 ones.
+2. **Per-cluster checks needing the DB (B):** a check-only pass over all clusters, after `ValidateAsync` /
+   `PreValidation` and before `OnBeforeStartAsync` writes anything: fingerprint check, archived non-final check. The
+   save loop then only saves. This is the split `reminders.md` point 2 describes.
+3. **`PreValidation`:** collect instead of throwing on the first error, so one list covers everything (optional; settle
+   below).
+
+**Open decisions.**
+- Can the DB checks (fingerprint, archived non-final) run before `OnBeforeStartAsync`? Provisioning may create the
+  tables they read (first start on an empty DB). Options: run them after provisioning but before any save (provisioning
+  is idempotent setup, not data), or skip a check when its table doesn't exist yet.
+- `PreValidation` → aggregated list too, or keep throwing on the first (it's structural, usually one mistake)?
+- Is invoking a profile's `Config` during validation safe (user code with side effects)? It already runs once at
+  bootstrap; this only moves it earlier and runs it once.
+
+**Tasks.**
+- [ ] Static definitions built during validation; all A errors aggregated; bootstrap reuses them. Unit tests per error.
+- [ ] Remove the checks from `BootstrapStaticRecurringSchedules` (priority, profile, attribute) once covered.
+- [ ] Check-only pass for B before any save; save loop only saves. Tests: fingerprint change with protection leaves
+      every cluster untouched; archived with unfinished data leaves master untouched.
+- [ ] Confirm the two "not found" throws are unreachable; remove or document.
+- [ ] Update `reminders.md` ("validation is still split" → fixed here) + internal ChangeLog. User ChangeLog: startup
+      errors that used to surface after the workers started now fail before anything starts.
+
+**Done when.** No configuration error can be thrown after a worker starts or after a database write, and the unit suite
+plus an existing scenario run are green.
