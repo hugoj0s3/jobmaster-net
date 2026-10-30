@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
@@ -94,7 +94,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         logger.Debug("Lock acquired, starting to plan next dates", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(scheduleRawModel);
-        var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
+        var handlerType = JobDefinitionIdResolver.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
         if (handlerType == null)
         {
             logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}");

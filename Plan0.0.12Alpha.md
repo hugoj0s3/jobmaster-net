@@ -28,6 +28,9 @@ open decisions (settle before coding), tasks, and done criteria.
 | 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
 | 18 | Archived safety net: strict mode flow + stray sweeper | S/M   | **Yes** (Active → Archived refused) | – |
 | 19 | Startup: validate everything before anything starts   | M     | No (errors move earlier) | 13 (its static check moves here) |
+| 20 | `JobMasterAssemblyDiscovery()` for unreferenced libraries | S  | No       | 14 (same branch) |
+| 21 | Load provider assemblies by repo type (bug fix)       | XS    | No       | 14         |
+| 22 | Lambda adapter: reserved definition-id prefix (idea)  | –     | –        | new project; scope TBD |
 
 ---
 
@@ -136,11 +139,11 @@ on a publisher-only app with no handler for that id, every such call rescans eve
 (Hugo, 2026-10-30).
 
 **Tasks.**
-- [ ] On first miss, build the full id→type map from one scan (via `GetJobDefinitionId`, same as
-      `DefaultRuntimeValidatorSetup`); thread-safe publish (build then swap).
-- [ ] Decide behavior for an id still missing after the full map exists (assemblies loaded later?) — rescan
-      once, or treat as not found. Must not rescan on every call (publisher-only `GetHandlerPriority` case).
-- [ ] Unit tests: N distinct types → 1 scan; unknown id → null; repeated unknown id → no rescan each call.
+- [x] On a miss, map every handler of each not-yet-mapped assembly at once (via `GetJobDefinitionId`), under a lock;
+      lookups stay lock-free on the `ConcurrentDictionary`.
+- [x] Unknown id (Hugo): recheck only assemblies loaded since the last miss; none new → `null` without reading types.
+- [x] Unit tests: one `GetTypes()` per assembly (`TypeDiscoveryTests`); resolve by config / `[JobMasterDefinitionId]` /
+      full name; unknown id → `null`, twice.
 
 ---
 
@@ -555,23 +558,23 @@ assembly whose types can't be loaded never crashes startup.
 - Validator: keep the early return after the missing-`Config` check. Reading from the cache doesn't call `GetConfig`,
   so that ordering reason still holds.
 
-**Open decisions.**
-- Should a type-load failure be logged, so an assembly whose types silently partly disappear is still visible? The
-  per-assembly cache would log it once per assembly.
-- Typed shortcuts in this PR, or just the raw cached `GetTypes()`?
+**Decided (Hugo, 2026-10-30).**
+- No logging of type-load failures: the loadable types are kept silently, like `JobMasterRuntimeSingleton` did.
+- Typed shortcuts in this PR: `typeof(T).GetCachedConcreteTypesOf()` extension, `StaticRecurringSchedulesProfileTypes()`.
+- Assembly filter: `!IsDynamic` only. The empty-`Location` filter is dropped, so single-file / in-memory assemblies are
+  scanned everywhere (before, only some scans skipped them).
 
 **Tasks.**
-- [ ] `TypeDiscovery` with a per-assembly cache and safe load. Unit tests:
+- [x] `TypeDiscovery` with a per-assembly cache and safe load. Unit tests:
   - `GetTypes()` called once per assembly across repeated calls;
   - an assembly loaded after the first call is picked up;
-  - a `ReflectionTypeLoadException` keeps the loadable types.
-- [ ] Move every listed call site onto it: the validator's four scans, `JobMasterRuntime`'s three,
+  - a `ReflectionTypeLoadException` keeps the loadable types; any other failure skips the assembly.
+- [x] Move every listed call site onto it: the validator's four scans, `JobMasterRuntime`'s two left after item 13,
       `ClusterConfigBuilder`, `JobMasterIocRegistrationAttribute`, `GetJobHandlerTypeFromId`,
-      `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, and `SqlGenerator` (`JobMaster.SqlBase` already
-      has `InternalsVisibleTo`).
-- [ ] Do item 4 in the same PR: `GetJobHandlerTypeFromId`'s id→type map built from `TypeDiscovery`, covering the
-      item 13 caller `JobUtil.GetHandlerPriority` (repeated misses must not rescan).
-- [ ] Internal ChangeLog. No docs change.
+      `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, and `SqlGenerator`.
+- [x] Do item 4 in the same PR: `GetJobHandlerTypeFromId`'s id→type map built from `TypeDiscovery`, covering the
+      item 13 caller `JobUtil.GetHandlerPriority` (repeated misses don't rescan).
+- [x] Internal ChangeLog. No docs change.
 
 **Done when.** No startup call site calls `Assembly.GetTypes()` directly, each assembly's types are read once per
 process, and the full unit suite is green.
@@ -893,3 +896,103 @@ running, no rollback. Not validation.
 
 **Done when.** No configuration error can be thrown after a worker starts or after a database write, and the unit suite
 plus an existing scenario run are green.
+
+---
+
+## 20. `JobMasterAssemblyDiscovery()` for unreferenced libraries
+
+**Goal.** Handlers, static recurring profiles, `[RecurringSchedule]` handlers and definition configs that live in a
+library the app never names in code are found. Raised by Hugo 2026-10-30 while reviewing item 14.
+
+**Current state.** .NET loads an assembly only when code first uses one of its types; a project reference alone loads
+nothing (and the compiler drops unused references from the metadata, so `GetReferencedAssemblies` doesn't list it).
+Every JobMaster scan only sees loaded assemblies. Typical case: split publisher / worker, where the worker gets its
+handlers from a `Billing.Handlers` library and never names a type from it.
+- Handlers: the job fails with "handler not found" (loud).
+- Profiles / `[RecurringSchedule]`: no schedules are created, no error (silent).
+- Definition configs: not validated at startup.
+- Handlers are registered in DI during `AddJobMasterCluster` (`ClusterConfigBuilder.Finish`), from the assemblies
+  loaded at that moment; an assembly loaded later fails with "not registered in the DI container".
+
+**Design (decided, Hugo 2026-10-30).**
+- Builder, not per cluster (discovery is AppDomain-wide), following the `Containing<T>` convention (MediatR,
+  FluentValidation):
+  ```csharp
+  services.JobMasterAssemblyDiscovery()
+      .AddAssemblyContaining<BillingHandler>()
+      .AddAssembly(assembly)
+      .AddAssemblies(params Assembly[] assemblies);
+  ```
+  Naming the type loads the assembly; `TypeDiscovery` also keeps the explicit set so `GetLoadedAssemblies()` includes
+  it (covers plugin assemblies).
+- Order doesn't matter: `serviceProvider.GetJobHandler(...)` falls back to
+  `ActivatorUtilities.CreateInstance(serviceProvider, handlerType)` when the type isn't registered. A user's own
+  registration (custom lifetime / factory) still wins. The DI registration in `ClusterConfigBuilder` stays.
+- Clearer "handler not found" message (engine + recurring planner): the handler's assembly may not be loaded, use
+  `JobMasterAssemblyDiscovery().AddAssemblyContaining<T>()`.
+
+**Tasks.**
+- [ ] Builder + `IServiceCollection` extension; explicit assembly set in `TypeDiscovery`.
+- [ ] `GetJobHandler` fallback via `ActivatorUtilities`; clearer not-found message.
+- [ ] Tests: added assembly is discovered; unregistered handler is created through the fallback; registered handler
+      is preferred.
+- [ ] XML docs in user language; ChangeLog (Added) + internal ChangeLog; docs-site note for item 10.
+
+**Done when.** A handler and a profile in a library the worker never names run once the library is added through the
+builder, regardless of call order; unit suite green.
+
+---
+
+## 21. Load provider assemblies by repo type (bug fix)
+
+**Goal.** A cluster configured only through JSON (`ConfigFromJson`, `"RepoType": "Postgres"`) works with just the
+provider package installed.
+
+**Current state.** With JSON the provider is only a string, so nothing names a type from `JobMaster.Postgres` and the
+assembly is never loaded. `JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster/Agent` then finds no
+`[JobMasterIocRegistration]` class and registers nothing, silently. `ConnectionOptionsBinderFactory.Create` already
+throws "Ensure the provider assembly is loaded" for `connectionOptions`. The fluent `UsePostgres(...)` style is fine
+(it names a provider type, intentionally). Same gap for the internal `ClusterConnString(conn, repoType)` /
+`AddAgentConnectionConfig(..., repoType, ...)` paths.
+
+**Design.**
+- Where a repo type string enters, load the known first-party assembly by name (`JobMaster.Postgres`,
+  `JobMaster.MySql`, `JobMaster.SqlServer`, `JobMaster.RavenDb`, `JobMaster.NatsJetStream`) before the scan.
+- Throw when no `[JobMasterIocRegistration]` matches the repo type after that (also catches typos in JSON):
+  "repo type 'X' not found — install `JobMaster.X`".
+- Separate commit from item 20 (Hugo).
+
+**Open decision.** Recurrence providers (Cronos / NCrontab) have the same shape: a stored schedule only carries the
+type id, and a process that never calls `AddJobMasterCronos()` fails with `Unknown recurrence type: Cronos` (loud).
+Leaning: leave it (the explicit call is the intended pattern), only extend the error message to name the package and
+the call.
+
+**Tasks.**
+- [ ] Repo type → assembly name load + "no registration" error. Unit test with a JSON-only config.
+- [ ] ChangeLog (Fixed) + internal ChangeLog.
+
+---
+
+## 22. Lambda adapter: reserved definition-id prefix (idea)
+
+**Goal.** A separate project lets users schedule static-method lambdas (Hangfire-style) to ease migration. Every job
+needs a definition id, so lambda jobs need ids that never collide with user handlers. Idea only (Hugo 2026-10-30);
+not part of the item 14 PR, scope TBD.
+
+**Design notes.**
+- Per-method id with a reserved prefix, e.g. `jm-lambda:Billing.Invoices.Send(System.Guid)`: dashboard / stats show
+  which method ran, and a later move to a real handler can reuse a meaningful id.
+- `JobDefinitionIdResolver.GetJobHandlerTypeFromId` checks reserved prefixes first and returns the adapter handler
+  type; the adapter reads method + arguments from the job data. The adapter project registers its prefix + handler
+  type through a small hook (internal + `InternalsVisibleTo`, like providers, or a minimal SDK API).
+
+**Open decisions.**
+- Prefix format: a character that can't be in a .NET `FullName` (e.g. `:`) so the `FullName` fallback never collides;
+  consistent with `hybrid:` (item 8).
+- Enforce the reservation: the startup validator rejects user `[JobMasterDefinitionId]` / `JobDefinitionConfig` ids
+  starting with a reserved prefix.
+- Per-job settings (priority, cluster, lane, timeout, retries) come from the call's optional parameters or defaults,
+  not handler attributes; item 13's disabled-priority check must account for it.
+- Security: invoking a method named in stored job data means anyone who can write to the master DB can call arbitrary
+  static methods. Allow-list the types / assemblies registered with the adapter.
+- Signature drift (method renamed / parameters changed while jobs are queued): fail with a clear "method not found".

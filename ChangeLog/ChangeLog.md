@@ -72,6 +72,7 @@
   | `ReScheduleAsync` / `ReSchedule` | `RescheduleAsync` / `Reschedule` |
 
   `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
+- **`JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` and `GetJobDefinitionId` were removed from the public API.** They're the runtime's handler lookup and were public by mistake.
 - **Disabled priorities are now checked against the cluster each job or schedule goes to, with the priority it actually resolves to.** Some setups that started before now fail at startup or at the call:
   - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
   - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.

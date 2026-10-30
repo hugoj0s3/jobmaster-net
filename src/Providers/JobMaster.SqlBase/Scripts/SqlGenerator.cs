@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.SqlBase.Scripts;
 
@@ -339,34 +340,23 @@ internal static class SqlGeneratorFactory
     private static IEnumerable<ISqlGenerator> DiscoverGenerators()
     {
         var results = new List<ISqlGenerator>();
-        var iface = typeof(ISqlGenerator);
 
-        foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+        foreach (var t in typeof(ISqlGenerator).GetCachedConcreteTypesOf().Where(t => t.IsClass))
         {
-            Type[] types;
-            try { types = asm.GetTypes(); }
-            catch (ReflectionTypeLoadException ex)
+            // require public parameterless constructor
+            var ctor = t.GetConstructor(Type.EmptyTypes);
+            if (ctor == null) continue;
+
+            try
             {
-                types = ex.Types.Where(t => t != null).ToArray()!;
+                if (Activator.CreateInstance(t) is ISqlGenerator instance)
+                {
+                    results.Add(instance);
+                }
             }
-
-            foreach (var t in types.Where(t => t != null && iface.IsAssignableFrom(t) && t.IsClass && !t.IsAbstract))
+            catch
             {
-                // require public parameterless constructor
-                var ctor = t!.GetConstructor(Type.EmptyTypes);
-                if (ctor == null) continue;
-
-                try
-                {
-                    if (Activator.CreateInstance(t) is ISqlGenerator instance)
-                    {
-                        results.Add(instance);
-                    }
-                }
-                catch
-                {
-                    // ignore types that fail to instantiate
-                }
+                // ignore types that fail to instantiate
             }
         }
 

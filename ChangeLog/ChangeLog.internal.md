@@ -7,6 +7,39 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### One type scan per assembly: `TypeDiscovery` (Plan0.0.12Alpha items 14 and 4)
+- New `JobMaster.Sdk.Utils.TypeDiscovery` (internal static): `ConcurrentDictionary<Assembly, Type[]>`, filled once per
+  assembly; the assembly list is re-read on every call, so a later-loaded assembly is picked up. Typed shortcuts
+  (Hugo): `typeof(T).GetCachedConcreteTypesOf()` extension (cached per assembly + base type) and
+  `StaticRecurringSchedulesProfileTypes()`.
+  - Safe load: `ReflectionTypeLoadException` → the loadable types; any other exception → the assembly is skipped.
+    No logging (Hugo).
+  - One filter: `!IsDynamic`. The empty-`Location` filter some scans had is dropped, so single-file / in-memory
+    assemblies are scanned too (before, the validator, `ClusterConfigBuilder` and `ConnectionOptionsBinderFactory`
+    skipped them while `JobMasterRuntime` / `GetJobHandlerTypeFromId` didn't).
+  - An extension on `Type` rather than a generic, so it also works for interfaces with `static abstract` members
+    (`IStaticJobDefinitionConfig`), which can't be generic arguments.
+  - `GetJobHandlerTypeFromId` maps every handler on a miss (no per-assembly index or lock); the handler types are
+    cached, so a repeated miss is only dictionary lookups.
+  - `GetJobHandlerTypeFromId` / `GetJobDefinitionId` and the id map moved off the attribute into internal
+    `JobMaster.Sdk.Utils.JobDefinitionIdResolver` (Hugo); `JobMasterDefinitionIdAttribute` is just the attribute now.
+    `type.GetJobDefinitionId()` is an extension, and `serviceProvider.GetJobHandler(jobDefinitionId)` holds the
+    engine's lookup + DI resolve + checks (same exceptions/messages as before).
+    Tests moved to `Sdk/Utils/JobDefinitionIdResolverTests`. Dead `JobUtil.JobHandlerTypeMap` removed.
+- Moved onto it: the validator's four scans, `JobMasterRuntime`'s two (profiles, `[RecurringSchedule]`; the
+  disabled-priority one was removed in item 13), `ClusterConfigBuilder` (runtime setups, handlers),
+  `JobMasterIocRegistrationAttribute`, `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, `SqlGenerator`.
+  Left: `RecurrenceCompilerFactory` (reads only JobMaster's own assembly).
+- **Item 4:** `GetJobHandlerTypeFromId` maps every handler of each assembly at once (id from `GetJobDefinitionId`:
+  config → `[JobMasterDefinitionId]` → full name, first wins on a duplicate id, which startup validation rejects). A miss
+  only maps assemblies loaded since the last miss (Hugo: recheck new assemblies only); with none new it returns `null`
+  without reading types, so item 13's `GetHandlerPriority` on a publisher-only app no longer rescans per call.
+  Now `internal` (Hugo), and so is `GetJobDefinitionId`: only JobMaster itself and the unit tests called them.
+- Tests: `TypeDiscoveryTests` (fake `Assembly`: one `GetTypes()` per assembly across calls, later assembly picked up,
+  partial load keeps loadable types, failing assembly skipped, concrete filter), `GetJobHandlerTypeFromId` by
+  `[JobMasterDefinitionId]`, by full name, unknown id twice. 765/765 unit tests; one RepoConformance test on all four
+  providers (starts real runtimes).
+
 #### Disabled-priority validation scoped per cluster (Plan0.0.12Alpha item 13)
 - **Startup:** `JobMasterRuntime.PreValidation`'s `DisabledPriorities` loop is gone. It checked every handler in the
   AppDomain against every cluster with disabled priorities (false positive across clusters) and read only

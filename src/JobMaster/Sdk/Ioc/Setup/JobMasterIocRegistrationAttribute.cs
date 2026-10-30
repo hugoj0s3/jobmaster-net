@@ -83,8 +83,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
 
     private static IEnumerable<Type> GetRegistrationTypes()
     {
-        return AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => a.GetTypes())
+        return TypeDiscovery.AllTypes()
             .Where(t => t.GetCachedAttribute<JobMasterIocRegistrationAttribute>() != null);
     }
 }

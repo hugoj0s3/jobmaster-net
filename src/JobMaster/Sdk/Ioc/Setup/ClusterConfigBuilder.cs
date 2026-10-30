@@ -209,16 +209,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         
         // Register runtime setup. get all impl and register for IJobMasterRuntimeSetup
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .ToList();
-
-        var runtimeSetupTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterRuntimeSetup).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
+        var runtimeSetupTypes = typeof(IJobMasterRuntimeSetup).GetCachedConcreteTypesOf().ToList();
 
         foreach (var runtimeSetupType in runtimeSetupTypes)
         {
@@ -227,13 +218,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         
         // Automatically register all IJobMasterHandler implementations
-        var handlerTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
-        
+        var handlerTypes = typeof(IJobMasterHandler).GetCachedConcreteTypesOf().ToList();
         foreach (var handlerType in handlerTypes)
         {
             services.AddScoped(handlerType);

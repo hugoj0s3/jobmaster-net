@@ -11,7 +11,7 @@ internal static class JobUtil
 {
     public static string GetJobDefinitionId(Type jobHandlerType)
     {
-        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(jobHandlerType);
+        var jobDefinitionId = jobHandlerType.GetJobDefinitionId();
 
         if (string.IsNullOrEmpty(jobDefinitionId))
         {
@@ -125,11 +125,9 @@ internal static class JobUtil
     // for the definition id is in this process (e.g. a publisher-only app), since the worker resolves it then.
     public static JobMasterPriority? GetHandlerPriority(string jobDefinitionId)
     {
-        var jobHandlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(jobDefinitionId);
+        var jobHandlerType = JobDefinitionIdResolver.GetJobHandlerTypeFromId(jobDefinitionId);
         return jobHandlerType is null ? null : GetJobMasterPriority(jobHandlerType, priority: null);
     }
-
-    private static readonly IDictionary<string, Type> JobHandlerTypeMap = new Dictionary<string, Type>();
 
     public static int ValidateMaxNumberOfRetries(int maxNumberOfRetries)
     {

@@ -151,7 +151,7 @@ public sealed class RecurringScheduleDefinitionCollection
             throw new ArgumentException("Invalid DefinitionId", nameof(defId));
         }
 
-        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
+        var jobDefinitionId = handlerType.GetJobDefinitionId();
         // Profile → handler (JobDefinitionConfigAttribute / attribute) → default, for both cluster and lane.
         // Cluster must be resolved here: the schedule itself is stored on that cluster. Matched ignoring case; the
         // configured casing is what goes into the schedule id and onto master.
