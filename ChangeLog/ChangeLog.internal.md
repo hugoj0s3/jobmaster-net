@@ -17,10 +17,10 @@
   shape chosen by Hugo over an `Action<>` callback. Internal `JobMasterAssemblyDiscoveryBuilder`: rejects null and
   dynamic assemblies, adds to `TypeDiscovery.AddedAssemblies` (unioned into `GetLoadedAssemblies()`), and
   `TryAddScoped`s the assembly's handlers.
-- Order independence through DI registration, not the planned `ActivatorUtilities` fallback (Hugo): a fallback-created
-  handler isn't tracked by the scope, so an `IDisposable` handler would never be disposed. `ClusterConfigBuilder` now
-  uses `TryAddScoped` too (once per handler across clusters; an app's own registration wins instead of being
-  overridden).
+- Order independence: the builder registers the assembly's handlers in DI itself (`TryAddScoped`), so it works before
+  or after `AddJobMasterCluster`, and handlers stay container-managed (scoped, disposed with the job's scope).
+  `ClusterConfigBuilder` now uses `TryAddScoped` too: once per handler across clusters, and an app's own registration
+  wins instead of being overridden.
 - `JobDefinitionIdResolver.AssemblyDiscoveryHint` appended to the "not found" / "not registered" errors and the
   recurring planner's Critical log.
 - Tests: `Ioc/JobMasterAssemblyDiscoveryTests` (6). They use the test assembly itself, not a fake one: the added set is
