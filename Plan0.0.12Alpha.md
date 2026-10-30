@@ -925,18 +925,21 @@ handlers from a `Billing.Handlers` library and never names a type from it.
   ```
   Naming the type loads the assembly; `TypeDiscovery` also keeps the explicit set so `GetLoadedAssemblies()` includes
   it (covers plugin assemblies).
-- Order doesn't matter: `serviceProvider.GetJobHandler(...)` falls back to
-  `ActivatorUtilities.CreateInstance(serviceProvider, handlerType)` when the type isn't registered. A user's own
-  registration (custom lifetime / factory) still wins. The DI registration in `ClusterConfigBuilder` stays.
+- Order doesn't matter: `AddAssembly` registers the assembly's handlers in DI itself (`TryAddScoped`), and
+  `ClusterConfigBuilder` switches to `TryAddScoped`. Changed from the `ActivatorUtilities` fallback (Hugo,
+  2026-10-30): a fallback-created handler isn't tracked by the scope, so an `IDisposable` handler would never be
+  disposed. A user's own registration (custom lifetime / factory) wins. `GetJobHandler` is unchanged.
 - Clearer "handler not found" message (engine + recurring planner): the handler's assembly may not be loaded, use
   `JobMasterAssemblyDiscovery().AddAssemblyContaining<T>()`.
 
 **Tasks.**
-- [ ] Builder + `IServiceCollection` extension; explicit assembly set in `TypeDiscovery`.
-- [ ] `GetJobHandler` fallback via `ActivatorUtilities`; clearer not-found message.
-- [ ] Tests: added assembly is discovered; unregistered handler is created through the fallback; registered handler
-      is preferred.
-- [ ] XML docs in user language; ChangeLog (Added) + internal ChangeLog; docs-site note for item 10.
+- [x] Builder + `IServiceCollection` extension; explicit assembly set in `TypeDiscovery`.
+- [x] Handler DI registration from the builder + `TryAddScoped` in `ClusterConfigBuilder`; clearer not-found /
+      not-registered messages (`JobDefinitionIdResolver.AssemblyDiscoveryHint`).
+- [x] Tests (`Ioc/JobMasterAssemblyDiscoveryTests`): added assembly is discovered, handlers registered scoped, an
+      existing registration is kept, dynamic / null rejected. Premise verified with a two-project repro.
+- [x] XML docs in user language; ChangeLog (Added + Changed) + internal ChangeLog.
+- [ ] Docs-site note, with item 10.
 
 **Done when.** A handler and a profile in a library the worker never names run once the library is added through the
 builder, regardless of call order; unit suite green.

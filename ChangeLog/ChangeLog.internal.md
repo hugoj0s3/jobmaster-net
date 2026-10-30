@@ -7,6 +7,25 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### `JobMasterAssemblyDiscovery()` for unreferenced libraries (Plan0.0.12Alpha item 20)
+- Root cause: .NET loads an assembly only when code uses one of its types, and every scan only sees loaded assemblies.
+  Verified with a two-project repro (worker referencing a handler library it never names): the library stays
+  unloaded and `GetJobHandlerTypeFromId("billing")` is null; after `AddAssemblyContaining<BillingHandler>()` it
+  resolves.
+- Public `IJobMasterAssemblyDiscoveryBuilder` (`JobMaster.Abstractions.Ioc`) returned by
+  `services.JobMasterAssemblyDiscovery()` (`JobMaster.Ioc.Extensions.JobMasterAssemblyDiscoveryExtensions`); builder
+  shape chosen by Hugo over an `Action<>` callback. Internal `JobMasterAssemblyDiscoveryBuilder`: rejects null and
+  dynamic assemblies, adds to `TypeDiscovery.AddedAssemblies` (unioned into `GetLoadedAssemblies()`), and
+  `TryAddScoped`s the assembly's handlers.
+- Order independence through DI registration, not the planned `ActivatorUtilities` fallback (Hugo): a fallback-created
+  handler isn't tracked by the scope, so an `IDisposable` handler would never be disposed. `ClusterConfigBuilder` now
+  uses `TryAddScoped` too (once per handler across clusters; an app's own registration wins instead of being
+  overridden).
+- `JobDefinitionIdResolver.AssemblyDiscoveryHint` appended to the "not found" / "not registered" errors and the
+  recurring planner's Critical log.
+- Tests: `Ioc/JobMasterAssemblyDiscoveryTests` (6). They use the test assembly itself, not a fake one: the added set is
+  process-wide, and a fake would show its types twice to every other test's scans.
+
 #### One type scan per assembly: `TypeDiscovery` (Plan0.0.12Alpha items 14 and 4)
 - New `JobMaster.Sdk.Utils.TypeDiscovery` (internal static): `ConcurrentDictionary<Assembly, Type[]>`, filled once per
   assembly; the assembly list is re-read on every call, so a later-loaded assembly is picked up. Typed shortcuts

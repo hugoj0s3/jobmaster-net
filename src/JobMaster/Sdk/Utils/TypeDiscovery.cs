@@ -17,6 +17,7 @@ internal static class TypeDiscovery
 {
     private static readonly ConcurrentDictionary<Assembly, Type[]> TypesByAssembly = new();
     private static readonly ConcurrentDictionary<(Assembly Assembly, Type BaseType), Type[]> ConcreteTypesByAssembly = new();
+    private static readonly ConcurrentDictionary<Assembly, byte> AddedAssemblies = new();
 
     /// <summary>Every type of every loaded assembly.</summary>
     public static IEnumerable<Type> AllTypes() => AllTypes(GetLoadedAssemblies());
@@ -31,9 +32,14 @@ internal static class TypeDiscovery
     public static IEnumerable<Type> StaticRecurringSchedulesProfileTypes() =>
         AllTypes().Where(t => !t.IsAbstract && t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
 
-    /// <summary>The loaded assemblies the scans look at: every non-dynamic one.</summary>
+    /// <summary>
+    /// The assemblies the scans look at: every non-dynamic loaded one, plus the ones added through
+    /// <c>JobMasterAssemblyDiscovery()</c>.
+    /// </summary>
     public static IEnumerable<Assembly> GetLoadedAssemblies() =>
-        AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic);
+        AppDomain.CurrentDomain.GetAssemblies().Where(a => !a.IsDynamic).Union(AddedAssemblies.Keys);
+
+    internal static void AddAssembly(Assembly assembly) => AddedAssemblies.TryAdd(assembly, 0);
 
     /// <summary>The (cached) types of <paramref name="assembly"/>.</summary>
     public static Type[] TypesOf(Assembly assembly) => TypesByAssembly.GetOrAdd(assembly, GetTypes);

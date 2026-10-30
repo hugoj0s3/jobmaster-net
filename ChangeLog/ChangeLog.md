@@ -131,8 +131,18 @@
   ```
 
   Returns `false` when it can't be cancelled anymore: the job is running or finished, or due to start in less than about a minute (a worker may already have it); the schedule had already ended. If it throws, calling it again is safe.
+- **`services.JobMasterAssemblyDiscovery()` for libraries your code never references directly.** JobMaster finds handlers, static recurring schedule profiles and job definitions in the assemblies your application has loaded, and .NET loads a library only when code uses one of its types. So a worker that only runs the handlers of a separate library, without naming any of its types, didn't find them: jobs failed with "handler not found" and the library's static recurring schedules were never created. Add such libraries explicitly:
+
+  ```csharp
+  services.JobMasterAssemblyDiscovery()
+      .AddAssemblyContaining<BillingHandler>();
+  ```
+
+  Also `AddAssembly(assembly)` and `AddAssemblies(...)`. It can be called before or after `AddJobMasterCluster`. The "handler not found" errors now point to it.
 
 ### Changed
+
+- **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
 
 - **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.
 

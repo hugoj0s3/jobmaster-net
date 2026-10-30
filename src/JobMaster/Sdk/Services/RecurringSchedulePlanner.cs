@@ -97,7 +97,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         var handlerType = JobDefinitionIdResolver.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
         if (handlerType == null)
         {
-            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}");
+            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}. {JobDefinitionIdResolver.AssemblyDiscoveryHint}");
             
             // Avoid keep get this schedule again and again. Delay the next attempt.
             scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);

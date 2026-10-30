@@ -9,6 +9,10 @@ internal static class JobDefinitionIdResolver
 {
     private static readonly ConcurrentDictionary<string, Type> JobDefinitionIdMap = new();
 
+    internal const string AssemblyDiscoveryHint =
+        "If the handler is in a library this application never references in code, add it with " +
+        "services.JobMasterAssemblyDiscovery().AddAssemblyContaining<THandler>().";
+
     /// <summary>
     /// Resolves the <see cref="IJobMasterHandler"/> implementation type for the given <paramref name="jobDefinitionId"/>.
     /// Returns <c>null</c> if no matching type is found.
@@ -39,15 +43,15 @@ internal static class JobDefinitionIdResolver
         var handlerType = GetJobHandlerTypeFromId(jobDefinitionId);
         if (handlerType is null)
         {
-            throw new InvalidOperationException($"Job handler type not found for job handler type id: {jobDefinitionId}");
+            throw new InvalidOperationException($"Job handler type not found for job definition id: {jobDefinitionId}. {AssemblyDiscoveryHint}");
         }
 
         var handler = serviceProvider.GetService(handlerType);
         if (handler is null)
         {
             throw new InvalidOperationException(
-                $"Job handler type {handlerType.FullName} is not registered in the DI container. " +
-                $"Ensure the handler is in an assembly that is scanned during cluster configuration.");
+                $"Job handler type {handlerType.FullName} is not registered in the DI container: its assembly was " +
+                $"loaded after the service provider was built. {AssemblyDiscoveryHint}");
         }
 
         if (handler is not IJobMasterHandler jobHandler)

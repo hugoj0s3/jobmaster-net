@@ -27,6 +27,7 @@ using JobMaster.Sdk.Services.Agents;
 using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
@@ -217,11 +218,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             clusterServiceRegistration.ClusterServices.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
         }
         
-        // Automatically register all IJobMasterHandler implementations
+        // Automatically register all IJobMasterHandler implementations. TryAdd: once per handler across clusters and
+        // JobMasterAssemblyDiscovery(), and an application's own registration (custom lifetime / factory) wins.
         var handlerTypes = typeof(IJobMasterHandler).GetCachedConcreteTypesOf().ToList();
         foreach (var handlerType in handlerTypes)
         {
-            services.AddScoped(handlerType);
+            services.TryAddScoped(handlerType);
         }
         
         var factory = clusterServiceRegistration.BuildFactory();
