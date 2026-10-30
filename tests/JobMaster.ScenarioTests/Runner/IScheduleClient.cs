@@ -13,6 +13,7 @@ public interface IScheduleClient
         int? maxNumberOfRetries = null,
         bool? confirmOnMaster = null,
         bool? cancelFromReceipt = null,
+        bool? cancelFromId = null,
         CancellationToken ct = default);
 }
 

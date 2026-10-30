@@ -26,8 +26,8 @@
     purged like any other.
   - Tests: unit (insert-cancelled, routing per receipt status, `JobSavePendingOperation` duplicate → `AlreadyExists`
     without dispatch), a `Cancelled` job in the RepoConformance finalized-insert test, and `ConfirmOnMasterTest/PostgresPure`
-    extended with a cancel-from-receipt step (passed): nothing whose cancel returned `true` ran, and master kept it
-    cancelled after the agent's late save.
+    extended with a cancel-from-receipt step and a cancel-by-id step (passed, 9m24s): nothing whose cancel returned
+    `true` ran, and master kept it cancelled after the agent's late save.
 
 #### Schedule receipts + ConfirmOnMaster (Plan0.0.12Alpha items 6 and 7)
 - **Receipts (item 6, breaking).** `JobScheduleReceipt` / `RecurringScheduleReceipt` are returned by every

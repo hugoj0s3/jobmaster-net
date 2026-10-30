@@ -81,6 +81,13 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         cancelledJobIds.AddRange(cancelled.Where(c => c.Cancelled).Select(c => c.JobId));
     }
 
+    if (req.CancelFromId == true)
+    {
+        var cancelled = await Task.WhenAll(jobs.Select(async j =>
+            (j.JobId, Cancelled: await RetryUntilOnMasterAsync(() => scheduler.CancelJobAsync(j.JobId, j.ClusterId)))));
+        cancelledJobIds.AddRange(cancelled.Where(c => c.Cancelled).Select(c => c.JobId));
+    }
+
     return Results.Ok(new ScheduleResponse(
         jobs.Select(j => j.Context.Id).ToList(),
         jobs.Count(j => j.Status == ScheduleReceiptStatus.AcceptedOnTransport),
@@ -96,7 +103,16 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         await receipt.ConfirmOnMasterAsync();
     }
 
-    var cancelled = req.CancelFromReceipt == true && await receipt.CancelAsync();
+    var cancelled = false;
+    if (req.CancelFromReceipt == true)
+    {
+        cancelled = await receipt.CancelAsync();
+    }
+
+    if (req.CancelFromId == true)
+    {
+        cancelled = await RetryUntilOnMasterAsync(() => scheduler.CancelRecurringAsync(receipt.RecurringScheduleId, receipt.ClusterId));
+    }
 
     return Results.Ok(new RecurringScheduleResponse(
         receipt.Context.Id,
@@ -115,6 +131,26 @@ await app.Services.StartJobMasterRuntimeAsync();
 app.Run();
 
 return;
+
+// Cancel by id only finds the item once it's saved on master (the agent may not have saved it yet), so retry.
+static async Task<bool> RetryUntilOnMasterAsync(Func<Task<bool>> cancel)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(60);
+    while (true)
+    {
+        if (await cancel())
+        {
+            return true;
+        }
+
+        if (DateTime.UtcNow >= deadline)
+        {
+            return false;
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+    }
+}
 
 static Task<JobScheduleReceipt> ScheduleHandler(
     string handlerType,

@@ -10,6 +10,7 @@ public interface IRecurringScheduleClient
         string? clusterId = null,
         bool? confirmOnMaster = null,
         bool? cancelFromReceipt = null,
+        bool? cancelFromId = null,
         CancellationToken ct = default);
 
     Task CancelRecurringAsync(

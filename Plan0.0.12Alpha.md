@@ -689,7 +689,8 @@ Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt);  // IJobMaste
 - [x] Unit test for the agent side: `JobSavePendingOperation` on a duplicate → `AlreadyExists`, nothing dispatched.
 - [x] Scenario test (extended `ConfirmOnMasterTest/PostgresPure`, passed 2026-10-29): jobs due in 2 min cancelled
       from their receipts → all `true`, never run, `Cancelled` on master; jobs due now → those cancelled never run, the
-      rest run once; recurring schedule → cancelled, never fires, `Canceled` on master. Postgres only: the logic is
+      rest run once; recurring schedule → cancelled, never fires, `Canceled` on master. Also cancel by id once on master
+      (`CancelFromId`, the app retries until the agent saved it): same outcomes. Postgres only: the logic is
       provider-independent and the repository parts are in RepoConformance.
 - [x] ChangeLog (added). Docs: item 10.
 
