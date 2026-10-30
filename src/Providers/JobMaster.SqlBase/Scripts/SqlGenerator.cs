@@ -2,7 +2,7 @@ using System.Linq.Expressions;
 using System.Reflection;
 using System.Text;
 using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Reflection;
 
 namespace JobMaster.SqlBase.Scripts;
 

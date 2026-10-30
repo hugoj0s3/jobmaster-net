@@ -2,7 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using JobMaster.Abstractions.StaticRecurringSchedules;
 
-namespace JobMaster.Sdk.Utils;
+namespace JobMaster.Sdk.Reflection;
 
 /// <summary>
 /// The types of every loaded assembly, for the AppDomain-wide scans (startup validation, IoC registration, handler

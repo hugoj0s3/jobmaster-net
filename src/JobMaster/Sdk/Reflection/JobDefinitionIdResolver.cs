@@ -1,8 +1,9 @@
 using System.Collections.Concurrent;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models.Attributes;
+using JobMaster.Sdk.Utils;
 
-namespace JobMaster.Sdk.Utils;
+namespace JobMaster.Sdk.Reflection;
 
 /// <summary>Maps job definition ids to handler types and back.</summary>
 internal static class JobDefinitionIdResolver

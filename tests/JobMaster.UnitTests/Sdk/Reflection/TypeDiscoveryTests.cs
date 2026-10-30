@@ -1,8 +1,8 @@
 using System.Reflection;
 using FluentAssertions;
-using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Reflection;
 
-namespace JobMaster.UnitTests.Sdk.Utils;
+namespace JobMaster.UnitTests.Sdk.Reflection;
 
 public class TypeDiscoveryTests
 {

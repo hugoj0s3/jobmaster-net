@@ -1,7 +1,7 @@
 using System.Reflection;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Ioc;
-using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 

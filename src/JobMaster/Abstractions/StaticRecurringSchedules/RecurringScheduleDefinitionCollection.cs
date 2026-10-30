@@ -6,6 +6,7 @@ using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;

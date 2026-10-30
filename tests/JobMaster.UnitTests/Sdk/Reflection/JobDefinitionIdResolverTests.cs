@@ -2,10 +2,10 @@ using FluentAssertions;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
-using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace JobMaster.UnitTests.Sdk.Utils;
+namespace JobMaster.UnitTests.Sdk.Reflection;
 
 public class JobDefinitionIdResolverTests
 {

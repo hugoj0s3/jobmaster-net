@@ -27,7 +27,7 @@
   process-wide, and a fake would show its types twice to every other test's scans.
 
 #### One type scan per assembly: `TypeDiscovery` (Plan0.0.12Alpha items 14 and 4)
-- New `JobMaster.Sdk.Utils.TypeDiscovery` (internal static): `ConcurrentDictionary<Assembly, Type[]>`, filled once per
+- New `JobMaster.Sdk.Reflection.TypeDiscovery` (internal static): `ConcurrentDictionary<Assembly, Type[]>`, filled once per
   assembly; the assembly list is re-read on every call, so a later-loaded assembly is picked up. Typed shortcuts
   (Hugo): `typeof(T).GetCachedConcreteTypesOf()` extension (cached per assembly + base type) and
   `StaticRecurringSchedulesProfileTypes()`.
@@ -41,10 +41,11 @@
   - `GetJobHandlerTypeFromId` maps every handler on a miss (no per-assembly index or lock); the handler types are
     cached, so a repeated miss is only dictionary lookups.
   - `GetJobHandlerTypeFromId` / `GetJobDefinitionId` and the id map moved off the attribute into internal
-    `JobMaster.Sdk.Utils.JobDefinitionIdResolver` (Hugo); `JobMasterDefinitionIdAttribute` is just the attribute now.
+    `JobMaster.Sdk.Reflection.JobDefinitionIdResolver` (Hugo); `JobMasterDefinitionIdAttribute` is just the attribute now.
     `type.GetJobDefinitionId()` is an extension, and `serviceProvider.GetJobHandler(jobDefinitionId)` holds the
     engine's lookup + DI resolve + checks (same exceptions/messages as before).
-    Tests moved to `Sdk/Utils/JobDefinitionIdResolverTests`. Dead `JobUtil.JobHandlerTypeMap` removed.
+    Tests moved to `Sdk/Reflection/JobDefinitionIdResolverTests`. Dead `JobUtil.JobHandlerTypeMap` removed.
+  - `TypeDiscovery` and `JobDefinitionIdResolver` live in `JobMaster.Sdk.Reflection` (Hugo), not `Sdk.Utils`.
 - Moved onto it: the validator's four scans, `JobMasterRuntime`'s two (profiles, `[RecurringSchedule]`; the
   disabled-priority one was removed in item 13), `ClusterConfigBuilder` (runtime setups, handlers),
   `JobMasterIocRegistrationAttribute`, `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, `SqlGenerator`.

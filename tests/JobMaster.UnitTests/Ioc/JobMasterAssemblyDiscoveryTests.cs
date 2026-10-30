@@ -4,7 +4,7 @@ using FluentAssertions;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
-using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Reflection;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.UnitTests.Ioc;

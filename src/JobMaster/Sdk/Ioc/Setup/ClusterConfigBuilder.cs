@@ -32,6 +32,7 @@ using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Setup.Binders;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
