@@ -7,6 +7,28 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Disabled-priority validation scoped per cluster (Plan0.0.12Alpha item 13)
+- **Startup:** `JobMasterRuntime.PreValidation`'s `DisabledPriorities` loop is gone. It checked every handler in the
+  AppDomain against every cluster with disabled priorities (false positive across clusters) and read only
+  `[JobMasterPriority]` (missed `JobDefinitionConfig.Priority`). Replaced by
+  `DefaultRuntimeValidatorSetup.ValidateDisabledPriorities` (aggregated with the other startup errors):
+  - handlers: `JobUtil.GetClusterId(t, null) ?? default` × `JobUtil.GetJobMasterPriority(t, null)`;
+  - definition-only `IStaticJobDefinitionConfig` (Hugo): `config.ClusterId ?? default` × `config.Priority ?? Medium`
+    (what `Job.New(config)` stores);
+  - unknown cluster ids are skipped (`ValidateClusterIds` reports them).
+- **Dynamic recurring (Hugo: fail at registration):** `JobMasterScheduler.EnsureCanSave(RecurringScheduleRawModel)`
+  checks `Priority ?? JobUtil.GetHandlerPriority(JobDefinitionId)`, the same resolution as each run
+  (`Job.FromRecurringSchedule`). Checked only, not stored. `GetHandlerPriority` returns `null` when the handler isn't
+  in the process (publisher-only config path), so that case keeps the old explicit-only check.
+- **Static recurring bootstrap:** the same `Priority ?? GetHandlerPriority` against each definition's cluster (the
+  schedule's cluster can differ from the handler's own, which startup checks). Still runs after `worker.StartAsync()`,
+  like before; not moved.
+- `GetHandlerPriority` goes through `GetJobHandlerTypeFromId`, so a miss rescans the assemblies (item 4).
+- Tests: 7 `ValidateDisabledPriorities` unit tests (other-cluster OK, own cluster, default cluster, config priority,
+  inherited attribute, definition-only, unknown cluster), 4 scheduler tests (`Recurring`/`RecurringAsync` throw on a
+  handler-resolved disabled priority without saving; explicit allowed priority wins; resolved priority isn't stored).
+  757/757 unit tests.
+
 #### Cancel from a receipt (Plan0.0.12Alpha item 16)
 - `IJobMasterScheduler.CancelJobAsync(JobScheduleReceipt)` / `CancelRecurringAsync(RecurringScheduleReceipt)`, and
   `receipt.CancelAsync()` calling them. Cancel by id only finds rows on master, so it returned `false` for an item

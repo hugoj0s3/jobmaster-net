@@ -121,6 +121,14 @@ internal static class JobUtil
         return priority.Value;
     }
 
+    // The priority a recurring schedule with no priority of its own resolves to on each run; null when no handler
+    // for the definition id is in this process (e.g. a publisher-only app), since the worker resolves it then.
+    public static JobMasterPriority? GetHandlerPriority(string jobDefinitionId)
+    {
+        var jobHandlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(jobDefinitionId);
+        return jobHandlerType is null ? null : GetJobMasterPriority(jobHandlerType, priority: null);
+    }
+
     private static readonly IDictionary<string, Type> JobHandlerTypeMap = new Dictionary<string, Type>();
 
     public static int ValidateMaxNumberOfRetries(int maxNumberOfRetries)

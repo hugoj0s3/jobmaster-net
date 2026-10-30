@@ -72,6 +72,10 @@
   | `ReScheduleAsync` / `ReSchedule` | `RescheduleAsync` / `Reschedule` |
 
   `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
+- **Disabled priorities are now checked against the cluster each job or schedule goes to, with the priority it actually resolves to.** Some setups that started before now fail at startup or at the call:
+  - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
+  - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.
+  - **Static recurring schedules without a priority** are checked the same way at startup, when the handler is in the app.
 
 ### Added
 
@@ -156,6 +160,7 @@
 ### Fixed
 
 - **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
+- **A priority disabled on one cluster no longer fails startup for handlers on other clusters.** Startup checked every handler against every cluster that disables a priority. So a `[JobMasterPriority(Critical)]` handler on the default cluster failed startup when another cluster disabled `Critical`. Each handler is now checked only against its own cluster: its `[JobMasterClusterId]` / `JobDefinitionConfig.ClusterId`, else the default cluster. A job sent to another cluster with an explicit `clusterId:` is still checked at the scheduling call.
 - **The synchronous `CancelJob` now saves the cancellation before returning.** It returned `true` without waiting for the database write, so a failed write (for example a concurrent update) was silently lost and the job could still run.
 - **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
 

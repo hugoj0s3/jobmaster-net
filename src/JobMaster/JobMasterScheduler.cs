@@ -640,12 +640,14 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
         if (config == null)
             throw new KeyNotFoundException("Cluster config not found");
 
-        if (recurringSchMd.Priority.HasValue &&
+        // Checked, not stored: a schedule without its own priority still resolves the handler's on each run.
+        var priority = recurringSchMd.Priority ?? JobUtil.GetHandlerPriority(recurringSchMd.JobDefinitionId);
+        if (priority.HasValue &&
             JobMasterClusterConnectionConfig.TryGet(recurringSchMd.ClusterId, includeNotReady: true)
-                ?.IsPriorityDisabled(recurringSchMd.Priority.Value) == true)
+                ?.IsPriorityDisabled(priority.Value) == true)
         {
             throw new InvalidOperationException(
-                $"Priority {recurringSchMd.Priority.Value} is disabled on cluster '{recurringSchMd.ClusterId}'. " +
+                $"Priority {priority.Value} is disabled on cluster '{recurringSchMd.ClusterId}'. " +
                 $"Cannot schedule recurring schedule '{recurringSchMd.JobDefinitionId}'.");
         }
     }

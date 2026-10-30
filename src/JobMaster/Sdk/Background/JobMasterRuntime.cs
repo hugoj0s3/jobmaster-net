@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -554,30 +555,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
             }
 
-            if (clusterDefinition.DisabledPriorities.Any())
-            {
-                var handlerTypes = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(a =>
-                    {
-                        try { return a.GetTypes(); }
-                        catch { return Array.Empty<Type>(); }
-                    })
-                    .Where(t => !t.IsAbstract && !t.IsInterface && typeof(IJobMasterHandler).IsAssignableFrom(t));
-
-                foreach (var handlerType in handlerTypes)
-                {
-                    // Inherited, like JobUtil.GetJobMasterPriority -- a base class's [JobMasterPriority] applies.
-                    var p = handlerType.GetCachedAttribute<JobMasterPriorityAttribute>()?.Priority ?? JobMasterPriority.Medium;
-
-                    if (clusterDefinition.DisabledPriorities.Contains(p))
-                    {
-                        throw new InvalidOperationException(
-                            $"Handler '{handlerType.FullName}' uses priority {p}, which is disabled " +
-                            $"on cluster '{clusterDefinition.ClusterId}'. " +
-                            $"Remove or change the [JobMasterPriority] attribute on that handler.");
-                    }
-                }
-            }
+            // Handler priorities vs DisabledPriorities: per handler cluster, in DefaultRuntimeValidatorSetup.
         }
     }
 
@@ -746,12 +724,13 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             if (clusterDef?.DisabledPriorities.Any() != true) continue;
 
-            // null priority defers to the handler attribute — already validated in PreValidation.
-            // Only reject an explicitly-set disabled priority here.
-            if (def.Priority.HasValue && clusterDef.DisabledPriorities.Contains(def.Priority.Value))
+            // Same resolution as each run (Job.FromRecurringSchedule): explicit, else the handler's. The handler's
+            // own cluster is checked at startup, but the schedule's cluster can differ.
+            var priority = def.Priority ?? JobUtil.GetHandlerPriority(def.JobDefinitionId);
+            if (priority.HasValue && clusterDef.DisabledPriorities.Contains(priority.Value))
             {
                 throw new InvalidOperationException(
-                    $"Static recurring schedule '{def.Id}' uses priority {def.Priority.Value}, " +
+                    $"Static recurring schedule '{def.Id}' uses priority {priority.Value}, " +
                     $"which is disabled on cluster '{def.ClusterId}'.");
             }
         }

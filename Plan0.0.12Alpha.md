@@ -480,26 +480,26 @@ cluster. Each check uses the fully resolved priority: explicit, then `JobDefinit
   cluster at bootstrap. Better: before workers start, which ties into the item-1 lesson about bootstrap failures
   after `worker.StartAsync()`.
 
-**Open decisions.**
-- Dynamic recurring schedules with a handler-resolved priority:
-  - fail at registration (`RecurringAsync`) by resolving the handler priority up front for the check, without storing
-    it, so per-occurrence resolution is kept;
-  - fail or warn when planned;
-  - or keep the delay-then-fallback and only log a warning.
-  - Registration-time failure is the most consistent with one-off jobs.
-- Is a definition-only `IStaticJobDefinitionConfig` (publisher side, no handler) with a disabled priority on its own
-  `ClusterId` also a startup error? It would match item 1's cluster-id validator scope.
+**Decided (Hugo, 2026-10-29).**
+- Dynamic recurring with a handler-resolved priority: **fail at registration** (`Recurring<T>` / `RecurringAsync<T>`).
+  The handler priority is resolved for the check only, not stored, so each run still resolves it.
+- A definition-only `IStaticJobDefinitionConfig` with a priority disabled on its own `ClusterId` **is a startup
+  error**, like item 1's cluster-id validator.
 
 **Tasks.**
-- [ ] Per-cluster startup validation helper + unit tests:
+- [x] Per-cluster startup validation helper (`DefaultRuntimeValidatorSetup.ValidateDisabledPriorities`) + unit tests:
   - Critical handler on the default cluster with Critical disabled only on cluster-b → OK.
   - The same handler with `[JobMasterClusterId("cluster-b")]` → error.
   - `JobDefinitionConfig` priority checked.
   - Inherited `[JobMasterPriority]` checked.
-- [ ] Remove the old all-handlers loop from `PreValidation`.
-- [ ] Static recurring: resolved-priority check per definition cluster.
-- [ ] Dynamic recurring: implement the decided behavior + tests.
-- [ ] Docs (`cluster-configuration.md` DisablePriority section, `job-configuration.md` priority warning) + ChangeLog.
+  - Definition-only config checked; unknown cluster skipped.
+- [x] Remove the old all-handlers loop from `PreValidation`.
+- [x] Static recurring: resolved-priority check per definition cluster (`Priority ?? JobUtil.GetHandlerPriority`).
+      Still at bootstrap after the workers start, like before; no unit test (private bootstrap path).
+- [x] Dynamic recurring: `EnsureCanSave` resolves `Priority ?? GetHandlerPriority` + tests. The definition-config path
+      on a publisher-only app has no handler, so it keeps checking only an explicit / config priority.
+- [x] ChangeLog. Docs (`cluster-configuration.md` DisablePriority section, `job-configuration.md` priority warning):
+      item 10.
 
 **Done when.** The per-cluster priority tests and the full unit suite are green.
 
