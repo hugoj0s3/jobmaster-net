@@ -558,6 +558,121 @@ public class JobMasterSchedulerClusterAwareTests
         await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("Cluster mode is archived");
     }
 
+    [Fact]
+    public void CancelJob_PersistsWithSyncUpdate_BeforeReturning()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var job = NewJob(clusterId);
+        job.Status = JobMasterJobStatus.OnMaster;
+        job.ScheduledAt = DateTime.UtcNow.AddHours(1); // outside the onboarding window
+        job.NextPlanExecutionAt = job.ScheduledAt;
+        mocks.Jobs.Setup(x => x.Get(job.Id)).Returns(job);
+        mocks.Jobs
+            .Setup(x => x.Update(It.Is<JobRawModel>(m => m.Id == job.Id && m.Status == JobMasterJobStatus.Cancelled), null, null))
+            .Verifiable();
+
+        mocks.CreateSut().CancelJob(job.Id).Should().BeTrue();
+
+        mocks.Jobs.Verify();
+        mocks.Jobs.Verify(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task InsertCancelledJobAsync_InsertsItCancelled_WithoutBucket()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var job = NewJob(clusterId);
+        job.AssignSavePendingJobToBucket(NewBucket(clusterId));
+        IList<JobRawModel>? sent = null;
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(batch => sent = batch)
+            .ReturnsAsync(new List<Guid> { job.Id });
+
+        (await mocks.CreateSut().InsertCancelledJobAsync(job)).Should().BeTrue();
+
+        var row = sent.Should().ContainSingle().Subject;
+        row.Status.Should().Be(JobMasterJobStatus.Cancelled);
+        row.BucketId.Should().BeNull();
+        row.AgentConnectionId.Should().BeNull();
+        row.AgentWorkerId.Should().BeNull();
+        row.NextPlanExecutionAt.Should().BeNull();
+        row.FinalizedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task InsertCancelledJobAsync_WhenAlreadyOnMaster_ReturnsFalse()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
+            .ReturnsAsync(new List<Guid>());
+
+        (await mocks.CreateSut().InsertCancelledJobAsync(NewJob(clusterId))).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InsertCancelledJobAsync_WhenClusterArchived_StillInsertsItCancelled()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Archived);
+        var job = NewJob(clusterId);
+        mocks.Jobs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.Is<IList<JobRawModel>>(l => l.Single().Status == JobMasterJobStatus.Cancelled)))
+            .ReturnsAsync(new List<Guid> { job.Id });
+
+        (await mocks.CreateSut().InsertCancelledJobAsync(job)).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task InsertCancelledRecurringScheduleAsync_InsertsItCanceled()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var schedule = NewRecurring(clusterId);
+        schedule.AssignPendingRecurringScheduleToBucket(NewBucket(clusterId));
+        IList<RecurringScheduleRawModel>? sent = null;
+        mocks.Recurs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .Callback<IList<RecurringScheduleRawModel>>(batch => sent = batch)
+            .ReturnsAsync(new List<Guid> { schedule.Id });
+
+        (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeTrue();
+
+        var row = sent.Should().ContainSingle().Subject;
+        row.Status.Should().Be(RecurringScheduleStatus.Canceled);
+        row.BucketId.Should().BeNull();
+        row.TerminatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task InsertCancelledRecurringScheduleAsync_WhenAlreadyOnMaster_ReturnsFalse()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        mocks.Recurs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .ReturnsAsync(new List<Guid>());
+
+        (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(NewRecurring(clusterId))).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task InsertCancelledRecurringScheduleAsync_WhenClusterArchived_StillInsertsItCanceled()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Archived);
+        var schedule = NewRecurring(clusterId);
+        mocks.Recurs
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.Is<IList<RecurringScheduleRawModel>>(l => l.Single().Status == RecurringScheduleStatus.Canceled)))
+            .ReturnsAsync(new List<Guid> { schedule.Id });
+
+        (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeTrue();
+    }
+
     private sealed class Mocks
     {
         private readonly JobMasterClusterConnectionConfig clusterConfig;

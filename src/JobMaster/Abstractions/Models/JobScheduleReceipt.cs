@@ -74,4 +74,22 @@ public sealed class JobScheduleReceipt
 
         return JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[] { this });
     }
+
+    /// <summary>
+    /// Cancels the job on the cluster it was scheduled on. Works right after scheduling too, whatever the
+    /// <see cref="Status"/>.
+    /// <para>
+    /// Returns <c>true</c> when the job is cancelled and won't run. Returns <c>false</c> when it can't be cancelled
+    /// anymore: it's running or finished, or it's due to start in less than about a minute and a worker may
+    /// already have it.
+    /// </para>
+    /// <para>
+    /// If it throws, the job may or may not be cancelled; calling it again is safe.
+    /// Same as <see cref="IJobMasterScheduler.CancelJobAsync(JobScheduleReceipt)"/>.
+    /// </para>
+    /// </summary>
+    public async Task<bool> CancelAsync()
+    {
+        return await JobMasterScheduler.Instance.CancelJobAsync(this);
+    }
 }

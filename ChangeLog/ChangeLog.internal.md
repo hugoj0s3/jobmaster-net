@@ -7,6 +7,28 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Cancel from a receipt (Plan0.0.12Alpha item 16)
+- `IJobMasterScheduler.CancelJobAsync(JobScheduleReceipt)` / `CancelRecurringAsync(RecurringScheduleReceipt)`, and
+  `receipt.CancelAsync()` calling them. Cancel by id only finds rows on master, so it returned `false` for an item
+  still on the agent transport, which then ran.
+  - `AcceptedOnTransport`: `IJobMasterSchedulerClusterAware.InsertCancelledJobAsync` /
+    `InsertCancelledRecurringScheduleAsync` insert the receipt's model already cancelled
+    (`BulkInsertIfNotExistsAsync`; no archived check, unlike confirm: a final row is allowed on an archived cluster).
+    Inserted → `true`: every agent save inserts
+    first and treats a duplicate as handled, so the agent's copy never runs. Not inserted (already on master) → the
+    existing cancel by id.
+  - `StoredOnMaster`: the existing cancel by id, on the receipt's `ClusterId`.
+  - New `JobRawModel.MarkAsCancelledBeforeSave()` (final `Cancelled`, bucket/agent/deadline/plan fields cleared):
+    `TryToCancel` only accepts `OnMaster` / `InBucket`. Schedules reuse `TryToCancel` (works from `PendingSave`).
+  - The cancel-by-id fallback keeps `TryToCancel`'s window: it refuses jobs due within ~50s (15s clock-skew padding +
+    30s `OnBoardingWindow` + 5s). Not relaxed here: needs its own check of every unversioned update path.
+  - A late cancel after data retention purged a finished job inserts a `Cancelled` row: final, so it's archived /
+    purged like any other.
+  - Tests: unit (insert-cancelled, routing per receipt status, `JobSavePendingOperation` duplicate → `AlreadyExists`
+    without dispatch), a `Cancelled` job in the RepoConformance finalized-insert test, and `ConfirmOnMasterTest/PostgresPure`
+    extended with a cancel-from-receipt step (passed): nothing whose cancel returned `true` ran, and master kept it
+    cancelled after the agent's late save.
+
 #### Schedule receipts + ConfirmOnMaster (Plan0.0.12Alpha items 6 and 7)
 - **Receipts (item 6, breaking).** `JobScheduleReceipt` / `RecurringScheduleReceipt` are returned by every
   `Once*`/`Recurring*` method and extension.

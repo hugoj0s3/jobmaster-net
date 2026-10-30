@@ -277,6 +277,26 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
     }
 
+    // No archived check: a cancelled row is final, which an archived cluster may hold.
+    public async Task<bool> InsertCancelledJobAsync(JobRawModel job)
+    {
+        // Final status: the agent's later save sees a duplicate and drops its message, so it never runs.
+        job.MarkAsCancelledBeforeSave();
+        var inserted = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+        return inserted.Contains(job.Id);
+    }
+
+    public async Task<bool> InsertCancelledRecurringScheduleAsync(RecurringScheduleRawModel schedule)
+    {
+        if (!schedule.TryToCancel())
+        {
+            return false;
+        }
+
+        var inserted = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+        return inserted.Contains(schedule.Id);
+    }
+
     public async Task<bool> CancelJobAsync(Guid jobId)
     {
         var jobEntity = await masterJobsService.GetAsync(jobId);
@@ -307,13 +327,13 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
 
-        masterJobsService.UpdateAsync(jobEntity);
+        masterJobsService.Update(jobEntity);
         return true;
     }
 
-    public async Task<bool> CancelRecurringAsync(Guid id)
+    public async Task<bool> CancelRecurringAsync(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(id);
+        var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(recurringScheduleId);
         if (recurringScheduleEntity == null)
         {
             return false;
@@ -328,9 +348,9 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         return true;
     }
 
-    public bool CancelRecurring(Guid id)
+    public bool CancelRecurring(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = masterRecurringSchedulesService.Get(id);
+        var recurringScheduleEntity = masterRecurringSchedulesService.Get(recurringScheduleId);
         if (recurringScheduleEntity == null)
         {
             return false;
@@ -345,7 +365,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         return true;
     }
 
-    public async Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt)
+    public async Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -359,18 +379,18 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
         
-        if (!jobEntity.CanReSchedule())
+        if (!jobEntity.CanReschedule())
         {
             return false;
         }
 
-        jobEntity.ReSchedule(scheduledAt);
+        jobEntity.Reschedule(scheduledAt);
         await masterJobsService.UpdateAsync(jobEntity);
         
         return true;
     }
 
-    public bool ReSchedule(Guid jobId, DateTime scheduledAt)
+    public bool Reschedule(Guid jobId, DateTime scheduledAt)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -384,12 +404,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
         
-        if (!jobEntity.CanReSchedule())
+        if (!jobEntity.CanReschedule())
         {
             return false;
         }
 
-        jobEntity.ReSchedule(scheduledAt);
+        jobEntity.Reschedule(scheduledAt);
         masterJobsService.Update(jobEntity);
         
         return true;

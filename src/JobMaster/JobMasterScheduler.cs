@@ -180,34 +180,34 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
         return schedulerClusterAware.CancelJobAsync(jobId);
     }
 
-    public bool TryCancelJob(Guid id, string? clusterId = null)
+    public bool CancelJob(Guid jobId, string? clusterId = null)
     {
         var schedulerClusterAware = EnsureGetSchedulerClusterAware(clusterId);
-        return schedulerClusterAware.CancelJob(id);
+        return schedulerClusterAware.CancelJob(jobId);
     }
 
-    public Task<bool> TryCancelRecurringAsync(Guid id, string? clusterId = null)
+    public Task<bool> CancelRecurringAsync(Guid recurringScheduleId, string? clusterId = null)
     {
         var schedulerClusterAware = EnsureGetSchedulerClusterAware(clusterId);
-        return schedulerClusterAware.CancelRecurringAsync(id);
+        return schedulerClusterAware.CancelRecurringAsync(recurringScheduleId);
     }
 
-    public bool CancelRecurring(Guid id, string? clusterId = null)
+    public bool CancelRecurring(Guid recurringScheduleId, string? clusterId = null)
     {
         var schedulerClusterAware = EnsureGetSchedulerClusterAware(clusterId);
-        return schedulerClusterAware.CancelRecurring(id);
+        return schedulerClusterAware.CancelRecurring(recurringScheduleId);
     }
 
-    public Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null)
+    public Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null)
     {
         var schedulerClusterAware = EnsureGetSchedulerClusterAware(clusterId);
-        return schedulerClusterAware.ReScheduleAsync(jobId, scheduledAt);
+        return schedulerClusterAware.RescheduleAsync(jobId, scheduledAt);
     }
 
-    public bool ReSchedule(Guid jobId, DateTime scheduledAt, string? clusterId = null)
+    public bool Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null)
     {
         var schedulerClusterAware = EnsureGetSchedulerClusterAware(clusterId);
-        return schedulerClusterAware.ReSchedule(jobId, scheduledAt);
+        return schedulerClusterAware.Reschedule(jobId, scheduledAt);
     }
     
     // The generic Advanced.OnceNow<TDefinition>/OnceAt<TDefinition>/OnceAfter<TDefinition> (+ Async) methods
@@ -742,6 +742,32 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
             var service = EnsureGetSchedulerClusterAware(cluster.Key);
             await service.ConfirmRecurringSchedulesOnMasterAsync(cluster.Select(r => r.model).ToList());
         }
+    }
+
+    // Only accepted on the transport: try to save it on master already cancelled first; if it's already there
+    // (e.g. the agent saved it), cancel it by id like CancelJobAsync.
+    public async Task<bool> CancelJobAsync(JobScheduleReceipt receipt)
+    {
+        var service = EnsureGetSchedulerClusterAware(receipt.ClusterId);
+        if (receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport &&
+            await service.InsertCancelledJobAsync(receipt.model))
+        {
+            return true;
+        }
+
+        return await service.CancelJobAsync(receipt.JobId);
+    }
+
+    public async Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt)
+    {
+        var service = EnsureGetSchedulerClusterAware(receipt.ClusterId);
+        if (receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport &&
+            await service.InsertCancelledRecurringScheduleAsync(receipt.model))
+        {
+            return true;
+        }
+
+        return await service.CancelRecurringAsync(receipt.RecurringScheduleId);
     }
 
     // bucket: where the cluster-aware scheduler handed it on the agent transport; null = stored on master.

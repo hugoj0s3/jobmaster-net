@@ -74,9 +74,17 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
         await scheduler.Advanced.ConfirmOnMasterAsync(jobs);
     }
 
+    var cancelledJobIds = new List<Guid>();
+    if (req.CancelFromReceipt == true)
+    {
+        var cancelled = await Task.WhenAll(jobs.Select(async j => (j.JobId, Cancelled: await j.CancelAsync())));
+        cancelledJobIds.AddRange(cancelled.Where(c => c.Cancelled).Select(c => c.JobId));
+    }
+
     return Results.Ok(new ScheduleResponse(
         jobs.Select(j => j.Context.Id).ToList(),
-        jobs.Count(j => j.Status == ScheduleReceiptStatus.AcceptedOnTransport)));
+        jobs.Count(j => j.Status == ScheduleReceiptStatus.AcceptedOnTransport),
+        cancelledJobIds));
 });
 
 app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
@@ -88,12 +96,17 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         await receipt.ConfirmOnMasterAsync();
     }
 
-    return Results.Ok(new RecurringScheduleResponse(receipt.Context.Id, receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport));
+    var cancelled = req.CancelFromReceipt == true && await receipt.CancelAsync();
+
+    return Results.Ok(new RecurringScheduleResponse(
+        receipt.Context.Id,
+        receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport,
+        cancelled));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
 {
-    var cancelled = await scheduler.TryCancelRecurringAsync(id, clusterId);
+    var cancelled = await scheduler.CancelRecurringAsync(id, clusterId);
     return cancelled ? Results.Ok() : Results.NotFound();
 });
 

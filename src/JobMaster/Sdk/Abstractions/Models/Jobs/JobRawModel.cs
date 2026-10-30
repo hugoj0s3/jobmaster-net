@@ -224,7 +224,21 @@ internal class JobRawModel : JobMasterBaseModel
         FinalizedAt = DateTime.UtcNow;
         return true;
     }
-    
+
+    // Cancelled before it reached master (still PendingSave on the agent transport), so no worker has it yet.
+    public void MarkAsCancelledBeforeSave()
+    {
+        AgentConnectionId = null;
+        BucketId = null;
+        AgentWorkerId = null;
+        ProcessDeadline = null;
+        NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
+        Status = JobMasterJobStatus.Cancelled;
+        FinalizedAt = DateTime.UtcNow;
+    }
+
     public void DelayNextExecutionPlan(TimeSpan delay)
     {
         var baseDate = ScheduledAt > DateTime.UtcNow ? ScheduledAt : DateTime.UtcNow;
@@ -288,7 +302,7 @@ internal class JobRawModel : JobMasterBaseModel
         PartitionLockExpiresAt = null;
     }
     
-    public void ReSchedule(DateTime scheduledAt)
+    public void Reschedule(DateTime scheduledAt)
     {
         if (!this.Status.IsFinalStatus())
         {
@@ -310,7 +324,7 @@ internal class JobRawModel : JobMasterBaseModel
         this.NumberOfFailures = 0;
     }
     
-    public bool CanReSchedule()
+    public bool CanReschedule()
     {
         if (!this.Status.IsFinalStatus())
         {

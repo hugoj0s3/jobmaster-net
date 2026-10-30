@@ -180,8 +180,13 @@ public interface IJobMasterScheduler
         DateTime? endBefore = null) where T : IJobMasterHandler;
 
     /// <summary>
-    /// Cancels the one-time job with the given ID.
-    /// Returns <c>true</c> if the job was found and successfully cancelled.
+    /// Cancels the one-time job with the given ID, once it's saved on master. Right after scheduling it may not be
+    /// there yet and isn't found; to cancel from that point, use <see cref="CancelJobAsync(JobScheduleReceipt)"/>.
+    /// <para>
+    /// Returns <c>true</c> when the job is cancelled and won't run. Returns <c>false</c> when it isn't found on
+    /// master, or can't be cancelled anymore: it's running or finished, or it's due to start in less than about a
+    /// minute and a worker may already have it.
+    /// </para>
     /// </summary>
     /// <param name="jobId">ID of the job to cancel.</param>
     /// <param name="clusterId">
@@ -191,23 +196,68 @@ public interface IJobMasterScheduler
     /// </param>
     Task<bool> CancelJobAsync(Guid jobId, string? clusterId = null);
 
-    /// <summary>Synchronous version of <see cref="CancelJobAsync"/>.</summary>
-    bool TryCancelJob(Guid id, string? clusterId = null);
+    /// <summary>Synchronous version of <see cref="CancelJobAsync(Guid, string)"/>.</summary>
+    bool CancelJob(Guid jobId, string? clusterId = null);
 
     /// <summary>
-    /// Cancels the recurring schedule with the given ID, stopping future firings.
-    /// Returns <c>true</c> if the schedule was found and successfully cancelled.
+    /// Cancels the job from the receipt its scheduling call returned, on the cluster it was scheduled on.
+    /// <para>
+    /// Unlike cancelling by id, it also works right after scheduling, before the job reaches master
+    /// (<see cref="ScheduleReceiptStatus.AcceptedOnTransport"/>): the job is cancelled there and the agent's copy
+    /// never runs. Once the job is on master, it behaves like <see cref="CancelJobAsync(Guid, string)"/>.
+    /// </para>
+    /// <para>
+    /// Returns <c>true</c> when the job is cancelled and won't run. Returns <c>false</c> when it can't be cancelled
+    /// anymore: it's running or finished, or it's due to start in less than about a minute and a worker may
+    /// already have it.
+    /// </para>
+    /// <para>
+    /// If it throws, the job may or may not be cancelled; calling it again is safe. Same as
+    /// <see cref="JobScheduleReceipt.CancelAsync"/>.
+    /// </para>
     /// </summary>
-    /// <param name="id">ID of the recurring schedule to cancel.</param>
+    /// <param name="receipt">Receipt returned when the job was scheduled.</param>
+    Task<bool> CancelJobAsync(JobScheduleReceipt receipt);
+
+    /// <summary>
+    /// Cancels the recurring schedule with the given ID, stopping future runs, once it's saved on master. Right after
+    /// scheduling it may not be there yet and isn't found; to cancel from that point, use
+    /// <see cref="CancelRecurringAsync(RecurringScheduleReceipt)"/>.
+    /// <para>
+    /// Returns <c>true</c> when the schedule is cancelled. Returns <c>false</c> when it isn't found on master, or had
+    /// already ended (cancelled, completed or inactive).
+    /// </para>
+    /// </summary>
+    /// <param name="recurringScheduleId">ID of the recurring schedule to cancel.</param>
     /// <param name="clusterId">
     /// Cluster the schedule was created on. When null, the default cluster is used — the handler's
     /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
     /// known), so pass it explicitly for schedules on a non-default cluster (see <see cref="RecurringScheduleContext.ClusterId"/>).
     /// </param>
-    Task<bool> TryCancelRecurringAsync(Guid id, string? clusterId = null);
+    Task<bool> CancelRecurringAsync(Guid recurringScheduleId, string? clusterId = null);
 
-    /// <summary>Synchronous version of <see cref="TryCancelRecurringAsync"/>.</summary>
-    bool CancelRecurring(Guid id, string? clusterId = null);
+    /// <summary>Synchronous version of <see cref="CancelRecurringAsync(Guid, string)"/>.</summary>
+    bool CancelRecurring(Guid recurringScheduleId, string? clusterId = null);
+
+    /// <summary>
+    /// Cancels the recurring schedule from the receipt its scheduling call returned, on the cluster it was created
+    /// on, stopping future runs.
+    /// <para>
+    /// Unlike cancelling by id, it also works right after scheduling, before the schedule reaches master
+    /// (<see cref="ScheduleReceiptStatus.AcceptedOnTransport"/>): the schedule is cancelled there and never fires.
+    /// Once the schedule is on master, it behaves like <see cref="CancelRecurringAsync(Guid, string)"/>.
+    /// </para>
+    /// <para>
+    /// Returns <c>true</c> when the schedule is cancelled. Returns <c>false</c> when it had already ended
+    /// (cancelled, completed or inactive).
+    /// </para>
+    /// <para>
+    /// If it throws, the schedule may or may not be cancelled; calling it again is safe. Same as
+    /// <see cref="RecurringScheduleReceipt.CancelAsync"/>.
+    /// </para>
+    /// </summary>
+    /// <param name="receipt">Receipt returned when the schedule was created.</param>
+    Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt);
 
     /// <summary>
     /// Changes the scheduled execution time of a one-time job.
@@ -221,8 +271,8 @@ public interface IJobMasterScheduler
     /// <c>[JobMasterClusterId]</c> / <c>JobDefinitionConfig.ClusterId</c> is not looked up here (only the id is
     /// known), so pass it explicitly for jobs on a non-default cluster (see <see cref="JobContext.ClusterId"/>).
     /// </param>
-    Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+    Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 
-    /// <summary>Synchronous version of <see cref="ReScheduleAsync"/>.</summary>
-    bool ReSchedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
+    /// <summary>Synchronous version of <see cref="RescheduleAsync"/>.</summary>
+    bool Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null);
 }

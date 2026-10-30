@@ -11,6 +11,7 @@ public sealed class RecurringScheduleClient(HttpClient httpClient) : IRecurringS
         string testIdentifier,
         string? clusterId = null,
         bool? confirmOnMaster = null,
+        bool? cancelFromReceipt = null,
         CancellationToken ct = default)
     {
         var body = new
@@ -19,7 +20,8 @@ public sealed class RecurringScheduleClient(HttpClient httpClient) : IRecurringS
             ExpressionTypeId = expressionTypeId,
             Expression = expression,
             TestIdentifier = testIdentifier,
-            ConfirmOnMaster = confirmOnMaster
+            ConfirmOnMaster = confirmOnMaster,
+            CancelFromReceipt = cancelFromReceipt
         };
 
         // Warm the connection on a safe, idempotent request first -- this HttpClient is freshly
