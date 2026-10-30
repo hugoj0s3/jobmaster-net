@@ -118,6 +118,14 @@
   - A confirmed job can start later than it would otherwise, because it's picked up from master instead of going straight to its worker. A confirmed recurring schedule's first run can be delayed by up to about 10 minutes, so avoid it for schedules that recur at short intervals.
   - If it throws, some items may or may not be saved. Calling it again is safe and never creates a second copy.
   - JobMaster runs jobs at least once. Confirming after the cluster's data retention has removed an already-finished job saves it again, and it runs again; a removed cancelled or finished schedule comes back as active. Be careful using it when the data retention is short.
+- **Cancel from a receipt: `receipt.CancelAsync()`, `scheduler.CancelJobAsync(receipt)` and `scheduler.CancelRecurringAsync(receipt)`.** Unlike cancelling by id, it also works right after scheduling, before the job or schedule reaches master: it's cancelled there and never runs. Once it's on master, it behaves like cancelling by id, on the cluster it was scheduled on.
+
+  ```csharp
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  var cancelled = await receipt.CancelAsync();
+  ```
+
+  Returns `false` when it can't be cancelled anymore: the job is running or finished, or due to start in less than about a minute (a worker may already have it); the schedule had already ended. If it throws, calling it again is safe.
 
 ### Changed
 

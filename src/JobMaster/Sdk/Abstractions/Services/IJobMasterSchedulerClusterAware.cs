@@ -18,6 +18,9 @@ internal interface IJobMasterSchedulerClusterAware : IJobMasterClusterAwareServi
     // ConfirmOnMaster: saves each model on master (held on master / active) if it isn't there yet.
     Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs);
     Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules);
+    // Receipt cancel: saves the model on master already cancelled if it isn't there yet. false = already on master.
+    Task<bool> InsertCancelledJobAsync(JobRawModel job);
+    Task<bool> InsertCancelledRecurringScheduleAsync(RecurringScheduleRawModel schedule);
     Task<bool> CancelJobAsync(Guid jobId);
     bool CancelJob(Guid jobId);
     Task<bool> CancelRecurringAsync(Guid recurringScheduleId);

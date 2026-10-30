@@ -277,6 +277,26 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
     }
 
+    // No archived check: a cancelled row is final, which an archived cluster may hold.
+    public async Task<bool> InsertCancelledJobAsync(JobRawModel job)
+    {
+        // Final status: the agent's later save sees a duplicate and drops its message, so it never runs.
+        job.MarkAsCancelledBeforeSave();
+        var inserted = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+        return inserted.Contains(job.Id);
+    }
+
+    public async Task<bool> InsertCancelledRecurringScheduleAsync(RecurringScheduleRawModel schedule)
+    {
+        if (!schedule.TryToCancel())
+        {
+            return false;
+        }
+
+        var inserted = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+        return inserted.Contains(schedule.Id);
+    }
+
     public async Task<bool> CancelJobAsync(Guid jobId)
     {
         var jobEntity = await masterJobsService.GetAsync(jobId);

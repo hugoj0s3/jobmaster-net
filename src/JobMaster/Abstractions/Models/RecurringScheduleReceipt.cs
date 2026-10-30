@@ -74,4 +74,21 @@ public sealed class RecurringScheduleReceipt
 
         return JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[] { this });
     }
+
+    /// <summary>
+    /// Cancels the recurring schedule on the cluster it was created on, stopping future runs. Works right after
+    /// scheduling too, whatever the <see cref="Status"/>.
+    /// <para>
+    /// Returns <c>true</c> when the schedule is cancelled. Returns <c>false</c> when it had already ended (cancelled,
+    /// completed or inactive).
+    /// </para>
+    /// <para>
+    /// If it throws, the schedule may or may not be cancelled; calling it again is safe.
+    /// Same as <see cref="IJobMasterScheduler.CancelRecurringAsync(RecurringScheduleReceipt)"/>.
+    /// </para>
+    /// </summary>
+    public async Task<bool> CancelAsync()
+    {
+        return await JobMasterScheduler.Instance.CancelRecurringAsync(this);
+    }
 }

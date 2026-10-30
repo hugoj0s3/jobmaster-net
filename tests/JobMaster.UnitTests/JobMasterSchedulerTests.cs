@@ -930,6 +930,77 @@ public class JobMasterSchedulerTests
         cluster.Verify();
     }
 
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenAcceptedAndInsertedCancelled_ReturnsTrue_WithoutCancelById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true); // strict: a cancel by id fails the test
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.InsertCancelledJobAsync(job)).ReturnsAsync(true);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenAcceptedButAlreadyOnMaster_CancelsByIdOnReceiptCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterMockCluster("c-default", isDefault: true);
+        var cluster = RegisterMockCluster("c-a", isDefault: false);
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.InsertCancelledJobAsync(job)).ReturnsAsync(false);
+        cluster.Setup(x => x.CancelJobAsync(job.Id)).ReturnsAsync(false);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).CancelAsync()).Should().BeFalse();
+
+        cluster.Verify(x => x.CancelJobAsync(job.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenStoredOnMaster_OnlyCancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true); // strict: an insert fails the test
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.CancelJobAsync(job.Id)).ReturnsAsync(true);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, job).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenAcceptedAndInsertedCancelled_ReturnsTrue_WithoutCancelById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.InsertCancelledRecurringScheduleAsync(schedule)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, schedule).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenAcceptedButAlreadyOnMaster_CancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.InsertCancelledRecurringScheduleAsync(schedule)).ReturnsAsync(false);
+        cluster.Setup(x => x.CancelRecurringAsync(schedule.Id)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, schedule).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenStoredOnMaster_OnlyCancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.CancelRecurringAsync(schedule.Id)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, schedule).CancelAsync()).Should().BeTrue();
+    }
+
     private static Mock<IJobMasterSchedulerClusterAware> RegisterMockCluster(string clusterId, bool isDefault)
     {
         var clusterCfg = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "cnn", isDefault);

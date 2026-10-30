@@ -744,6 +744,32 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
         }
     }
 
+    // Only accepted on the transport: try to save it on master already cancelled first; if it's already there
+    // (e.g. the agent saved it), cancel it by id like CancelJobAsync.
+    public async Task<bool> CancelJobAsync(JobScheduleReceipt receipt)
+    {
+        var service = EnsureGetSchedulerClusterAware(receipt.ClusterId);
+        if (receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport &&
+            await service.InsertCancelledJobAsync(receipt.model))
+        {
+            return true;
+        }
+
+        return await service.CancelJobAsync(receipt.JobId);
+    }
+
+    public async Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt)
+    {
+        var service = EnsureGetSchedulerClusterAware(receipt.ClusterId);
+        if (receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport &&
+            await service.InsertCancelledRecurringScheduleAsync(receipt.model))
+        {
+            return true;
+        }
+
+        return await service.CancelRecurringAsync(receipt.RecurringScheduleId);
+    }
+
     // bucket: where the cluster-aware scheduler handed it on the agent transport; null = stored on master.
     private static JobScheduleReceipt ToReceipt(JobRawModel model, BucketModel? bucket) =>
         new(StatusOf(bucket), model);

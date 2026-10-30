@@ -1564,16 +1564,20 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         j1.Metadata = "{\"testIdentifier\":\"bulk-insert-j1\"}";
         var j2 = NewJob(def, JobMasterJobStatus.Failed);
         j2.Metadata = "{\"testIdentifier\":\"bulk-insert-j2\"}";
+        // Receipt cancel inserts a not-yet-saved job already cancelled.
+        var j3 = NewJob(def, JobMasterJobStatus.Cancelled);
 
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 }, Array.Empty<JobExecution>());
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2, j3 }, Array.Empty<JobExecution>());
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
         var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+        var fromDb3 = await Fixture.MasterJobs.GetAsync(j3.Id);
 
         Assert.NotNull(fromDb1);
         Assert.NotNull(fromDb2);
         Assert.Equal(JobMasterJobStatus.Succeeded, fromDb1!.Status);
         Assert.Equal(JobMasterJobStatus.Failed, fromDb2!.Status);
+        Assert.Equal(JobMasterJobStatus.Cancelled, Assert.IsType<JobRawModel>(fromDb3).Status);
         Assert.False(string.IsNullOrEmpty(fromDb1.Version));
         Assert.False(string.IsNullOrEmpty(fromDb2.Version));
 

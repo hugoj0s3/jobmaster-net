@@ -11,6 +11,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ConfirmOnMasterTest;
 /// (<c>Advanced.ConfirmOnMasterAsync(receipts)</c> for jobs, <c>receipt.ConfirmOnMasterAsync()</c> for the recurring
 /// schedule). Checks the confirm's guarantee -- everything is on master as soon as the call returns -- and that the
 /// race with the agent's own save (one of them gets a duplicate) never runs anything twice or loses anything.
+/// Then the same race for <c>receipt.CancelAsync()</c>: a cancel that returned true never runs.
 /// </summary>
 public abstract class ConfirmOnMasterTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlobalEnvironment global, ScenarioRunner runner)
     : BasePhaseEmulator<TPhaseEnum>(global, runner)
@@ -21,10 +22,16 @@ public abstract class ConfirmOnMasterTestPhase1EmulatorBase<TPhaseEnum>(Scenario
     private const string RecurringInterval = "00:00:15";
     private const int MinRecurringRuns = 3;
 
-    // Mirrors JobMaster.Abstractions.Models.JobMasterJobStatus.Succeeded (no JobMaster reference in this project).
+    private const int QtyCancelJobs = 50;
+
+    // Mirror JobMasterJobStatus.Succeeded / Cancelled and RecurringScheduleStatus.Canceled (no JobMaster reference in this project).
     private const int SucceededStatus = 5;
+    private const int CancelledStatus = 8;
+    private const int CanceledStatus = 3;
 
     private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan CancelLaterDueIn = TimeSpan.FromMinutes(2);
+    private static readonly TimeSpan CancelSettleMargin = TimeSpan.FromSeconds(45);
 
     protected abstract string ClusterId { get; }
     protected abstract string ContainerName { get; }
@@ -77,5 +84,62 @@ public abstract class ConfirmOnMasterTestPhase1EmulatorBase<TPhaseEnum>(Scenario
             async () => await api.GetJobCountAsync(ClusterId, testIdentifier: jobsTestIdentifier, status: SucceededStatus) == QtyJobs,
             "every confirmed job to be Succeeded on master",
             pollInterval: TimeSpan.FromSeconds(2));
+
+        await RunCancelFromReceiptAsync(api);
+    }
+
+    // receipt.CancelAsync() right after scheduling, while the receipts are still AcceptedOnTransport: whichever of the
+    // cancel or the agent's save reaches master first, a cancel that returned true must never run.
+    private async Task RunCancelFromReceiptAsync(IScenarioApiClient api)
+    {
+        // Due well after the ~50s window: every cancel must succeed (inserted cancelled, or cancelled by id once the
+        // agent saved it).
+        var laterTestIdentifier = Guid.NewGuid().ToString("N");
+        var later = await Runner.ScheduleFor(ContainerName)
+            .ScheduleAsync("fast", laterTestIdentifier, qtyJobs: QtyCancelJobs, clusterId: ClusterId,
+                afterSeconds: (int)CancelLaterDueIn.TotalSeconds, cancelFromReceipt: true);
+        later.AcceptedOnTransportCount.Should().BeGreaterThan(0,
+            "the cluster has live agent connections, so receipts should be AcceptedOnTransport");
+        later.CancelledJobIds.Should().BeEquivalentTo(later.JobIds,
+            "jobs due after the onboarding window can always be cancelled from the receipt");
+        var laterDueAt = DateTime.UtcNow.Add(CancelLaterDueIn);
+
+        // Due now: a cancel may lose the race with the agent's save and the onboarding window (false, it runs);
+        // only the ones that returned true are checked.
+        var nowTestIdentifier = Guid.NewGuid().ToString("N");
+        var now = await Runner.ScheduleFor(ContainerName)
+            .ScheduleAsync("fast", nowTestIdentifier, qtyJobs: QtyCancelJobs, clusterId: ClusterId, cancelFromReceipt: true);
+        var nowCancelled = now.CancelledJobIds ?? new List<Guid>();
+        var nowNotCancelled = now.JobIds.Except(nowCancelled).ToList();
+
+        var recurringTestIdentifier = Guid.NewGuid().ToString("N");
+        var recurring = await Runner.RecurringScheduleFor(ContainerName)
+            .CreateRecurringAsync("fast", TimeSpanIntervalExpressionTypeId, RecurringInterval, recurringTestIdentifier,
+                clusterId: ClusterId, cancelFromReceipt: true);
+        recurring.Cancelled.Should().BeTrue("a just-created schedule can always be cancelled from its receipt");
+
+        // The ones not cancelled still run, exactly once.
+        if (nowNotCancelled.Count > 0)
+        {
+            var ran = await Runner.Tracker.WaitForAsync(nowTestIdentifier, nowNotCancelled.Count, ExecuteWaitTimeout);
+            ran.Select(e => e.JobId).Should().BeEquivalentTo(nowNotCancelled);
+        }
+
+        // Past the later jobs' due time (+ margin for the agent's late save and assignment), nothing cancelled ran.
+        var waitUntil = laterDueAt.Add(CancelSettleMargin);
+        if (waitUntil > DateTime.UtcNow)
+        {
+            await Task.Delay(waitUntil - DateTime.UtcNow);
+        }
+
+        (await Runner.Tracker.GetAllAsync(laterTestIdentifier)).Should().BeEmpty("cancelled jobs must never run");
+        (await Runner.Tracker.GetAllAsync(nowTestIdentifier)).Select(e => e.JobId).Should().NotIntersectWith(nowCancelled,
+            "a job whose receipt cancel returned true must never run");
+        (await Runner.Tracker.GetAllAsync(recurringTestIdentifier)).Should().BeEmpty("a cancelled schedule must never fire");
+
+        // And master holds them cancelled (the agent's late save didn't revive them).
+        (await api.GetJobCountAsync(ClusterId, testIdentifier: laterTestIdentifier, status: CancelledStatus)).Should().Be(QtyCancelJobs);
+        var schedules = await api.GetRecurringSchedulesAsync(ClusterId, recurringTestIdentifier);
+        schedules.Should().ContainSingle().Which.Status.GetInt32().Should().Be(CanceledStatus);
     }
 }

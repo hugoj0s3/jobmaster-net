@@ -643,15 +643,18 @@ the item runs moments later.
   - Job `OnMaster` → cancelled, never assigned.
   - Job `InBucket` → cancelled; the worker's version-checked `PreEnqueue` update conflicts, reloads, sees `Cancelled`
     and drops it (`JobsExecutionEngine.PreEnqueue`).
-  - Job within 5s of onboarding (`IsWithinOnboardingWindow`) → `false` even though found.
+  - Job due within ~50s (`TryToCancel`: 15s clock-skew padding + 30s `OnBoardingWindow` + 5s) → `false` even though
+    found.
   - Queued / running / final → `false`.
 - Cancel by id falls back to the default cluster when `clusterId` isn't passed; the receipt knows `ClusterId`.
 - Nothing cancels an item that isn't on master yet. The unfinished `RecurringScheduleCancellingLock` check (never set)
   was removed in items 6+7.
 
-**Design (proposed).**
+**Design (decided, Hugo 2026-10-29).**
 ```csharp
 public Task<bool> CancelAsync();   // on JobScheduleReceipt and RecurringScheduleReceipt
+Task<bool> CancelJobAsync(JobScheduleReceipt receipt);              // IJobMasterScheduler, public
+Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt);  // IJobMasterScheduler, public
 ```
 - `StoredOnMaster` → the normal cancel by id on the receipt's `ClusterId`.
 - `AcceptedOnTransport` → **insert it already cancelled**: `BulkInsertIfNotExistsAsync` with the model in
@@ -664,27 +667,31 @@ public Task<bool> CancelAsync();   // on JobScheduleReceipt and RecurringSchedul
     path.
 - Returns `true` when the item is now cancelled; `false` when it's already queued/running/final, or inside the
   onboarding window.
-- Throws for an archived cluster, like confirm (`GetFresh()`).
+- No archived check (Hugo, 2026-10-29): unlike confirm, the inserted row is final (`Cancelled` / `Canceled`), which
+  an archived cluster may hold.
 
-**Open decisions.**
-- The 5s onboarding window still makes a receipt cancel return `false` right after the agent hands the job to a
-  worker. Find out why the window exists before relaxing it (the `PreEnqueue` version check may already make it
-  unnecessary); verify, don't assume.
-- Batch version on `IJobMasterSchedulerAdvanced` (`CancelAsync(IEnumerable<receipt>)`), like confirm? Only if there's a
-  real use case.
-- A late cancel (after data retention purged a finished job) would insert a `Cancelled` row: harmless (final, purged
-  again), but document it.
+**Decided.**
+- The ~50s window stays in the cancel-by-id fallback (Hugo, 2026-10-29). A job due now returns `true` only when the
+  receipt cancel beats the agent's save. Relaxing it needs every unversioned update path checked first
+  (`PreEnqueue` and the engine flush `BulkUpdateAsync(jobs)` are version-checked; the request-based
+  `BulkUpdateAsync` isn't): separate investigation if ever needed.
+- No batch version for now.
+- A late cancel (after data retention purged a finished job) inserts a `Cancelled` row: fine, it's final and goes to
+  archive / purge like any other (Hugo).
 
 **Tasks.**
-- [ ] Receipt `CancelAsync` for jobs and recurring schedules; cluster-aware implementation (insert-cancelled, then
-      fall back to cancel by id).
-- [ ] Unit tests: `StoredOnMaster` → cancel by id; `AcceptedOnTransport` + not on master → inserted cancelled;
-      already on master → cancel by id; archived throws.
-- [ ] RepoConformance: `BulkInsertIfNotExistsAsync` with `Cancelled` / `Canceled` rows (if not already covered by the
-      archive tests).
-- [ ] Scenario test: schedule through an agent and cancel from the receipt right away → never runs; same for a
-      recurring schedule → never fires.
-- [ ] ChangeLog (added) + docs (item 10).
+- [x] Receipt `CancelAsync` + public `IJobMasterScheduler.CancelJobAsync(receipt)` / `CancelRecurringAsync(receipt)`;
+      cluster-aware `InsertCancelledJobAsync` / `InsertCancelledRecurringScheduleAsync`, then cancel by id.
+- [x] Unit tests: `StoredOnMaster` → cancel by id; `AcceptedOnTransport` + not on master → inserted cancelled;
+      already on master → cancel by id; archived still inserts it cancelled.
+- [x] RepoConformance: already covered (final rows, inserted ids, existing untouched); added a `Cancelled` job to
+      `BulkInsertIfNotExists_ShouldInsert_NewFinalizedJobs` (schedules already insert `Canceled`).
+- [x] Unit test for the agent side: `JobSavePendingOperation` on a duplicate → `AlreadyExists`, nothing dispatched.
+- [x] Scenario test (extended `ConfirmOnMasterTest/PostgresPure`, passed 2026-10-29): jobs due in 2 min cancelled
+      from their receipts → all `true`, never run, `Cancelled` on master; jobs due now → those cancelled never run, the
+      rest run once; recurring schedule → cancelled, never fires, `Canceled` on master. Postgres only: the logic is
+      provider-independent and the repository parts are in RepoConformance.
+- [x] ChangeLog (added). Docs: item 10.
 
 **Done when.** A receipt cancel issued right after scheduling reliably prevents the run when it returns `true`, the
 agent's late save never revives it, and unit + scenario tests are green.
