@@ -228,7 +228,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 {
                     var lanes = existingBuckets.Where(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!))
                         .Select(x => x.WorkerLane)
-                        .Distinct()
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
                     foreach (var lane in lanes)

@@ -287,10 +287,13 @@ public class RecurringSchedulePlannerTests
     public void PlanNextDates_WithEndBefore_ShouldRespectEndBound()
     {
         // Arrange
+        // Fixed past dates, no clock reads: EndBefore (earlier than now + horizon) is always the bound, so the result
+        // is deterministic. (Two DateTime.UtcNow calls returning the same tick used to put an occurrence exactly at
+        // EndBefore.)
         var recurringScheduleId = JobMasterRandomUtil.NewGuid4();
-        var baseDateTime = DateTime.UtcNow;
+        var baseDateTime = new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         var horizon = TimeSpan.FromMinutes(5);
-        var endBefore = DateTime.UtcNow.AddMinutes(2); // End after 2 minutes
+        var endBefore = baseDateTime.AddMinutes(2);
         var interval = TimeSpan.FromSeconds(10);
         var compiler = new TimeSpanIntervalExprCompiler();
         var expression = compiler.Compile(interval.ToString());
@@ -318,14 +321,11 @@ public class RecurringSchedulePlannerTests
             output.WriteLine($"  - {date:O}");
         }
         
-        nextDates.Should().NotBeEmpty();
-        
-        // All dates should be before endBefore
-        nextDates.Should().AllSatisfy(date => 
-            date.Should().BeBefore(endBefore, "all dates should respect endBefore bound"));
-        
-        // Should generate approximately 12 dates (2 minutes / 10 seconds)
-        nextDates.Count.Should().BeLessThanOrEqualTo(13, "should respect the endBefore limit");
+        // +10s … +110s: EndBefore is exclusive, so the occurrence exactly at +120s (= EndBefore) doesn't fire.
+        nextDates.Should().HaveCount(11);
+        nextDates.Should().AllSatisfy(date =>
+            date.Should().BeBefore(endBefore, "EndBefore is exclusive"));
+        nextDates.Last().Should().Be(endBefore.AddSeconds(-10));
     }
 
     [Fact]

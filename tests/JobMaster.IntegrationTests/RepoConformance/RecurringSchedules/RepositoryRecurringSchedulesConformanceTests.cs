@@ -566,6 +566,44 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
         Assert.Equal(expected, queried.Select(x => x.Id).ToList());
     }
 
+    [Fact]
+    public async Task Query_MetadataFilter_KeyIgnoresCase()
+    {
+        var def = "defMetaCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var a = NewSchedule(jobDefinitionId: def);
+        a.Metadata = "{\"Category\":\"billing\"}";
+        var b = NewSchedule(jobDefinitionId: def);
+        b.Metadata = "{\"Category\":\"other\"}";
+
+        await Fixture.MasterRecurringSchedules.AddAsync(a);
+        await Fixture.MasterRecurringSchedules.AddAsync(b);
+        await SettleAsync();
+
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "category", Operation = GenericFilterOperation.Eq, Value = "billing" }, a.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "CATEGORY", Operation = GenericFilterOperation.Neq, Value = "billing" }, b.Id);
+    }
+
+    [Fact]
+    public async Task Query_WorkerLane_Filter_IgnoresCase()
+    {
+        var def = "defLaneCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var billing = NewSchedule(jobDefinitionId: def);
+        billing.WorkerLane = "Lane_Billing";
+        var other = NewSchedule(jobDefinitionId: def);
+        other.WorkerLane = "Lane_Other";
+
+        await Fixture.MasterRecurringSchedules.AddAsync(billing);
+        await Fixture.MasterRecurringSchedules.AddAsync(other);
+        await SettleAsync();
+
+        var queried = await Fixture.MasterRecurringSchedules.QueryAsync(new RecurringScheduleQueryCriteria { JobDefinitionId = def, WorkerLane = "lane_billing", CountLimit = 100 });
+
+        Assert.Equal(new[] { billing.Id }, queried.Select(s => s.Id).ToArray());
+        Assert.Equal("Lane_Billing", queried[0].WorkerLane);
+    }
+
     internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
     {
         var criteria = new RecurringScheduleQueryCriteria

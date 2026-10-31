@@ -1,18 +1,20 @@
 using JobMaster.Abstractions.Serialization;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.Models;
 
 internal class KeyValueBag
 {
-    private IDictionary<string, object?> values = new Dictionary<string, object?>();
+    private readonly IDictionary<string, object?> values = JobMasterDictionaryUtils.NewIgnoreCase();
 
     public KeyValueBag()
     {
     }
 
+    // Copied, not wrapped: the given dictionary (e.g. deserialized from storage) may be case-sensitive.
     public KeyValueBag(IDictionary<string, object?> values)
     {
-        this.values = values;
+        this.values = values.ToCaseInsensitive();
     }
 
     // ========= Write API =========
@@ -154,9 +156,9 @@ internal class KeyValueBag
 
     public IDictionary<string, object?> ToDictionary()
     {
-        return new Dictionary<string, object?>(values);
+        return values.ToCaseInsensitive();
     }
-    
+
     private void Set(string key, object? value)
     {
         values[key] = value;

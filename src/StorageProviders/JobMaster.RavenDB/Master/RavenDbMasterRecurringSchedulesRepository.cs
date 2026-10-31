@@ -664,7 +664,7 @@ update {{
 
         for (var i = 0; i < criteria.MetadataFilters.Count; i++)
         {
-            var (clause, paramName, paramValue) = RavenDbFilterClauseBuilder.Build(criteria.MetadataFilters[i], i, "metaFilter", "Metadata");
+            var (clause, paramName, paramValue) = RavenDbFilterClauseBuilder.Build(criteria.MetadataFilters[i], i, "metaFilter", "Metadata", lowercaseKey: true);
             where.Add(clause);
             if (paramName != null) parameters[paramName] = paramValue;
         }
@@ -734,19 +734,20 @@ update {{
         var dict = KeyValueBagUtil.DeserializeMetadata(metadataJson).ToDictionary();
         foreach (var kv in dict)
         {
+            var key = kv.Key.ToLowerInvariant();
             switch (kv.Value)
             {
                 case DateTime dt:
-                    doc.MetadataDateTimeValues[kv.Key] = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+                    doc.MetadataDateTimeValues[key] = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
                     break;
                 case Guid g:
-                    doc.MetadataGuidValues[kv.Key] = g;
+                    doc.MetadataGuidValues[key] = g;
                     break;
                 case decimal dec:
-                    doc.MetadataDecimalValues[kv.Key] = dec;
+                    doc.MetadataDecimalValues[key] = dec;
                     break;
                 default:
-                    doc.MetadataValues[kv.Key] = kv.Value;
+                    doc.MetadataValues[key] = kv.Value;
                     break;
             }
         }

@@ -439,6 +439,42 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lte, Value = 20.5m }, a.Id, b.Id);
     }
 
+    [Fact]
+    public async Task Query_MetadataFilter_KeyIgnoresCase()
+    {
+        var def = "defMetaCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var a = NewJob(jobDefinitionId: def);
+        a.Metadata = "{\"Category\":\"billing\"}";
+        var b = NewJob(jobDefinitionId: def);
+        b.Metadata = "{\"Category\":\"other\"}";
+
+        await Fixture.MasterJobs.AddAsync(a);
+        await Fixture.MasterJobs.AddAsync(b);
+        await SettleAsync();
+
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "category", Operation = GenericFilterOperation.Eq, Value = "billing" }, a.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "CATEGORY", Operation = GenericFilterOperation.Neq, Value = "billing" }, b.Id);
+    }
+
+    [Fact]
+    public async Task Query_WorkerLane_Filter_IgnoresCase()
+    {
+        var def = "defLaneCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var billing = NewJob(jobDefinitionId: def, workerLane: "Lane_Billing");
+        var other = NewJob(jobDefinitionId: def, workerLane: "Lane_Other");
+
+        await Fixture.MasterJobs.AddAsync(billing);
+        await Fixture.MasterJobs.AddAsync(other);
+        await SettleAsync();
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, WorkerLane = "lane_billing", CountLimit = 100 });
+
+        Assert.Equal(new[] { billing.Id }, queried.Select(j => j.Id).ToArray());
+        Assert.Equal("Lane_Billing", queried[0].WorkerLane);
+    }
+
     internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
     {
         var criteria = new JobQueryCriteria

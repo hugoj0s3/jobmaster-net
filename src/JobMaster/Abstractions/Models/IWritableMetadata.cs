@@ -45,6 +45,10 @@ public static class WritableMetadata
     /// <summary>Creates a new empty metadata builder.</summary>
     public static IWritableMetadata New() => new Metadata();
 
-    /// <summary>Creates a metadata builder pre-populated from an existing dictionary.</summary>
+    /// <summary>
+    /// Creates a metadata builder pre-populated with a copy of <paramref name="dictionary"/>: later changes to either
+    /// one don't affect the other. Keys are matched ignoring case; if <paramref name="dictionary"/> holds one key in
+    /// different casings, the last value is kept under the first spelling.
+    /// </summary>
     public static IWritableMetadata FromDictionary(IDictionary<string, object?> dictionary) => new Metadata(dictionary);
 }

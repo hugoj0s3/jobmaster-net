@@ -222,6 +222,16 @@ public class JobUtilTests
     }
 
     [Fact]
+    public void MetadataAttribute_DerivedKeyOverridesBaseIgnoringCase()
+    {
+        var metadata = JobUtil.GetHandlerMetadata(typeof(DerivedHandlerOverridingOtherCase));
+
+        metadata.Should().ContainSingle(kv => string.Equals(kv.Key, "base-key", StringComparison.OrdinalIgnoreCase))
+            .Which.Should().Be(new KeyValuePair<string, object?>("base-key", "derived-value"));
+        metadata["base-only"].Should().Be("y");
+    }
+
+    [Fact]
     public void MetadataAttribute_CallMetadataOverridesInheritedAttribute()
     {
         var job = Job.New("cluster", typeof(DerivedHandlerOverriding),
@@ -249,6 +259,9 @@ public class JobUtilTests
     [JobMasterMetadata("base-key", "derived-value")]
     [JobMasterMetadata("derived-only", "x")]
     private sealed class DerivedHandlerOverriding : BaseHandlerWithAttributes;
+
+    [JobMasterMetadata("BASE-KEY", "derived-value")]
+    private sealed class DerivedHandlerOverridingOtherCase : BaseHandlerWithAttributes;
 
     [JobMasterDefinitionId("defid")]
     private class MasterHandlerWithDefinitionId : IJobMasterHandler

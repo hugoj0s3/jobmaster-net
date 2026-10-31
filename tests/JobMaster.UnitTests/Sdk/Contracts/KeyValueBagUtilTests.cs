@@ -29,6 +29,74 @@ public class KeyValueBagUtilTests
     }
 
     [Fact]
+    public void Metadata_And_MessageData_ReadKeysIgnoringCase()
+    {
+        var metadata = WritableMetadata.New().SetStringValue("Category", "billing");
+        var data = WriteableMessageData.New().SetIntValue("OrderId", 7);
+
+        metadata.ToReadable().GetStringValue("CATEGORY").Should().Be("billing");
+        data.ToReadable().GetIntValue("orderid").Should().Be(7);
+    }
+
+    [Fact]
+    public void Set_SameKeyOtherCase_OverwritesValue_KeepsFirstSpelling()
+    {
+        var metadata = WritableMetadata.New()
+            .SetStringValue("Category", "a")
+            .SetStringValue("category", "b");
+
+        metadata.ToDictionary().Should().Equal(new Dictionary<string, object?> { ["Category"] = "b" });
+    }
+
+    [Fact]
+    public void Set_SameKeyOtherCase_KeepsKeyOrder()
+    {
+        var metadata = WritableMetadata.New()
+            .SetStringValue("First", "1")
+            .SetStringValue("Second", "2")
+            .SetStringValue("Third", "3")
+            .SetStringValue("FIRST", "1b");
+
+        metadata.ToDictionary().Keys.Should().Equal("First", "Second", "Third");
+    }
+
+    [Fact]
+    public void Constructor_FromCaseSensitiveDictionary_CollapsesSpellings_LastValueWins()
+    {
+        var stored = new Dictionary<string, object?>(StringComparer.Ordinal) { ["Category"] = "a", ["CATEGORY"] = "b" };
+
+        var metadata = new Metadata(stored);
+
+        metadata.ToDictionary().Should().Equal(new Dictionary<string, object?> { ["Category"] = "b" });
+        metadata.ToReadable().GetStringValue("category").Should().Be("b");
+    }
+
+    [Fact]
+    public void FromDictionary_CopiesTheDictionary_ForMetadataAndMessageData()
+    {
+        var source = new Dictionary<string, object?> { ["Key"] = "a" };
+
+        var metadata = WritableMetadata.FromDictionary(source).SetStringValue("Other", "m");
+        var data = WriteableMessageData.FromDictionary(source).SetStringValue("Other", "d");
+        source["Key"] = "changed";
+
+        source.Keys.Should().Equal("Key");
+        metadata.ToReadable().GetStringValue("key").Should().Be("a");
+        data.ToReadable().GetStringValue("key").Should().Be("a");
+    }
+
+    [Fact]
+    public void Serialize_ThenDeserializeMetadata_KeepsKeySpelling_AndReadsIgnoringCase()
+    {
+        var json = KeyValueBagUtil.Serialize(WritableMetadata.New().SetStringValue("Category", "billing"));
+
+        var metadata = KeyValueBagUtil.DeserializeMetadata(json);
+
+        metadata.ToDictionary().Keys.Should().Equal("Category");
+        metadata.ToReadable().GetStringValue("category").Should().Be("billing");
+    }
+
+    [Fact]
     public void Serialize_Metadata_ThenDeserializeMetadata_ShouldRoundTrip_AllSupportedTypes()
     {
         var guid = Guid.Parse("8e8fd3b4-1c3b-4a2b-9d86-3c28b7c7f7b1");

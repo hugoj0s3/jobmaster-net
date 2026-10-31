@@ -76,13 +76,13 @@ internal static class JobUtil
             hierarchy.Push(type);
         }
 
-        var result = new Dictionary<string, object?>();
+        var result = JobMasterDictionaryUtils.NewIgnoreCase();
         while (hierarchy.Count > 0)
         {
             var declared = hierarchy.Pop()
                 .GetCachedAttributes<JobMasterMetadataAttribute>(inherit: false)
                 .Select(attr => attr.ToKeyValuePair())
-                .ToDictionary(x => x.Key, x => x.Value);
+                .ToDictionary(x => x.Key, x => x.Value, StringComparer.OrdinalIgnoreCase);
 
             foreach (var kv in declared)
             {

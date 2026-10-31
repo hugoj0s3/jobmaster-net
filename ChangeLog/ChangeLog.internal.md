@@ -7,6 +7,45 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Case-insensitive metadata / message-data keys and worker lanes (Plan0.0.12Alpha item 12)
+- Measured first with new RepoConformance tests (`Query_MetadataFilter_KeyIgnoresCase`,
+  `Query_WorkerLane_Filter_IgnoresCase`, jobs + recurring schedules): Postgres (ICU nondeterministic collation
+  `und-u-ks-level2`), MySQL and SQL Server already ignored case for keys and lanes through their column collation.
+  RavenDB ignored case for lane values but not for metadata keys (a key is a field path, case-sensitive in RQL).
+- `KeyValueBag`: `OrdinalIgnoreCase` (Hugo); the `IDictionary` constructor and `ToDictionary()` go through
+  `JobMasterDictionaryUtils.ToCaseInsensitive()` (always a copy; the constructor used to wrap the caller's
+  dictionary). `Merge` and `JobUtil.GetHandlerMetadata` ignore case too.
+- Collision rule (Hugo): plain indexer, so the last value wins and the key keeps its first spelling and position.
+  Remove-then-add was rejected because it can reorder the keys.
+- `Job.FromRecurringSchedule`: `Merge(handler, schedule)`, the schedule wins (Hugo); the old test asserted the
+  opposite on purpose and was flipped.
+- `WriteableMessageData.FromDictionary` added for symmetry (Hugo). The `Writeable` vs `Writable` naming mismatch is
+  left as is for now (Hugo).
+- Lanes: `GET /workers` used `Ordinal` (`/count` used `OrdinalIgnoreCase`); the duplicated filter is now one
+  `WorkersEndpoints.FilterWorkers`. Also `MasterBucketService` lane filter, the bucket-assignment fallback-timer
+  dictionary, the standalone drainer `Distinct`. `PreValidation`'s exact check (rejects two spellings of one lane)
+  stays.
+- RavenDB: the jobs / recurring-schedule metadata projections (`MetadataValues` + 3 typed buckets) store lowercased
+  keys and the filter lowercases its key (`RavenDbFilterClauseBuilder`, opt-in `lowercaseKey`). `MetadataJson`
+  (what's returned) stays verbatim. Generic records unchanged: their `Values` are the stored data, not a projection.
+  Existing documents keep mixed-case projection keys until re-saved; accepted with a ChangeLog note, no migration.
+  Done by hand rather than a Newtonsoft converter: the query side needs lowercasing anyway, and a converter would
+  silently stop working if the client's serializer changed.
+
+#### `EndBefore` exclusive + flaky planner test (Hugo, 2026-10-31)
+- Flaky `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound` (~1 in 5 full-suite runs,
+  never alone): it took `DateTime.UtcNow` twice; when both calls returned the same tick, `endBefore = base + 2min`
+  exactly, the 12th 10-second occurrence landed on `endBefore`, and the planner kept it (`at > stopAt` only).
+- That exposed the semantics: docs said "after which no jobs fire" (inclusive), the name says "before". Decided
+  (Hugo): exclusive, like the name; `StartAfter` is effectively exclusive too (first run = next occurrence after it).
+  - `PlanNextDates`: with an explicit end, an occurrence equal to it stops the loop (the plain horizon stays inclusive).
+  - Ended check at the top of the planner: `EndBefore <= UtcNow` (was `<`). `RecurringScheduleRawModel`'s status was
+    already exclusive (`EndBefore > now` = active).
+  - Repository `EndBeforeFrom`/`EndBeforeTo` filters are ranges on the stored value, unchanged.
+- Test made deterministic (fixed past dates, no clock reads): exactly 11 dates, the last 10 s before `endBefore`.
+- XML docs (7 `endBefore` params, 3 `EndBefore` properties) and jobmaster-doc `recurring-schedule.md` (new
+  "Start and end dates" section with the 31 Oct example).
+
 #### Unit tests against the `netstandard2.0` builds (Hugo, 2026-10-31)
 - Before: no test ever ran a `netstandard2.0` build (a .NET 8/10 test project always loads the `net8.0`/`net10.0`
   builds), so the `#if NETSTANDARD2_0` / `!NET6_0_OR_GREATER` paths were compiled but never executed.

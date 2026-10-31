@@ -295,7 +295,7 @@ internal class MasterBucketsService : JobMasterClusterAwareComponent, IMasterBuc
             query = query.Where(b => b.AgentWorkerId == criteria.AgentWorkerId);
 
         if (!string.IsNullOrEmpty(criteria.WorkerLane))
-            query = query.Where(b => b.WorkerLane == criteria.WorkerLane);
+            query = query.Where(b => string.Equals(b.WorkerLane, criteria.WorkerLane, StringComparison.OrdinalIgnoreCase));
 
         if (criteria.BucketType.HasValue)
             query = query.Where(b => b.BucketType == criteria.BucketType.Value);

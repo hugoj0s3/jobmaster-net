@@ -77,8 +77,9 @@ internal class Job : JobMasterBaseModel
             masterConfig: masterConfig,
             workerLane: recurringSchedule.WorkerLane);
         
+        // The schedule's metadata overrides the handler's [JobMasterMetadata], like its priority / timeout / lane.
         var recurringMetadata = recurringSchedule.Metadata?.ToDictionary() ?? new Dictionary<string, object?>();
-        var finalMetadata = JobMasterDictionaryUtils.Merge(recurringMetadata, job.Metadata?.ToDictionary() ?? new Dictionary<string, object?>());
+        var finalMetadata = JobMasterDictionaryUtils.Merge(job.Metadata?.ToDictionary() ?? new Dictionary<string, object?>(), recurringMetadata);
         job.Metadata = new Metadata(finalMetadata);
         
         return job;
