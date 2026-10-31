@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background;
@@ -25,22 +26,15 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
             result.Add($"{cluster.ClusterId} is configured with a TransientThreshold greater than 24 hours. This is not allowed.");
         }
 
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .ToList();
-
         // IStaticJobDefinitionConfig.Config is compile-time enforced via `static abstract` on net8.0, but
         // not on netstandard2.0 (no static abstract interface members there) -- this is the only thing
         // that catches a missing Config on that target framework. Checked (and returned on, if violated)
         // before handlerTypes below, which resolves JobDefinitionId via JobMasterDefinitionIdAttribute ->
         // JobDefinitionConfigAttribute.GetConfig and would otherwise throw uncaught partway through
         // discovery instead of reporting a clean, aggregated error like every other check here.
-        var staticJobDefinitionConfigTypesMissingConfig = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IStaticJobDefinitionConfig).IsAssignableFrom(t) &&
-                        !t.IsInterface &&
-                        !t.IsAbstract &&
-                        !JobDefinitionConfigAttribute.TryGetConfig(t, out _))
+        var staticJobDefinitionConfigTypes = typeof(IStaticJobDefinitionConfig).GetCachedConcreteTypesOf().ToList();
+        var staticJobDefinitionConfigTypesMissingConfig = staticJobDefinitionConfigTypes
+            .Where(t => !JobDefinitionConfigAttribute.TryGetConfig(t, out _))
             .ToList();
 
         if (staticJobDefinitionConfigTypesMissingConfig.Any())
@@ -51,15 +45,11 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
             return Task.FromResult<IList<string>>(result);
         }
 
-        var handlerTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) &&
-                        !t.IsInterface &&
-                        !t.IsAbstract)
+        var handlerTypes = typeof(IJobMasterHandler).GetCachedConcreteTypesOf()
             .Select(x => new
             {
                 Type = x,
-                JobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(x)
+                JobDefinitionId = x.GetJobDefinitionId()
             })
             .ToList();
 
@@ -98,10 +88,6 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
         }
 
         // Missing Config was already returned on above, so GetConfig can't throw here.
-        var staticJobDefinitionConfigTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IStaticJobDefinitionConfig).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
-
         var unknownClusterIdError = ValidateClusterIds(
             handlerTypes.Select(x => x.Type),
             staticJobDefinitionConfigTypes,
@@ -123,9 +109,7 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
 
         // Same discovery as JobMasterRuntime.BootstrapStaticRecurringSchedules — without this, an unknown profile
         // ClusterId only surfaces there as a KeyNotFoundException, after the workers have already started.
-        var staticProfileTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => !t.IsAbstract && t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
+        var staticProfileTypes = TypeDiscovery.StaticRecurringSchedulesProfileTypes();
 
         var unknownProfileClusterIdError = ValidateStaticProfileClusterIds(
             staticProfileTypes,

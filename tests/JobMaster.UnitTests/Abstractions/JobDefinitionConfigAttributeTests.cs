@@ -59,7 +59,7 @@ public class JobDefinitionConfigAttributeTests
     {
     }
 
-    // Deliberately NOT an IJobMasterHandler -- JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId does
+    // Deliberately NOT an IJobMasterHandler -- JobDefinitionIdResolver.GetJobHandlerTypeFromId does
     // an AppDomain-wide scan over every loaded IJobMasterHandler type and evaluates TryGetAppliedConfig on
     // each one unconditionally; a broken definition attribute on an actual IJobMasterHandler here would
     // make that throw for every other test in the process that resolves a handler by JobDefinitionId, not

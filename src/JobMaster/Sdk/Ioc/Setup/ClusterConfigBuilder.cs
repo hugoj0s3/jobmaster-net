@@ -27,10 +27,12 @@ using JobMaster.Sdk.Services.Agents;
 using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Setup.Binders;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
@@ -209,16 +211,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         
         // Register runtime setup. get all impl and register for IJobMasterRuntimeSetup
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .ToList();
-
-        var runtimeSetupTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterRuntimeSetup).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
+        var runtimeSetupTypes = typeof(IJobMasterRuntimeSetup).GetCachedConcreteTypesOf().ToList();
 
         foreach (var runtimeSetupType in runtimeSetupTypes)
         {
@@ -226,17 +219,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             clusterServiceRegistration.ClusterServices.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
         }
         
-        // Automatically register all IJobMasterHandler implementations
-        var handlerTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
-        
+        // Automatically register all IJobMasterHandler implementations. TryAdd: once per handler across clusters and
+        // JobMasterAssemblyDiscovery(), and an application's own registration (custom lifetime / factory) wins.
+        var handlerTypes = typeof(IJobMasterHandler).GetCachedConcreteTypesOf().ToList();
         foreach (var handlerType in handlerTypes)
         {
-            services.AddScoped(handlerType);
+            services.TryAddScoped(handlerType);
         }
         
         var factory = clusterServiceRegistration.BuildFactory();

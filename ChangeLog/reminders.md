@@ -486,3 +486,32 @@ Found 2026-10-26 (Plan 0.0.12 item 7). The per-cluster component containers are 
 disposes, and `JobMasterRuntime.Stop()` has no caller. So `JobMasterLogger.Dispose()` (and its "FORCE Final
 Flush") doesn't run on host shutdown: up to 15s / 100 buffered log rows are lost. Item 7 added
 `StopJobMasterRuntimeAsync()`; the logger flush could hook into the same path.
+
+## Message data in failure logs, and an optional dead-letter handler
+
+Raised 2026-10-30. Some `Critical` logs write user message data/metadata (possibly sensitive) to the master logs table,
+the Dashboard/API logs views and `MirrorLog`:
+- `JobRawModel.ToLogSummary()` / `RecurringScheduleRawModel.ToLogSummary()`: first 500 chars of `MsgData` and
+  `Metadata`. Used by `PollingSavePendingJobsRunner` (2×), `PollingSaveRecurringScheduleRunner` (2×),
+  `JobSavePendingOperation.AddPendingSaveJobForDrainWithSafeGuardAsync`.
+- `AgentJobsDispatcherRepository` deserialize failures (3×): the whole raw `message.Payload`, untruncated.
+
+Hugo will change `ToLogSummary` to keys + size only (`MsgData: keys=[UserId, Amount] size=184B`); payload logs should
+drop the payload too.
+
+Those logs are the only recovery copy today. SQL and RavenDB `PullMessagesAsync` delete on pull, so once master save
+and the agent re-push both fail, the job exists only in memory (NATS naks and is redelivered, no loss). Evaluated:
+- `ToLogSummary` paths: **possible** loss, not certain. The master write may have committed before throwing, and in
+  the batch-timeout path in-flight saves keep running (no token passed). The drain path returns `Failed`, but
+  `PollingDrainSavePendingJobsRunner` only backs off; the job was already pulled and is not retried.
+- Deserialize failures: **certain** loss (already pulled, unreadable).
+- `JobSavePendingOperation` line ~104 already loses data without logging any payload.
+
+Idea (not designed): an optional handler, no-op by default, e.g. `IJobMasterDeadLetterHandler` ("dead letter" rather
+than "lost", since most cases may already be saved). Context carries ids, `IReadableMessageData`, metadata, a reason
+(`SaveAndRequeueFailed` / `DrainSaveFailed` / `UnreadablePayload`) and the exception; raw payload for unreadable ones.
+Call guarded (try/catch + timeout). Open: per-cluster registration (like `EnableMirrorLog`) vs global DI; one
+interface vs three.
+
+Also: bare `catch` without logging the exception in `PollingSavePendingJobsRunner` (~128) and
+`PollingSaveRecurringScheduleRunner` (~130); the jobs one also omits category and reference id.

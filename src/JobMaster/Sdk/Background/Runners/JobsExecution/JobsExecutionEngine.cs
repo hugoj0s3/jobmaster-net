@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Threading;
@@ -19,6 +19,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 using Microsoft.Extensions.DependencyInjection;
@@ -887,24 +888,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 var jobContext = JobConvertUtil.ToJobContext(job);
                 jobContext.RecurringSchedule = recurringScheduleContext;
 
-                var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(job.JobDefinitionId);
-                if (handlerType is null)
-                {
-                    throw new InvalidOperationException($"Job handler type not found for job handler type id: {job.JobDefinitionId}");
-                }
-
-                var handler = scope.ServiceProvider.GetService(handlerType);
-                if (handler is null)
-                {
-                    throw new InvalidOperationException(
-                        $"Job handler type {handlerType.FullName} is not registered in the DI container. " +
-                        $"Ensure the handler is in an assembly that is scanned during cluster configuration.");
-                }
-
-                if (handler is not IJobMasterHandler jobHandler)
-                {
-                    throw new InvalidOperationException($"Job handler type {handlerType} does not implement IJobMasterHandler");
-                }
+                var jobHandler = scope.ServiceProvider.GetJobHandler(job.JobDefinitionId);
 
                 timeoutCancellationToken.ThrowIfCancellationRequested();
 

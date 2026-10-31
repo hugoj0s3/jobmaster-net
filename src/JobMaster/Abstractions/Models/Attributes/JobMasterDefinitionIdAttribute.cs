@@ -1,7 +1,3 @@
-using System.Collections.Concurrent;
-using System.Reflection;
-using JobMaster.Sdk.Utils;
-
 namespace JobMaster.Abstractions.Models.Attributes;
 
 /// <summary>
@@ -22,62 +18,4 @@ public class JobMasterDefinitionIdAttribute : Attribute
 
     /// <summary>The stable, human-readable ID assigned to the job handler.</summary>
     public string JobDefinitionId { get; }
-
-    private static readonly ConcurrentDictionary<string, Type> JobDefinitionIdMap = new();
-
-    /// <summary>
-    /// Resolves the <see cref="IJobMasterHandler"/> implementation type for the given <paramref name="jobdefinitionId"/>.
-    /// Returns <c>null</c> if no matching type is found.
-    /// </summary>
-    public static Type? GetJobHandlerTypeFromId(string jobdefinitionId)
-    {
-        if (JobDefinitionIdMap.TryGetValue(jobdefinitionId, out var result))
-        {
-            return result;
-        }
-
-        var type = typeof(IJobMasterHandler);
-        var types = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(s => s.GetTypes())
-            .Where(p => type.IsAssignableFrom(p))
-            .Where(p => p.IsAbstract == false && p is { IsInterface: false, IsClass: true })
-            .ToList();
-
-        var byConfigAttribute = types.FirstOrDefault(x =>
-            JobDefinitionConfigAttribute.TryGetAppliedConfig(x)?.JobDefinitionId == jobdefinitionId);
-        if (byConfigAttribute is not null)
-        {
-            JobDefinitionIdMap.TryAdd(jobdefinitionId, byConfigAttribute);
-            return byConfigAttribute;
-        }
-        
-        var byDefinitionIdAttribute = types.FirstOrDefault(x =>
-            x.GetCachedAttributes<JobMasterDefinitionIdAttribute>().FirstOrDefault()?.JobDefinitionId == jobdefinitionId);
-        if (byDefinitionIdAttribute is not null)
-        {
-            JobDefinitionIdMap.TryAdd(jobdefinitionId, byDefinitionIdAttribute);
-            return byDefinitionIdAttribute;
-        }
-        
-        var byFullName = types.FirstOrDefault(x => x.FullName == jobdefinitionId);
-        if (byFullName is not null)
-        {
-            JobDefinitionIdMap.TryAdd(jobdefinitionId, byFullName);
-            return byFullName;
-        }
-        
-        return null;
-    }
-
-    /// <summary>
-    /// Returns the definition ID for <paramref name="type"/>: the value from a
-    /// <see cref="JobDefinitionConfigAttribute"/> if present, otherwise from
-    /// <see cref="JobMasterDefinitionIdAttribute"/> if present, otherwise <see cref="Type.FullName"/>.
-    /// </summary>
-    public static string GetJobDefinitionId(Type type)
-    {
-        return JobDefinitionConfigAttribute.TryGetAppliedConfig(type)?.JobDefinitionId
-               ?? type.GetCachedAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId
-               ?? type.FullName!;
-    }
 }

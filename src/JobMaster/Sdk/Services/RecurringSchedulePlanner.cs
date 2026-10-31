@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
@@ -13,6 +13,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
@@ -94,10 +95,10 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         logger.Debug("Lock acquired, starting to plan next dates", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(scheduleRawModel);
-        var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
+        var handlerType = JobDefinitionIdResolver.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
         if (handlerType == null)
         {
-            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}");
+            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}. {JobDefinitionIdResolver.AssemblyDiscoveryHint}");
             
             // Avoid keep get this schedule again and again. Delay the next attempt.
             scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);

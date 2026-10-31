@@ -72,6 +72,7 @@
   | `ReScheduleAsync` / `ReSchedule` | `RescheduleAsync` / `Reschedule` |
 
   `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
+- **`JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` and `GetJobDefinitionId` were removed from the public API.** They're the runtime's handler lookup and were public by mistake.
 - **Disabled priorities are now checked against the cluster each job or schedule goes to, with the priority it actually resolves to.** Some setups that started before now fail at startup or at the call:
   - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
   - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.
@@ -130,8 +131,18 @@
   ```
 
   Returns `false` when it can't be cancelled anymore: the job is running or finished, or due to start in less than about a minute (a worker may already have it); the schedule had already ended. If it throws, calling it again is safe.
+- **`services.JobMasterAssemblyDiscovery()` for libraries your code never references directly.** JobMaster finds handlers, static recurring schedule profiles and job definitions in the assemblies your application has loaded, and .NET loads a library only when code uses one of its types. So a worker that only runs the handlers of a separate library, without naming any of its types, didn't find them: jobs failed with "handler not found" and the library's static recurring schedules were never created. Add such libraries explicitly:
+
+  ```csharp
+  services.JobMasterAssemblyDiscovery()
+      .AddAssemblyContaining<BillingHandler>();
+  ```
+
+  Also `AddAssembly(assembly)` and `AddAssemblies(...)`. It can be called before or after `AddJobMasterCluster`. The "handler not found" errors now point to it.
 
 ### Changed
+
+- **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
 
 - **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.
 
@@ -159,6 +170,7 @@
 
 ### Fixed
 
+- **A cluster configured only with `ConfigFromJson` now finds its database provider.** With JSON, the provider is named only by `"RepoType"`, so its package (for example `JobMaster.Postgres`) was never loaded and nothing was registered for the cluster, without any error. JobMaster now loads the provider package for the repository type. An unknown repository type, such as a typo or the wrong casing (`"postgres"`), or a provider used in a role it doesn't support (NATS as the cluster database), now fails at configuration with an error saying what to fix.
 - **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
 - **A priority disabled on one cluster no longer fails startup for handlers on other clusters.** Startup checked every handler against every cluster that disables a priority. So a `[JobMasterPriority(Critical)]` handler on the default cluster failed startup when another cluster disabled `Critical`. Each handler is now checked only against its own cluster: its `[JobMasterClusterId]` / `JobDefinitionConfig.ClusterId`, else the default cluster. A job sent to another cluster with an explicit `clusterId:` is still checked at the scheduling call.
 - **The synchronous `CancelJob` now saves the cancellation before returning.** It returned `true` without waiting for the database write, so a failed write (for example a concurrent update) was silently lost and the job could still run.

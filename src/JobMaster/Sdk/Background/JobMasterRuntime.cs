@@ -20,6 +20,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -623,20 +624,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
     private void BootstrapStaticRecurringSchedules(string defaultClusterId)
     {
         // 1) Discover profile types (static interface)
-        var profileTypes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a =>
-            {
-                try
-                {
-                    return a.GetTypes();
-                }
-                catch
-                {
-                    return Array.Empty<Type>();
-                } // skip dynamic/unloaded
-            })
-            .Where(t => !t.IsAbstract &&
-                        t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
+        var profileTypes = TypeDiscovery.StaticRecurringSchedulesProfileTypes();
 
         IList<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection)>
             profileInfos =
@@ -676,18 +664,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
         // 1b) Discover handler classes decorated with a RecurringScheduleAttribute (the lighter,
         // profile-free alternative) and synthesize an equivalent (info, collection) pair for each so
         // everything below (priority validation, upsert, locking, keep-alive) is reused unchanged.
-        var handlerTypesWithScheduleAttributes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a =>
-            {
-                try
-                {
-                    return a.GetTypes();
-                }
-                catch
-                {
-                    return Array.Empty<Type>();
-                }
-            })
+        var handlerTypesWithScheduleAttributes = TypeDiscovery.AllTypes()
             .Where(t => !t.IsAbstract && t.GetCachedAttributes<RecurringScheduleAttribute>().Any())
             .ToList();
 
@@ -699,7 +676,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"{handlerType.FullName} has a RecurringScheduleAttribute but does not implement IJobMasterHandler.");
             }
 
-            var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
+            var jobDefinitionId = handlerType.GetJobDefinitionId();
             var info = new StaticRecurringSchedulesProfileInfo($"attr:{jobDefinitionId}", clusterId: null, workerLane: null);
             if (!info.IsValid)
                 throw new InvalidOperationException($"Invalid synthesized ProfileId for {handlerType.FullName}.");
