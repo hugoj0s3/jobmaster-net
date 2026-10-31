@@ -16,6 +16,14 @@
   - If you load the provider by file name, the dll is now `JobMaster.RavenDB.dll` (file names are case-sensitive on Linux).
 
   The repository type stays `"RavenDB"`, and the provider's configuration keys are unchanged.
+- **Metadata and message data keys ignore case.** `"Category"` and `"category"` are now the same key everywhere:
+  - Reads: `GetStringValue("CATEGORY")` finds a value set as `"Category"`.
+  - Overrides: call metadata overrides a handler's `[JobMasterMetadata]`, and a derived handler's attribute overrides its base class's, whatever the casing. Before, both keys were kept.
+  - Metadata filters (API, dashboard) match keys ignoring case on every provider.
+
+  When one key is set twice in different casings, the last value wins and the key keeps its first spelling and position.
+- **A recurring schedule's own metadata now overrides the handler's `[JobMasterMetadata]`.** It was the other way round, unlike one-off jobs (where the call wins) and unlike the schedule's priority, timeout and worker lane.
+- **`WritableMetadata.FromDictionary` now copies the dictionary.** Changes to the metadata no longer change your dictionary, and the other way round.
 - ⚠️ **Optional parameters now follow one order everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`.**
   - **`clusterId`** moves from last to right after the payload in every scheduling method, and to right after the id in `JobDefinitionConfig`.
   - **`JobDefinitionConfig`:** `workerLane` also moves before `timeout`.
@@ -86,6 +94,7 @@
 
 ### Added
 
+- **`WriteableMessageData.FromDictionary(dictionary)`**, like `WritableMetadata.FromDictionary`: a message data builder pre-populated with a copy of the dictionary.
 - **.NET 10 builds.** Every package now also targets `net10.0`: `JobMaster`, the storage and recurrence providers (`net10.0`, `net8.0`, `netstandard2.0`), and `JobMaster.Api` / `JobMaster.Dashboard` (`net10.0`, `net8.0`). Apps on .NET 10 get the `net10.0` build; nothing changes for .NET 8 or `netstandard2.0` apps.
 - **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
   1. the `clusterId` passed to the call;
@@ -178,6 +187,8 @@
 
 ### Fixed
 
+- **Worker lanes ignore case everywhere.** `GET /workers?workerLane=Billing` returned nothing for a `"billing"` worker while `/workers/count` counted it; both now ignore case, like job routing already did.
+- **RavenDB: metadata filters match keys ignoring case**, like the SQL providers. Jobs and recurring schedules saved before this version only match a key typed in all lowercase until they're saved again (jobs are saved again as they run; static recurring schedules at startup).
 - **`JobMaster.SqlServer` no longer brings in a vulnerable `System.Security.Cryptography.Pkcs`.** `Microsoft.Data.SqlClient` depends on a version with known high-severity vulnerabilities ([GHSA-846f-f764-76mx](https://github.com/advisories/GHSA-846f-f764-76mx), [GHSA-2fmv-rv2c-59x7](https://github.com/advisories/GHSA-2fmv-rv2c-59x7)). The package now references the patched version directly (8.0.2, or 9.0.22 on .NET 10). `Microsoft.Data.SqlClient` stays on 6.1.4.
 - **`JobMaster.NatsJetStream` no longer brings in a vulnerable `Microsoft.Bcl.Memory`.** On `netstandard2.0`, the NATS client depends on version 9.0.0, which has a known high-severity vulnerability ([GHSA-73j8-2gch-69rq](https://github.com/advisories/GHSA-73j8-2gch-69rq)). The package now references the patched 9.0.22 directly. The NATS client stays on 2.7.2; `net8.0` and `net10.0` were never affected.
 - **`JobMaster.MySql` now depends on `MySqlConnector` 2.6.2** (was 2.5.0, which has a known moderate-severity vulnerability, [GHSA-473q-m89c-ghf8](https://github.com/advisories/GHSA-473q-m89c-ghf8)).

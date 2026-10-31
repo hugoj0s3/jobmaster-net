@@ -438,9 +438,10 @@ There are two reminder files: [ChangeLog/reminders.md](ChangeLog/reminders.md) a
 for both, because every string column is created with the provider's case-insensitive collation
 (`GetCaseInsensitiveCollation`). RavenDB ignores case for lane values but **not** for metadata keys: a key is part of
 the field path into the query-only projection (`e.MetadataValues.Category`), and field names are case-sensitive.
-- RavenDB fix (agreed, not done yet): lowercase the keys of the jobs / recurring-schedule metadata projections and
+- RavenDB fix (done 2026-10-31): lowercase the keys of the jobs / recurring-schedule metadata projections and
   the filter key (opt-in in `RavenDbFilterClauseBuilder`). Display is unaffected (rendered from `MetadataJson`).
-  Generic records stay as they are: their `Values` dictionaries are the stored data, not a projection.
+  Generic records stay as they are: their `Values` dictionaries are the stored data, not a projection. Existing
+  documents: ChangeLog note, no migration. All 160 RavenDB conformance tests pass, incl. the case tests.
 - Colliding spellings (Hugo): the last value wins; the key keeps its first spelling **and position**, so overrides
   never reorder metadata / message data (plain indexer on the ignore-case dictionary).
 

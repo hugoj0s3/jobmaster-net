@@ -14,8 +14,12 @@ internal static class RavenDbFilterClauseBuilder
     /// GenericRecords' bare <c>Values</c>).
     /// </param>
     /// <param name="paramPrefix">Prefix for the generated RQL parameter name, must be unique per caller.</param>
+    /// <param name="lowercaseKey">
+    /// The buckets store their keys lowercased (metadata projections): field names are case-sensitive in RQL, so
+    /// lowercasing both sides is what makes the key match ignoring case.
+    /// </param>
     public static (string Clause, string? ParamName, object? ParamValue) Build(
-        GenericRecordValueFilter filter, int index, string paramPrefix, string fieldPrefix = "")
+        GenericRecordValueFilter filter, int index, string paramPrefix, string fieldPrefix = "", bool lowercaseKey = false)
     {
         // RQL has no bracket-index syntax (`Values['key']` is a parse error, dot-path only), so keys with
         // spaces/hyphens/leading digits aren't queryable this way -- known limitation, not handled here.
@@ -31,7 +35,7 @@ internal static class RavenDbFilterClauseBuilder
             decimal => $"{fieldPrefix}DecimalValues",
             _ => $"{fieldPrefix}Values",
         };
-        var field = $"e.{bucket}.{filter.Key}";
+        var field = $"e.{bucket}.{(lowercaseKey ? filter.Key.ToLowerInvariant() : filter.Key)}";
         var paramName = $"{paramPrefix}{index}";
 
         switch (filter.Operation)

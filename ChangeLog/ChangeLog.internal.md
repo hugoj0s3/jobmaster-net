@@ -7,6 +7,31 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Case-insensitive metadata / message-data keys and worker lanes (Plan0.0.12Alpha item 12)
+- Measured first with new RepoConformance tests (`Query_MetadataFilter_KeyIgnoresCase`,
+  `Query_WorkerLane_Filter_IgnoresCase`, jobs + recurring schedules): Postgres (ICU nondeterministic collation
+  `und-u-ks-level2`), MySQL and SQL Server already ignored case for keys and lanes through their column collation.
+  RavenDB ignored case for lane values but not for metadata keys (a key is a field path, case-sensitive in RQL).
+- `KeyValueBag`: `OrdinalIgnoreCase` (Hugo); the `IDictionary` constructor and `ToDictionary()` go through
+  `JobMasterDictionaryUtils.ToCaseInsensitive()` (always a copy; the constructor used to wrap the caller's
+  dictionary). `Merge` and `JobUtil.GetHandlerMetadata` ignore case too.
+- Collision rule (Hugo): plain indexer, so the last value wins and the key keeps its first spelling and position.
+  Remove-then-add was rejected because it can reorder the keys.
+- `Job.FromRecurringSchedule`: `Merge(handler, schedule)`, the schedule wins (Hugo); the old test asserted the
+  opposite on purpose and was flipped.
+- `WriteableMessageData.FromDictionary` added for symmetry (Hugo). The `Writeable` vs `Writable` naming mismatch is
+  left as is for now (Hugo).
+- Lanes: `GET /workers` used `Ordinal` (`/count` used `OrdinalIgnoreCase`); the duplicated filter is now one
+  `WorkersEndpoints.FilterWorkers`. Also `MasterBucketService` lane filter, the bucket-assignment fallback-timer
+  dictionary, the standalone drainer `Distinct`. `PreValidation`'s exact check (rejects two spellings of one lane)
+  stays.
+- RavenDB: the jobs / recurring-schedule metadata projections (`MetadataValues` + 3 typed buckets) store lowercased
+  keys and the filter lowercases its key (`RavenDbFilterClauseBuilder`, opt-in `lowercaseKey`). `MetadataJson`
+  (what's returned) stays verbatim. Generic records unchanged: their `Values` are the stored data, not a projection.
+  Existing documents keep mixed-case projection keys until re-saved; accepted with a ChangeLog note, no migration.
+  Done by hand rather than a Newtonsoft converter: the query side needs lowercasing anyway, and a converter would
+  silently stop working if the client's serializer changed.
+
 #### `EndBefore` exclusive + flaky planner test (Hugo, 2026-10-31)
 - Flaky `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound` (~1 in 5 full-suite runs,
   never alone): it took `DateTime.UtcNow` twice; when both calls returned the same tick, `endBefore = base + 2min`
