@@ -1,0 +1,46 @@
+<Solution>
+  <Configurations>
+    <Platform Name="Any CPU" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Folder Name="/misc/" />
+  <Folder Name="/misc/Benchmarks/">
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.Common/JobMaster.Benchmarks.Common.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.HangfireHost/JobMaster.Benchmarks.HangfireHost.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.HangfireRunner/JobMaster.Benchmarks.HangfireRunner.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.JobMasterHost/JobMaster.Benchmarks.JobMasterHost.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.QuartzHost/JobMaster.Benchmarks.QuartzHost.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.QuartzRunner/JobMaster.Benchmarks.QuartzRunner.csproj" />
+    <Project Path="misc/Benchmarks/JobMaster.Benchmarks.Runner/JobMaster.Benchmarks.Runner.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/JobMaster.SampleWeb/JobMaster.SampleWeb.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/JobMaster.Api/JobMaster.Api.csproj" />
+    <Project Path="src/JobMaster.Dashboard/JobMaster.Dashboard.csproj" />
+    <Project Path="src/JobMaster/JobMaster.csproj" />
+  </Folder>
+  <Folder Name="/src/RecurrenceProviders/">
+    <Project Path="src/RecurrenceProviders/JobMaster.Cronos/JobMaster.Cronos.csproj" />
+    <Project Path="src/RecurrenceProviders/JobMaster.NCrontab/JobMaster.NCrontab.csproj" />
+  </Folder>
+  <Folder Name="/src/StorageProviders/">
+    <Project Path="src/StorageProviders/JobMaster.MySql/JobMaster.MySql.csproj" />
+    <Project Path="src/StorageProviders/JobMaster.NatsJetStream/JobMaster.NatsJetStream.csproj" />
+    <Project Path="src/StorageProviders/JobMaster.Postgres/JobMaster.Postgres.csproj" />
+    <Project Path="src/StorageProviders/JobMaster.RavenDB/JobMaster.RavenDB.csproj" />
+    <Project Path="src/StorageProviders/JobMaster.SqlBase/JobMaster.SqlBase.csproj" />
+    <Project Path="src/StorageProviders/JobMaster.SqlServer/JobMaster.SqlServer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj" />
+    <Project Path="tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj" />
+    <Project Path="tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj" />
+    <Project Path="tests/TargetTestApi/TargetTestApi.csproj" />
+    <Project Path="tests/TargetTestClusterIdApp/TargetTestClusterIdApp.csproj" />
+    <Project Path="tests/TargetTestRecurringApp/TargetTestRecurringApp.csproj" />
+    <Project Path="tests/TargetTestScheduleApp/TargetTestScheduleApp.csproj" />
+  </Folder>
+</Solution>

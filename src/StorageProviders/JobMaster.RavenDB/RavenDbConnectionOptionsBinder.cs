@@ -126,7 +126,12 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
         }
 
         var certificatePassword = GetString(options, "certificatePassword");
+#if NET9_0_OR_GREATER
+        // The constructor is obsolete from .NET 9 (SYSLIB0057); a RavenDB client certificate is a PFX (PKCS#12).
+        return X509CertificateLoader.LoadPkcs12FromFile(certificateFile, certificatePassword);
+#else
         return new X509Certificate2(certificateFile, certificatePassword);
+#endif
     }
 
     private static void ValidateKeys(IDictionary<string, object> options, HashSet<string> knownKeys)

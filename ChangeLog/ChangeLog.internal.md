@@ -7,6 +7,40 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### SDK 10, `.slnx`, `net10.0` target (Hugo, 2026-10-30)
+- `global.json`: SDK `10.0.100`, `rollForward: latestFeature` (was `8.0.0` / `major`, which resolved to SDK 8 and
+  can't read `.slnx`). Builds still target `net8.0` / `netstandard2.0`; only the tooling moved.
+- `JobMaster.sln` → `JobMaster.slnx` (`dotnet sln migrate`); `.sln` deleted, not kept alongside (two files drift).
+  Both `RepoRootLocator`s (scenario tests, benchmarks) now look for `global.json` instead of `JobMaster.sln`.
+- Targets: the 9 libraries `net10.0;net8.0;netstandard2.0`; Api / Dashboard `net10.0;net8.0`; UnitTests
+  `net8.0;net10.0` (the suite runs on both). Test apps, integration / scenario tests, benchmarks, sample stay
+  `net8.0`. All `#if`s are `NETx_OR_GREATER` / `NETSTANDARD2_0`, so `net10.0` takes the `net8.0` paths unchanged.
+- Package conditions `'$(TargetFramework)' == 'net8.0'` → `!= 'netstandard2.0'` (`CryptoRandom` in `JobMaster`,
+  `Npgsql` 10 in Postgres): with an exact match the `net10.0` build lost them (CS0246).
+- Api keeps `Microsoft.AspNetCore.OpenApi` 8.0.14 + `Swashbuckle.AspNetCore` 7.3.1 on both targets (Hugo). Possible
+  follow-up: OpenApi 10.x on `net10.0`, which needs `Microsoft.OpenApi` 2.x and therefore Swashbuckle 10 + conditional
+  code.
+- CI: every `setup-dotnet` installs the SDK from `global-json-file` plus `8.0.x` (runtime for the `net8.0` tests);
+  `unit-tests.yml` builds `JobMaster.slnx`.
+- Dockerfiles: build stage `sdk:8.0` → `sdk:10.0` (restoring a project that references `net10.0` libraries needs SDK
+  10: NETSDK1045, and `COPY . .` brings `global.json` in). Runtime stages stay `aspnet:8.0`; verified with a real
+  `TargetTestScheduleApp` image build + `--list-runtimes`.
+- New build warnings compared with SDK 8 (an SDK-8 build of the pre-migration commit was the baseline):
+  NU1903 `Microsoft.Bcl.Memory` 9.0.0 (via NatsJetStream) and NU1902/NU1903 `System.Security.Cryptography.Pkcs`
+  8.0.1 / 9.0.11 (via SqlServer): SDK 10 audits transitive packages by default, the dependencies were always there.
+  SYSLIB0057 in `RavenDbConnectionOptionsBinder` (the `X509Certificate2(path, password)` ctor, obsolete from .NET 9;
+  only the `net10.0` build reports it): fixed with `X509CertificateLoader.LoadPkcs12FromFile` under
+  `#if NET9_0_OR_GREATER` (not available on `net8.0` / `netstandard2.0`, which keep the ctor). A RavenDB client
+  certificate is a PFX; a non-PKCS#12 file now fails at load on `net10.0` instead of at the TLS handshake. Covered by
+  the existing `RavenDbConnectionOptionsTests` certificate tests (password-protected PFX), which run on both test
+  targets. Already there before: NU1902 `MySqlConnector` 2.5.0, CS8887 in
+  `NatsJetStreamRunnerBase`.
+- `MySqlConnector` 2.5.0 → 2.6.2 (minor) in all 6 projects that reference it (MySql provider, ScenarioTests, 4
+  benchmarks), so versions don't diverge; `dotnet list package --vulnerable` is clean for the provider.
+- Not done (Hugo): `System.Security.Cryptography.Pkcs` (via `Microsoft.Data.SqlClient` 6.1.4) and
+  `Microsoft.Bcl.Memory` (via `NATS.Client.*` 2.7.2). Fixing them by upgrading the client means a major
+  (SqlClient 7, NATS 3) with breaking changes; the alternative is pinning the patched transitive version.
+
 #### Provider folders split + `JobMaster.RavenDb` → `JobMaster.RavenDB` (Hugo, 2026-10-30)
 - `src/Providers` split into `src/StorageProviders` (SqlBase, Postgres, MySql, SqlServer, RavenDB, NatsJetStream; NATS
   isn't a DB, hence "storage") and `src/RecurrenceProviders` (Cronos, NCrontab). Same split for the solution folders

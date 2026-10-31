@@ -17,13 +17,15 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
+          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
+          global-json-file: global.json
           dotnet-version: '8.0.x'
 
       - name: Restore
-        run: dotnet restore JobMaster.sln
+        run: dotnet restore JobMaster.slnx
 
       - name: Build
-        run: dotnet build JobMaster.sln --no-restore --configuration Release
+        run: dotnet build JobMaster.slnx --no-restore --configuration Release
 
       - name: Test
         run: dotnet test tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj --no-build --configuration Release --verbosity normal

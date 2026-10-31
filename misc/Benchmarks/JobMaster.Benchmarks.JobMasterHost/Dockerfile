@@ -2,7 +2,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 # false = restore JobMaster/*.SqlBase/etc from nuget.org (the published package) instead of the
 # copied local source -- lets a benchmark run exercise the real published package end to end.

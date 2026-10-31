@@ -25,6 +25,8 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
+          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
+          global-json-file: global.json
           dotnet-version: '8.0.x'
 
       - name: Restore

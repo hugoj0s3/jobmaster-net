@@ -86,6 +86,7 @@
 
 ### Added
 
+- **.NET 10 builds.** Every package now also targets `net10.0`: `JobMaster`, the storage and recurrence providers (`net10.0`, `net8.0`, `netstandard2.0`), and `JobMaster.Api` / `JobMaster.Dashboard` (`net10.0`, `net8.0`). Apps on .NET 10 get the `net10.0` build; nothing changes for .NET 8 or `netstandard2.0` apps.
 - **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
   1. the `clusterId` passed to the call;
   2. `ClusterId` from the handler's `JobDefinitionConfigAttribute` config, or from the `JobDefinitionConfig` you pass to an `Advanced` method;
@@ -176,6 +177,7 @@
 
 ### Fixed
 
+- **`JobMaster.MySql` now depends on `MySqlConnector` 2.6.2** (was 2.5.0, which has a known moderate-severity vulnerability, [GHSA-473q-m89c-ghf8](https://github.com/advisories/GHSA-473q-m89c-ghf8)).
 - **A cluster configured only with `ConfigFromJson` now finds its database provider.** With JSON, the provider is named only by `"RepoType"`, so its package (for example `JobMaster.Postgres`) was never loaded and nothing was registered for the cluster, without any error. JobMaster now loads the provider package for the repository type. An unknown repository type, such as a typo or the wrong casing (`"postgres"`), or a provider used in a role it doesn't support (NATS as the cluster database), now fails at configuration with an error saying what to fix.
 - **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
 - **A priority disabled on one cluster no longer fails startup for handlers on other clusters.** Startup checked every handler against every cluster that disables a priority. So a `[JobMasterPriority(Critical)]` handler on the default cluster failed startup when another cluster disabled `Critical`. Each handler is now checked only against its own cluster: its `[JobMasterClusterId]` / `JobDefinitionConfig.ClusterId`, else the default cluster. A job sent to another cluster with an explicit `clusterId:` is still checked at the scheduling call.
