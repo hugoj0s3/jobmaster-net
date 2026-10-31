@@ -55,7 +55,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private PollingJobsExecutionRunner? fallBackRunner;
     private BucketModel? fallbackBucket;
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
-    private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
+    // Ignore case: lanes do, so one fallback timer per lane whatever spelling each job carries.
+    private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new(StringComparer.OrdinalIgnoreCase);
 
     private DateTime LastAssignExecution = DateTime.MinValue;
 

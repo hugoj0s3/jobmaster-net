@@ -103,7 +103,7 @@ public class JobTests
     }
 
     [Fact]
-    public void FromRecurringSchedule_CopiesSchedulingAndMergesMetadataWithJobWinning()
+    public void FromRecurringSchedule_CopiesSchedulingAndMergesMetadataWithScheduleWinning()
     {
         var clusterId = "cluster";
         var scheduleAt = new DateTime(2025, 01, 02, 03, 04, 05, DateTimeKind.Utc);
@@ -140,7 +140,47 @@ public class JobTests
 
         job.Metadata.Should().NotBeNull();
         job.Metadata!.ToReadable().GetStringValue("RecurringOnly").Should().Be("ro");
-        job.Metadata!.ToReadable().GetIntValue("Test2").Should().Be(10);
+        job.Metadata!.ToReadable().GetIntValue("Test2").Should().Be(111);
+        job.Metadata!.ToReadable().GetLongValue("Test1").Should().Be(10L);
+    }
+
+    [Fact]
+    public void FromRecurringSchedule_ScheduleMetadataOverridesHandlerAcrossCasing()
+    {
+        var recurring = RecurringSchedule.New(
+            "cluster",
+            jobDefinitionId: "ignored",
+            values: WriteableMessageData.New(),
+            expression: new NeverRecursCompiledExpr(),
+            priority: null,
+            timeout: null,
+            maxNumberOfRetries: null,
+            metadata: WritableMetadata.New().SetIntValue("test2", 222),
+            recurringScheduleType: RecurringScheduleType.Static,
+            staticDefinitionId: "sd",
+            startAfter: null,
+            endBefore: null,
+            workerLane: null);
+
+        var job = Job.FromRecurringSchedule("cluster", typeof(JobMasterHandlerForTestAllAttributes), recurring, DateTime.UtcNow);
+
+        var metadata = job.Metadata!.ToReadable();
+        metadata.GetIntValue("TEST2").Should().Be(222);
+        job.Metadata.ToDictionary().Keys.Should().ContainSingle(k => string.Equals(k, "test2", StringComparison.OrdinalIgnoreCase))
+            .Which.Should().Be("Test2");
+    }
+
+    [Fact]
+    public void New_CallMetadataOverridesHandlerAttributeAcrossCasing()
+    {
+        var job = Job.New(
+            "cluster",
+            typeof(JobMasterHandlerForTestAllAttributes),
+            writableMetadata: WritableMetadata.New().SetIntValue("TEST2", 999));
+
+        job.Metadata!.ToReadable().GetIntValue("test2").Should().Be(999);
+        job.Metadata.ToDictionary().Keys.Should().ContainSingle(k => string.Equals(k, "test2", StringComparison.OrdinalIgnoreCase))
+            .Which.Should().Be("Test2");
     }
 
     [Fact]

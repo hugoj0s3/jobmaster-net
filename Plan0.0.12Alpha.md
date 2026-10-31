@@ -430,20 +430,39 @@ There are two reminder files: [ChangeLog/reminders.md](ChangeLog/reminders.md) a
   - But it contradicts `recurring-schedule.md` ("configuration in a profile / `RecurringAsync` overrides handler
     attributes") and the same test's priority/timeout/lane, where the schedule wins.
   - Decide here, since it's the same merge code.
+  - **Decided (Hugo, 2026-10-31): the schedule wins**, like one-off jobs (call wins) and like the schedule's own
+    priority / timeout / lane; matches `recurring-schedule.md`. Breaking: the test above flips.
+
+**Verified (2026-10-31).** New RepoConformance tests (`Query_MetadataFilter_KeyIgnoresCase`,
+`Query_WorkerLane_Filter_IgnoresCase`, jobs + recurring schedules): Postgres, MySQL and SQL Server already ignore case
+for both, because every string column is created with the provider's case-insensitive collation
+(`GetCaseInsensitiveCollation`). RavenDB ignores case for lane values but **not** for metadata keys: a key is part of
+the field path into the query-only projection (`e.MetadataValues.Category`), and field names are case-sensitive.
+- RavenDB fix (agreed, not done yet): lowercase the keys of the jobs / recurring-schedule metadata projections and
+  the filter key (opt-in in `RavenDbFilterClauseBuilder`). Display is unaffected (rendered from `MetadataJson`).
+  Generic records stay as they are: their `Values` dictionaries are the stored data, not a projection.
+- Colliding spellings (Hugo): the last value wins; the key keeps its first spelling **and position**, so overrides
+  never reorder metadata / message data (plain indexer on the ignore-case dictionary).
 
 **Tasks.**
-- [ ] Verify the current per-provider DB filter behavior first: a RepoConformance test, metadata filter with a
+- [x] Verify the current per-provider DB filter behavior first: a RepoConformance test, metadata filter with a
       different-case key, against all providers.
-- [ ] Case-insensitive comparer in `KeyValueBag` (metadata + message data) / `GetHandlerMetadata` / `Merge`.
+- [x] Case-insensitive comparer in `KeyValueBag` (metadata + message data) / `GetHandlerMetadata` / `Merge`.
+      Also `KeyValueBag(IDictionary)` copies instead of wrapping, and `ToDictionary()` keeps the comparer.
+- [x] Recurring metadata precedence: schedule wins (`Job.FromRecurringSchedule`), test flipped.
+- [x] `WritableMetadata.FromDictionary` documented as a copy (it used to wrap the caller's dictionary); new
+      `WriteableMessageData.FromDictionary` for symmetry (Hugo). ChangeLog: *Added* + the copy behavior change.
 - [ ] Provider filter changes so all providers agree; RepoConformance test asserting case-insensitive matching on each.
 - [ ] Unit tests: derived `"category"` overrides base `"Category"`; metadata and message-data reads ignore case; call
       metadata overrides an attribute across casing; storage round-trips keep the original key spelling.
 - [ ] Worker lanes:
-  - [ ] Fix `GET /workers` (`Ordinal` → `OrdinalIgnoreCase`) so it matches `/workers/count`, with an API test.
-  - [ ] Make the other in-memory lane comparisons and keys ignore case: `MasterBucketService` query filter,
-        `BucketFailureKey`, standalone drainer `Distinct`.
-  - [ ] Make provider lane filters ignore case for jobs and recurring schedules. Add a RepoConformance test per
-        provider, and confirm the lane indexes are still used.
+  - [x] Fix `GET /workers` (`Ordinal` → `OrdinalIgnoreCase`) so it matches `/workers/count`, with an API test. The two
+        endpoints' duplicated filter is now one `WorkersEndpoints.FilterWorkers`, so they can't drift again.
+  - [x] Make the other in-memory lane comparisons and keys ignore case: `MasterBucketService` query filter,
+        `BucketFailureKey` (the fallback-timer dictionary ignores case), standalone drainer `Distinct`.
+  - [x] Make provider lane filters ignore case for jobs and recurring schedules: already the case on every provider
+        (collation / RavenDB value comparison), guarded by the new RepoConformance tests. No query change, so the lane
+        indexes are untouched.
   - [ ] Unit tests: a job with lane `"Billing"` is found and filtered under `"billing"` everywhere.
 - [ ] Docs (`job-configuration.md` Message Data + Metadata + Worker Lane sections) + ChangeLog breaking entry.
 

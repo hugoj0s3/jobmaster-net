@@ -1,4 +1,5 @@
 using JobMaster.Api.ApiModels;
+using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -33,18 +34,7 @@ internal static class WorkersEndpoints
 
         var workers = await service.QueryWorkersAsync(useCache: true);
 
-        if (!string.IsNullOrEmpty(criteria.WorkerLane))
-            workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.Ordinal)).ToList();
-        if (criteria.Mode.HasValue)
-            workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
-        if (criteria.IsAlive.HasValue)
-            workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
-        if (criteria.Status.HasValue)
-            workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
-        if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
-            workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (!string.IsNullOrEmpty(criteria.HostId))
-            workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
+        workers = FilterWorkers(workers, criteria);
 
         var apiWorkers = workers.Select(ApiAgentWorker.FromDomain).ToList();
         
@@ -75,18 +65,7 @@ internal static class WorkersEndpoints
 
         var workers = await service.QueryWorkersAsync(useCache: true);
 
-        if (!string.IsNullOrEmpty(criteria.WorkerLane))
-            workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (criteria.Mode.HasValue)
-            workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
-        if (criteria.IsAlive.HasValue)
-            workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
-        if (criteria.Status.HasValue)
-            workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
-        if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
-            workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
-        if (!string.IsNullOrEmpty(criteria.HostId))
-            workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
+        workers = FilterWorkers(workers, criteria);
 
         return Results.Ok(workers.Count);
     }
@@ -109,5 +88,24 @@ internal static class WorkersEndpoints
         }
 
         return Results.Ok(ApiAgentWorker.FromDomain(worker));
+    }
+
+    // Shared by the list and count endpoints so their filters can't drift apart (they once compared lanes differently).
+    internal static IList<AgentWorkerModel> FilterWorkers(IList<AgentWorkerModel> workers, ApiAgentWorkerCriteria criteria)
+    {
+        if (!string.IsNullOrEmpty(criteria.WorkerLane))
+            workers = workers.Where(w => string.Equals(w.WorkerLane, criteria.WorkerLane, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (criteria.Mode.HasValue)
+            workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
+        if (criteria.IsAlive.HasValue)
+            workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
+        if (criteria.Status.HasValue)
+            workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
+        if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
+            workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (!string.IsNullOrEmpty(criteria.HostId))
+            workers = workers.Where(w => string.Equals(w.HostId?.IdValue, criteria.HostId, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        return workers;
     }
 }
