@@ -7,6 +7,20 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### `EndBefore` exclusive + flaky planner test (Hugo, 2026-10-31)
+- Flaky `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound` (~1 in 5 full-suite runs,
+  never alone): it took `DateTime.UtcNow` twice; when both calls returned the same tick, `endBefore = base + 2min`
+  exactly, the 12th 10-second occurrence landed on `endBefore`, and the planner kept it (`at > stopAt` only).
+- That exposed the semantics: docs said "after which no jobs fire" (inclusive), the name says "before". Decided
+  (Hugo): exclusive, like the name; `StartAfter` is effectively exclusive too (first run = next occurrence after it).
+  - `PlanNextDates`: with an explicit end, an occurrence equal to it stops the loop (the plain horizon stays inclusive).
+  - Ended check at the top of the planner: `EndBefore <= UtcNow` (was `<`). `RecurringScheduleRawModel`'s status was
+    already exclusive (`EndBefore > now` = active).
+  - Repository `EndBeforeFrom`/`EndBeforeTo` filters are ranges on the stored value, unchanged.
+- Test made deterministic (fixed past dates, no clock reads): exactly 11 dates, the last 10 s before `endBefore`.
+- XML docs (7 `endBefore` params, 3 `EndBefore` properties) and jobmaster-doc `recurring-schedule.md` (new
+  "Start and end dates" section with the 31 Oct example).
+
 #### Unit tests against the `netstandard2.0` builds (Hugo, 2026-10-31)
 - Before: no test ever ran a `netstandard2.0` build (a .NET 8/10 test project always loads the `net8.0`/`net10.0`
   builds), so the `#if NETSTANDARD2_0` / `!NET6_0_OR_GREATER` paths were compiled but never executed.

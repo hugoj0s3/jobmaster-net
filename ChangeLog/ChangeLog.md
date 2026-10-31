@@ -149,6 +149,7 @@
 
 ### Changed
 
+- **A recurring schedule's `endBefore` is now exclusive.** Jobs run only before `endBefore`, never at or after it. Before, an occurrence landing exactly on `endBefore` still ran: a daily 00:00 schedule with `endBefore` = 31 Oct 2026 00:00 ran once on 31 Oct. It now stops after 30 Oct. Occurrences at any other time are unaffected.
 - **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
 
 - **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.

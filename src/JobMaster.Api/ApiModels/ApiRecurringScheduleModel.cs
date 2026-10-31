@@ -39,7 +39,7 @@ public class ApiRecurringScheduleModel : ApiClusterBaseModel
     public DateTime CreatedAt { get; set; }
     /// <summary>UTC date before which the schedule will not fire.</summary>
     public DateTime? StartAfter { get; set; }
-    /// <summary>UTC date after which the schedule will not fire.</summary>
+    /// <summary>The schedule fires only before this UTC time, never at or after it.</summary>
     public DateTime? EndBefore { get; set; }
     /// <summary>UTC timestamp up to which jobs have been planned by the scheduler.</summary>
     public DateTime? LastPlanCoverageUntil { get; set; }

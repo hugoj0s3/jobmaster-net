@@ -49,7 +49,7 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
@@ -77,7 +77,7 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         string expressionType,
@@ -104,7 +104,7 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,
@@ -130,7 +130,7 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
     /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         IRecurrenceCompiledExpr compiledExpr,

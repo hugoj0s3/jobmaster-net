@@ -118,7 +118,7 @@ public interface IJobMasterScheduler
     /// <param name="maxNumberOfRetries">Max retries per fired job. Falls back to <c>[JobMasterMaxNumberOfRetries]</c> attribute, then the cluster default.</param>
     /// <param name="metadata">Optional key-value metadata passed to the handler on each firing.</param>
     /// <param name="startAfter">UTC date before which no jobs fire. <c>null</c> means start immediately.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire. <c>null</c> means no end date.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it. <c>null</c> means no end date.</param>
     RecurringScheduleReceipt Recurring<T>(
         IRecurrenceCompiledExpr expression,
         IWriteableMessageData? data = null,

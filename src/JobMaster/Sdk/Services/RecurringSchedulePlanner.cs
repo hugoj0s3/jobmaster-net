@@ -64,7 +64,8 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             return;
         }
         
-        if (scheduleRawModel.EndBefore.HasValue && scheduleRawModel.EndBefore.Value < DateTime.UtcNow)
+        // EndBefore is exclusive: the schedule has ended once EndBefore itself is reached.
+        if (scheduleRawModel.EndBefore.HasValue && scheduleRawModel.EndBefore.Value <= DateTime.UtcNow)
         {
             logger.Debug($"Skipping: EndBefore ({scheduleRawModel.EndBefore:O}) is in the past", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             scheduleRawModel.TryEnded();
@@ -268,7 +269,8 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             if (i > 0 && at <= cursor + MinInterval)
                 at = cursor + MinInterval;
 
-            if (at > stopAt)
+            // EndBefore is exclusive (an occurrence exactly at it doesn't fire); the plain horizon isn't.
+            if (at > stopAt || (stopAtIsExplicitEnd && at == stopAt))
             {
                 // Always return at least one occurrence rather than leaving results empty just because
                 // the recurrence's own cadence exceeds this pass's horizon (e.g. an "every year" schedule
