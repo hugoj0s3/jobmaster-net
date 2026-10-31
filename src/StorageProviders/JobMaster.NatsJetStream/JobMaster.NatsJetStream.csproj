@@ -47,4 +47,9 @@
         <None Include="JobMaster.NatsJetStream.NuGet.README.md" Pack="true" PackagePath="\" />
     </ItemGroup>
 
+    <!-- Security pin: NATS.Client.* pulls a vulnerable Microsoft.Bcl.Memory on netstandard2.0 (GHSA-73j8-2gch-69rq).
+         Remove once the NATS client depends on a fixed version. -->
+    <ItemGroup Condition="'$(TargetFramework)' == 'netstandard2.0'">
+      <PackageReference Include="Microsoft.Bcl.Memory" Version="9.0.22" />
+    </ItemGroup>
 </Project>

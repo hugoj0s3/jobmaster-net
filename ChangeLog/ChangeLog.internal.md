@@ -17,7 +17,15 @@
   pulls the same vulnerable `Pkcs`, so it doesn't fix anything on its own; reverted.
 - Verified: unit tests 782/782 on `net8.0` and `net10.0`; SqlServer RepoConformance 150 passed (3 measurement tests
   skipped as always).
-- Still open: `Microsoft.Bcl.Memory` 9.0.0 via `NATS.Client.*` 2.7.2 (same approach likely applies).
+- NATS done the same way, see below.
+
+#### NatsJetStream: patched `Microsoft.Bcl.Memory` pinned (2026-10-31)
+- `NATS.Client.*` 2.7.2 pulls `Microsoft.Bcl.Memory` 9.0.0 (GHSA-73j8-2gch-69rq, high) on `netstandard2.0` only (a
+  polyfill the modern targets don't need). Pinned 9.0.22 (latest patch of the same major) under a
+  `netstandard2.0` condition, with a comment to drop it once the NATS client depends on a fixed version. NATS client
+  stays 2.7.2 (no NATS 3 move). The solution now builds with no NU190x warnings.
+- Tests run on `net8.0` / `net10.0`, so they don't execute the `netstandard2.0` build where the pin applies; it's a
+  patch release of a package the client already uses, so the risk is low.
 
 #### SDK 10, `.slnx`, `net10.0` target (Hugo, 2026-10-30)
 - `global.json`: SDK `10.0.100`, `rollForward: latestFeature` (was `8.0.0` / `major`, which resolved to SDK 8 and
