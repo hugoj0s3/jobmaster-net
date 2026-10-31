@@ -7,6 +7,24 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Provider assembly loaded by repository type (Plan0.0.12Alpha item 21, bug fix)
+- Root cause: with `ConfigFromJson` the provider is only a string, so nothing names a type from e.g.
+  `JobMaster.Postgres`, .NET never loads it, and `JobMasterIocRegistrationAttribute.RegisterProviderExtensionsFor*`
+  found no `[JobMasterIocRegistration]` and returned silently. Verified with a two-run repro (scratchpad copy of
+  `HEAD` vs working tree): `HEAD` leaves the assembly unloaded and registers nothing, even for a typo.
+- New internal `Sdk.Reflection.ProviderAssemblies`: repo type id → first-party assembly name map, `EnsureLoaded`
+  (`Assembly.Load`, then `TypeDiscovery.AddAssembly` like `JobMasterAssemblyDiscovery()`, so every assembly JobMaster
+  loads on purpose goes through one entry point; `FileNotFoundException` = package not installed, left to the error
+  below) and the error hint.
+  Hardcoded because core can't reference the providers' constants; `ProviderAssembliesTests` guards it against each
+  provider's `RepositoryType`.
+- `RegisterProviderExtensionsForMaster/Agent` share one `RegisterProviderExtensions` (were copies): loads first,
+  then throws when nothing registered. Two messages: no provider for the type (install hint, or the case-sensitive
+  list of built-in types) vs a provider without that role (`NatsJetStream` has no `RegisterForMaster`). Repo types
+  stay case-sensitive: they're also DI keys.
+- `ConnectionOptionsBinderFactory.Create` loads the provider before its rescan (`connectionOptions` in JSON is bound
+  before `Finish`).
+
 #### `JobMasterAssemblyDiscovery()` for unreferenced libraries (Plan0.0.12Alpha item 20)
 - Root cause: .NET loads an assembly only when code uses one of its types, and every scan only sees loaded assemblies.
   Verified with a two-project repro (worker referencing a handler library it never names): the library stays

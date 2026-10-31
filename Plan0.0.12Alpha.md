@@ -960,7 +960,10 @@ throws "Ensure the provider assembly is loaded" for `connectionOptions`. The flu
 
 **Design.**
 - Where a repo type string enters, load the known first-party assembly by name (`JobMaster.Postgres`,
-  `JobMaster.MySql`, `JobMaster.SqlServer`, `JobMaster.RavenDb`, `JobMaster.NatsJetStream`) before the scan.
+  `JobMaster.MySql`, `JobMaster.SqlServer`, `JobMaster.RavenDB`, `JobMaster.NatsJetStream`) before the scan.
+  The map already uses `JobMaster.RavenDB`, the name the provider takes in a separate rename PR (Hugo, 2026-10-30:
+  project, assembly, package and namespace `JobMaster.RavenDb` → `JobMaster.RavenDB`, matching the RavenDB client).
+  Until then it still loads the current dll: assembly names match case-insensitively.
 - Throw when no `[JobMasterIocRegistration]` matches the repo type after that (also catches typos in JSON):
   "repo type 'X' not found — install `JobMaster.X`".
 - Separate commit from item 20 (Hugo).
@@ -971,8 +974,14 @@ Leaning: leave it (the explicit call is the intended pattern), only extend the e
 the call.
 
 **Tasks.**
-- [ ] Repo type → assembly name load + "no registration" error. Unit test with a JSON-only config.
-- [ ] ChangeLog (Fixed) + internal ChangeLog.
+- [x] Repo type → assembly name load (`Sdk.Reflection.ProviderAssemblies`), in the one place every repo type goes
+      through (`JobMasterIocRegistrationAttribute.RegisterProviderExtensions*`) and in `ConnectionOptionsBinderFactory`.
+- [x] "No registration" error: unknown type (lists the built-in ones, case-sensitive) vs provider without that role
+      (NATS as master). Unit tests incl. a drift guard on the name map. A JSON-only config can't be unit-tested
+      in-process (the test project already loads every provider), so verified with a two-run repro: `HEAD` leaves
+      `JobMaster.Postgres` unloaded and registers nothing; the fix loads it and registers its services.
+- [x] ChangeLog (Fixed) + internal ChangeLog.
+- [ ] Recurrence providers' error message (open decision above).
 
 ---
 

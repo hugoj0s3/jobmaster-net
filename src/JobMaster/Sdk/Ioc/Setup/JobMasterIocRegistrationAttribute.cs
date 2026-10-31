@@ -22,27 +22,49 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
     /// <summary>
     /// Registers all services from modules matching the specified repository type
     /// </summary>
-    public static void RegisterProviderExtensionsForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId) 
-    { 
+    public static void RegisterProviderExtensionsForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
+    {
+        RegisterProviderExtensions(clusterIocRegistration, repositoryType, clusterId, RegisterForMasterMethod, "master");
+    }
+
+    public static void RegisterProviderExtensionsForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
+    {
+        RegisterProviderExtensions(clusterIocRegistration, repositoryType, clusterId, RegisterForAgentMethod, "agent");
+    }
+
+    private static void RegisterProviderExtensions(
+        IClusterIocRegistration clusterIocRegistration,
+        string repositoryType,
+        string clusterId,
+        string registerMethodName,
+        string role)
+    {
+        ProviderAssemblies.EnsureLoaded(repositoryType);
+
+        var providerFound = false;
+        var registered = 0;
         foreach (var type in GetRegistrationTypes())
         {
             try
             {
                 // Check repository type
-                var repoTypeProp = type.GetProperty(RepositoryTypeProperty, 
+                var repoTypeProp = type.GetProperty(RepositoryTypeProperty,
                     BindingFlags.Public | BindingFlags.Static);
-                
+
                 if (repoTypeProp?.GetValue(null)?.ToString() != repositoryType)
                     continue;
 
+                providerFound = true;
+
                 // Invoke the appropriate registration method
-                var method = type.GetMethod(RegisterForMasterMethod, 
+                var method = type.GetMethod(registerMethodName,
                     BindingFlags.Public | BindingFlags.Static);
-                
+
                 if (method == null)
                     continue;
-                
+
                 method.Invoke(null, new object[] { clusterIocRegistration, clusterId });
+                registered++;
             }
             catch (Exception ex)
             {
@@ -50,35 +72,13 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
                     $"Failed to register services from {type.FullName}", ex);
             }
         }
-    }
-    
-    public static void RegisterProviderExtensionsForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
-    {
-        foreach (var type in GetRegistrationTypes())
-        {
-            try
-            {
-                // Check repository type
-                var repoTypeProp = type.GetProperty(RepositoryTypeProperty, 
-                    BindingFlags.Public | BindingFlags.Static);
-                
-                if (repoTypeProp?.GetValue(null)?.ToString() != repositoryType)
-                    continue;
 
-                // Invoke the appropriate registration method
-                var method = type.GetMethod(RegisterForAgentMethod, 
-                    BindingFlags.Public | BindingFlags.Static);
-                
-                if (method == null)
-                    continue;
-                
-                method.Invoke(null, new object[] { clusterIocRegistration, clusterId });
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to register services from {type.FullName}", ex);
-            }
+        if (registered == 0)
+        {
+            throw new InvalidOperationException(providerFound
+                ? $"The '{repositoryType}' provider can't be used as {role} (cluster '{clusterId}')."
+                : $"No JobMaster provider found for repository type '{repositoryType}' (cluster '{clusterId}'). " +
+                  ProviderAssemblies.MissingProviderHint(repositoryType));
         }
     }
 
