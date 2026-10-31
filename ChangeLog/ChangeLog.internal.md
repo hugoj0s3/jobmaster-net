@@ -7,6 +7,18 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### SqlServer: patched `System.Security.Cryptography.Pkcs` pinned (2026-10-31)
+- `Microsoft.Data.SqlClient` pulls a vulnerable `Pkcs` (8.0.1 on `netstandard2.0` / `net8.0`, 9.0.18 on `net10.0`;
+  GHSA-846f-f764-76mx high, GHSA-2fmv-rv2c-59x7 moderate), reported since the SDK 10 move (transitive audit).
+- Fix: direct `PackageReference` to the latest patch of the same major, per target (8.0.2 / 9.0.22), in
+  `JobMaster.SqlServer.csproj` with a comment to drop it once SqlClient depends on a fixed version. NuGet picks the
+  highest requested version, so the pin wins; `dotnet list package --vulnerable` is clean.
+- SqlClient stays 6.1.4 (Hugo). 7.1.1 was tried: compiles on all three targets (still supports `netstandard2.0`) but
+  pulls the same vulnerable `Pkcs`, so it doesn't fix anything on its own; reverted.
+- Verified: unit tests 782/782 on `net8.0` and `net10.0`; SqlServer RepoConformance 150 passed (3 measurement tests
+  skipped as always).
+- Still open: `Microsoft.Bcl.Memory` 9.0.0 via `NATS.Client.*` 2.7.2 (same approach likely applies).
+
 #### SDK 10, `.slnx`, `net10.0` target (Hugo, 2026-10-30)
 - `global.json`: SDK `10.0.100`, `rollForward: latestFeature` (was `8.0.0` / `major`, which resolved to SDK 8 and
   can't read `.slnx`). Builds still target `net8.0` / `netstandard2.0`; only the tooling moved.
@@ -37,9 +49,8 @@
   `NatsJetStreamRunnerBase`.
 - `MySqlConnector` 2.5.0 → 2.6.2 (minor) in all 6 projects that reference it (MySql provider, ScenarioTests, 4
   benchmarks), so versions don't diverge; `dotnet list package --vulnerable` is clean for the provider.
-- Not done (Hugo): `System.Security.Cryptography.Pkcs` (via `Microsoft.Data.SqlClient` 6.1.4) and
-  `Microsoft.Bcl.Memory` (via `NATS.Client.*` 2.7.2). Fixing them by upgrading the client means a major
-  (SqlClient 7, NATS 3) with breaking changes; the alternative is pinning the patched transitive version.
+- Not done here: `System.Security.Cryptography.Pkcs` (via `Microsoft.Data.SqlClient` 6.1.4; fixed by a pin, see the
+  SqlServer entry above) and `Microsoft.Bcl.Memory` (via `NATS.Client.*` 2.7.2, still open).
 
 #### Provider folders split + `JobMaster.RavenDb` → `JobMaster.RavenDB` (Hugo, 2026-10-30)
 - `src/Providers` split into `src/StorageProviders` (SqlBase, Postgres, MySql, SqlServer, RavenDB, NatsJetStream; NATS
