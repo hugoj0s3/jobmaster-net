@@ -10,6 +10,12 @@
 
 ### Breaking changes
 
+- **`JobMaster.RavenDb` is now `JobMaster.RavenDB`**, matching the RavenDB client's casing. The package, assembly and namespace are renamed:
+  - Reference the `JobMaster.RavenDB` package (NuGet ids ignore case, so an existing `JobMaster.RavenDb` reference still resolves).
+  - Change `using JobMaster.RavenDb;` to `using JobMaster.RavenDB;`.
+  - If you load the provider by file name, the dll is now `JobMaster.RavenDB.dll` (file names are case-sensitive on Linux).
+
+  The repository type stays `"RavenDB"`, and the provider's configuration keys are unchanged.
 - ⚠️ **Optional parameters now follow one order everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`.**
   - **`clusterId`** moves from last to right after the payload in every scheduling method, and to right after the id in `JobDefinitionConfig`.
   - **`JobDefinitionConfig`:** `workerLane` also moves before `timeout`.

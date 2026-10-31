@@ -7,6 +7,22 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Provider folders split + `JobMaster.RavenDb` → `JobMaster.RavenDB` (Hugo, 2026-10-30)
+- `src/Providers` split into `src/StorageProviders` (SqlBase, Postgres, MySql, SqlServer, RavenDB, NatsJetStream; NATS
+  isn't a DB, hence "storage") and `src/RecurrenceProviders` (Cronos, NCrontab). Same split for the solution folders
+  (`Providers` folder renamed to `StorageProviders`, keeping its GUID; new `RecurrenceProviders`). Namespaces of the
+  moved projects are unchanged.
+- RavenDB project / assembly / package / namespace renamed to `JobMaster.RavenDB` (matches the RavenDB client).
+  Class names (`RavenDb*`) unchanged. `RavenDbConfigKeys.NamespaceUniqueKey` keeps `"JobMaster.RavenDb"` on purpose:
+  it's the identity of the provider's config values in `JobMasterConfigDictionary`, not a display name.
+- Done with per-file `git mv` (156 renames): whole-folder renames were refused because the C# extension's language
+  server held handles in `obj/`. Case-only renames need `git mv` on Windows (`core.ignorecase`), or Linux checkouts
+  keep the old casing. The old `src/Providers/*/obj|bin` folders (gitignored) are left behind until nothing holds them.
+- Updated: `JobMaster.sln`, test / sample / benchmark csproj references, 5 Dockerfiles (Linux paths are
+  case-sensitive; verified with a real `TargetTestScheduleApp` image build), `pack-local.sh/.ps1`,
+  `InternalsVisibleTo("JobMaster.RavenDB")`, the `Assembly.LoadFrom("JobMaster.RavenDB.dll")` calls, and the provider
+  map in `ProviderAssemblies`.
+
 #### Provider assembly loaded by repository type (Plan0.0.12Alpha item 21, bug fix)
 - Root cause: with `ConfigFromJson` the provider is only a string, so nothing names a type from e.g.
   `JobMaster.Postgres`, .NET never loads it, and `JobMasterIocRegistrationAttribute.RegisterProviderExtensionsFor*`

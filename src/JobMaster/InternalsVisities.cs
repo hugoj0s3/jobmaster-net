@@ -15,5 +15,5 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("JobMaster.SqlServer")]
 [assembly: InternalsVisibleTo("JobMaster.NatsJetStream")]
 [assembly: InternalsVisibleTo("JobMaster.Api")]
-[assembly: InternalsVisibleTo("JobMaster.RavenDb")]
+[assembly: InternalsVisibleTo("JobMaster.RavenDB")]
 

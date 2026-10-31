@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
-using JobMaster.RavenDb;
+using JobMaster.RavenDB;
 using JobMaster.Sdk.Ioc.Setup;
 using Microsoft.Extensions.DependencyInjection;
 

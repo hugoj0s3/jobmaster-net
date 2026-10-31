@@ -1,9 +1,9 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
-using JobMaster.RavenDb;
-using JobMaster.RavenDb.Agents;
-using JobMaster.RavenDb.Connections;
-using JobMaster.RavenDb.Master;
+using JobMaster.RavenDB;
+using JobMaster.RavenDB.Agents;
+using JobMaster.RavenDB.Connections;
+using JobMaster.RavenDB.Master;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;

@@ -1,6 +1,6 @@
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
-using JobMaster.RavenDb;
-using JobMaster.RavenDb.Agents;
+using JobMaster.RavenDB;
+using JobMaster.RavenDB.Agents;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Utils;
 using Xunit;

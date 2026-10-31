@@ -226,7 +226,7 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         {
             if (ravenDb != null) return ravenDb;
 
-            // Client major version (RavenDB.Client 7.x, referenced by JobMaster.RavenDb) must track the
+            // Client major version (RavenDB.Client 7.x, referenced by JobMaster.RavenDB) must track the
             // server image's major version -- a mismatch rejects the client's request bodies with a
             // binary/JSON protocol error.
             //
