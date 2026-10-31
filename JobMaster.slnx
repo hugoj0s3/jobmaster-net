@@ -37,6 +37,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj" />
     <Project Path="tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj" />
+    <Project Path="tests/JobMaster.UnitTests.NetStandard/JobMaster.UnitTests.NetStandard.csproj" />
     <Project Path="tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj" />
     <Project Path="tests/TargetTestApi/TargetTestApi.csproj" />
     <Project Path="tests/TargetTestClusterIdApp/TargetTestClusterIdApp.csproj" />

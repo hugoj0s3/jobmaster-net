@@ -29,3 +29,6 @@ jobs:
 
       - name: Test
         run: dotnet test tests/JobMaster.UnitTests/JobMaster.UnitTests.csproj --no-build --configuration Release --verbosity normal
+
+      - name: Test (netstandard2.0 builds)
+        run: dotnet test tests/JobMaster.UnitTests.NetStandard/JobMaster.UnitTests.NetStandard.csproj --no-build --configuration Release --verbosity normal

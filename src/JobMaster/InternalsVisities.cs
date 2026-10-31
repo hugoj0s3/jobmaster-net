@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 // Tests.
 [assembly: InternalsVisibleTo("JobMaster.UnitTests")]
+[assembly: InternalsVisibleTo("JobMaster.UnitTests.NetStandard")]
 [assembly: InternalsVisibleTo("JobMaster.IntegrationTests")]
 
 // Mocking frameworks

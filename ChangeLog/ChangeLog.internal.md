@@ -7,6 +7,22 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Unit tests against the `netstandard2.0` builds (Hugo, 2026-10-31)
+- Before: no test ever ran a `netstandard2.0` build (a .NET 8/10 test project always loads the `net8.0`/`net10.0`
+  builds), so the `#if NETSTANDARD2_0` / `!NET6_0_OR_GREATER` paths were compiled but never executed.
+- New `tests/JobMaster.UnitTests.NetStandard` (`net8.0`): compiles the `JobMaster.UnitTests` files (no copies;
+  `Api/` and `Dashboard/` excluded, those packages have no `netstandard2.0` build) and references the 9 libraries with
+  `SetTargetFramework="TargetFramework=netstandard2.0"`. Verified the output's `JobMaster.dll` is the
+  `.NETStandard,Version=v2.0` build. 738/738 pass (782 minus the 44 Api/Dashboard tests). A switch on the existing
+  project was rejected: its Api/Dashboard references would put the `net8.0` `JobMaster.dll` in the same output.
+- `InternalsVisibleTo("JobMaster.UnitTests.NetStandard")` added next to the `JobMaster.UnitTests` grant in the 7
+  libraries that have one. Needs `Microsoft.Extensions.Configuration` (the original gets it through the ASP.NET Core
+  framework reference).
+- Scope: our `netstandard2.0` code on the .NET 8 runtime, not .NET Framework runtime behaviour. The package graph is
+  restored for `net8.0`, so transitive dependencies resolve to their `net8.0` assets (e.g. MSB3277 on
+  `Microsoft.Bcl.AsyncInterfaces` 8 vs 10, harmless on .NET 8 where those types are built in).
+- CI: `unit-tests.yml` runs it as a second test step. Scenario target apps on `netstandard2.0` builds: deferred (Hugo).
+
 #### SqlServer: patched `System.Security.Cryptography.Pkcs` pinned (2026-10-31)
 - `Microsoft.Data.SqlClient` pulls a vulnerable `Pkcs` (8.0.1 on `netstandard2.0` / `net8.0`, 9.0.18 on `net10.0`;
   GHSA-846f-f764-76mx high, GHSA-2fmv-rv2c-59x7 moderate), reported since the SDK 10 move (transitive audit).

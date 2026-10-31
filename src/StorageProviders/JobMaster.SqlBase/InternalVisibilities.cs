@@ -6,3 +6,4 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("JobMaster.Postgres")]
 [assembly: InternalsVisibleTo("JobMaster.MySql")]
 [assembly: InternalsVisibleTo("JobMaster.UnitTests")]
+[assembly: InternalsVisibleTo("JobMaster.UnitTests.NetStandard")]
