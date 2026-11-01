@@ -229,7 +229,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 {
                     logger.Warn(
                         $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
-                        $"'{modelToSave.TargetActiveClusterId}' only while a Coordinator worker of it runs. This app has none; " +
+                        $"'{modelToSave.TargetActiveClusterId}' only while a worker of it runs. This app has none;" +
                         "make sure one runs in an app that also configures that cluster.");
                 }
                 else if (JobMasterClusterAwareComponentFactories.TryGetFactory(modelToSave.TargetActiveClusterId!) == null)
@@ -237,7 +237,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     logger.Warn(
                         $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
                         $"'{modelToSave.TargetActiveClusterId}', but that cluster isn't configured in this app. " +
-                        "Configure it here, next to a Coordinator worker of the archived cluster, or they stay on the archived cluster.");
+                        "Configure it here, next to a worker of the archived cluster, or they stay on the archived cluster.");
                 }
             }
 
