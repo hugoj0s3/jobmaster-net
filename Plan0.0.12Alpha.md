@@ -26,11 +26,12 @@ open decisions (settle before coding), tasks, and done criteria.
 | 15 | Consistent cancel / reschedule method names           | XS    | No (obsolete aliases) | – |
 | 16 | `CancelAsync` on receipts (follow-up to 15)           | S     | No       | 6, 7, 15   |
 | 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
-| 18 | Archived safety net: strict mode flow + stray sweeper | S/M   | **Yes** (Active → Archived refused) | – |
+| 18 | Archived safety net: `Archive(target)` + late-job sweep | S/M | No (startup check relaxed with a target) | – |
 | 19 | Startup: validate everything before anything starts   | M     | No (errors move earlier) | 13 (its static check moves here) |
 | 20 | `JobMasterAssemblyDiscovery()` for unreferenced libraries | S  | No       | 14 (same branch) |
 | 21 | Load provider assemblies by repo type (bug fix)       | XS    | No       | 14         |
 | 22 | Lambda adapter: reserved definition-id prefix (idea)  | –     | –        | new project; scope TBD |
+| 23 | Scenario tests: all multi-provider, same phases + one `scenario.md` per scenario | M/L | No (tests only) | 18 |
 
 ---
 
@@ -787,7 +788,7 @@ logs are still found by `ReferenceGuid`, and tests are green.
 
 ---
 
-## 18. Archived safety net: strict mode flow + stray sweeper
+## 18. Archived safety net: `Archive(target)` + late-job sweep
 
 **Goal.** A job or recurring schedule that lands on a cluster after it became Archived is never silently lost: it's
 moved to the active cluster and runs there, or, when that's impossible, it's logged as Critical.
@@ -1033,3 +1034,61 @@ not part of the item 14 PR, scope TBD.
 - Security: invoking a method named in stored job data means anyone who can write to the master DB can call arbitrary
   static methods. Allow-list the types / assemblies registered with the adapter.
 - Signature drift (method renamed / parameters changed while jobs are queued): fail with a clear "method not found".
+
+---
+
+## 23. Scenario tests: same phases on every provider + one `scenario.md` per scenario
+
+**Goal.** Every scenario runs on every storage provider (Hugo: ideally all tests are multi-provider), each variant
+proves the same behavior, and each scenario is described once (Hugo, 2026-10-31, after item 18). Next PR after
+item 18.
+
+**Current state.**
+- Variants have drifted. ArchivedModeTest phases 2–3 (archived safety net, item 18) exist only in `PostgresPure`;
+  `MySqlPure`, `SqlServerPure`, `PostgresNats` and `RavenDbPure` run phase 1 only. Other scenarios may differ too
+  (ClusterIdTest and ConfirmOnMasterTest are PostgresPure-only).
+- About 40 `scenario.md` files live per provider (`Scenarios/<Test>/<Provider>/scenario.md`), mostly repeating each
+  other. Only `BasicExecution`, `ClusterIdTest` and `ConfirmOnMasterTest` have one at the scenario level.
+- Phase logic is partly shared already (e.g. `ArchivedModeTestPhase1EmulatorBase`); phases 2–3 aren't
+  (`PostgresPurePhase2Emulator` / `PostgresPurePhase3Emulator`, `PostgresPureState`).
+
+**Design.**
+- One `Scenarios/<Test>/scenario.md` per scenario: flow, topology, timing, and a short "provider differences" section
+  (e.g. RavenDB indexing waits, NATS transport) instead of a copy per provider.
+- Shared phase bases for every phase, like phase 1 today; a variant only supplies cluster ids, container names and
+  any provider-specific hook.
+- Provider-specific raw access (phase 2's direct `ClusterMode` update, the timeout dump's `DumpRawAsync`) goes through
+  a per-provider hook: Postgres / MySQL / SQL Server SQL, a RavenDB document patch. NATS only changes the transport;
+  its master is Postgres.
+
+**Decided (Hugo).**
+- All scenarios become multi-provider, including the PostgresPure-only ones today (ClusterIdTest,
+  ConfirmOnMasterTest) and single-variant ones (BasicExecution, ApiAuths).
+- Split ArchivedModeTest in two scenarios (Hugo, 2026-10-31): phase 1 is data-retention archiving (finished jobs
+  copied to the archive cluster, `TargetArchivedClusterId`), phases 2–3 are the archived-mode safety net (late work
+  moved to the active target, item 18). Different features, clusters and setups; phase 2 only stops phase 1's app.
+- Run time isn't a reason to stay single-provider: the tests will be run a better way to cut the total time.
+
+- Direction for run time (future, not this item): run the scenarios on cloud machines provisioned with Terraform,
+  all variants in parallel. Locally they keep running sequentially.
+
+**Open decisions.**
+- Until the cloud runner exists: a cheaper local speed-up, if any (e.g. one test filter per provider, shared images),
+  or just accept the longer local run.
+- The cloud runner itself (provider, machine size, how results and the timeout dumps come back) is its own future
+  item.
+- ApiAuths: multiply by provider, or is the auth mode the real axis there?
+
+**Tasks.**
+- [ ] Audit every scenario for phase/coverage differences between variants, and list the single-provider ones.
+- [ ] Add the missing provider variants (ClusterIdTest, ConfirmOnMasterTest, BasicExecution, ...).
+- [ ] Keep each variant runnable on its own (by test filter), so a future parallel cloud runner can split them.
+- [ ] Split ArchivedModeTest: phase 1 → its own scenario (e.g. `DataRetentionArchiveTest`, or folded into the
+      existing data-retention scenario), phases 2–3 → `ArchivedModeTest` (phases 1–2), each with its own `scenario.md`.
+- [ ] The safety-net phases → shared bases + the 4 remaining variants (incl. the raw `ClusterMode` switch per
+      provider).
+- [ ] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
+- [ ] All variants green.
+
+**Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and
+each variant can run on its own.
