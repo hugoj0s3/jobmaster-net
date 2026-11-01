@@ -22,7 +22,10 @@
   (an app without `Mode`, e.g. Api/Dashboard, saves a new cluster as Active first). Side finding while it existed:
   `MasterClusterConfigurationService.GetFresh()` never returns null (falls back to a default Active model); use
   `IsSaved()` to tell a new cluster from a saved Active one.
-- New `Archive(string? targetActiveClusterId = null)` (`IClusterConfigSelector`) / `ClusterArchive(...)` (standalone)
+- New `Archive(string? targetActiveClusterId = null)` (`IClusterConfigSelector`) / `Archive(...)` (standalone, `IClusterStandaloneConfigSelector`; no `Cluster` prefix). Same pass: the
+  standalone selector's other public `Cluster…` methods got unprefixed names, old ones `[Obsolete]` forwarders, same
+  pattern as `IClusterConfigSelector` (Hugo). `ClusterId` and the internal `ClusterConnString` / `ClusterRepoType` /
+  `ClusterAdditionalConfig` unchanged.
   → `ClusterDefinition.Archive`: sets Archived, and the target only when given (never cleared). `MigrateTo` stays
   Migrating-only (Hugo; an interim version made `MigrateTo` keep Archived, replaced by the explicit method).
 - `JobMasterBackgroundAgentWorker.LoadArchivedRunnersAsync` also starts `MigrateJobsRunner` and

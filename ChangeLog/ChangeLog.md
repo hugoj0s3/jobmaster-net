@@ -155,7 +155,7 @@
   ```
 
   Also `AddAssembly(assembly)` and `AddAssemblies(...)`. It can be called before or after `AddJobMasterCluster`. The "handler not found" errors now point to it.
-- **`Archive(targetActiveClusterId = null)` / `ClusterArchive(...)`: jobs waiting on an archived cluster are moved to an active cluster.** A job or recurring schedule saved at the moment its cluster switched to `Archived` used to stay there and never run. With a target, jobs and schedules waiting on the archived cluster, late ones included, are now moved to it and run there. The target is set with `Archive(targetActiveClusterId)`, or kept from an earlier `MigrateTo`. In JSON, use `"Mode": "Archived"` with `"TargetActiveClusterId"`. This needs a worker running for the archived cluster, in an app that also configures the target cluster; until one runs, they wait, and startup warns when the app has none. A late job with nowhere to go (no target, or a target that isn't configured) is logged as Critical.
+- **`Archive(targetActiveClusterId = null)` (also on the standalone cluster builder): jobs waiting on an archived cluster are moved to an active cluster.** A job or recurring schedule saved at the moment its cluster switched to `Archived` used to stay there and never run. With a target, jobs and schedules waiting on the archived cluster, late ones included, are now moved to it and run there. The target is set with `Archive(targetActiveClusterId)`, or kept from an earlier `MigrateTo`. In JSON, use `"Mode": "Archived"` with `"TargetActiveClusterId"`. This needs a worker running for the archived cluster, in an app that also configures the target cluster; until one runs, they wait, and startup warns when the app has none. A late job with nowhere to go (no target, or a target that isn't configured) is logged as Critical.
 
   ```csharp
   cluster.Archive(targetActiveClusterId: "billing-v2");
@@ -186,6 +186,8 @@
   | `Add<Th>(string)` | `CronosAdd<Th>` | `NCrontabAdd<Th>` |
 
   The old names still work, with an obsolete warning, and will be removed in a later release.
+
+- **Standalone cluster methods lose the `Cluster` prefix**, like the regular cluster ones already did: `DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `DataRetentionTtl`, `Mode` and `MigrateTo`. The `Cluster…` names still work, with an obsolete warning, and will be removed in a later release. `ClusterId` is unchanged.
 
 ### Performance
 

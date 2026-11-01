@@ -61,7 +61,7 @@ internal sealed class ClusterDefinition
         TargetActiveClusterId = targetActiveClusterId;
     }
 
-    // Shared by IClusterConfigSelector.Archive and IClusterStandaloneConfigSelector.ClusterArchive.
+    // Shared by IClusterConfigSelector.Archive and IClusterStandaloneConfigSelector.Archive.
     // A null target replaces nothing: the target is never cleared, only replaced.
     public void Archive(string? targetActiveClusterId)
     {
