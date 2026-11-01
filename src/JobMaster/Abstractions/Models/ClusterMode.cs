@@ -20,11 +20,12 @@ public enum ClusterMode
     Migrating = 2,
 
     /// <summary>
-    /// The cluster is retained for historical data only.
+    /// The cluster is retained for historical data only and no longer accepts new jobs or recurring schedules:
+    /// scheduling or rescheduling on it throws an <see cref="System.InvalidOperationException"/>.
     /// <para>
     /// With a target (<c>Archive(targetActiveClusterId)</c>, or kept from <c>MigrateTo</c>), unfinished jobs and
     /// active recurring schedules on the cluster, including ones that reach it later, are moved to the target and
-    /// run there. Jobs that were already with a worker that stopped are moved once their processing deadline passes.
+    /// run there.
     /// </para>
     /// <para>
     /// Requires one worker of the archived cluster, running in an app that also configures the target.

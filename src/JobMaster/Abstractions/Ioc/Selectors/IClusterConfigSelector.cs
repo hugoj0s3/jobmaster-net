@@ -167,7 +167,8 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     public IClusterConfigSelector MigrateTo(string targetActiveClusterId);
 
     /// <summary>
-    /// Puts this cluster into <see cref="ClusterMode.Archived"/> mode.
+    /// Puts this cluster into <see cref="ClusterMode.Archived"/> mode: it no longer accepts new jobs or recurring
+    /// schedules, and scheduling or rescheduling on it throws an <see cref="System.InvalidOperationException"/>.
     /// <para>
     /// Unfinished jobs and active recurring schedules on it, including ones that reach it later, are moved to
     /// <paramref name="targetActiveClusterId"/> and run there. When omitted, the target kept from an earlier
