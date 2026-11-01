@@ -124,7 +124,7 @@ internal class HeldOnMasterDeadlineTimeoutJobsRunner : JobMasterRunner
                 logger.Warn($"Skipping {jobs.Count - eligibleJobs.Count} final-status jobs.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
             }
 
-            logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
+            logger.Info($"HeldOnMasterDeadlineTimeoutJobsRunner: Marking {eligibleJobs.Count} jobs as HeldOnMaster. JobIds: {string.Join(", ", eligibleJobs.Select(x => x.Id.ToBase64()).Take(10))}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
             var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
             var partitions = eligibleJobs.Select(j => j.Id).ToList().Partition(maxBatchSize);

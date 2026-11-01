@@ -18,6 +18,7 @@ using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services;
@@ -235,7 +236,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         if (unConfirmed.Count > 0)
         {
             throw new InvalidOperationException(
-                $"{unConfirmed.Count} job(s) could not be saved on master: {string.Join(", ", unConfirmed)}. Calling ConfirmOnMasterAsync again is safe.");
+                $"{unConfirmed.Count} job(s) could not be saved on master: {string.Join(", ", unConfirmed.Select(id => id.ToBase64()))}. Calling ConfirmOnMasterAsync again is safe.");
         }
     }
 
@@ -273,7 +274,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         if (unConfirmed.Count > 0)
         {
             throw new InvalidOperationException(
-                $"{unConfirmed.Count} recurring schedule(s) could not be saved on master: {string.Join(", ", unConfirmed)}. Calling ConfirmOnMasterAsync again is safe.");
+                $"{unConfirmed.Count} recurring schedule(s) could not be saved on master: {string.Join(", ", unConfirmed.Select(id => id.ToBase64()))}. Calling ConfirmOnMasterAsync again is safe.");
         }
     }
 

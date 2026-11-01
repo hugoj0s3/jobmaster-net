@@ -475,7 +475,7 @@ public class JobMasterSchedulerClusterAwareTests
         var act = () => mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { missing });
 
         (await act.Should().ThrowAsync<InvalidOperationException>())
-            .Which.Message.Should().Contain(missing.Id.ToString());
+            .Which.Message.Should().Contain(missing.Id.ToBase64());
     }
 
     [Fact]
@@ -543,7 +543,7 @@ public class JobMasterSchedulerClusterAwareTests
             new List<RecurringScheduleRawModel> { alreadyThere, missing });
 
         var thrown = await act.Should().ThrowAsync<InvalidOperationException>();
-        thrown.Which.Message.Should().Contain(missing.Id.ToString()).And.NotContain(alreadyThere.Id.ToString());
+        thrown.Which.Message.Should().Contain(missing.Id.ToBase64()).And.NotContain(alreadyThere.Id.ToBase64());
     }
 
     [Fact]

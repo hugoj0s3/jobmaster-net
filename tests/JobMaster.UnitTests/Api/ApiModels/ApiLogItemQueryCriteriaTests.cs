@@ -1,5 +1,6 @@
 using FluentAssertions;
 using JobMaster.Api.ApiModels;
+using JobMaster.Sdk.Utils;
 using Microsoft.AspNetCore.Http;
 
 namespace JobMaster.UnitTests.Api.ApiModels;

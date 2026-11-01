@@ -66,7 +66,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 // and its bad status isn't the other jobs' problem -- throwing here would abort
                 // dispatch for the rest of a perfectly fine partition. Left untouched (not held on
                 // master) since we don't know what state it's legitimately in.
-                logger.Error($"Job {jobRaw.Id} is not in bucket, skipping dispatch. Status: {jobRaw.Status}", JobMasterLogCategory.Job, jobRaw.Id);
+                logger.Error($"Job {jobRaw.Id.ToBase64()} is not in bucket, skipping dispatch. Status: {jobRaw.Status}", JobMasterLogCategory.Job, jobRaw.Id);
                 continue;
             }
 
@@ -80,19 +80,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                     if (result == OnBoardingResult.Accepted)
                     {
-                        logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Debug($"Short-circuit: Injecting job {jobRaw.Id.ToBase64()} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
                     if (result == OnBoardingResult.MovedToMaster)
                     {
-                        logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id.ToBase64()}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
                     if (result == OnBoardingResult.Cancelled)
                     {
-                        logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id.ToBase64()}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
@@ -106,7 +106,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception ex)
             {
-                logger.Error($"Failed short-circuit attempt for job {jobRaw.Id}, holding on master.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
+                logger.Error($"Failed short-circuit attempt for job {jobRaw.Id.ToBase64()}, holding on master.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 jobRaw.MarkAsHeldOnMaster();
                 await masterJobsService.UpdateAsync(jobRaw);
             }
@@ -172,7 +172,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id.ToBase64()}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
 
@@ -196,7 +196,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id.ToBase64()}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
     public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null)
@@ -234,7 +234,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
+            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id.ToBase64()}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
         }
     }
 

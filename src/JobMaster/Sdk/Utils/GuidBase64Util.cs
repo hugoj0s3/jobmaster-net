@@ -1,6 +1,6 @@
-﻿namespace JobMaster.Api.ApiModels;
+namespace JobMaster.Sdk.Utils;
 
-internal static class GuidBase64Extensions
+internal static class GuidBase64Util
 {
     public static string ToBase64(this Guid guid)
     {
@@ -13,7 +13,7 @@ internal static class GuidBase64Extensions
     /// Parses a GUID from either standard format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
     /// or base64url-encoded format (22-character compact form).
     /// </summary>
-    public static Guid ParseFlexible(this string value)
+    public static Guid ParseFlexible(string value)
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new ArgumentException("Value cannot be null or empty.", nameof(value));
@@ -21,15 +21,15 @@ internal static class GuidBase64Extensions
         if (Guid.TryParse(value, out var guid))
             return guid;
 
-        return value.FromBase64();
+        return FromBase64(value);
     }
-    
-    private static Guid FromBase64(this string base64Url)
-    {
-        if (string.IsNullOrWhiteSpace(base64Url))
-            throw new ArgumentException("Value cannot be null or empty.", nameof(base64Url));
 
-        var b64 = base64Url.Replace('-', '+').Replace('_', '/');
+    private static Guid FromBase64(string base64)
+    {
+        if (string.IsNullOrWhiteSpace(base64))
+            throw new ArgumentException("Value cannot be null or empty.", nameof(base64));
+
+        var b64 = base64.Replace('-', '+').Replace('_', '/');
 
         // restore padding
         switch (b64.Length % 4)

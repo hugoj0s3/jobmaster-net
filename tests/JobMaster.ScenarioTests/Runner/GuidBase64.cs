@@ -1,7 +1,7 @@
 namespace JobMaster.ScenarioTests.Runner;
 
 /// <summary>
-/// Mirrors JobMaster.Api's internal GuidBase64Extensions encoding (base64url, unpadded) so this
+/// Mirrors JobMaster's internal GuidBase64Util encoding (base64url, unpadded) so this
 /// project can match ApiJobModel.Id values back to the Guids it scheduled, without taking a
 /// JobMaster reference just to share the algorithm.
 /// </summary>

@@ -87,6 +87,7 @@
 
   `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
 - **`JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` and `GetJobDefinitionId` were removed from the public API.** They're the runtime's handler lookup and were public by mistake.
+- **The API's log `ReferenceId` is now base64url for jobs, recurring schedules and executions** (`ApiLogItem.ReferenceId`, 22 characters), the same id the rest of the API and the dashboard show. It used to be 32 hex characters. Other references (buckets, workers, clusters) are unchanged. To filter logs by a returned `ReferenceId`, pass it as `ReferenceGuid`, which accepts every format; the raw `ReferenceId` filter still matches the stored hex value only. Stored logs are unchanged, so older logs are found the same way.
 - **Disabled priorities are now checked against the cluster each job or schedule goes to, with the priority it actually resolves to.** Some setups that started before now fail at startup or at the call:
   - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
   - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.
@@ -163,6 +164,7 @@
 
 ### Changed
 
+- **Job, recurring schedule and execution ids in log messages and error messages are now base64url**, the same 22-character id the API and dashboard show, so an id copied from the dashboard finds the matching log lines. They used to be written as standard GUIDs (`xxxxxxxx-xxxx-…`). Logs written before the upgrade keep the old format in their text; filtering by `ReferenceGuid` finds both.
 - **A recurring schedule's `endBefore` is now exclusive.** Jobs run only before `endBefore`, never at or after it. Before, an occurrence landing exactly on `endBefore` still ran: a daily 00:00 schedule with `endBefore` = 31 Oct 2026 00:00 ran once on 31 Oct. It now stops after 30 Oct. Occurrences at any other time are unaffected.
 - **An archived cluster with a target no longer fails startup because it holds unfinished jobs or schedules.** They're moved to the target instead, as described under Added. Without a target, startup still fails until the cluster only holds finished data.
 - **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
@@ -195,6 +197,7 @@
 
 ### Fixed
 
+- **Message data and metadata are no longer written to the logs.** When a job or recurring schedule couldn't be queued, the Critical log included up to 500 characters of its message data and metadata, which can hold personal or sensitive data. The log now shows only their sizes, along with the id, status and other job details. Logs written by earlier versions may still contain them; purge them if that matters to you.
 - **Worker lanes ignore case everywhere.** `GET /workers?workerLane=Billing` returned nothing for a `"billing"` worker while `/workers/count` counted it; both now ignore case, like job routing already did.
 - **RavenDB: metadata filters match keys ignoring case**, like the SQL providers. Jobs and recurring schedules saved before this version only match a key typed in all lowercase until they're saved again (jobs are saved again as they run; static recurring schedules at startup).
 - **`JobMaster.SqlServer` no longer brings in a vulnerable `System.Security.Cryptography.Pkcs`.** `Microsoft.Data.SqlClient` depends on a version with known high-severity vulnerabilities ([GHSA-846f-f764-76mx](https://github.com/advisories/GHSA-846f-f764-76mx), [GHSA-2fmv-rv2c-59x7](https://github.com/advisories/GHSA-2fmv-rv2c-59x7)). The package now references the patched version directly (8.0.2, or 9.0.22 on .NET 10). `Microsoft.Data.SqlClient` stays on 6.1.4.

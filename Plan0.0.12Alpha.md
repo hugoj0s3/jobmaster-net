@@ -730,7 +730,7 @@ agent's late save never revives it, and unit + scenario tests are green.
 
 ## 17. Base64 ids in logs (messages + API `ReferenceId`)
 
-**Status: noted for later** (Hugo, 2026-10-27), not scheduled yet.
+**Status: done 2026-10-31**, uncommitted.
 
 **Goal.** An id copied from the dashboard (base64url, 22 chars) finds the matching logs, and log output shows ids in
 the same format as the rest of the API/dashboard. Easier investigation from the dashboard (Hugo, 2026-10-27).
@@ -765,22 +765,23 @@ the same format as the rest of the API/dashboard. Easier investigation from the 
 queries) for existing rows and changes to every runner that queries by `"N"`, while the API is the only place users
 see it.
 
-**Open decisions.**
-- **Keyword search for old logs (optional):** when the keyword parses as a Guid in any format, also match the other
-  two forms (`N`, `D`, base64), so a dashboard id still finds messages written before this change. Worth it, or accept
-  that only new logs match?
-- Core helpers internal or public?
-- Exceptions whose message includes an id (e.g. Confirm's "could not be saved on master: {ids}"): base64 too, for the
-  same reason?
+**Decided (Hugo, 2026-10-31).** Rule: what users read is base64, pointers/references stay as they are.
+- Keyword search for old logs: skipped. Only the log text changes; the stored reference stays `"N"`, so
+  `ReferenceGuid` still finds old logs.
+- Core helpers: internal, the Api uses them through `InternalsVisibleTo`.
+- Exception messages users read: base64 (Confirm, duplication, version conflict, execution "no outcome").
+- Raw `ReferenceId` filter stays an exact match; storing base64 only if an issue shows up or it turns out impossible.
 
 **Tasks.**
-- [ ] Move `GuidBase64Extensions` to core; `JobMaster.Api` uses it.
-- [ ] Log messages: job / schedule / execution ids via `ToBase64()`.
-- [ ] `ApiLogItem.ReferenceId` → base64 for Guid references. Update its XML doc.
-- [ ] (If decided) keyword search matches all three Guid forms.
-- [ ] Tests: `ApiLogItem.FromDomain` (Guid → base64, non-Guid unchanged); API test querying logs with the returned
-      `ReferenceId`; helper round-trip tests.
-- [ ] ChangeLog: API `ReferenceId` format change + log message id format.
+- [x] Move `GuidBase64Extensions` to core as `GuidBase64Util` in `JobMaster.Sdk.Utils` (Hugo); `JobMaster.Api` uses
+      it. It's the one place for base64 Guid parsing and generation; method naming to be revisited later (Hugo).
+- [x] Log messages: job / schedule / execution ids via `ToBase64()` (incl. `ToLogSummary()`).
+- [x] `ApiLogItem.ReferenceId` → base64 for Guid references. Update its XML doc.
+- [x] ~~Keyword search matches all three Guid forms~~ (skipped).
+- [x] Tests: `ApiLogItemTests` (Guid → base64, non-Guid unchanged, returned `ReferenceId` as `ReferenceGuid` → stored
+      value); helper tests moved to `UnitTests/Sdk` (now also on netstandard2.0) + `"N"` parse. No log-endpoint
+      harness, so the round trip is tested at the model level.
+- [x] ChangeLog: API `ReferenceId` format change (breaking) + log message id format (changed); internal ChangeLog.
 - [ ] Dashboard: if it starts showing `referenceId`, link it to the job/schedule page (ids now match).
 
 **Done when.** Ids in log messages and `ApiLogItem.ReferenceId` match the base64 ids the dashboard shows, existing
