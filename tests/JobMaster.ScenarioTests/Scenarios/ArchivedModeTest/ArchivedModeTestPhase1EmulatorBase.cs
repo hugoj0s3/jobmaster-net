@@ -12,7 +12,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ArchivedModeTest;
 /// only resolves clusters registered in the same process) -- an entirely ordinary Active source
 /// (but with DataRetentionTtl set to JobMasterDefaults.MinDataRetentionTtl -- 10 minutes, the
 /// framework's floor -- and TargetArchivedClusterId set) and an Archived target (no agent
-/// connections, only a Coordinator, per PreValidation's "Archive clusters only run Coordinator").
+/// connections, only a Coordinator, per ValidateClusterDefinitions' "Archive clusters only run Coordinator").
 /// Proves the real, unmodified archive-then-delete flow (DeleteOldFinalJobsRunner's adaptive poll
 /// -- Clamp(TTL/2, 5min, 1hr) => 5 minutes at this TTL -- archiving via the same
 /// BulkInsertIfNotExistsAsync/intake-service path RepoConformance covers, then deleting the source

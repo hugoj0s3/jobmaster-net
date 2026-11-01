@@ -121,7 +121,7 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
 
                 cfg.Mode(ClusterMode.Active);
                 // Registering 3 clusters on one ServiceCollection requires exactly one default --
-                // PreValidation throws "Multiple clusters configured but no default cluster defined"
+                // StartAsync fails with "Multiple clusters configured but no default cluster defined"
                 // otherwise. Arbitrary choice among the 3; nothing here relies on which one it is.
                 cfg.SetAsDefault();
             });

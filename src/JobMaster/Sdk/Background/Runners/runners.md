@@ -13,7 +13,7 @@ methods it calls.
 | Migrating | yes | **no** | yes | yes (no execution runners; acts as Coordinator + Drain) |
 | Archived | yes | **no** | **no** | yes (behaves exactly like Coordinator, no agent connection) |
 
-Enforced at startup by `PreValidation` in [`JobMasterRuntime`](../JobMasterRuntime.cs).
+Enforced at startup by `ValidateClusterDefinitions` in [`JobMasterRuntime`](../JobMasterRuntime.cs).
 
 ## Matrix
 

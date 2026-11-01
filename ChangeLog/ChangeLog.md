@@ -164,6 +164,11 @@
 
 ### Changed
 
+- **Every startup configuration error is now reported before anything starts, all in one list.** `StartJobMasterRuntimeAsync` throws one exception listing every problem, before any worker starts and before any cluster configuration or agent connection is saved. Before, it stopped at the first structural error, and some errors only showed up later:
+  - after the workers were already running: a static recurring schedule profile without a `ProfileId` or `Config`, a `Config` that throws, an invalid definition, `[...Schedule]` on a class that isn't a handler, or a static schedule whose priority is disabled on its cluster;
+  - after other clusters had already been saved: an agent connection whose fingerprint changed while `ProtectConnectionChanges` is on, or an archived cluster without a target that still holds unfinished jobs or schedules.
+- **Starting with no cluster configured now fails with a clear error** ("No cluster configured"), instead of a `NullReferenceException`.
+- **Two static recurring schedule profiles with the same `ProfileId` now fail at startup.** Their schedules got the same id, and one silently replaced the other.
 - **Job, recurring schedule and execution ids in log messages and error messages are now base64url**, the same 22-character id the API and dashboard show, so an id copied from the dashboard finds the matching log lines. They used to be written as standard GUIDs (`xxxxxxxx-xxxx-…`). Logs written before the upgrade keep the old format in their text; filtering by `ReferenceGuid` finds both.
 - **A recurring schedule's `endBefore` is now exclusive.** Jobs run only before `endBefore`, never at or after it. Before, an occurrence landing exactly on `endBefore` still ran: a daily 00:00 schedule with `endBefore` = 31 Oct 2026 00:00 ran once on 31 Oct. It now stops after 30 Oct. Occurrences at any other time are unaffected.
 - **An archived cluster with a target no longer fails startup because it holds unfinished jobs or schedules.** They're moved to the target instead, as described under Added. Without a target, startup still fails until the cluster only holds finished data.
@@ -197,6 +202,7 @@
 
 ### Fixed
 
+- **With a single cluster not marked as default, startup now catches a handler whose priority is disabled on it.** The check skipped handlers without their own cluster id in that setup; the call failed only when scheduling.
 - **Message data and metadata are no longer written to the logs.** When a job or recurring schedule couldn't be queued, the Critical log included up to 500 characters of its message data and metadata, which can hold personal or sensitive data. The log now shows only their sizes, along with the id, status and other job details. Logs written by earlier versions may still contain them; purge them if that matters to you.
 - **Worker lanes ignore case everywhere.** `GET /workers?workerLane=Billing` returned nothing for a `"billing"` worker while `/workers/count` counted it; both now ignore case, like job routing already did.
 - **RavenDB: metadata filters match keys ignoring case**, like the SQL providers. Jobs and recurring schedules saved before this version only match a key typed in all lowercase until they're saved again (jobs are saved again as they run; static recurring schedules at startup).

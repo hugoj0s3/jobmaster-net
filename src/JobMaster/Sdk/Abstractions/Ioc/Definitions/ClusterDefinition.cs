@@ -54,7 +54,7 @@ internal sealed class ClusterDefinition
 
     // Shared by IClusterConfigSelector.MigrateTo and IClusterStandaloneConfigSelector.ClusterMigrateTo.
     // No validation here on purpose — everything (target required, must resolve, must be Active,
-    // self-reference) is checked once, at startup, in JobMasterRuntime.PreValidation.
+    // self-reference) is checked once, at startup, in JobMasterRuntime.ValidateClusterDefinitions.
     public void MigrateTo(string targetActiveClusterId)
     {
         this.ClusterMode = JobMaster.Abstractions.Models.ClusterMode.Migrating;
