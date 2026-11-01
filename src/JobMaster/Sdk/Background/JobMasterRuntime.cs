@@ -164,6 +164,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.DataRetentionTtl = clusterDefinition.DataRetentionTtl ?? modelToSave.DataRetentionTtl;
             modelToSave.TargetArchivedClusterId = clusterDefinition.TargetArchivedClusterId ?? modelToSave.TargetArchivedClusterId;
+            // Never cleared, only replaced: an archived cluster moves late jobs/schedules there.
             modelToSave.TargetActiveClusterId = clusterDefinition.TargetActiveClusterId ?? modelToSave.TargetActiveClusterId;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
             modelToSave.IsStandalone = isStandalone;
@@ -175,29 +176,33 @@ internal class JobMasterRuntime : IJobMasterRuntime
             }
 
             // Validate before saving: a failed check must not leave master marked as Archived.
-            if (modelToSave.ClusterMode == ClusterMode.Archived)
+            // With a target, the migrate runners move what's left, so only an archived cluster without one is checked.
+            if (modelToSave.ClusterMode == ClusterMode.Archived && string.IsNullOrEmpty(modelToSave.TargetActiveClusterId))
             {
                 var jobsRepo = componentFactory.GetMasterRepository<IMasterJobsRepository>();
                 var nonFinalJobStatuses = Enum.GetValues(typeof(JobMasterJobStatus))
                     .Cast<JobMasterJobStatus>()
                     .Where(s => !s.IsFinalStatus())
                     .ToList();
+                
                 var nonFinalJobs = await jobsRepo.QueryAsync(new JobQueryCriteria
                 {
                     Statuses = nonFinalJobStatuses,
                     CountLimit = 1
                 });
+                
                 if (nonFinalJobs.Any())
                 {
                     throw new InvalidOperationException(
                         $"Archived cluster '{clusterDefinition.ClusterId}' contains jobs in a non-final status. " +
-                        "Archive clusters may only hold finalized data.");
+                        "Archive clusters without a target may only hold finalized data; use Archive(targetActiveClusterId) to move them.");
                 }
 
                 var recurringRepo = componentFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
                 var nonFinalRecurringStatuses = Enum.GetValues(typeof(RecurringScheduleStatus))
                     .Cast<RecurringScheduleStatus>()
                     .Where(s => !s.IsFinalStatus());
+                
                 foreach (var status in nonFinalRecurringStatuses)
                 {
                     var nonFinalSchedules = await recurringRepo.QueryAsync(new RecurringScheduleQueryCriteria
@@ -205,16 +210,36 @@ internal class JobMasterRuntime : IJobMasterRuntime
                         Status = status,
                         CountLimit = 1
                     });
+                
                     if (nonFinalSchedules.Any())
                     {
                         throw new InvalidOperationException(
                             $"Archived cluster '{clusterDefinition.ClusterId}' contains recurring schedules in a non-final status. " +
-                            "Archive clusters may only hold finalized data.");
+                            "Archive clusters without a target may only hold finalized data; use Archive(targetActiveClusterId) to move them.");
                     }
                 }
             }
 
             masterConfigService.Save(modelToSave);
+
+            if (modelToSave.ClusterMode == ClusterMode.Archived && !string.IsNullOrEmpty(modelToSave.TargetActiveClusterId))
+            {
+                // Every worker allowed on an Archived cluster acts as its Coordinator.
+                if (!workerDefinitions.Any())
+                {
+                    logger.Warn(
+                        $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
+                        $"'{modelToSave.TargetActiveClusterId}' only while a worker of it runs. This app has none;" +
+                        "make sure one runs in an app that also configures that cluster.");
+                }
+                else if (JobMasterClusterAwareComponentFactories.TryGetFactory(modelToSave.TargetActiveClusterId!) == null)
+                {
+                    logger.Warn(
+                        $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
+                        $"'{modelToSave.TargetActiveClusterId}', but that cluster isn't configured in this app. " +
+                        "Configure it here, next to a worker of the archived cluster, or they stay on the archived cluster.");
+                }
+            }
 
             if (!isStandalone)
             {
@@ -440,11 +465,13 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     $"Migrating cluster '{clusterDefinition.ClusterId}' must have a TargetActiveClusterId configured (use MigrateTo(...)).");
             }
 
-            if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId) && clusterDefinition.ClusterMode != ClusterMode.Migrating)
+            if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId) &&
+                clusterDefinition.ClusterMode != ClusterMode.Migrating &&
+                clusterDefinition.ClusterMode != ClusterMode.Archived)
             {
                 throw new InvalidOperationException(
-                    $"Cluster '{clusterDefinition.ClusterId}' has a TargetActiveClusterId configured but is not in ClusterMode.Migrating. " +
-                    "TargetActiveClusterId only applies to Migrating clusters (use MigrateTo(...) instead of setting it directly).");
+                    $"Cluster '{clusterDefinition.ClusterId}' has a TargetActiveClusterId configured but is not in ClusterMode.Migrating or ClusterMode.Archived. " +
+                    "TargetActiveClusterId only applies to Migrating and Archived clusters (use MigrateTo(...) or Archive(...) instead of setting it directly).");
             }
 
             if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId))

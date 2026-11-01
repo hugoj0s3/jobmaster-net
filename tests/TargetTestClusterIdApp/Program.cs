@@ -37,12 +37,17 @@ foreach (var clusterConfig in clusterConfigs)
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
     ?? throw new InvalidOperationException("REDIS_CONNECTION_STRING environment variable must be set.");
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+// Connected at startup, not lazily by the first job: under the first burst of jobs the connect can time out and
+// fail them. /health stays 503 until connected, so the harness doesn't schedule before Redis is ready.
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.AbortOnConnectFail = false;
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync(redisOptions));
 builder.Services.AddSingleton<ExecutionRecorder>();
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", (IConnectionMultiplexer redis) =>
+    redis.IsConnected ? Results.Ok(new { status = "ok" }) : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
 // Same request/response contract as TargetTestScheduleApp's /schedule/{handlerType}, so the scenario side can
 // reuse the existing ScheduleClient. ClusterId is passed straight through: null (the default) is the case

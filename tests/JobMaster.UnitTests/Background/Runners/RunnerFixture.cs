@@ -35,6 +35,7 @@ internal sealed record RunnerFixture(
     RunnerFakes.FakeRecurringSchedulePlanner RecurringSchedulePlanner,
     RunnerFakes.FakeRecentlyInsertedRecurringScheduleQueue RecentlyInsertedQueue,
     Mock<IWorkerClusterOperations> WorkerClusterOps,
+    Mock<IJobMasterLogger> Logger,
     string WorkerId,
     string ClusterId,
     AgentConnectionId AgentConnectionId)
@@ -150,6 +151,7 @@ internal sealed record RunnerFixture(
             recurringSchedulePlanner,
             recentlyInsertedQueue,
             workerClusterOps,
+            logger,
             workerId,
             clusterId,
             agentConnectionId);

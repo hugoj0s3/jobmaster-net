@@ -99,7 +99,16 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         // The source cluster is an ordinary Active cluster -- jobs onboard and execute normally. Waited
         // for separately from the failure-injected job below: with maxNumberOfRetries: 0 that job never
         // reaches Succeeded (never calls recorder.RecordAsync), so it must not count toward QtyJobs here.
-        var executions = await Runner.Tracker.WaitForAsync(testIdentifier, QtyJobs - 1, ExecuteWaitTimeout);
+        IReadOnlyList<ExecutionRecord> executions;
+        try
+        {
+            executions = await Runner.Tracker.WaitForAsync(testIdentifier, QtyJobs - 1, ExecuteWaitTimeout);
+        }
+        catch (TimeoutException ex)
+        {
+            var diagPath = await DumpMissingJobsAsync(api, testIdentifier, scheduled.JobIds);
+            throw new TimeoutException($"{ex.Message}{Environment.NewLine}DIAG: {diagPath}", ex);
+        }
         executions.Select(e => e.JobId).Should().OnlyHaveUniqueItems();
 
         await PollingWaitUtil.WaitUntilAsync(ExecuteWaitTimeout,
@@ -165,5 +174,39 @@ public abstract class ArchivedModeTestPhase1EmulatorBase<TPhaseEnum>(ScenarioGlo
         GuidBase64.Parse(archivedSchedule.Id).Should().Be(recurring.RecurringScheduleId);
         archivedSchedule.Status.GetInt32().Should().Be(CanceledStatus,
             "the archived copy must keep the Canceled status it had at purge time");
+    }
+
+    // On an execution-wait timeout: what happened to the jobs that never ran, written to a file named in the failure.
+    // Variants with direct DB access add the raw rows.
+    protected virtual Task<string> DumpRawAsync(IReadOnlyCollection<Guid> missingIds) => Task.FromResult(string.Empty);
+
+    private async Task<string> DumpMissingJobsAsync(IScenarioApiClient api, string testIdentifier, IReadOnlyCollection<Guid> jobIds)
+    {
+        var sb = new System.Text.StringBuilder();
+        var recorded = (await Runner.Tracker.GetAllAsync(testIdentifier)).Select(r => r.JobId).ToHashSet();
+        var missing = jobIds.Where(id => !recorded.Contains(id)).ToList();
+        sb.AppendLine($"utcNow={DateTime.UtcNow:O} missing={string.Join(",", missing)}");
+        foreach (var id in missing)
+        {
+            sb.AppendLine($"== job {id}");
+            sb.AppendLine(System.Text.Json.JsonSerializer.Serialize(await api.GetJobAsync(SourceClusterId, id)));
+            sb.AppendLine("executions: " + System.Text.Json.JsonSerializer.Serialize(await api.GetJobExecutionsAsync(SourceClusterId, id)));
+            foreach (var log in await api.GetLogsAsync(SourceClusterId, id))
+                sb.AppendLine($"log {log.TimestampUtc:O} {log.Category}: {log.Message}");
+        }
+        sb.AppendLine("== buckets");
+        sb.AppendLine(System.Text.Json.JsonSerializer.Serialize(await api.GetBucketsAsync(SourceClusterId)));
+        sb.AppendLine("== workers");
+        sb.AppendLine(System.Text.Json.JsonSerializer.Serialize(await api.GetAgentWorkersAsync(SourceClusterId)));
+        sb.AppendLine("== raw");
+        sb.AppendLine(await DumpRawAsync(missing));
+        sb.AppendLine("== container logs");
+        sb.AppendLine(await Runner.GetContainerLogsAsync(ContainerName));
+
+        var dir = Path.Combine(Path.GetTempPath(), "jm-scenario-diag");
+        Directory.CreateDirectory(dir);
+        var path = Path.Combine(dir, $"{testIdentifier}.txt");
+        await File.WriteAllTextAsync(path, sb.ToString());
+        return path;
     }
 }

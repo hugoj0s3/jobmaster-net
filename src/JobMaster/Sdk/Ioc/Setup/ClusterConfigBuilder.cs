@@ -384,6 +384,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    public IClusterConfigSelector Archive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
+        return this;
+    }
+
     public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
         clusterDefinition.IsStandalone = true;
@@ -596,41 +602,54 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout)
+    public IClusterStandaloneConfigSelector DefaultJobTimeout(TimeSpan defaultJobTimeout)
     {
        clusterDefinition.DefaultJobTimeout = defaultJobTimeout;
        return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold)
+    public IClusterStandaloneConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout) => DefaultJobTimeout(defaultJobTimeout);
+
+    public IClusterStandaloneConfigSelector TransientThreshold(TimeSpan transientThreshold)
     {
         clusterDefinition.TransientThreshold = transientThreshold;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount)
+    public IClusterStandaloneConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold) => TransientThreshold(transientThreshold);
+
+    public IClusterStandaloneConfigSelector DefaultMaxRetryCount(int defaultMaxRetryCount)
     {
         clusterDefinition.DefaultMaxRetryCount = defaultMaxRetryCount;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize)
+    public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterStandaloneConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {
         clusterDefinition.MaxMessageByteSize = maxMessageByteSize;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId)
+    public IClusterStandaloneConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize) => MaxMessageByteSize(maxMessageByteSize);
+
+    public IClusterStandaloneConfigSelector IanaTimeZoneId(string ianaTimeZoneId)
     {
         clusterDefinition.IanaTimeZoneId = ianaTimeZoneId;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
+    public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId) => IanaTimeZoneId(ianaTimeZoneId);
+
+    public IClusterStandaloneConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
         clusterDefinition.SetDataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
         return this;
     }
+
+    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null) =>
+        DataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
 
     public IClusterStandaloneConfigSelector RetainDataForever()
     {
@@ -658,15 +677,25 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode)
+    public IClusterStandaloneConfigSelector Mode(ClusterMode mode)
     {
         clusterDefinition.ClusterMode = mode;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId)
+    public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode) => Mode(mode);
+
+    public IClusterStandaloneConfigSelector MigrateTo(string targetActiveClusterId)
     {
         clusterDefinition.MigrateTo(targetActiveClusterId);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId) => MigrateTo(targetActiveClusterId);
+
+    public IClusterStandaloneConfigSelector Archive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
         return this;
     }
 

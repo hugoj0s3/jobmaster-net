@@ -117,6 +117,15 @@ public sealed class ScenarioRunner : IAsyncDisposable
         }
     }
 
+    /// <summary>stdout + stderr of a running container, for failure diagnostics.</summary>
+    public async Task<string> GetContainerLogsAsync(string containerName)
+    {
+        if (!runningContainers.TryGetValue(containerName, out var container))
+            return $"<container {containerName} not running>";
+        var (stdout, stderr) = await container.GetLogsAsync();
+        return stdout + Environment.NewLine + "---- stderr ----" + Environment.NewLine + stderr;
+    }
+
     public async Task StopAsync(string containerName, CancellationToken ct = default)
     {
         if (!runningContainers.TryGetValue(containerName, out var container))

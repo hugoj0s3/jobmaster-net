@@ -61,6 +61,15 @@ internal sealed class ClusterDefinition
         TargetActiveClusterId = targetActiveClusterId;
     }
 
+    // Shared by IClusterConfigSelector.Archive and IClusterStandaloneConfigSelector.Archive.
+    // A null target replaces nothing: the target is never cleared, only replaced.
+    public void Archive(string? targetActiveClusterId)
+    {
+        this.ClusterMode = JobMaster.Abstractions.Models.ClusterMode.Archived;
+        if (targetActiveClusterId != null)
+            TargetActiveClusterId = targetActiveClusterId;
+    }
+
     // Shared by IClusterConfigSelector.DisablePriority and IClusterStandaloneConfigSelector.DisablePriority.
     public void DisablePriority(JobMasterPriority priority)
     {

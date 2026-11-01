@@ -153,9 +153,12 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         MarkInitialized();
     }
 
-    // Archive clusters only ever hold finalized data (enforced at startup) and never dispatch or
-    // schedule jobs, so the bucket-assignment/scheduling coordinator runners would be permanent
-    // no-ops here — only heartbeat (already started above) and the deletion/cleanup runners apply.
+    // Archive clusters never dispatch or schedule jobs, so the bucket-assignment/scheduling coordinator
+    // runners would be permanent no-ops here — only heartbeat, the deletion/cleanup runners and the
+    // migrate runners apply. The migrate runners move jobs/schedules that landed after the switch to
+    // Archived (the scheduler's mode check isn't atomic with its write) to the stored TargetActiveClusterId.
+    // Jobs still in buckets of dead workers get there too: their buckets are marked Lost and the deadline
+    // runner returns them to OnMaster. Lost buckets aren't drained (no Drain/Full worker on Archived).
     // Reached for both Coordinator and Full workers on an Archived cluster (Full behaves exactly
     // like Coordinator there — see PreValidation's ActsAsCoordinator check — so there's no agent
     // connection to load and nothing to drain either way).
@@ -174,6 +177,18 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
         var deleteOldLogsRunner = new DeleteOldLogsRunner(this);
         await deleteOldLogsRunner.StartAsync();
+
+        var markBucketAsLostRunner = new MarkBucketAsLostRunner(this);
+        await markBucketAsLostRunner.StartAsync();
+
+        var processDeadlineTimeoutRunner = new HeldOnMasterDeadlineTimeoutJobsRunner(this);
+        await processDeadlineTimeoutRunner.StartAsync();
+
+        var migrateJobsRunner = new MigrateJobsRunner(this);
+        await migrateJobsRunner.StartAsync();
+
+        var migrateRecurringSchedulesRunner = new MigrateRecurringSchedulesRunner(this);
+        await migrateRecurringSchedulesRunner.StartAsync();
 
         MarkInitialized();
     }

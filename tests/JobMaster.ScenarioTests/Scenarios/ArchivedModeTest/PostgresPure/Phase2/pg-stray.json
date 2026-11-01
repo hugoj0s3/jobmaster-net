@@ -1,0 +1,23 @@
+{
+  "containerName": "pg-stray",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "pg-stray",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "stray-old",
+      "Default": true,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StrayOld;Username={{PostgresUsername}};Password={{PostgresPassword}}",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "stray-new"
+    },
+    {
+      "ClusterId": "stray-new",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StrayNew;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    }
+  ]
+}

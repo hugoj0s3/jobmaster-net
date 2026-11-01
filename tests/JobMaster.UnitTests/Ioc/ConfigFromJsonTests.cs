@@ -585,7 +585,7 @@ public class ConfigFromJsonTests
     {
         var b = Builder();
         IClusterStandaloneConfigSelector standalone = b.UseStandaloneCluster();
-        standalone.ClusterDataRetentionTtl(TimeSpan.FromDays(14));
+        standalone.DataRetentionTtl(TimeSpan.FromDays(14));
 
         b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.FromDays(14));
     }
