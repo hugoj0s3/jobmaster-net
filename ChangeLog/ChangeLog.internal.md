@@ -8,36 +8,37 @@
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
 #### Startup: validate everything before anything starts (Plan0.0.12Alpha item 19)
-- New `StartAsync` order: single cluster set as default → validation (`ValidateAsync` of every setup + `PreValidate` +
-  static-schedule build, one aggregated list) → `ValidateArchivedStorageAsync` → `OnBeforeStartAsync` →
-  `ValidateFingerprintAsync` → save loop → workers → `SaveStaticRecurringSchedules`; a `ThrowIfFailed` after each
-  validation step.
+- New `DoStartAsync` order, a `ThrowIfFailed` after each validation step:
+  1. `ValidateClusterDefinitions` + every `IJobMasterRuntimeSetup.ValidateAsync` + static-schedule build (one list);
+  2. `ValidateArchivedStorageAsync`;
+  3. `OnBeforeStartAsync` (provisioning);
+  4. `ValidateFingerprintAsync`;
+  5. save loop → workers → `SaveStaticRecurringSchedules`.
 - `StartAsync` wraps `DoStartAsync` and clears a private `StartupState` instance (validation messages, built static
   schedules, resolved agent fingerprints keyed by agent connection id) in a `finally`, so a retry after a failed start
   starts clean (Hugo: one bag instead of values passed between steps).
-- `PreValidation()` → `PreValidate(errors)`: every throw is now `errors.Add` with the same message (Hugo: collect).
-  A missing definition / conn string / repo type skips the rest of that cluster; the two target-cluster pairs
-  (`== null` then `.ClusterMode`) became `else if`.
-- All default-cluster handling at the top of `DoStartAsync` (Hugo): single cluster → set as default; none configured
-  → new error (the cluster loops ran zero times and startup used to crash later with a `NullReferenceException` on
-  `Default!`); several without a default → the existing error, moved out of `PreValidate`. Both go into the same list.
-- Default cluster set first (moved from `PreValidation`):
-  it ran after `ValidateAsync`, so with one cluster not marked default `ValidateDisabledPriorities` got a null default
-  and skipped attribute-less handlers (false negative, found while planning).
+- `PreValidation()` → `ValidateClusterDefinitions(errors)`, now first: every throw is `errors.Add` with the same message
+  (Hugo: collect). A missing definition / conn string / repo type skips the rest of that cluster; the two
+  target-cluster pairs (`== null` then `.ClusterMode`) became `else if`.
+- Default-cluster handling stays in `ValidateClusterDefinitions`, which now runs before the `ValidateAsync` validators:
+  single cluster → set as default; none configured → new error (the cluster loops ran zero times and startup used to
+  crash later with a `NullReferenceException` on `Default!`); several without a default → the existing error. Before,
+  the default was only set after `ValidateAsync`, so with one cluster not marked default `ValidateDisabledPriorities`
+  got a null default and skipped attribute-less handlers (false negative, found while planning).
 - New `StaticRecurringScheduleDefinitionsBuilder` (moved from `BootstrapStaticRecurringSchedules`): each error is
   collected per profile / handler (reflection `Config` exceptions unwrapped); disabled-priority check per definition.
   New: cross-profile duplicate `(ClusterId, Id)` check (two profiles sharing a `ProfileId` collided and the second
   `UpsertStatic` replaced the first; inside one collection a repeated `defId` already gets a `-1` suffix, so the
   collection's own "Duplicate static schedule Id" throw is effectively unreachable). Bootstrap only upserts now.
-- `ValidateArchivedStorageAsync` (read-only) runs **before** provisioning, after the configuration checks passed
-  (Hugo: no fingerprint created until everything else is valid). A not-yet-provisioned schema counts as empty, like
-  `GetFreshClusterConfig` (`SchemaNotProvisioned`: Postgres 42P01, SQL Server 208, MySQL 1146; RavenDB's collection
-  query just returns nothing). `ValidateFingerprintAsync` runs after provisioning (needs the agent tables, and the
-  resolvers are get-or-create), so the only writes before validation completes are schema DDL and each agent's own
-  fingerprint. It keeps the master's and the agent's fingerprint in `StartupState` so the save loop doesn't call the
-  resolvers again; the unprotected
-  "fingerprint changed, updating" Warn stays in the save loop. Private helpers `CheckFingerprint`,
-  `CheckArchivedHoldsOnlyFinalDataAsync`.
+- `ValidateArchivedStorageAsync` prevents lost jobs (an archived cluster without a target runs nothing and moves
+  nothing). Read-only, runs **before** provisioning, after the configuration checks passed (Hugo: no fingerprint
+  created until everything else is valid). A not-yet-provisioned schema counts as empty, like `GetFreshClusterConfig`
+  (`SchemaNotProvisioned`: Postgres 42P01, SQL Server 208, MySQL 1146; RavenDB's collection query just returns
+  nothing), via `AnyUnlessSchemaNotProvisionedAsync`. Queries in the private `CheckArchivedHoldsOnlyFinalDataAsync`.
+- `ValidateFingerprintAsync` runs after provisioning (needs the agent tables, and the resolvers are get-or-create), so
+  the only writes before validation completes are schema DDL and each agent's own fingerprint. The protected-change
+  check is an inline `if` (Hugo). It keeps the master's and the agent's fingerprint in `StartupState` so the save loop
+  doesn't call the resolvers again; the unprotected "fingerprint changed, updating" Warn stays in the save loop.
 - The two "not found" throws were unreachable (`ClusterConfigBuilder.Finish` registers a config per cluster and per
   agent definition): the save loop uses `GetAgentConnectionConfig`, the worker's `Cluster not found` stays as an assert.
 - Known limitation, unchanged: `[...Schedule]` on a nested handler class fails (synthesized ProfileId is `attr:` +

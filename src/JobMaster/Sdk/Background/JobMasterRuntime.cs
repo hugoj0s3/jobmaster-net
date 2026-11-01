@@ -132,7 +132,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 // Guaranteed by ClusterConfigBuilder.Finish, which registers a config per agent definition.
                 var agentConfig = clusterCnnCfg.GetAgentConnectionConfig(agentDefinition.AgentConnectionName);
                 
-                // ValidateStorageAsync resolves one per agent definition of every cluster.
+                // ValidateFingerprintAsync resolves one per agent definition of every cluster.
                 // The agent connection id already includes the cluster id.
                 if (!State.AgentFingerprints.TryGetValue(agentConfig.Id, out var fingerprint))
                     throw new InvalidOperationException($"Fingerprint not resolved for agent connection {agentDefinition.AgentConnectionName}.");
@@ -191,7 +191,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
             }
 
-            // Archived without a target holding unfinished data already failed in ValidateStorageAsync.
+            // Archived without a target holding unfinished data already failed in ValidateArchivedStorageAsync.
             masterConfigService.Save(modelToSave);
 
             if (modelToSave.ClusterMode == ClusterMode.Archived && !string.IsNullOrEmpty(modelToSave.TargetActiveClusterId))

@@ -905,23 +905,28 @@ running, no rollback. Not validation.
    below).
 
 **Decided (Hugo, 2026-11-01).**
-- DB checks run after provisioning, before the first save. The fingerprint resolvers are get-or-create, so the only
-  writes before validation completes are schema DDL and each agent's own fingerprint. No provider changes.
-- `PreValidation` collects into the same list.
+- The archived check (`ValidateArchivedStorageAsync`, read-only) runs before provisioning, once the configuration is
+  valid; a schema that doesn't exist yet counts as empty. The fingerprint check (`ValidateFingerprintAsync`) runs after
+  provisioning: the resolvers are get-or-create, so the only writes before validation completes are schema DDL and
+  each agent's own fingerprint. No provider changes.
+- `PreValidation` → `ValidateClusterDefinitions`, runs first and collects into the same list.
 - A profile's `Config` runs during validation: still once, just earlier.
+- Startup values in a private `StartupState` instance, cleared in a `finally` around `DoStartAsync`.
 
 **Found while planning.** The default cluster was resolved inside `PreValidation`, after `ValidateAsync`, so with one
-cluster not marked default `ValidateDisabledPriorities` skipped attribute-less handlers. Now resolved first. Also found
-while testing: two profiles sharing a `ProfileId` collided on schedule ids silently; now a startup error.
+cluster not marked default `ValidateDisabledPriorities` skipped attribute-less handlers. Now resolved first, in
+`ValidateClusterDefinitions`. Also found: no cluster configured crashed later with a `NullReferenceException` (now an
+error); two profiles sharing a `ProfileId` collided on schedule ids silently (now a startup error).
 
 **Tasks.**
 - [x] Static definitions built during validation (`StaticRecurringScheduleDefinitionsBuilder`); all A errors aggregated;
-      bootstrap only saves them. Unit tests per error.
-- [x] Checks removed from the bootstrap (`SaveStaticRecurringSchedules`).
-- [x] Check-only pass for B (`ValidateStorageAsync`) before any save; save loop only saves. Tested at helper level
-      (`CheckFingerprint`, `CheckArchivedHoldsOnlyFinalDataAsync`); ordering by structure.
+      bootstrap only saves them (`SaveStaticRecurringSchedules`).
+- [x] Check-only passes for B (`ValidateArchivedStorageAsync`, `ValidateFingerprintAsync`) before any save; save loop
+      only saves.
 - [x] The two "not found" throws: unreachable (`ClusterConfigBuilder.Finish`); kept as asserts with a comment.
 - [x] `reminders.md` entry removed; internal + user ChangeLog.
+- [ ] Whole-`StartAsync` tests in a separate `JobMaster.StartupTests` project (helper-level tests dropped, Hugo).
+      Open: constructor seam for the static-schedule error cases; reset hook name.
 
 **Done when.** No configuration error can be thrown after a worker starts or after a database write, and the unit suite
 plus an existing scenario run are green.
