@@ -6,9 +6,9 @@ using JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 namespace JobMaster.ScenarioTests.Scenarios.ArchivedModeTest.PostgresPure;
 
 /// <summary>
-/// stray-old restarts as Archived while still holding Phase2's late jobs and schedule (startup must not
-/// refuse it: the unfinished-data check only applies when entering Archived), with MigrateTo configured on
-/// the Archived cluster. Its Coordinator moves them to stray-new, which runs them -- same job ids, none lost.
+/// stray-old restarts as Archived with TargetActiveClusterId stray-new while still holding Phase2's late jobs and
+/// schedule (startup must not refuse it: with a target, the unfinished-data check is skipped). Its Coordinator
+/// moves them to stray-new, which runs them -- same job ids, none lost.
 /// </summary>
 public sealed class PostgresPurePhase3Emulator(ScenarioGlobalEnvironment global, ScenarioRunner runner)
     : BasePhaseEmulator<PostgresPurePhases>(global, runner)
@@ -19,7 +19,7 @@ public sealed class PostgresPurePhase3Emulator(ScenarioGlobalEnvironment global,
     private const int SucceededStatus = 5;
     private const int ActiveStatus = 2;
 
-    // The migrate runners tick right after startup; budget a full 5-minute Archived interval on top.
+    // The migrate runners tick right after startup; budget a few 2.5-minute Archived intervals on top.
     private static readonly TimeSpan MoveWaitTimeout = TimeSpan.FromMinutes(7);
     private static readonly TimeSpan ExecuteWaitTimeout = TimeSpan.FromMinutes(10);
 
