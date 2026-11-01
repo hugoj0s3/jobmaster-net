@@ -475,9 +475,10 @@ a cluster archived in between can always end up with a job on master. The order 
 - Check after the save: the caller gets an exception, so the job isn't silently lost, but it's still stored on the
   archived cluster (the window stays open for that job).
 
-No ordering makes it safe; noted so it isn't mistaken for a gap that a reorder fixes. Fix planned as a safety net
-instead: Plan 0.0.12 item 18 (strict Active → Migrating → Archived flow + archived clusters migrate strays to the
-stored `MigrateTo` target).
+No ordering makes it safe; noted so it isn't mistaken for a gap that a reorder fixes. **Fixed by a safety net in Plan
+0.0.12 item 18 (2026-10-31):** archived clusters with a target (`Archive(targetActiveClusterId)`, or kept from
+`MigrateTo`) move late jobs/schedules there (`MigrateJobsRunner` / `MigrateRecurringSchedulesRunner`). The race itself stays; a
+late job just isn't stuck anymore, as long as a Coordinator of the archived cluster runs next to the target cluster.
 
 ## `JobMasterLogger`'s final flush on `Dispose` never runs
 

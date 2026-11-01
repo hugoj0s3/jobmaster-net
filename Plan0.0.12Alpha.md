@@ -826,27 +826,32 @@ moved to the active cluster and runs there, or, when that's impossible, it's log
   that read the mode just before the switch, or a cached `Get()`).
 - Checking the mode after the write too: with the sweeper the stray still runs, so an exception would mislead.
 
-**Open decisions.**
-- Archived → Active / Archived → Migrating: allowed today. Restrict too, or leave?
-- Archive process must register the target cluster for the sweeper to move strays (same requirement as
-  `MigrateJobsRunner`). Validate at startup (warn/throw when a target is stored but not registered), or only log per
-  stray?
-- Sweeper interval on archived clusters: same as Migrating, or slower (strays are rare)?
+**Decisions (Hugo, 2026-10-31).**
+- Archived → Active / Archived → Migrating stay allowed.
+- Target stored but not configured in the archive process: startup Warn + Critical per sweep that finds late jobs
+  (no startup throw).
+- Sweep interval on Archived: 2.5 min (Migrating stays 30 s). Count first, acquire only when something's there.
+- No mode-transition rule (final, after two stricter versions): Archived with a target → no unfinished-data check (the
+  sweep moves what's left); Archived without a target → check, throw on non-final jobs/schedules.
+- New `Archive(string? targetActiveClusterId = null)`; `MigrateTo` stays Migrating-only; the target is never cleared,
+  only replaced.
+- Requires a Coordinator worker of the archived cluster, in an app that also configures the target: documented + startup
+  Warn when the app has none (not a throw: Api/Dashboard apps have no workers).
+- Dropped: Critical for "other unfinished statuses" (none can exist without buckets).
 
 **Tasks.**
-- [ ] `JobMasterRuntime`: read the stored mode before line 166 overwrites it; throw on Active → Archived.
-- [ ] Comment at line 165: stored `TargetActiveClusterId` kept on purpose for archived strays.
-- [ ] `LoadArchivedRunnersAsync`: start the migrate runners; Critical log when there's no target / unreachable / other
-      unfinished status.
-- [ ] Unit tests: Active → Archived throws; Migrating → Archived ok; new → Archived ok; Archived → Archived ok; target
-      survives Migrating → Archived.
-- [ ] Scenario test: Migrating → Archived, insert a held job (and an active schedule) straight onto the archived
-      cluster → moved to the active cluster and runs.
-- [ ] Update the reminder (fix lives here) and the ChangeLog (breaking: Active → Archived refused; added: safety net).
-- [ ] Docs (item 10): mode flow Active → Migrating → Archived.
+- [x] `JobMasterRuntime`: unfinished-data check only without a target; target allowed on Archived; `Archive(...)`.
+- [x] Comment: stored `TargetActiveClusterId` kept on purpose for archived strays.
+- [x] `LoadArchivedRunnersAsync`: start the migrate runners; Critical when there's no target / target not configured.
+- [x] Unit tests: `ClusterDefinitionArchiveTests`, `MigrateRunnersTests`.
+- [x] Scenario test: `ArchivedModeTest/PostgresPure` phases 2–3 (Migrating → stored mode flipped to Archived with late
+      jobs + schedule → restart as Archived → moved and run). Other variants not mirrored.
+- [x] Update the reminder and the ChangeLog (added / changed).
+- [ ] Docs (item 10): `Archive(target)`; with a target leftovers are moved, without one startup needs finished data
+      only; keep a Coordinator.
 
-**Done when.** Active → Archived is refused, an archived cluster with a stored target moves strays to it and they run,
-strays with no way out are logged as Critical, and unit + scenario tests are green.
+**Done when.** An archived cluster with a target moves strays to it and they run, one without a target refuses
+unfinished data at startup, strays with no way out are logged as Critical, and unit + scenario tests are green.
 
 ---
 

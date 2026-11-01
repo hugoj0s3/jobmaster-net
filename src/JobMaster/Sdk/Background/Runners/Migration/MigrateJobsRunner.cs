@@ -11,9 +11,10 @@ using JobMaster.Sdk.Abstractions.Services.Master;
 namespace JobMaster.Sdk.Background.Runners.Migration;
 
 /// <summary>
-/// Continuously forwards <c>OnMaster</c> (held) jobs on a <c>ClusterMode.Migrating</c> cluster to its
-/// <c>TargetActiveClusterId</c> cluster. Nothing else ever advances an <c>OnMaster</c> job on a
-/// Migrating cluster (<see cref="JobAndRecurringScheduleLifeCycleControl.AssignJobsToBucketsRunner"/>
+/// Continuously forwards <c>OnMaster</c> (held) jobs on a <c>ClusterMode.Migrating</c> or
+/// <c>ClusterMode.Archived</c> cluster to its <c>TargetActiveClusterId</c> cluster (on Archived: jobs that
+/// landed after the switch; no target there is logged Critical). Nothing else ever advances an
+/// <c>OnMaster</c> job on these clusters (<see cref="JobAndRecurringScheduleLifeCycleControl.AssignJobsToBucketsRunner"/>
 /// only runs on <c>Active</c> clusters), so this runner has the field to itself. Uses the same
 /// partition-lock acquire primitive as <c>AssignJobsToBucketsRunner</c>, so concurrent Coordinators on
 /// the same cluster naturally split the work. If the target cluster isn't reachable, nothing is
@@ -42,19 +43,8 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
             return OnTickResult.Skipped(this);
 
         var cfg = clusterConfigService.Get();
-        if (cfg == null || string.IsNullOrEmpty(cfg.TargetActiveClusterId))
+        if (cfg == null)
             return OnTickResult.Skipped(this);
-
-        var targetFactory = JobMasterClusterAwareComponentFactories.TryGetFactory(cfg.TargetActiveClusterId!);
-        if (targetFactory == null)
-        {
-            logger.Error(
-                $"Target active cluster '{cfg.TargetActiveClusterId}' is not reachable from this process. " +
-                "Held jobs remain on master until this is resolved — nothing is lost.",
-                JobMasterLogCategory.Cluster,
-                BackgroundAgentWorker.ClusterConnConfig.ClusterId);
-            return OnTickResult.Skipped(this);
-        }
 
         var startTimeUtc = DateTime.UtcNow;
         var criteria = new JobQueryCriteria
@@ -63,6 +53,38 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
             Status = JobMasterJobStatus.OnMaster,
             SortBy = new SortByCriteria { Property = nameof(JobRawModel.NextPlanExecutionAt), Ascending = true },
         };
+
+        var probe = await masterJobsService.ProbeForAcquireAsync(criteria);
+        if (probe.Count <= 0)
+            return OnTickResult.Skipped(this);
+
+        var isArchived = cfg.ClusterMode == ClusterMode.Archived;
+        if (string.IsNullOrEmpty(cfg.TargetActiveClusterId))
+        {
+            if (isArchived)
+            {
+                logger.Critical(
+                    $"Archived cluster '{BackgroundAgentWorker.ClusterConnConfig.ClusterId}' holds {probe.Count} job(s) but has no cluster to move them to " +
+                    "(it wasn't switched to Archived from Migrating). They will not run.",
+                    JobMasterLogCategory.Cluster,
+                    BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            }
+
+            return OnTickResult.Skipped(this);
+        }
+
+        var targetFactory = JobMasterClusterAwareComponentFactories.TryGetFactory(cfg.TargetActiveClusterId!);
+        if (targetFactory == null)
+        {
+            var message =
+                $"Target active cluster '{cfg.TargetActiveClusterId}' is not reachable from this process. " +
+                "Held jobs remain on master until this is resolved — nothing is lost.";
+            if (isArchived)
+                logger.Critical(message, JobMasterLogCategory.Cluster, BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            else
+                logger.Error(message, JobMasterLogCategory.Cluster, BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+            return OnTickResult.Skipped(this);
+        }
 
         var jobs = await masterJobsService.AcquireAndFetchAsync(criteria, startTimeUtc.Add(JobMasterConstants.DurationToLockRecords));
         if (jobs.Count == 0)
@@ -86,5 +108,7 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
         return OnTickResult.Success(this);
     }
 
-    public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(30);
+    // Archived clusters only get the odd late job; Migrating ones are draining real traffic.
+    public override TimeSpan SucceedInterval =>
+        clusterConfigService.Get()?.ClusterMode == ClusterMode.Archived ? TimeSpan.FromMinutes(2.5) : TimeSpan.FromSeconds(30);
 }

@@ -117,6 +117,9 @@ public interface IClusterStandaloneConfigSelector
     /// <inheritdoc cref="IClusterConfigSelector.MigrateTo"/>
     public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId);
 
+    /// <inheritdoc cref="IClusterConfigSelector.Archive"/>
+    public IClusterStandaloneConfigSelector ClusterArchive(string? targetActiveClusterId = null);
+
     internal IClusterStandaloneConfigSelector ClusterConnString(string connString);
     internal IClusterStandaloneConfigSelector ClusterRepoType(string repoType);
 

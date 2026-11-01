@@ -7,6 +7,39 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Archived safety net: late-job sweep to a target cluster (Plan0.0.12Alpha item 18)
+- Why: the scheduler's `GetFresh()` Archived check isn't atomic with the write, so a job/schedule can land on a cluster
+  right after it became Archived. Archived clusters only ran heartbeat + cleanup, so it was stuck forever (reminder
+  "The archived check before a master write can't close the archived race").
+- `JobMasterRuntime`: the unfinished-data check (non-final jobs / schedules → throw) now runs only for an Archived
+  cluster without a target (`modelToSave.TargetActiveClusterId`, configured or stored); with one, the migrate runners
+  move what's left. `TargetActiveClusterId` is never cleared, only replaced (it already was `configured ?? stored`);
+  only the migrate runners read it, on Migrating/Archived. PreValidation now allows `TargetActiveClusterId` on Archived
+  too. After save, on Archived with a target: Warn when this app has no worker for it (all allowed workers act as
+  Coordinator), else Warn when the target isn't configured here.
+- No mode-transition rule (Hugo, final): earlier versions refused Active → Archived (first "go through Migrating",
+  then "needs a target"). Dropped for "target → no check, no target → check": simpler, and not startup-order dependent
+  (an app without `Mode`, e.g. Api/Dashboard, saves a new cluster as Active first). Side finding while it existed:
+  `MasterClusterConfigurationService.GetFresh()` never returns null (falls back to a default Active model); use
+  `IsSaved()` to tell a new cluster from a saved Active one.
+- New `Archive(string? targetActiveClusterId = null)` (`IClusterConfigSelector`) / `ClusterArchive(...)` (standalone)
+  → `ClusterDefinition.Archive`: sets Archived, and the target only when given (never cleared). `MigrateTo` stays
+  Migrating-only (Hugo; an interim version made `MigrateTo` keep Archived, replaced by the explicit method).
+- `JobMasterBackgroundAgentWorker.LoadArchivedRunnersAsync` also starts `MigrateJobsRunner` and
+  `MigrateRecurringSchedulesRunner`, plus `MarkBucketAsLostRunner` and `HeldOnMasterDeadlineTimeoutJobsRunner`: jobs
+  already in buckets of dead workers go back to `OnMaster` once their deadline passes and are moved too (Hugo; replaces
+  a "drain through Migrating first" doc note). The deadline runner skips Active/Completing buckets, hence the Lost
+  marking. `AssignedLostBucketsRunner` stays out: no Drain/Full worker on Archived, it would only log Critical.
+- Both runners: count first (`ProbeForAcquireAsync` / `ProbeCountForAcquireAsync`) before acquiring, `Skipped` when 0
+  (also on Migrating). On Archived: no target → Critical; target not configured in this process → Critical (Error on
+  Migrating, unchanged). `SucceedInterval` 2.5 min on Archived, 30 s otherwise.
+- Decisions (Hugo): Archived → Active/Migrating stay allowed; startup Warn + per-sweep Critical rather than a startup
+  throw for an unregistered target or a missing worker.
+- Tests: `ClusterDefinitionArchiveTests`, `MigrateRunnersTests` (count first, Critical vs Error, interval);
+  `RunnerFixture` now exposes the logger mock. Scenario `ArchivedModeTest/PostgresPure` phases 2–3: stray-old
+  Active → Migrating (no Coordinator, 20 jobs + 1 schedule held), stored mode flipped to Archived via SQL (the race),
+  restart as Archived with `MigrateTo` stray-new → moved and run, same ids.
+
 #### Case-insensitive metadata / message-data keys and worker lanes (Plan0.0.12Alpha item 12)
 - Measured first with new RepoConformance tests (`Query_MetadataFilter_KeyIgnoresCase`,
   `Query_WorkerLane_Filter_IgnoresCase`, jobs + recurring schedules): Postgres (ICU nondeterministic collation

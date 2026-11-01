@@ -384,6 +384,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    public IClusterConfigSelector Archive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
+        return this;
+    }
+
     public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
         clusterDefinition.IsStandalone = true;
@@ -667,6 +673,12 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId)
     {
         clusterDefinition.MigrateTo(targetActiveClusterId);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector ClusterArchive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
         return this;
     }
 

@@ -155,10 +155,16 @@
   ```
 
   Also `AddAssembly(assembly)` and `AddAssemblies(...)`. It can be called before or after `AddJobMasterCluster`. The "handler not found" errors now point to it.
+- **`Archive(targetActiveClusterId = null)` / `ClusterArchive(...)`: jobs waiting on an archived cluster are moved to an active cluster.** A job or recurring schedule saved at the moment its cluster switched to `Archived` used to stay there and never run. With a target, jobs and schedules waiting on the archived cluster, late ones included, are now moved to it and run there. The target is set with `Archive(targetActiveClusterId)`, or kept from an earlier `MigrateTo`. In JSON, use `"Mode": "Archived"` with `"TargetActiveClusterId"`. This needs a Coordinator worker running for the archived cluster, in an app that also configures the target cluster; until one runs, they wait, and startup warns when the app has none. A late job with nowhere to go (no target, or a target that isn't configured) is logged as Critical.
+
+  ```csharp
+  cluster.Archive(targetActiveClusterId: "billing-v2");
+  ```
 
 ### Changed
 
 - **A recurring schedule's `endBefore` is now exclusive.** Jobs run only before `endBefore`, never at or after it. Before, an occurrence landing exactly on `endBefore` still ran: a daily 00:00 schedule with `endBefore` = 31 Oct 2026 00:00 ran once on 31 Oct. It now stops after 30 Oct. Occurrences at any other time are unaffected.
+- **An archived cluster with a target no longer fails startup because it holds unfinished jobs or schedules.** They're moved to the target instead, as described under Added. Without a target, startup still fails until the cluster only holds finished data.
 - **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
 
 - **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.

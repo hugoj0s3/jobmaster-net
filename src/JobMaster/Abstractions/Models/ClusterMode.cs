@@ -19,6 +19,14 @@ public enum ClusterMode
     /// </summary>
     Migrating = 2,
 
-    /// <summary>The cluster is retained for historical data only.</summary>
+    /// <summary>
+    /// The cluster is retained for historical data only. With a target (set by
+    /// <c>Archive(targetActiveClusterId)</c>, or kept from <c>MigrateTo</c>), jobs and recurring schedules
+    /// waiting on the cluster, including ones that reach it after the switch, are moved to the target and
+    /// run there (jobs already handed to workers that are gone are moved once their processing deadline
+    /// passes), as long as a Coordinator worker of the archived cluster runs in an app that also configures
+    /// the target; until one runs, they wait on the archived cluster. Without a target, startup fails while
+    /// the cluster still holds unfinished jobs or schedules.
+    /// </summary>
     Archived = 3,
 }

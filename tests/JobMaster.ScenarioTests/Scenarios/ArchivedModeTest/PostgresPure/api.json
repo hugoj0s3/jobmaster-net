@@ -19,6 +19,18 @@
       "Default": false,
       "RepoType": "Postgres",
       "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=ArchiveTarget;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    },
+    {
+      "ClusterId": "stray-old",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StrayOld;Username={{PostgresUsername}};Password={{PostgresPassword}}"
+    },
+    {
+      "ClusterId": "stray-new",
+      "Default": false,
+      "RepoType": "Postgres",
+      "ConnectionString": "Host={{PostgresHost}};Port={{PostgresPort}};Database=StrayNew;Username={{PostgresUsername}};Password={{PostgresPassword}}"
     }
   ]
 }

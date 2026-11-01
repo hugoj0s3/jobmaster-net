@@ -167,6 +167,22 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     public IClusterConfigSelector MigrateTo(string targetActiveClusterId);
 
     /// <summary>
+    /// Puts this cluster into <see cref="ClusterMode.Archived"/> mode. Jobs and recurring schedules waiting
+    /// on it, including ones that reach it after the switch, are moved to <paramref name="targetActiveClusterId"/>
+    /// and run there, as long as a Coordinator worker of this cluster runs in an app that also configures
+    /// that cluster. Without a target, startup fails while the cluster still holds unfinished jobs or
+    /// schedules. When omitted, the target kept from an earlier <see cref="MigrateTo"/> or <c>Archive</c>
+    /// still applies.
+    /// Validated at startup only (target must resolve to a configured <see cref="ClusterMode.Active"/>
+    /// cluster).
+    /// </summary>
+    /// <param name="targetActiveClusterId">
+    /// Id of the <see cref="ClusterMode.Active"/> cluster, configured elsewhere in this app, that takes over
+    /// jobs and recurring schedules reaching this cluster.
+    /// </param>
+    public IClusterConfigSelector Archive(string? targetActiveClusterId = null);
+
+    /// <summary>
     /// Switches this cluster to standalone mode, where the master and worker run in the same process.
     /// In standalone mode no separate agent connection is needed.
     /// Returns a selector to apply standalone-specific settings.
