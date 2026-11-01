@@ -15,7 +15,7 @@ loops over it calling `AddJobMasterCluster` once per entry, no app code changes 
 
 | Cluster | Mode | Workers | Notes |
 |---|---|---|---|
-| `migrating-source` | `Migrating` | Coordinator only | No agent connections at all — `PreValidation` forbids buckets on a Migrating cluster, and a Coordinator never needs one anyway. Every job scheduled here is held `OnMaster` forever (`AssignJobsToBucketsRunner`, the only thing that would onboard a job into a bucket, only runs on `Active` clusters) until `MigrateJobsRunner` moves it. |
+| `migrating-source` | `Migrating` | Coordinator only | No agent connections at all — `ValidateClusterDefinitions` forbids buckets on a Migrating cluster, and a Coordinator never needs one anyway. Every job scheduled here is held `OnMaster` forever (`AssignJobsToBucketsRunner`, the only thing that would onboard a job into a bucket, only runs on `Active` clusters) until `MigrateJobsRunner` moves it. |
 | `migrating-target` | `Active` (default) | Coordinator + 1 Execution worker | Nothing special — a minimal, ordinary single-worker cluster. Once a job lands here it's indistinguishable from one scheduled directly against it. |
 
 `migrating-source.TargetActiveClusterId = "migrating-target"`.

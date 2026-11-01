@@ -22,30 +22,6 @@ the Client ID, so a forged `Host` alone doesn't work. Only becomes a real issue 
 loose/wildcard redirect matching, or the admin registered one. Gap is just doc: nothing tells admins to
 register the exact, full callback URL. Worth a line in the OAuth setup docs.
 
-## `JobMasterRuntime.StartAsync` validation is still split across two places
-
-**2026-10-30: scheduled as Plan 0.0.12 item 19** (all startup validation before anything starts), together with the
-static-schedule checks that throw after the workers are running.
-
-Raised 2026-07-19 while working on the Migrating-mode PR. Point 1 (validation must fully complete
-before any `OnBeforeStartAsync` side effects run) was fixed as part of that PR — `PreValidation()` now
-runs right after the `ValidateAsync` loop and before `OnBeforeStartAsync`.
-
-Point 2, not yet addressed: some validation still happens *after* that point, inside the per-cluster
-loop in `StartAsync` — most notably the agent-connection fingerprint check
-(`existingConnection.Fingerprint != fingerprint` + `ProtectConnectionChanges` → throws) around
-`JobMaster\Sdk\Background\JobMasterRuntime.cs`. This check is interleaved with real side-effecting work
-in the same loop (saving connections, merging cluster config, persisting to DB), so a fingerprint
-mismatch on a later cluster in the loop can throw *after* earlier clusters in the same startup have
-already had connections saved / config persisted — an inconsistent partial-startup state, the same class
-of problem Point 1 fixed, just not yet untangled here.
-
-Properly fixing this means splitting the per-cluster loop into a validate-everything pass and a
-separate apply-everything pass — bigger and riskier than Point 1's reorder (connection registration,
-fingerprinting, and config persistence are currently one intertwined loop), and not a natural side
-effect of whatever feature happens to touch `JobMasterRuntime` next. Worth its own dedicated
-investigation/PR rather than opportunistic bundling.
-
 ## `ConfigFromJson` — `RepoType` comparisons are case-sensitive, inconsistent with the rest of the surface
 
 Raised 2026-08-14 while checking `ConfigFromJson`'s case-sensitivity end to end. JSON property names

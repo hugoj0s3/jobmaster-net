@@ -37,4 +37,15 @@ internal static class JobMasterDictionaryUtils
 
         return result;
     }
+    
+    public static Dictionary<string, T> ToCaseInsensitive<T>(this IDictionary<string, T> source)
+    {
+        var result = new Dictionary<string, T>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in source)
+        {
+            result[kv.Key] = kv.Value;
+        }
+
+        return result;
+    }
 }

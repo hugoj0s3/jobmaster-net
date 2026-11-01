@@ -83,7 +83,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
                         // misconfigured a lane/priority so no real bucket ever matches — an exceptional,
                         // mistake-driven case, not routine operation. So there's nothing at risk here:
                         // no real worker can ever own the reserved fallback connection anyway (see
-                        // JobMasterRuntime.PreValidation), meaning this bucket can never be drained the
+                        // JobMasterRuntime.ValidateClusterDefinitions), meaning this bucket can never be drained the
                         // normal way. It's fine for its jobs to recover more slowly via the deadline
                         // runner instead — send it straight to ReadyToDelete.
                         if (bucket.ReadyToDelete())

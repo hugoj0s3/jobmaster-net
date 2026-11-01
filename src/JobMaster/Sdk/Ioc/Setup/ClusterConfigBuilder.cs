@@ -55,6 +55,16 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    /// <summary>
+    /// <list type="number">
+    /// <item>Copies the blueprint's connection-level values into <see cref="JobMasterClusterConnectionConfig"/> — cluster
+    /// id, repository type, connection string, default flag, mirror log, disabled priorities, additional config and agent
+    /// connections. This is the only place that copies them. The rest of the blueprint (cluster settings, workers, static
+    /// schedules) is validated and saved to master by <see cref="JobMasterRuntime.StartAsync"/>.</item>
+    /// <item>Registers the cluster's services into the IoC.</item>
+    /// <item>Calls each repository provider's IoC registration, for the master and for every agent repository type.</item>
+    /// </list>
+    /// </summary>
     public void Finish()
     {
         if (string.IsNullOrWhiteSpace(clusterDefinition.ClusterId))

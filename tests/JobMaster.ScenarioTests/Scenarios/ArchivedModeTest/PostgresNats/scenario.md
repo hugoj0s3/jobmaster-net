@@ -17,7 +17,7 @@ topology/mechanism writeup — this file only notes what differs.
   minutes) or app startup throws; unlike a SQL-only cluster, this can't be left to the 10-minute
   default.
 - `archive-target` is unchanged — `ClusterMode.Archived` clusters run Coordinator only, no agent
-  connections at all (`PreValidation` forbids them), so there is nothing for NATS to replace there.
+  connections at all (`ValidateClusterDefinitions` forbids them), so there is nothing for NATS to replace there.
 - No other logic differs — `ArchivedModeTestPhase1EmulatorBase` is shared verbatim across every
   repo-type variant of this scenario.
 

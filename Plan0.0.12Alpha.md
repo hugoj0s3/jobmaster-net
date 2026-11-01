@@ -730,7 +730,7 @@ agent's late save never revives it, and unit + scenario tests are green.
 
 ## 17. Base64 ids in logs (messages + API `ReferenceId`)
 
-**Status: done 2026-10-31**, uncommitted.
+**Status: merged 2026-11-01.**
 
 **Goal.** An id copied from the dashboard (base64url, 22 chars) finds the matching logs, and log output shows ids in
 the same format as the rest of the API/dashboard. Easier investigation from the dashboard (Hugo, 2026-10-27).
@@ -904,22 +904,29 @@ running, no rollback. Not validation.
 3. **`PreValidation`:** collect instead of throwing on the first error, so one list covers everything (optional; settle
    below).
 
-**Open decisions.**
-- Can the DB checks (fingerprint, archived non-final) run before `OnBeforeStartAsync`? Provisioning may create the
-  tables they read (first start on an empty DB). Options: run them after provisioning but before any save (provisioning
-  is idempotent setup, not data), or skip a check when its table doesn't exist yet.
-- `PreValidation` → aggregated list too, or keep throwing on the first (it's structural, usually one mistake)?
-- Is invoking a profile's `Config` during validation safe (user code with side effects)? It already runs once at
-  bootstrap; this only moves it earlier and runs it once.
+**Decided (Hugo, 2026-11-01).**
+- The archived check (`ValidateArchivedStorageAsync`, read-only) runs before provisioning, once the configuration is
+  valid; a schema that doesn't exist yet counts as empty. The fingerprint check (`ValidateFingerprintAsync`) runs after
+  provisioning: the resolvers are get-or-create, so the only writes before validation completes are schema DDL and
+  each agent's own fingerprint. No provider changes.
+- `PreValidation` → `ValidateClusterDefinitions`, runs first and collects into the same list.
+- A profile's `Config` runs during validation: still once, just earlier.
+- Startup values in a private `StartupState` instance, cleared in a `finally` around `DoStartAsync`.
+
+**Found while planning.** The default cluster was resolved inside `PreValidation`, after `ValidateAsync`, so with one
+cluster not marked default `ValidateDisabledPriorities` skipped attribute-less handlers. Now resolved first, in
+`ValidateClusterDefinitions`. Also found: no cluster configured crashed later with a `NullReferenceException` (now an
+error); two profiles sharing a `ProfileId` collided on schedule ids silently (now a startup error).
 
 **Tasks.**
-- [ ] Static definitions built during validation; all A errors aggregated; bootstrap reuses them. Unit tests per error.
-- [ ] Remove the checks from `BootstrapStaticRecurringSchedules` (priority, profile, attribute) once covered.
-- [ ] Check-only pass for B before any save; save loop only saves. Tests: fingerprint change with protection leaves
-      every cluster untouched; archived with unfinished data leaves master untouched.
-- [ ] Confirm the two "not found" throws are unreachable; remove or document.
-- [ ] Update `reminders.md` ("validation is still split" → fixed here) + internal ChangeLog. User ChangeLog: startup
-      errors that used to surface after the workers started now fail before anything starts.
+- [x] Static definitions built during validation (`StaticRecurringScheduleDefinitionsBuilder`); all A errors aggregated;
+      bootstrap only saves them (`SaveStaticRecurringSchedules`).
+- [x] Check-only passes for B (`ValidateArchivedStorageAsync`, `ValidateFingerprintAsync`) before any save; save loop
+      only saves.
+- [x] The two "not found" throws: unreachable (`ClusterConfigBuilder.Finish`); kept as asserts with a comment.
+- [x] `reminders.md` entry removed; internal + user ChangeLog.
+- [ ] Whole-`StartAsync` tests in a separate `JobMaster.StartupTests` project (helper-level tests dropped, Hugo).
+      Open: constructor seam for the static-schedule error cases; reset hook name.
 
 **Done when.** No configuration error can be thrown after a worker starts or after a database write, and the unit suite
 plus an existing scenario run are green.

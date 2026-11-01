@@ -15,7 +15,7 @@ finds clusters registered in the same process, so both live in one container's
 | Cluster | Mode | DataRetentionTtl | Workers | Notes |
 |---|---|---|---|---|
 | `archive-source` | `Active` (default) | `00:10:00` | Coordinator + 1 Execution worker | An entirely ordinary Active cluster otherwise — jobs onboard and execute normally. `00:10:00` is `JobMasterDefaults.MinDataRetentionTtl`, the framework's floor (the fastest this can be configured). Backed by a RavenDB agent connection (`raven-agent-source`, database `ArchiveSourceAgent`). |
-| `archive-target` | `Archived` | — | Coordinator only | No agent connections — `PreValidation` forbids them on an Archived cluster ("Archive clusters only run Coordinator"). |
+| `archive-target` | `Archived` | — | Coordinator only | No agent connections — `ValidateClusterDefinitions` forbids them on an Archived cluster ("Archive clusters only run Coordinator"). |
 
 `archive-source.TargetArchivedClusterId = "archive-target"`.
 

@@ -122,7 +122,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         }
         else
         {
-            // PreValidation guarantees every non-Coordinator worker on an Active cluster resolves to
+            // ValidateClusterDefinitions guarantees every non-Coordinator worker on an Active cluster resolves to
             // a registered agent connection, so agentWorkerSnapshot.AgentConnectionId is never null here.
             await StartNonCoordinatorAsync(agentWorkerSnapshot.AgentConnectionId!);
         }
@@ -160,7 +160,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     // Jobs still in buckets of dead workers get there too: their buckets are marked Lost and the deadline
     // runner returns them to OnMaster. Lost buckets aren't drained (no Drain/Full worker on Archived).
     // Reached for both Coordinator and Full workers on an Archived cluster (Full behaves exactly
-    // like Coordinator there — see PreValidation's ActsAsCoordinator check — so there's no agent
+    // like Coordinator there — see ValidateClusterDefinitions' ActsAsCoordinator check — so there's no agent
     // connection to load and nothing to drain either way).
     private async Task LoadArchivedRunnersAsync()
     {
@@ -197,7 +197,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     // (the online-migration scenario), so the full coordinator runner set is reused as-is —
     // AssignJobsToBucketsRunner/ScheduleRecurringJobsRunner are already self-gated to ClusterMode.Active
     // internally, so they no-op here rather than needing to be excluded. Coordinator-mode workers have
-    // no agent connection (enforced by PreValidation) and stop after that; Drain/Full workers continue
+    // no agent connection (enforced by ValidateClusterDefinitions) and stop after that; Drain/Full workers continue
     // on to drain out any pre-existing buckets, at a pace matching how busy that mode already is
     // elsewhere (fast for Drain, slower for Full, same intervals used on an Active cluster).
     private async Task LoadMigrateRunnersAsync()
@@ -432,13 +432,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var workerName = workerDefinition.WorkerName;
         var workerLane = workerDefinition.WorkerLane;
 
+        // Guaranteed by ClusterConfigBuilder.Finish (config created per cluster definition); kept as an assert.
         var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
         if (clusterConfig == null)
         {
             throw new ArgumentException($"Cluster '{clusterId}' not found");
         }
 
-        // JobMasterRuntime.PreValidation already guarantees Coordinator workers have no
+        // JobMasterRuntime.ValidateClusterDefinitions already guarantees Coordinator workers have no
         // AgentConnectionName and every other mode has one that resolves to a registered
         // connection, so there's nothing left to validate here — just resolve it.
         var agentConfig = !string.IsNullOrEmpty(agentConnName) ?
