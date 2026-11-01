@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
@@ -235,7 +236,7 @@ internal class JobSavePendingOperation
         var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         var engine = backgroundAgentWorker.GetEngine(bucketId);
         
-        logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
+        logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id.ToBase64()} " +
                      $"BucketId={bucketId} " +
                      $"IsOnBoarding={jobRaw.IsWithinOnboardingWindow()} " +
                      $"EngineAvailable={engine is not null} " +
@@ -287,7 +288,7 @@ internal class JobSavePendingOperation
 
                 // TooEarly, Busy, Invalid: job is persisted as InBucket but engine rejected it.
                 // Hold on master so the master runner can reassign it on the next cycle.
-                logger.Error($"Unexpected OnBoardingResult. JobId={jobRaw.Id} Result={result}", JobMasterLogCategory.Job, jobRaw.Id);
+                logger.Error($"Unexpected OnBoardingResult. JobId={jobRaw.Id.ToBase64()} Result={result}", JobMasterLogCategory.Job, jobRaw.Id);
                 jobRaw.MarkAsHeldOnMaster();
                 await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
                 return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
@@ -342,7 +343,7 @@ internal class JobSavePendingOperation
 
         try
         {
-            logger.Debug($"Publishing job {jobRaw.Id} to agent {jobRaw.AgentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+            logger.Debug($"Publishing job {jobRaw.Id.ToBase64()} to agent {jobRaw.AgentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
             
             var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
             

@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Utils;
 using Microsoft.AspNetCore.Http;
 
 namespace JobMaster.Api.ApiModels;
@@ -12,7 +13,8 @@ public class ApiLogItemQueryCriteria
     public ApiJobMasterLogCategory? Category { get; set; }
     /// <summary>
     /// Filter by reference identifier as a raw string (matched exactly against the stored value).
-    /// Use <see cref="ReferenceGuid"/> instead when the reference ID is a GUID.
+    /// Use <see cref="ReferenceGuid"/> instead when the reference ID is a GUID, including a
+    /// <see cref="ApiLogItem.ReferenceId"/> returned by this API.
     /// </summary>
     public string? ReferenceId { get; set; }
     /// <summary>
@@ -52,7 +54,7 @@ public class ApiLogItemQueryCriteria
         {
             try
             {
-                criteria.ReferenceId = ReferenceGuid.ParseFlexible().ToString("N");
+                criteria.ReferenceId = GuidBase64Util.ParseFlexible(ReferenceGuid).ToString("N");
             }
             catch (Exception)
             {

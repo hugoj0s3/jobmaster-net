@@ -1,29 +1,36 @@
 using FluentAssertions;
-using JobMaster.Api.ApiModels;
+using JobMaster.Sdk.Utils;
 
-namespace JobMaster.UnitTests.Api.ApiModels;
+namespace JobMaster.UnitTests.Sdk.Utils;
 
-public class GuidBase64ExtensionsTests
+public class GuidBase64UtilTests
 {
     [Fact]
     public void ParseFlexible_WithStandardGuidFormat_ReturnsGuid()
     {
         var guid = Guid.NewGuid();
-        guid.ToString("D").ParseFlexible().Should().Be(guid);
+        GuidBase64Util.ParseFlexible(guid.ToString("D")).Should().Be(guid);
     }
 
     [Fact]
     public void ParseFlexible_WithBase64UrlFormat_ReturnsGuid()
     {
         var guid = Guid.NewGuid();
-        guid.ToBase64().ParseFlexible().Should().Be(guid);
+        GuidBase64Util.ParseFlexible(guid.ToBase64()).Should().Be(guid);
+    }
+
+    [Fact]
+    public void ParseFlexible_WithNoDashesFormat_ReturnsGuid()
+    {
+        var guid = Guid.NewGuid();
+        GuidBase64Util.ParseFlexible(guid.ToString("N")).Should().Be(guid);
     }
 
     [Fact]
     public void ParseFlexible_RoundTrip_Succeeds()
     {
         var guid = Guid.NewGuid();
-        guid.ToBase64().ParseFlexible().Should().Be(guid);
+        GuidBase64Util.ParseFlexible(guid.ToBase64()).Should().Be(guid);
     }
 
     [Theory]
@@ -31,7 +38,7 @@ public class GuidBase64ExtensionsTests
     [InlineData(" ")]
     public void ParseFlexible_WhenNullOrWhitespace_ThrowsArgumentException(string value)
     {
-        var act = () => value.ParseFlexible();
+        var act = () => GuidBase64Util.ParseFlexible(value);
         act.Should().Throw<ArgumentException>();
     }
 
@@ -41,7 +48,7 @@ public class GuidBase64ExtensionsTests
     [InlineData("!!!")]
     public void ParseFlexible_WithInvalidValue_Throws(string value)
     {
-        var act = () => value.ParseFlexible();
+        var act = () => GuidBase64Util.ParseFlexible(value);
         act.Should().Throw<Exception>();
     }
 

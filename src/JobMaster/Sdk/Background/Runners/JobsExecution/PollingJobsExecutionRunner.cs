@@ -8,6 +8,7 @@ using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
@@ -108,7 +109,7 @@ internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRun
         foreach (var job in jobs)
         {
             var result = await jobExecutionEngine.TryOnBoardingJobAsync(job, forceIfNoCapacity: true);
-            logger.Debug($"JobId={job.Id} OnBoardingResult={result}", JobMasterLogCategory.Job, job.Id);
+            logger.Debug($"JobId={job.Id.ToBase64()} OnBoardingResult={result}", JobMasterLogCategory.Job, job.Id);
             if (result == OnBoardingResult.Accepted)
             {
                 continue;
@@ -118,7 +119,7 @@ internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRun
             {
                 job.MarkAsHeldOnMaster();
                 await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
-                logger.Warn($"Job is too early to onboard. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O} Now={DateTime.UtcNow:O}", JobMasterLogCategory.Job, job.Id);
+                logger.Warn($"Job is too early to onboard. JobId={job.Id.ToBase64()} NextPlanExecutionAt={job.NextPlanExecutionAt:O} Now={DateTime.UtcNow:O}", JobMasterLogCategory.Job, job.Id);
                 continue;
             }
             
@@ -134,7 +135,7 @@ internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRun
                 continue;
             }
             
-            logger.Error($"Unexpected OnBoardingResult. JobId={job.Id} Result={result}", JobMasterLogCategory.Job, job.Id);
+            logger.Error($"Unexpected OnBoardingResult. JobId={job.Id.ToBase64()} Result={result}", JobMasterLogCategory.Job, job.Id);
             job.MarkAsHeldOnMaster();
             await clusterOperations.ExecWithRetryAsync(async (o) => await o.UpdateAsync(job));
         }

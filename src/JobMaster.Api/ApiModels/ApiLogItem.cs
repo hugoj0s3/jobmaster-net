@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Api.ApiModels;
 
@@ -15,7 +16,12 @@ public class ApiLogItem
     public string Message { get; set; } = string.Empty;
     /// <summary>Optional category grouping (e.g. Job, Bucket, Cluster).</summary>
     public ApiJobMasterLogCategory? Category { get; set; }
-    /// <summary>Optional reference identifier linking the entry to a specific resource.</summary>
+    /// <summary>
+    /// Optional reference identifier linking the entry to a specific resource. Job, recurring schedule and
+    /// execution references are base64url-encoded GUIDs, the same ids the rest of the API returns; filter by
+    /// them with <see cref="ApiLogItemQueryCriteria.ReferenceGuid"/>. Other references (e.g. bucket or worker
+    /// ids) are returned as-is.
+    /// </summary>
     public string? ReferenceId { get; set; }
     /// <summary>UTC timestamp when the log entry was recorded.</summary>
     public DateTime TimestampUtc { get; set; }
@@ -53,12 +59,20 @@ public class ApiLogItem
             Category = model.Category.HasValue
                 ? (ApiJobMasterLogCategory)(int)model.Category.Value
                 : null,
-            ReferenceId = model.ReferenceId,
+            ReferenceId = ToApiReferenceId(model.ReferenceId),
             TimestampUtc = model.TimestampUtc,
             Host = model.Host,
             SourceMember = model.SourceMember,
             SourceFile = model.SourceFile,
             SourceLine = model.SourceLine,
         };
+    }
+
+    // Guid references are stored as "N" (JobMasterLoggerExtensions); anything else is a string id.
+    private static string? ToApiReferenceId(string? referenceId)
+    {
+        return referenceId != null && Guid.TryParseExact(referenceId, "N", out var guid)
+            ? guid.ToBase64()
+            : referenceId;
     }
 }

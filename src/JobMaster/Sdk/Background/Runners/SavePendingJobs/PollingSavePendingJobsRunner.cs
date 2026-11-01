@@ -10,6 +10,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Serialization;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.Runners.SavePendingJobs;
 
@@ -127,7 +128,7 @@ internal class PollingSavePendingJobsRunner : BucketAwareRunner, ISavePendingJob
                 }
                 catch 
                 { 
-                    logger.Critical($"Failed to add job to queue. jobId: {job.Id} Data: {job.ToLogSummary()}");
+                    logger.Critical($"Failed to add job to queue. jobId: {job.Id.ToBase64()} Data: {job.ToLogSummary()}");
                 }
             }
         }

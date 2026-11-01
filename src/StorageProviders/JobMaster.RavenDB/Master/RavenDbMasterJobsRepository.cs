@@ -17,6 +17,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 using Raven.Client;
 using Raven.Client.Documents;
@@ -642,7 +643,7 @@ update {{
                     // parallel; letting any exception here escape would fail the whole ForEachAsync call
                     // and discard `results`, which already holds every other row that succeeded in this
                     // same fan-out.
-                    logger.Error($"BulkUpdateAsync per-row retry failed. JobId={job.Id}", JobMasterLogCategory.Job, job.Id, exception: ex);
+                    logger.Error($"BulkUpdateAsync per-row retry failed. JobId={job.Id.ToBase64()}", JobMasterLogCategory.Job, job.Id, exception: ex);
                     return;
                 }
 
@@ -852,7 +853,7 @@ update {{
                     // parallel; letting any exception here escape would fail the whole ForEachAsync call
                     // and discard `insertedIds`, which already holds every other row that succeeded in
                     // this same fan-out.
-                    logger.Error($"BulkInsertIfNotExistsAsync per-row retry failed. JobId={job.Id}", JobMasterLogCategory.Job, job.Id, exception: ex);
+                    logger.Error($"BulkInsertIfNotExistsAsync per-row retry failed. JobId={job.Id.ToBase64()}", JobMasterLogCategory.Job, job.Id, exception: ex);
                 }
             });
 

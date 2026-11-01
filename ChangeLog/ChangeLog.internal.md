@@ -7,6 +7,34 @@
 ### JobMaster 0.0.12-alpha
 > Test counts in the entries below are snapshots from when each change landed. Current: solution builds with 0 errors, 699/699 unit tests pass, and the `ClusterIdTest/PostgresPure` scenario passed.
 
+#### Base64 ids in log text and API `ReferenceId` (Plan0.0.12Alpha item 17)
+- Rule (Hugo): what users read is base64url, pointers/references stay as they are.
+- `GuidBase64Extensions` (`ToBase64`, `ParseFlexible`) moved from `JobMaster.Api` to core as `GuidBase64Util`
+  (`JobMaster.Sdk.Utils`, next to the other `*Util` classes; Hugo), extension methods kept, still internal; the Api
+  uses it via `InternalsVisibleTo`. Meant as the one place for base64 Guid parsing and generation (Hugo). Its tests
+  moved to `UnitTests/Sdk/Utils`, so they now also run against the `netstandard2.0` build. The scenario tests keep
+  their own `GuidBase64` copy: that project references no JobMaster project.
+- Log message text: job / recurring-schedule / execution Guids via `.ToBase64()` (core runners, engine,
+  `WorkerClusterOperations`, `JobSavePendingOperation`, NATS execution runner, RavenDB jobs repo), incl. both
+  `ToLogSummary()`. Exception messages a user reads too: Confirm's "could not be saved on master",
+  `JobMasterDuplicationException`, `JobMasterVersionConflictException` (their `Id` property stays a Guid),
+  `JobExecution` "no outcome". Bucket / worker / agent-connection ids are strings and untouched.
+- Unchanged on purpose: stored log `ReferenceId` (`"N"`, `JobMasterLoggerExtensions`), the runners' `"N"` lookups,
+  lock keys, document ids, SQL. No migration.
+- `ApiLogItem.FromDomain`: `ReferenceId` parsed with `Guid.TryParseExact(..., "N")` → base64, anything else as-is.
+  The raw `ReferenceId` filter stays an exact match (guessing "is this base64?" could hit 22-char non-Guid ids);
+  `ReferenceGuid` already accepts base64. Revisit storing base64 only if that turns out to be a problem (Hugo).
+- Skipped (Hugo): keyword search matching all three Guid forms for logs written before the change.
+- Security (Hugo): `JobRawModel` / `RecurringScheduleRawModel.ToLogSummary()` no longer include `MsgData` / `Metadata`
+  content (first 500 chars before), only `MsgDataLength` / `MetadataLength`. Callers: the Critical "failed to add to
+  queue" logs in `PollingSavePendingJobsRunner` / `PollingSaveRecurringScheduleRunner` and the drain-safeguard log in
+  `JobSavePendingOperation`. Size kept because those failures can be caused by an oversized message. Checked: no other
+  log line interpolates message data or metadata. Tests: `JobRawModelTests.ToLogSummary_*`.
+- `ParseFlexible` is a plain static call, not a `string` extension (Hugo): `GuidBase64Util.ParseFlexible(value)`;
+  `ToBase64()` stays a `Guid` extension.
+- Tests: `ApiLogItemTests` (Guid → base64, non-Guid unchanged, returned id → `ReferenceGuid` → stored value);
+  `ParseFlexible` accepts `"N"`; Confirm tests assert the base64 id. 812/812 + 771/771 (netstandard) unit tests pass.
+
 #### Archived safety net: late-job sweep to a target cluster (Plan0.0.12Alpha item 18)
 - Why: the scheduler's `GetFresh()` Archived check isn't atomic with the write, so a job/schedule can land on a cluster
   right after it became Archived. Archived clusters only ran heartbeat + cleanup, so it was stuck forever (reminder

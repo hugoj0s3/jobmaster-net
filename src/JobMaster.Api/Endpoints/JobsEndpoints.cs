@@ -7,6 +7,7 @@ using JobMaster.Api.ApiModels;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -96,7 +97,7 @@ internal static class JobsEndpoints
         Guid guid;
         try
         {
-            guid = id.ParseFlexible();
+            guid = GuidBase64Util.ParseFlexible(id);
         }
         catch (Exception)
         {
@@ -126,7 +127,7 @@ internal static class JobsEndpoints
         Guid guid;
         try
         {
-            guid = id.ParseFlexible();
+            guid = GuidBase64Util.ParseFlexible(id);
         }
         catch (Exception)
         {

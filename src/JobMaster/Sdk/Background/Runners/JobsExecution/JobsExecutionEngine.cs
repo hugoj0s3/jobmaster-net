@@ -205,12 +205,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             if (forceIfNoCapacity || available > 0)
             {
                 jobsToFlush.Add(payload);
-                logger.Debug($"OnBoarding authorized: JobId={payload.Id} force={forceIfNoCapacity}");
+                logger.Debug($"OnBoarding authorized: JobId={payload.Id.ToBase64()} force={forceIfNoCapacity}");
                 return OnBoardingResult.Accepted;
             }
         }
 
-        logger.Debug($"OnBoarding deferred — staging buffer full: JobId={payload.Id}");
+        logger.Debug($"OnBoarding deferred — staging buffer full: JobId={payload.Id.ToBase64()}");
 
         await Task.Delay(TimeSpan.FromMilliseconds(250));
         return OnBoardingResult.Busy;
@@ -297,7 +297,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             var existingJob = masterJobsService.Get(jobRawModel.Id);
             if (existingJob?.Status == JobMasterJobStatus.Cancelled)
             {
-                logger.Info($"Job {jobRawModel.Id} was cancelled before being enqueued.", JobMasterLogCategory.Job, jobRawModel.Id);
+                logger.Info($"Job {jobRawModel.Id.ToBase64()} was cancelled before being enqueued.", JobMasterLogCategory.Job, jobRawModel.Id);
                 return false;
             }
 
@@ -305,7 +305,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 $"PreEnqueue conflict: job is probably held on master or assigned to another bucket. " +
                 $"DB=(status:{existingJob?.Status}, bucketId:{existingJob?.BucketId}) " +
                 $"Local=(status:{jobRawModel.Status}, bucketId:{jobRawModel.BucketId}) " +
-                $"JobId={jobRawModel.Id} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}",
+                $"JobId={jobRawModel.Id.ToBase64()} NextPlanExecutionAt={jobRawModel.NextPlanExecutionAt:O}",
                 JobMasterLogCategory.Job, jobRawModel.Id);
             return false;
         }
@@ -448,7 +448,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 foreach (var job in updated)
                 {
                     OnBoardingControl.Push(job, job.Id.ToString(), job.GetSafeNextPlanExecutionAt());
-                    logger.Debug($"OnBoarding flushed: JobId={job.Id}");
+                    logger.Debug($"OnBoarding flushed: JobId={job.Id.ToBase64()}");
                     flushRequeueAttemptCounts.Remove(job.Id);
                 }
             }
@@ -511,7 +511,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 // poisoned (always fails) than just unlucky contention -- stop re-queuing it here so
                 // it can't loop forever, and let it fall back to the slower CheckDeadlineJobsAsync
                 // sweep instead, same as before this path existed.
-                logger.Warn($"Flush retry cap ({MaxFlushRequeueAttempts}) reached, dropping from fast re-queue path. JobId={job.Id}", JobMasterLogCategory.JobExecution, job.Id);
+                logger.Warn($"Flush retry cap ({MaxFlushRequeueAttempts}) reached, dropping from fast re-queue path. JobId={job.Id.ToBase64()}", JobMasterLogCategory.JobExecution, job.Id);
                 flushRequeueAttemptCounts.Remove(job.Id);
             }
             else
@@ -549,7 +549,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             if (TaskQueueControl.Contains(job.Id.ToString()))
             {
-                logger.Debug($"JobId={job.Id} already in TaskQueue");
+                logger.Debug($"JobId={job.Id.ToBase64()} already in TaskQueue");
                 continue;
             }
 
@@ -582,7 +582,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                 if (!await this.masterJobsService.CheckVersionAsync(job.Id, job.Version))
                 {
-                    logger.Warn($"Job conflict detected — likely processed by another node or held on master. Excluded from queue. JobId={job.Id} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogCategory.Job, job.Id);
+                    logger.Warn($"Job conflict detected — likely processed by another node or held on master. Excluded from queue. JobId={job.Id.ToBase64()} NextPlanExecutionAt={job.NextPlanExecutionAt:O}", JobMasterLogCategory.Job, job.Id);
                     continue;
                 }
 
@@ -746,7 +746,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             logger.Warn(
                 $"CheckDeadlineJobsAsync: Moved {toHoldOnMaster.Count} deadline-exceeded jobs to master. " +
-                $"BucketId={bucketId} JobIds={string.Join(", ", toHoldOnMaster.Select(j => j.Id).Take(10))}",
+                $"BucketId={bucketId} JobIds={string.Join(", ", toHoldOnMaster.Select(j => j.Id.ToBase64()).Take(10))}",
                 JobMasterLogCategory.Bucket, bucketId);
         } 
     }
@@ -771,7 +771,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             {
                 // Bucket may have transitioned to Lost while cache still shows Completing.
                 // A drain/recovery runner likely already claimed this job — re-check bucket status and stop draining.
-                logger.Warn($"Version conflict moving JobId={job.Id} to master during Completing drain. " +
+                logger.Warn($"Version conflict moving JobId={job.Id.ToBase64()} to master during Completing drain. " +
                             $"Job likely already claimed by drain/recovery runner (bucket may have transitioned to Lost).",
                     JobMasterLogCategory.Job, job.Id);
 
@@ -783,7 +783,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     break;
                 }
 
-                logger.Warn($"Bucket still in Completing state after conflict on JobId={job.Id}. Conflict may be job-specific, continuing drain.", JobMasterLogCategory.Bucket, BucketId);
+                logger.Warn($"Bucket still in Completing state after conflict on JobId={job.Id.ToBase64()}. Conflict may be job-specific, continuing drain.", JobMasterLogCategory.Bucket, BucketId);
             }
         }
     }
@@ -838,8 +838,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                     if (lockRecurringScheduleProcessingToken == null)
                     {
-                        logger.Warn($"Recurring schedule {jobRawModel.SourceId} has an overlapping job still executing.", JobMasterLogCategory.RecurringSchedule, jobRawModel.SourceId.Value);
-                        logger.Error($"Job {jobRawModel.Id} failed due to overlap — recurring schedule {jobRawModel.SourceId} is still executing.", JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                        logger.Warn($"Recurring schedule {jobRawModel.SourceId.Value.ToBase64()} has an overlapping job still executing.", JobMasterLogCategory.RecurringSchedule, jobRawModel.SourceId.Value);
+                        logger.Error($"Job {jobRawModel.Id.ToBase64()} failed due to overlap — recurring schedule {jobRawModel.SourceId.Value.ToBase64()} is still executing.", JobMasterLogCategory.JobExecution, jobRawModel.Id);
                         
                         execution = jobRawModel.ProcessingStarted();
                         
@@ -1073,8 +1073,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
         if (recurringSchedule is null)
         {
-            logger.Error($"Recurring schedule {recurringScheduleId} not found", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
-            logger.Warn($"Recurring schedule {recurringScheduleId} not found", JobMasterLogCategory.JobExecution, jobId);
+            logger.Error($"Recurring schedule {recurringScheduleId.ToBase64()} not found", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
+            logger.Warn($"Recurring schedule {recurringScheduleId.ToBase64()} not found", JobMasterLogCategory.JobExecution, jobId);
             return (RecurringScheduleValidationResult.NotFound, null);
         }
 
@@ -1083,7 +1083,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             if (!recurringSchedule.TerminatedAt.HasValue)
             {
                 recurringSchedule.TerminatedAt = DateTime.UtcNow;
-                logger.Error($"Recurring schedule {recurringScheduleId} is in a final status but has no TerminatedAt set. Using UtcNow as fallback.", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
+                logger.Error($"Recurring schedule {recurringScheduleId.ToBase64()} is in a final status but has no TerminatedAt set. Using UtcNow as fallback.", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
             }
 
             if (recurringSchedule.TerminatedAt.HasValue && recurringSchedule.TerminatedAt.Value > dateToCheck)
@@ -1091,15 +1091,15 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 return (RecurringScheduleValidationResult.Valid, recurringSchedule);
             }
 
-            logger.Warn($"Recurring schedule {recurringScheduleId} was terminated (cancelled, inactive, or completed).", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
-            logger.Warn($"Job {jobId} cancelled because recurring schedule {recurringScheduleId} was terminated (cancelled, inactive, or completed).", JobMasterLogCategory.JobExecution, jobId);
+            logger.Warn($"Recurring schedule {recurringScheduleId.ToBase64()} was terminated (cancelled, inactive, or completed).", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
+            logger.Warn($"Job {jobId.ToBase64()} cancelled because recurring schedule {recurringScheduleId.ToBase64()} was terminated (cancelled, inactive, or completed).", JobMasterLogCategory.JobExecution, jobId);
             return (RecurringScheduleValidationResult.Terminated, recurringSchedule);
         }
 
         if (recurringSchedule.IsStaticIdle(JobMasterRuntimeSingleton.Instance?.StartingAt))
         {
-            logger.Warn($"Recurring schedule {recurringScheduleId} is static idle.", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
-            logger.Warn($"Job {jobId} held on master because recurring schedule {recurringScheduleId} is static idle.", JobMasterLogCategory.JobExecution, jobId);
+            logger.Warn($"Recurring schedule {recurringScheduleId.ToBase64()} is static idle.", JobMasterLogCategory.RecurringSchedule, recurringScheduleId);
+            logger.Warn($"Job {jobId.ToBase64()} held on master because recurring schedule {recurringScheduleId.ToBase64()} is static idle.", JobMasterLogCategory.JobExecution, jobId);
             return (RecurringScheduleValidationResult.StaticIdle, recurringSchedule);
         }
 

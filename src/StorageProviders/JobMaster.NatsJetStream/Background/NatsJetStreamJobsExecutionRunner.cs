@@ -49,7 +49,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
     private async Task DoProcessPayloadAsync(JobRawModel payload, MsgAckGuard ackGuard)
     {
-        logger.Debug($"Processing payload: JobId={payload.Id}");
+        logger.Debug($"Processing payload: JobId={payload.Id.ToBase64()}");
         
         var utcNow = DateTime.UtcNow;
         if (jobsExecutionEngine is null)
@@ -62,7 +62,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         if (onBoardingResult == OnBoardingResult.Cancelled)
         {
             // Job was cancelled (e.g., recurring schedule cancelled) - ACK to remove from queue
-            logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: Job cancelled. JobId={payload.Id.ToBase64()} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
             return; // Message will be ACK'd automatically by NatsJetStreamRunnerBase
         }
 
@@ -73,7 +73,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn($"{GetRunnerDescription()}: NextPlanExecutionAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
+                logger.Warn($"{GetRunnerDescription()}: NextPlanExecutionAt > 2 minutes. HeldOnMaster and terminated. JobId={payload.Id.ToBase64()} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
                 return;
             }
 
@@ -87,19 +87,19 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
 
             await ackGuard.TryNakAsync(delay + jitter);
 
-            logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: NextPlanExecutionAt > {JobMasterConstants.OnBoardingWindow.TotalSeconds:F0}s ahead. Nak with delay={delay}. JobId={payload.Id.ToBase64()} NextPlanExecutionAt={payload.NextPlanExecutionAt:O} now={utcNow:O}", JobMasterLogCategory.Job, payload.Id);
             return;
         }
 
         if (onBoardingResult == OnBoardingResult.MovedToMaster)
         {
-            logger.Debug($"{GetRunnerDescription()}: MovedToMaster. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
+            logger.Debug($"{GetRunnerDescription()}: MovedToMaster. JobId={payload.Id.ToBase64()}", JobMasterLogCategory.Job, payload.Id);
             return;
         }
 
         if (onBoardingResult == OnBoardingResult.Invalid)
         {
-            logger.Warn($"{GetRunnerDescription()}: Invalid onboarding result. JobId={payload.Id} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
+            logger.Warn($"{GetRunnerDescription()}: Invalid onboarding result. JobId={payload.Id.ToBase64()} Status={payload.Status}", JobMasterLogCategory.Job, payload.Id);
             payload.MarkAsHeldOnMaster();
             await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
             return;
@@ -113,11 +113,11 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
             {
                 payload.MarkAsHeldOnMaster();
                 await this.BackgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(payload));
-                logger.Warn($"{GetRunnerDescription()}: Onboarding busy, retries exhausted. Moved to master. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
+                logger.Warn($"{GetRunnerDescription()}: Onboarding busy, retries exhausted. Moved to master. JobId={payload.Id.ToBase64()}", JobMasterLogCategory.Job, payload.Id);
             }
             else
             {
-                logger.Debug($"{GetRunnerDescription()}: Onboarding busy, NAK'd for retry. JobId={payload.Id}", JobMasterLogCategory.Job, payload.Id);
+                logger.Debug($"{GetRunnerDescription()}: Onboarding busy, NAK'd for retry. JobId={payload.Id.ToBase64()}", JobMasterLogCategory.Job, payload.Id);
             }
 
             return;
