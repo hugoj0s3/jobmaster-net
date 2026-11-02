@@ -23,7 +23,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 12 | Case-insensitive metadata/message-data keys + worker lanes | M | **Yes** | 1          |
 | 13 | Disabled-priority validation scoped per cluster       | S/M   | Maybe (stricter recurring check) | 1 |
 | 14 | Startup type scans: one pass + safe `GetTypes`        | S     | No       | 1 (13 adds a scan user) |
-| 15 | Consistent cancel / reschedule method names           | XS    | No (obsolete aliases) | – |
+| 15 | Consistent cancel / reschedule method names           | XS    | **Yes** (plain rename) | – |
 | 16 | `CancelAsync` on receipts (follow-up to 15)           | S     | No       | 6, 7, 15   |
 | 17 | Base64 ids in logs (messages + API `ReferenceId`)     | S/M   | API response (`ReferenceId` format) | – |
 | 18 | Archived safety net: `Archive(target)` + late-job sweep | S/M | No (startup check relaxed with a target) | – |
@@ -639,9 +639,10 @@ bool       Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null
 - Parameter renames (`id` → `jobId` / `recurringScheduleId`) only break callers passing the name (`id: ...`);
   ChangeLog note.
 
-**Open decisions.**
-- Confirm "drop `Try`" vs "`Try` everywhere" (the latter would also rename `ReSchedule` → `TryReschedule`).
-- Cancel doesn't check `ClusterMode.Archived`, reschedule does. Align (throw on archived for cancel too), or leave?
+**Decided.**
+- Drop `Try` (above).
+- No archived check for cancel (Hugo, 2026-11-01): cancel leaves the item in a final status, which an archived cluster
+  may hold. Same reasoning as the receipt cancel (item 16). Reschedule keeps its check: it makes the job runnable again.
 
 **Tasks.**
 - [x] Rename on `IJobMasterScheduler` + `JobMasterScheduler`.
@@ -651,12 +652,11 @@ bool       Reschedule(Guid jobId, DateTime scheduledAt, string? clusterId = null
       `CancelRecurring`; `JobMaster.Api` doesn't call them.)
 - [x] Unit tests: renamed test, sync `CancelJob` persists with sync `Update` before returning.
 - [x] ChangeLog (breaking rename + parameter names, fixed sync `CancelJob`). Docs: item 10.
-- [ ] Archived check for cancel (open decision above): not changed yet.
+- [x] Archived check for cancel: none, by decision (above).
 
 **Follow-up.** `CancelAsync` on the receipts is item 16 (separate PR, uses this item's naming).
 
-**Done when.** One naming rule across all six methods, old names compile with an obsolete warning, and the unit suite
-is green.
+**Done when.** One naming rule across all six methods (plain rename, no obsolete aliases), and the unit suite is green.
 
 ---
 
