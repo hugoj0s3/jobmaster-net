@@ -680,13 +680,13 @@ internal static class RunnerFakes
             return Task.FromResult<IList<RecurringScheduleRawModel>>(pulled);
         }
 
-        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
             => Task.FromResult(HasJobsResult);
 
-        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
             => throw new NotImplementedException();
 
-        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
             => throw new NotImplementedException();
     }
 

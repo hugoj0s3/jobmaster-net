@@ -6,9 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.MySql.Agents;
 
-internal class MySqlAgentFingerprintResolver : SqlAgentFingerprintResolver
+internal class MySqlAgentRawFingerprintResolver : SqlAgentRawFingerprintResolver
 {
-    public MySqlAgentFingerprintResolver(IServiceProvider serviceProvider) :
+    public MySqlAgentRawFingerprintResolver(IServiceProvider serviceProvider) :
         base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(MySqlRepositoryConstants.RepositoryTypeId),
             serviceProvider.GetRequiredService<IKnownExceptionIdentifier>())
     {

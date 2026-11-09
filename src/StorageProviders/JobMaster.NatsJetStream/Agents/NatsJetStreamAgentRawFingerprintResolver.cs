@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Utils;
@@ -9,18 +9,18 @@ using NATS.Client.KeyValueStore;
 
 namespace JobMaster.NatsJetStream.Agents;
 
-internal sealed class NatsJetStreamAgentFingerprintResolver : IAgentFingerprintResolver
+internal sealed class NatsJetStreamAgentRawFingerprintResolver : IAgentRawFingerprintResolver
 {
     private NatsConnection? natsConnection;
     private INatsJSContext? kvContext;
-    private JobMasterAgentConnectionConfig? config;
+    private JobMasterAgentProviderConfig? config;
     private const string KvSuffixStoreName = "agent_fingerprints";
     public string AgentRepoTypeId => NatsJetStreamConstants.RepositoryTypeId;
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
         if (natsConnection == null)
-            throw new InvalidOperationException("NatsJetStreamAgentFingerprintResolver not initialized. Call Initialize first.");
+            throw new InvalidOperationException("NatsJetStreamAgentRawFingerprintResolver not initialized. Call Initialize first.");
 
         var kvStore = await EnsureKvStoreAsync(clusterId);
 
@@ -42,7 +42,7 @@ internal sealed class NatsJetStreamAgentFingerprintResolver : IAgentFingerprintR
         }
 
         // 2. Generate new fingerprint
-        var fingerprint = JobMasterRandomUtil.NewGuid4().ToString("N");
+        var fingerprint = RepoTypeAndFingerprintUtil.GenerateSingleFingerprint();
 
         // 3. Try to create (insert only if missing)
         try
@@ -76,10 +76,16 @@ internal sealed class NatsJetStreamAgentFingerprintResolver : IAgentFingerprintR
         return fingerprint;
     }
     
-    public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig agentConnConfig)
     {
+        if (IsInitialized)
+            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
         this.config = agentConnConfig;
-        (natsConnection, kvContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnConfig);
+        (natsConnection, kvContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, agentConnConfig);
+        IsInitialized = true;
     }
 
     private async Task<INatsKVStore> EnsureKvStoreAsync(string clusterId)

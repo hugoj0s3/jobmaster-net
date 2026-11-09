@@ -397,7 +397,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                     async (entry, __) =>
                     {
                         var (bucket, bucketJobs) = entry;
-                        var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(bucket.AgentConnectionId.IdValue);
+                        var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentExecutionMaxBatchSize(bucket.AgentConnectionId.IdValue);
                         foreach (var partition in bucketJobs.Partition(agentMaxBatchSize))
                         {
                             try

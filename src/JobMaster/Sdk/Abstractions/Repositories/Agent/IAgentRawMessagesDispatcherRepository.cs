@@ -15,8 +15,11 @@ internal interface IAgentRawMessagesDispatcherRepository : IJobMasterClusterAwar
     Task CreateBucketAsync(string fullBucketAddressId);
     Task DestroyBucketAsync(string fullBucketAddressId);
     
-    void Initialize(JobMasterAgentConnectionConfig config);
-    
+    /// <remarks>Must be called exactly once; a second call throws.</remarks>
+    void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config);
+
+    bool IsInitialized { get; }
+
     bool IsPollingBased { get; }
     
     string AgentRepoTypeId { get; }

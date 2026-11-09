@@ -39,6 +39,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
         string registerMethodName,
         string role)
     {
+        RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryType);
         ProviderAssemblies.EnsureLoaded(repositoryType);
 
         var providerFound = false;
@@ -51,7 +52,13 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
                 var repoTypeProp = type.GetProperty(RepositoryTypeProperty,
                     BindingFlags.Public | BindingFlags.Static);
 
-                if (repoTypeProp?.GetValue(null)?.ToString() != repositoryType)
+                var candidateRepoType = repoTypeProp?.GetValue(null)?.ToString();
+                if (!string.IsNullOrEmpty(candidateRepoType))
+                {
+                    RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(candidateRepoType!);
+                }
+
+                if (candidateRepoType != repositoryType)
                     continue;
 
                 providerFound = true;
@@ -66,7 +73,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
                 method.Invoke(null, new object[] { clusterIocRegistration, clusterId });
                 registered++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 throw new InvalidOperationException(
                     $"Failed to register services from {type.FullName}", ex);

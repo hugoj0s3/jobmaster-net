@@ -92,6 +92,10 @@
   - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
   - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.
   - **Static recurring schedules without a priority** are checked the same way at startup, when the handler is in the app.
+- **`UseSqlTablePrefixForMaster` and `UseSqlTablePrefixForAgent` were removed.** They were obsolete since 0.0.11. Pass `tablePrefix` to the provider's own method instead:
+  - Master: `UsePostgresForMaster(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForMaster` / `UseSqlServerForMaster`, and `UsePostgres` / `UseMySql` / `UseSqlServer` for standalone clusters.
+  - Agent connection: `UsePostgresForAgent(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForAgent` / `UseSqlServerForAgent`.
+  - JSON config: `"ConnectionOptions": { "tablePrefix": "jm_" }`.
 
 ### Added
 
@@ -161,6 +165,20 @@
   ```csharp
   cluster.Archive(targetActiveClusterId: "billing-v2");
   ```
+
+- **Hybrid agent connections: `.UseHybrid().Transport(...).Execution(...)`.** An agent connection can now use one provider for transport (saving newly scheduled jobs and recurring schedules) and another provider for execution (dispatching due jobs for processing, running them on workers, and draining processing buckets). For example, use NATS JetStream for high-throughput scheduling ingestion and RavenDB or Postgres for execution:
+
+  ```csharp
+  cluster.AddAgentConnectionConfig("hybrid-conn")
+      .UseHybrid()
+      .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
+      .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=ExecDb"))
+      .ProtectConnectionChanges(true);
+  ```
+
+  In JSON (`ConfigFromJson`), configure `"Transport"` and `"Execution"` on the agent connection entry instead of top-level `"RepositoryType"` / `"ConnectionString"`. Workers attach to a hybrid connection by name like any other agent connection.
+  - A hybrid connection's repository type and fingerprint are stored as `hybrid:<transport>&&<execution>` (for example `hybrid:NatsJetStream&&RavenDB`), so `ProtectConnectionChanges` detects both endpoint changes and role swaps between transport and execution.
+  - **NATS `TransientThreshold` limit (5 minutes) now applies only when NATS is on the execution side.** A hybrid connection that uses NATS only for `Transport` and another provider for `Execution` can use a cluster `TransientThreshold` longer than 5 minutes.
 
 ### Changed
 

@@ -1,4 +1,4 @@
-﻿using System.Data;
+using System.Data;
 using Dapper;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
@@ -142,11 +142,11 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
     {
         var agentConfigs = JobMasterClusterConnectionConfig
             .GetAllConfigs()
-            .SelectMany(x => x.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == RepositoryTypeId)
+            .SelectMany(x => x.GetAllAgentProviderConfigs().Select(a => (ClusterConfig: x, AgentConfig: a)))
+            .Where(x => x.AgentConfig.RepositoryTypeId == RepositoryTypeId)
             .ToList();
 
-        foreach (var agentConfig in agentConfigs)
+        foreach (var (_, agentConfig) in agentConfigs)
         {
             var agentTablePrefix =
                 agentConfig.AdditionalConnConfig.TryGetValue<string>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey);
@@ -157,9 +157,8 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             }
         }
 
-        foreach (var agentConfig in agentConfigs)
+        foreach (var (clusterConfig, agentConfig) in agentConfigs)
         {
-            var clusterConfig = JobMasterClusterConnectionConfig.Get(agentConfig.ClusterId, includeNotReady: true);
             if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
             {
                 return;

@@ -6,9 +6,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.SqlServer.Agents;
 
-internal class SqlServerAgentFingerprintResolver : SqlAgentFingerprintResolver
+internal class SqlServerAgentRawFingerprintResolver : SqlAgentRawFingerprintResolver
 {
-    public SqlServerAgentFingerprintResolver(IServiceProvider serviceProvider) :
+    public SqlServerAgentRawFingerprintResolver(IServiceProvider serviceProvider) :
         base(serviceProvider.GetRequiredKeyedService<IDbConnectionManager>(SqlServerRepositoryConstants.RepositoryTypeId),
             serviceProvider.GetRequiredService<IKnownExceptionIdentifier>())
     {

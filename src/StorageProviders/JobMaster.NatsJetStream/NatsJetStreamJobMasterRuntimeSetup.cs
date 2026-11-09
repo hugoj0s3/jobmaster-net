@@ -15,15 +15,19 @@ internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 {
     public Task<IList<string>> ValidateAsync(IServiceProvider mainServiceProvider)
     {
-        var natAgentConfigs = JobMasterClusterConnectionConfig
+        // Only restrict TransientThreshold when NATS JetStream plays the Execution role
+        // (standalone NATS connection or hybrid connection with NATS on Execution).
+        // When NATS is used only for Transport, jobs scheduled beyond 5 minutes are held on
+        // the master and dispatched to the non-NATS Execution provider later.
+        var natExecutionAgentConfigs = JobMasterClusterConnectionConfig
             .GetAllConfigs()
             .SelectMany(x => x.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId)
+            .Where(a => a.ExecutionConfig.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId)
             .ToList();
         
         var errors = new List<string>();
         
-        foreach (var agentConfig in natAgentConfigs)
+        foreach (var agentConfig in natExecutionAgentConfigs)
         {
             var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.FirstOrDefault(c => c.ClusterId == agentConfig.ClusterId);
             if (clusterDefinition is null)

@@ -32,8 +32,8 @@ internal static class MySqlIocRegistration
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
         registration.ClusterServices.AddKeyedSingleton<IDbConnectionManager, MySqlDbConnectionManager>(RepositoryType);
-        registration.AddFingerprintResolver<MySqlAgentFingerprintResolver>(RepositoryType);
-        registration.AddRepositoryDispatcher<MySqlJobsDispatcherRepository, MySqlRawMessagesDispatcherRepository, MySqlRawMessagesDispatcherRepository>(RepositoryType);
+        registration.AddFingerprintResolver<MySqlAgentRawFingerprintResolver>(RepositoryType);
+        registration.AddRepositoryDispatcher<MySqlRawMessagesDispatcherRepository, MySqlRawMessagesDispatcherRepository>(RepositoryType);
         registration.ClusterServices.AddSingleton<IKnownExceptionIdentifierStrategy, MySqlKnownExceptionIdentifierStrategy>();
     }
 }

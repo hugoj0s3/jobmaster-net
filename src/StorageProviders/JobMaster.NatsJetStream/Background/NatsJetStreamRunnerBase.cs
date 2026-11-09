@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using JobMaster.Abstractions.Models;
@@ -38,7 +38,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private DateTime lastHeartbeatPublishedAt = DateTime.MinValue;
 
     private AgentConnectionId agentConnectionId = null!;
-    private JobMasterAgentConnectionConfig agentConnectionConfig = null!;
+    private JobMasterAgentProviderConfig agentConnectionConfig = null!;
     private INatsJSConsumer? consumer;
     
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> lockMessages = new();
@@ -88,10 +88,14 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // 2. Transport Initialization
         if (!hasInitialized)
         {
-            NatsJetStreamConnector.GetOrCreateConnection(agentConnectionConfig);
-            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionConfig);
-            var transientThreshold = masterClusterConfigurationService.Get()?.TransientThreshold ?? NatsJetStreamConstants.MaxThreshold;
+            NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId.IdValue, agentConnectionConfig);
+            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId.IdValue, agentConnectionConfig);
+            var clusterThreshold = masterClusterConfigurationService.Get()?.TransientThreshold ?? NatsJetStreamConstants.MaxThreshold;
+            var transientThreshold = clusterThreshold > NatsJetStreamConstants.MaxThreshold
+                ? NatsJetStreamConstants.MaxThreshold
+                : clusterThreshold;
             consumer = await NatsJetStreamConnector.CreateOrUpdateConsumerAsync(
+                agentConnectionId.IdValue,
                 agentConnectionConfig,
                 fullBucketAddressId,
                 BackgroundAgentWorker.BucketBufferSize,
@@ -276,8 +280,16 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         BucketId = bucketId;
         var bucketModel = this.masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
         agentConnectionId = bucketModel!.AgentConnectionId;
-        agentConnectionConfig = BackgroundAgentWorker.ClusterConnConfig.GetAgentConnectionConfig(agentConnectionId.IdValue);
+        var rootConfig = BackgroundAgentWorker.ClusterConnConfig.GetAgentConnectionConfig(agentConnectionId.IdValue);
+        agentConnectionConfig = ResolveLegConfig(rootConfig);
     }
+
+    /// <summary>
+    /// Resolves the concrete leg configuration for this runner (TransportConfig for save-pending/drain-save-pending runners
+    /// where <see cref="LostRisk"/> is true, or ExecutionConfig for execution/drain-processing runners).
+    /// </summary>
+    protected virtual JobMasterAgentProviderConfig ResolveLegConfig(JobMasterAgentConnectionConfig connectionConfig)
+        => LostRisk() ? connectionConfig.TransportConfig : connectionConfig.ExecutionConfig;
 
     protected virtual Task DoOnTickAsync(CancellationToken ct) => Task.CompletedTask;
 
@@ -285,7 +297,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     {
         try
         {
-            var (_, jsContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionConfig);
+            var (_, jsContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId.IdValue, agentConnectionConfig);
             var subjectName = NatsJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
             var data = Encoding.UTF8.GetBytes(string.Empty);
             

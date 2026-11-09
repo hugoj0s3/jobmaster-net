@@ -82,7 +82,7 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
         }
     }
 
-    public void SetOptions(IAgentConnectionConfigSelector selector, IDictionary<string, object> options)
+    public void SetOptions(IAgentConnectionProviderSelector selector, IDictionary<string, object> options)
     {
         ValidateKeys(options, AgentKnownKeys);
 

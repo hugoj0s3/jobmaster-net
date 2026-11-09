@@ -17,6 +17,7 @@ namespace JobMaster.Sdk.Services.Agents;
 internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAgentJobsDispatcherService
 {
     private IAgentComponentFactory agentComponentFactory = null!;
+
     private readonly IJobMasterLogger logger;
 
     public AgentJobsDispatcherService(
@@ -33,7 +34,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        return ResolveThrottler(throttler, jobRaw.AgentConnectionId!).Exec(() => repository.PushSavePendingJob(jobRaw));
+        return ResolveTransportThrottler(throttler, jobRaw.AgentConnectionId!).Exec(() => repository.PushSavePendingJob(jobRaw));
     }
 
     public async Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
@@ -41,7 +42,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        return await ResolveThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushSavePendingJobAsync(jobRaw));
+        return await ResolveTransportThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushSavePendingJobAsync(jobRaw));
     }
 
     public async Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
@@ -60,7 +61,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
 
         logger.Debug($"Bulk scheduling jobs. partition size: {jobRawModels.Count} for bucket {bucketId}",
             JobMasterLogCategory.Job, jobRawModels[0].Id);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushSavePendingJobAsync(bucketId, jobRawModels));
+        return await ResolveTransportThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushSavePendingJobAsync(bucketId, jobRawModels));
     }
 
     public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
@@ -68,7 +69,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         ValidateRecurringScheduleAssignedToBucket(recurringScheduleRaw);
 
         var repository = GetJobDispatcherRepository(recurringScheduleRaw.AgentConnectionId!);
-        return ResolveThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).Exec(() => repository.PushForSaving(recurringScheduleRaw));
+        return ResolveTransportThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).Exec(() => repository.PushForSaving(recurringScheduleRaw));
     }
 
     public async Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
@@ -76,7 +77,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         ValidateRecurringScheduleAssignedToBucket(recurringScheduleRaw);
 
         var repository = GetJobDispatcherRepository(recurringScheduleRaw.AgentConnectionId!);
-        return await ResolveThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).ExecAsync(() => repository.PushForSavingAsync(recurringScheduleRaw));
+        return await ResolveTransportThrottler(throttler, recurringScheduleRaw.AgentConnectionId!).ExecAsync(() => repository.PushForSavingAsync(recurringScheduleRaw));
     }
 
     public async Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
@@ -84,7 +85,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
         ValidateJobAssignedToBucket(jobRaw);
 
         var repository = GetJobDispatcherRepository(jobRaw.AgentConnectionId!);
-        return await ResolveThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
+        return await ResolveExecutionThrottler(throttler, jobRaw.AgentConnectionId!).ExecAsync(() => repository.PushForProcessingAsync(jobRaw));
     }
 
     public async Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
@@ -103,46 +104,87 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
 
         logger.Debug($"Bulk dispatching jobs for processing. partition size: {jobRawModels.Count} for bucket {bucketId}",
             JobMasterLogCategory.Job, jobRawModels[0].Id);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushForProcessingAsync(bucketId, jobRawModels));
+        return await ResolveExecutionThrottler(throttler, agentConnectionId).ExecAsync(() => repository.BulkPushForProcessingAsync(bucketId, jobRawModels));
     }
 
     public async Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId,
         int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
+        return await ResolveExecutionThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullForProcessingAsync(bucketId, numberOfJobs, scheduleTo));
     }
 
     public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(AgentConnectionId agentConnectionId,
         string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingJobsAsync(bucketId, numberOfJobs));
+        return await ResolveTransportThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingJobsAsync(bucketId, numberOfJobs));
     }
 
     public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(
         AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingRecurAsync(bucketId, numberOfJobs));
+        return await ResolveTransportThrottler(throttler, agentConnectionId).ExecAsync(() => repository.PullSavePendingRecurAsync(bucketId, numberOfJobs));
     }
 
-    public async Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+    public async Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
     {
         var repository = GetJobDispatcherRepository(agentConnectionId);
-        return await ResolveThrottler(throttler, agentConnectionId).ExecAsync(() => repository.HasJobsAsync(bucketId!));
+        return await ExecBucketLifecycleAsync(agentConnectionId, () => repository.HasJobsAsync(bucketId));
     }
 
-    public async Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+    public async Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
     {
-        var repository = GetJobDispatcherRepository(agentConnectionId!);
-        await ResolveThrottler(throttler, agentConnectionId!).ExecAsync(() => repository.CreateBucketAsync(bucketId!));
+        var repository = GetJobDispatcherRepository(agentConnectionId);
+        await ExecBucketLifecycleAsync(agentConnectionId, () => repository.CreateBucketAsync(bucketId));
     }
 
-    public async Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+    public async Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
     {
-        var repository = GetJobDispatcherRepository(agentConnectionId!);
-        await ResolveThrottler(throttler, agentConnectionId!).ExecAsync(() => repository.DestroyBucketAsync(bucketId!));
+        var repository = GetJobDispatcherRepository(agentConnectionId);
+        await ExecBucketLifecycleAsync(agentConnectionId, () => repository.DestroyBucketAsync(bucketId));
+    }
+
+    private static async Task<T> ExecBucketLifecycleAsync<T>(AgentConnectionId agentConnectionId, Func<Task<T>> func)
+    {
+        var id = agentConnectionId.IdValue;
+        var bucketLifecycleThrottler = OperationThrottlerSettingsFactory.GetBucketLifecycleThrottler(id);
+        var transportThrottler = OperationThrottlerSettingsFactory.GetInternalAgentTransportThrottler(id);
+        var executionThrottler = OperationThrottlerSettingsFactory.GetInternalAgentExecutionThrottler(id);
+        
+        return await bucketLifecycleThrottler.ExecAsync(async () =>
+        {
+            await transportThrottler.WaitForCapacityAsync();
+            await executionThrottler.WaitForCapacityAsync();
+            return await func();
+        });
+    }
+
+    private static async Task ExecBucketLifecycleAsync(AgentConnectionId agentConnectionId, Func<Task> func)
+    {
+        await ExecBucketLifecycleAsync(agentConnectionId, async () =>
+        {
+            await func();
+            return true;
+        });
+    }
+
+    // These touch both legs, so they don't hold a transport or execution slot: one at a time per connection
+    // (single-slot throttler), and inside it wait while either store is at capacity. Never nested on one
+    // semaphore, so a single connection (transport == execution throttler) is safe.
+    internal static async Task<T> ExecBucketLifecycleAsync<T>(
+        OperationThrottler bucketLifecycleThrottler,
+        OperationThrottler transportThrottler,
+        OperationThrottler executionThrottler,
+        Func<Task<T>> func)
+    {
+        return await bucketLifecycleThrottler.ExecAsync(async () =>
+        {
+            await transportThrottler.WaitForCapacityAsync();
+            await executionThrottler.WaitForCapacityAsync();
+            return await func();
+        });
     }
 
     private IAgentJobsDispatcherRepository GetJobDispatcherRepository(AgentConnectionId agentConnectionId)
@@ -154,9 +196,15 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
     // internal-process, per-agent-connection throttler unless a caller passes its own -- e.g.
     // JobMasterSchedulerClusterAware passes an unbounded throttler explicitly, since it's always
     // external-facing and shouldn't be artificially gated by app-level throttling.
-    private OperationThrottler ResolveThrottler(OperationThrottler? throttler, AgentConnectionId agentConnectionId)
+    // For hybrid connections, transport and execution calls resolve their own role-specific throttlers.
+    private OperationThrottler ResolveTransportThrottler(OperationThrottler? throttler, AgentConnectionId agentConnectionId)
     {
-        return throttler ?? OperationThrottlerSettingsFactory.GetInternalAgentThrottler(agentConnectionId.IdValue);
+        return throttler ?? OperationThrottlerSettingsFactory.GetInternalAgentTransportThrottler(agentConnectionId.IdValue);
+    }
+
+    private OperationThrottler ResolveExecutionThrottler(OperationThrottler? throttler, AgentConnectionId agentConnectionId)
+    {
+        return throttler ?? OperationThrottlerSettingsFactory.GetInternalAgentExecutionThrottler(agentConnectionId.IdValue);
     }
 
     private void ValidateJobAssignedToBucket(JobRawModel jobRaw)
@@ -170,7 +218,7 @@ internal class AgentJobsDispatcherService : JobMasterClusterAwareComponent, IAge
                 "Job is not fully assigned to a bucket. AgentConnectionId, BucketId, AgentWorkerId, and HostId are required.");
         }
     }
-
+    
     private void ValidateRecurringScheduleAssignedToBucket(RecurringScheduleRawModel recurringScheduleRaw)
     {
         if (!recurringScheduleRaw.AgentConnectionId.IsNotNullAndValid() ||

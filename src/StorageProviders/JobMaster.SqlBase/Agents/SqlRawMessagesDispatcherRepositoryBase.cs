@@ -38,11 +38,17 @@ internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterCluste
         this.logger = logger;
     }
 
-    public void Initialize(JobMasterAgentConnectionConfig config)
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        this.connString = config.ConnectionString;    
+        if (IsInitialized)
+            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+        this.connString = config.ConnectionString;
         this.additionalConnConfig = config.AdditionalConnConfig;
         this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
+        IsInitialized = true;
     }
 
     protected string MessageTableName()

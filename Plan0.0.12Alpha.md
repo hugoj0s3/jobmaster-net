@@ -32,6 +32,7 @@ open decisions (settle before coding), tasks, and done criteria.
 | 21 | Load provider assemblies by repo type (bug fix)       | XS    | No       | 14         |
 | 22 | Lambda adapter: reserved definition-id prefix (idea)  | –     | –        | new project; scope TBD |
 | 23 | Scenario tests: all multi-provider, same phases + one `scenario.md` per scenario | M/L | No (tests only) | 18 |
+| 24 | SQL auto-provision skips later clusters (bug fix)     | XS    | No       | –          |
 
 ---
 
@@ -274,14 +275,14 @@ stays open.
 **Status.** In scope for 0.0.12, but the biggest item — gets its own dedicated sub-plan file
 (e.g. `PlanHybridAgentConnection.md`) before coding. What's below is the groundwork already decided, to
 carry over into that file. May itself span more than one PR (e.g. repo-type split helper + call sites first,
-then the `.Hybrid()` config API + fingerprint, then validation).
+then the `.UseHybrid()` config API + fingerprint, then validation).
 
 **Goal.** One agent connection that uses one provider for transport (save/dispatch) and another for
 execution, e.g. NATS for transport + RavenDB for execution. Replaces the per-worker sketch in the reminder.
 
 ```csharp
 AddAgentConnection("hybrid-connection-1")
-    .Hybrid()
+    .UseHybrid()
     .Transport(["nats-connection"])
     .Execution(["raven-db"]);
 ```
@@ -334,9 +335,9 @@ hybrid?" first, split it, and call the lookup with the right role's repo type �
 - Throttler settings per role (ties into the per-transport throttler idea).
 
 **Tasks.**
-- [ ] Create the dedicated sub-plan file and move this section into it.
-- [ ] Inventory every repo-type-keyed call site and assign it a role (transport/execution).
-- [ ] Settle the open decisions above; split the work into PRs in the sub-plan.
+- [x] Create the dedicated sub-plan file and move this section into it ([PlanHybridAgentConnection.md](PlanHybridAgentConnection.md)).
+- [x] Inventory every repo-type-keyed call site and assign it a role (transport/execution).
+- [x] Settle the open decisions above; implement hybrid agent connection, role-based validation, throttlers, unit tests, and ChangeLog.
 
 ---
 
@@ -1100,3 +1101,27 @@ item 18.
 
 **Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and
 each variant can run on its own.
+
+---
+
+## 24. SQL auto-provision skips later clusters (bug fix)
+
+**Goal.** A cluster with SQL auto-provisioning turned off must not stop provisioning for the other clusters.
+Found 2026-11-04 during the item 8 review; older than hybrid.
+
+**Current state.** `SqlJobMasterRuntimeSetup` (base for Postgres / MySQL / SQL Server) checks
+`IsAutoProvisionSqlSchemaEnabled()` per cluster and does `return` instead of `continue`, in both loops:
+- `ConfigClustersAsync` (master tables): every cluster after the first opted-out one gets no master tables.
+- `ConfigAgentsAsync` (agent tables): every agent connection after the first one on an opted-out cluster gets no
+  agent tables (with hybrid, each SQL leg counts as one entry).
+
+Startup then fails later with missing-table errors, or the tables only exist because the user created them.
+`PostgresJobMasterRuntimeSetup` does the same check with `continue`, which is the intended behavior.
+
+**Tasks.**
+- [ ] `return` → `continue` in both loops.
+- [ ] Unit/RepoConformance test: two clusters on the same provider, first with auto-provision off, second on → the
+      second's master and agent tables are created.
+- [ ] ChangeLog (Fixed).
+
+**Done when.** Turning off auto-provision on one cluster affects only that cluster.

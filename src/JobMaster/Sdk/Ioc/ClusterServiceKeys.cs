@@ -1,4 +1,4 @@
-﻿using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 
 namespace JobMaster.Sdk.Ioc;

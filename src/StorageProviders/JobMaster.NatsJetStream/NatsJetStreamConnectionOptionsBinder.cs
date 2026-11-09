@@ -15,7 +15,7 @@ internal sealed class NatsJetStreamConnectionOptionsBinder : IConnectionOptionsB
 
     public string RepoType => NatsJetStreamConstants.RepositoryTypeId;
 
-    public void SetOptions(IAgentConnectionConfigSelector selector, IDictionary<string, object> options)
+    public void SetOptions(IAgentConnectionProviderSelector selector, IDictionary<string, object> options)
     {
         ValidateKeys(options);
 

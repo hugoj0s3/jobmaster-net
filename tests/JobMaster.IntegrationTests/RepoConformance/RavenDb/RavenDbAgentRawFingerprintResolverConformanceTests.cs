@@ -9,28 +9,28 @@ namespace JobMaster.IntegrationTests.RepoConformance.RavenDb;
 
 // No shared "AgentFingerprintResolver" RepoConformance category exists for any provider (SQL/NATS
 // included), so this is a standalone RavenDB-only test class, same reasoning as
-// RavenDbLogsRepositoryConformanceTests. Constructs RavenDbAgentFingerprintResolver directly rather than
+// RavenDbLogsRepositoryConformanceTests. Constructs RavenDbAgentRawFingerprintResolver directly rather than
 // resolving it through DI -- this fixture only registers the master side of UseRavenDb, so RegisterForAgent never
 // runs and there's no agent-connection DI graph to resolve it from.
 [Collection("RavenDbRepoConformance")]
 [Trait("DB", "RavenDb")]
-public sealed class RavenDbAgentFingerprintResolverConformanceTests
+public sealed class RavenDbAgentRawFingerprintResolverConformanceTests
 {
     private readonly RavenDbRepositoryFixture fixture;
 
-    public RavenDbAgentFingerprintResolverConformanceTests(RavenDbRepositoryFixture fixture)
+    public RavenDbAgentRawFingerprintResolverConformanceTests(RavenDbRepositoryFixture fixture)
     {
         this.fixture = fixture;
     }
 
-    private RavenDbAgentFingerprintResolver NewResolver(string agentConnectionId)
+    private RavenDbAgentRawFingerprintResolver NewResolver(string agentConnectionId)
     {
-        var resolver = new RavenDbAgentFingerprintResolver(fixture.DocumentStoreManager);
-        resolver.Initialize(new JobMasterAgentConnectionConfig(
-            fixture.ClusterId,
-            agentConnectionId,
-            fixture.ConnectionString,
-            RavenDbRepositoryConstants.RepositoryTypeId));
+        var resolver = new RavenDbAgentRawFingerprintResolver(fixture.DocumentStoreManager);
+        resolver.Initialize(
+            $"{fixture.ClusterId}:{agentConnectionId}",
+            new JobMasterAgentProviderConfig(
+                RavenDbRepositoryConstants.RepositoryTypeId,
+                fixture.ConnectionString));
         return resolver;
     }
 

@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -11,35 +11,40 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Repositories;
 
-internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing> : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository<TSavePending, TProcessing>
-    where TSavePending : class, IAgentRawMessagesDispatcherRepository
-    where TProcessing : class, IAgentRawMessagesDispatcherRepository
+internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository
 {
-    private readonly TSavePending savePendingRepository;
-    private readonly TProcessing processingRepository;
+    private readonly IAgentRawMessagesDispatcherRepository savePendingRepository;
+    private readonly IAgentRawMessagesDispatcherRepository processingRepository;
     private readonly IJobMasterLogger logger;
-
-    protected JobMasterAgentConnectionConfig AgentConnConfig = null!;
-
+    private bool isInitialized;
 
     protected AgentJobsDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
-        TSavePending savePendingRepository,
-        TProcessing processingRepository,
+        string agentRepoTypeId,
+        IAgentRawMessagesDispatcherRepository savePendingRepository,
+        IAgentRawMessagesDispatcherRepository processingRepository,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
+        AgentRepoTypeId = agentRepoTypeId;
         this.savePendingRepository = savePendingRepository ?? throw new ArgumentNullException(nameof(savePendingRepository));
         this.processingRepository = processingRepository ?? throw new ArgumentNullException(nameof(processingRepository));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
-    
-    public abstract string AgentRepoTypeId { get; }
+
+    public string AgentRepoTypeId { get; }
 
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
     {
-        AgentConnConfig = agentConnConfig;
-        savePendingRepository.Initialize(agentConnConfig);
-        processingRepository.Initialize(agentConnConfig);
+        if (isInitialized)
+            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+        // Single connections share one raw repo for both roles, so the second check skips it.
+        if (!savePendingRepository.IsInitialized)
+            savePendingRepository.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
+        if (!processingRepository.IsInitialized)
+            processingRepository.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
+
+        isInitialized = true;
     }
     
     public string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw)
@@ -262,8 +267,6 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         await savePendingRepository.DestroyBucketAsync(recurringScheduleAddress);
         await processingRepository.DestroyBucketAsync(processingAddress);
     }
-
-    
 
     private static string GetCorrelationId(JobRawModel job)
     {

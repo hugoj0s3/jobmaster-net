@@ -30,7 +30,8 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     
     protected readonly ConcurrentDictionary<string, bool> ensuredConsumers = new();
     
-    protected JobMasterAgentConnectionConfig config = null!;
+    protected string agentConnectionId = null!;
+    protected JobMasterAgentProviderConfig config = null!;
     
     public NatsJetStreamRawMessagesDispatcherRepository(JobMasterClusterConnectionConfig clusterConnConfig, IJobMasterLogger logger) : base(clusterConnConfig)
     {
@@ -101,10 +102,17 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     }
     
 
-    public void Initialize(JobMasterAgentConnectionConfig config)
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
+        if (IsInitialized)
+            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+        this.agentConnectionId = agentConnectionId;
         this.config = config;
-        (_, jsContext, streamName) = NatsJetStreamConnector.GetOrCreateConnection(config);
+        (_, jsContext, streamName) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, config);
+        IsInitialized = true;
     }
     
     public async Task DestroyBucketAsync(string fullBucketAddressId)
@@ -132,7 +140,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     
     protected async Task EnsureStreamAsync()
     {
-        await NatsJetStreamConnector.EnsureStreamAsync(config);
+        await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId, config);
     }
     
     private async Task<string> DoPublishAsync(string subject, string payload, DateTime referenceTime, string correlationId)
@@ -198,7 +206,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
 
         await EnsureStreamAsync(); 
         
-        await NatsJetStreamConnector.GetOrCreateConsumerAsync(config, fullBucketAddressId);
+        await NatsJetStreamConnector.GetOrCreateConsumerAsync(agentConnectionId, config, fullBucketAddressId);
         
         // Update cache after successful consumer creation
         ensuredConsumers[fullBucketAddressId] = true;
@@ -225,7 +233,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
         }
     }
 
-    private string GetSubjectName(string fullBucketAddressId) => NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
+    private string GetSubjectName(string fullBucketAddressId) => NatsJetStreamUtils.GetSubjectName(agentConnectionId, fullBucketAddressId);
     
     private string GetConsumerName(string steamName) => NatsJetStreamUtils.GetConsumerName(steamName);
 }
