@@ -67,7 +67,8 @@
 - Single initialization: `IAgentRawMessagesDispatcherRepository` and `IAgentRawFingerprintResolver` expose
   `IsInitialized`, and every raw implementation throws `InvalidOperationException` on a second `Initialize`. The two
   bases skip legs that are already initialized (so Single's shared instance is initialized once) and throw on their own
-  second call.
+  second call. Each check-initialize-set runs under a private `object` lock (netstandard2.0, no `System.Threading.Lock`);
+  the bases lock before calling the raw ones, never the reverse.
 - NATS specifics (Hugo): `NatsJetStreamJobMasterRuntimeSetup.ValidateAsync` enforces `TransientThreshold <= 5 minutes`
   only when `a.ExecutionConfig.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId`. `NatsJetStreamRunnerBase`
   resolves `TransportConfig` vs `ExecutionConfig` based on `LostRisk()` (`High` = saving/transport, `Medium` =

@@ -102,17 +102,22 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     }
     
 
+    private readonly object initializeLock = new();
+
     public bool IsInitialized { get; private set; }
 
     public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        if (IsInitialized)
-            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
 
-        this.agentConnectionId = agentConnectionId;
-        this.config = config;
-        (_, jsContext, streamName) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, config);
-        IsInitialized = true;
+            this.agentConnectionId = agentConnectionId;
+            this.config = config;
+            (_, jsContext, streamName) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, config);
+            IsInitialized = true;
+        }
     }
     
     public async Task DestroyBucketAsync(string fullBucketAddressId)

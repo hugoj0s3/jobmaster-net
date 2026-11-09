@@ -20,16 +20,21 @@ internal sealed class RavenDbAgentRawFingerprintResolver : IAgentRawFingerprintR
 
     public string AgentRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
+    private readonly object initializeLock = new();
+
     public bool IsInitialized { get; private set; }
 
     public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig agentConnConfig)
     {
-        if (IsInitialized)
-            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
 
-        store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString, agentConnConfig.GetCertificate(), agentConnConfig.GetRequestTimeout(), agentConnConfig.GetPooledConnectionLifetime(), agentConnConfig.GetPooledConnectionIdleTimeout());
-        prefix = agentConnConfig.GetCollectionPrefix();
-        IsInitialized = true;
+            store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString, agentConnConfig.GetCertificate(), agentConnConfig.GetRequestTimeout(), agentConnConfig.GetPooledConnectionLifetime(), agentConnConfig.GetPooledConnectionIdleTimeout());
+            prefix = agentConnConfig.GetCollectionPrefix();
+            IsInitialized = true;
+        }
     }
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)

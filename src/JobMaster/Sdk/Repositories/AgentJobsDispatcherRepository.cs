@@ -16,6 +16,7 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
     private readonly IAgentRawMessagesDispatcherRepository savePendingRepository;
     private readonly IAgentRawMessagesDispatcherRepository processingRepository;
     private readonly IJobMasterLogger logger;
+    private readonly object initializeLock = new();
     private bool isInitialized;
 
     protected AgentJobsDispatcherRepository(
@@ -35,16 +36,19 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
 
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
     {
-        if (isInitialized)
-            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+        lock (initializeLock)
+        {
+            if (isInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
 
-        // Single connections share one raw repo for both roles, so the second check skips it.
-        if (!savePendingRepository.IsInitialized)
-            savePendingRepository.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
-        if (!processingRepository.IsInitialized)
-            processingRepository.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
+            // Single connections share one raw repo for both roles, so the second check skips it.
+            if (!savePendingRepository.IsInitialized)
+                savePendingRepository.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
+            if (!processingRepository.IsInitialized)
+                processingRepository.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
 
-        isInitialized = true;
+            isInitialized = true;
+        }
     }
     
     public string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw)

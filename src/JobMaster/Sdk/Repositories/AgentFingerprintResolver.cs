@@ -5,6 +5,7 @@ namespace JobMaster.Sdk.Repositories;
 
 internal abstract class AgentFingerprintResolver : IAgentFingerprintResolver
 {
+    private readonly object initializeLock = new();
     private bool isInitialized;
 
     protected AgentFingerprintResolver(
@@ -24,16 +25,19 @@ internal abstract class AgentFingerprintResolver : IAgentFingerprintResolver
 
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
     {
-        if (isInitialized)
-            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+        lock (initializeLock)
+        {
+            if (isInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
 
-        // Single connections share one raw resolver for both roles, so the second check skips it.
-        if (!TransportResolver.IsInitialized)
-            TransportResolver.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
-        if (!ExecutionResolver.IsInitialized)
-            ExecutionResolver.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
+            // Single connections share one raw resolver for both roles, so the second check skips it.
+            if (!TransportResolver.IsInitialized)
+                TransportResolver.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
+            if (!ExecutionResolver.IsInitialized)
+                ExecutionResolver.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
 
-        isInitialized = true;
+            isInitialized = true;
+        }
     }
 
     public abstract ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId);

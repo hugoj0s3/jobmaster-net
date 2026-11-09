@@ -76,16 +76,21 @@ internal sealed class NatsJetStreamAgentRawFingerprintResolver : IAgentRawFinger
         return fingerprint;
     }
     
+    private readonly object initializeLock = new();
+
     public bool IsInitialized { get; private set; }
 
     public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig agentConnConfig)
     {
-        if (IsInitialized)
-            throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
 
-        this.config = agentConnConfig;
-        (natsConnection, kvContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, agentConnConfig);
-        IsInitialized = true;
+            this.config = agentConnConfig;
+            (natsConnection, kvContext, _) = NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId, agentConnConfig);
+            IsInitialized = true;
+        }
     }
 
     private async Task<INatsKVStore> EnsureKvStoreAsync(string clusterId)
