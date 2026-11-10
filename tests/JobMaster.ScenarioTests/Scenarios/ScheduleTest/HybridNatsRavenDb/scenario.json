@@ -1,0 +1,9 @@
+{
+  "scenarioName": "hybrid-nats-ravendb",
+  "phases": [
+    { "name": "phase-1", "containers": ["hybrid-dist-one", "hybrid-dist-two"] },
+    { "name": "phase-2", "containers": ["hybrid-dist-one", "hybrid-dist-two"] },
+    { "name": "phase-3", "containers": ["hybrid-dist-one"] }
+  ],
+  "api": { "container": "api" }
+}

@@ -302,6 +302,17 @@ public sealed class ScenarioRunner : IAsyncDisposable
             names.Add(databaseName);
         }
 
+        void TrackProvider(JsonElement providerConfig)
+        {
+            if (providerConfig.TryGetProperty("RepositoryType", out var providerRepoType) && providerRepoType.ValueKind == JsonValueKind.String)
+            {
+                var connectionString = providerConfig.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
+                    ? cs.GetString()
+                    : null;
+                Track(providerRepoType.GetString()!, connectionString);
+            }
+        }
+
         foreach (var clusterConfig in containerDef.ClusterConfigTemplates)
         {
             if (clusterConfig.TryGetProperty("RepoType", out var repoType) && repoType.ValueKind == JsonValueKind.String)
@@ -316,12 +327,15 @@ public sealed class ScenarioRunner : IAsyncDisposable
             {
                 foreach (var agentConnection in agentConnections.EnumerateArray())
                 {
-                    if (agentConnection.TryGetProperty("RepositoryType", out var agentRepoType) && agentRepoType.ValueKind == JsonValueKind.String)
+                    TrackProvider(agentConnection);
+
+                    // A hybrid connection names its providers in "Transport" and "Execution" instead.
+                    foreach (var leg in new[] { "Transport", "Execution" })
                     {
-                        var connectionString = agentConnection.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
-                            ? cs.GetString()
-                            : null;
-                        Track(agentRepoType.GetString()!, connectionString);
+                        if (agentConnection.TryGetProperty(leg, out var legConfig) && legConfig.ValueKind == JsonValueKind.Object)
+                        {
+                            TrackProvider(legConfig);
+                        }
                     }
                 }
             }

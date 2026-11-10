@@ -1,0 +1,32 @@
+{
+  "containerName": "hybrid-recurring",
+  "dockerfilePath": "tests/TargetTestRecurringApp/Dockerfile",
+  "networkAlias": "hybrid-recurring",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "hybrid-recurring",
+      "Default": true,
+      "RepoType": "RavenDB",
+      "ConnectionString": "Urls={{RavenDbUrl}};Database=HybridRecurring",
+      "TransientThreshold": "00:05:00",
+      "AgentConnections": [
+        {
+          "Name": "hyb-nats-raven",
+          "Transport": { "RepositoryType": "NatsJetStream", "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}" },
+          "Execution": { "RepositoryType": "RavenDB", "ConnectionString": "Urls={{RavenDbUrl}};Database=HybridRecurringExec1" }
+        },
+        {
+          "Name": "hyb-raven-nats",
+          "Transport": { "RepositoryType": "RavenDB", "ConnectionString": "Urls={{RavenDbUrl}};Database=HybridRecurringTransport2" },
+          "Execution": { "RepositoryType": "NatsJetStream", "ConnectionString": "nats://{{NatsUsername}}:{{NatsPassword}}@{{NatsHost}}:{{NatsPort}}" }
+        }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "hyb-nats-raven" },
+        { "WorkerName": "w2", "AgentConnectionName": "hyb-raven-nats" }
+      ]
+    }
+  ]
+}

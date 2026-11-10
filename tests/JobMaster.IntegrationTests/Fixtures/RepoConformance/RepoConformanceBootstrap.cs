@@ -49,6 +49,13 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
     public const string SqlServerTablePrefix = "JMSqlServerTests_";
     public const string SqlServerAgentConnectionName = "Agent-SqlServer-1";
 
+    // Hybrid agent connection: Postgres transport, MySQL execution, each with its own table prefix.
+    public const string HybridClusterId = "RT-Hybrid-1";
+    public const string HybridMasterTablePrefix = "JMHybridTests_";
+    public const string HybridAgentConnectionName = "Agent-Hybrid-1";
+    public const string HybridTransportTablePrefix = "JMHybT_";
+    public const string HybridExecutionTablePrefix = "JMHybE_";
+
     // Second cluster per provider on the same database + table prefix (same tables), registered on a separate,
     // never-started ServiceCollection after the runtime starts -- only used to write rows with another cluster_id.
     public const string PostgresOtherClusterId = "RT-Postgres-2";
@@ -142,6 +149,18 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
 
                 cfg.AddAgentConnectionConfig(SqlServerAgentConnectionName)
                     .UseSqlServerForAgent(sqlServerConnectionString, tablePrefix: SqlServerTablePrefix);
+
+                cfg.Mode(ClusterMode.Active);
+            });
+
+            services.AddJobMasterCluster(HybridClusterId, cfg =>
+            {
+                cfg.UsePostgresForMaster(postgres.GetConnectionString(), tablePrefix: HybridMasterTablePrefix);
+
+                cfg.AddAgentConnectionConfig(HybridAgentConnectionName)
+                    .UseHybrid()
+                    .Transport(t => t.UsePostgresForAgent(postgres.GetConnectionString(), tablePrefix: HybridTransportTablePrefix))
+                    .Execution(e => e.UseMySqlForAgent(mySql.GetConnectionString(), tablePrefix: HybridExecutionTablePrefix));
 
                 cfg.Mode(ClusterMode.Active);
             });
