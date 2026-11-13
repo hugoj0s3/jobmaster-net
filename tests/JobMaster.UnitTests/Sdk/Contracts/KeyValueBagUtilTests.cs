@@ -3,6 +3,7 @@ using JobMaster;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Serialization;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Serialization;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -20,6 +21,15 @@ public class KeyValueBagUtilTests
         Red,
         Green,
         Blue
+    }
+
+    [Flags]
+    private enum TestPermissions
+    {
+        None = 0,
+        Read = 1,
+        Write = 2,
+        Delete = 4
     }
 
     private class TestPayload
@@ -185,22 +195,132 @@ public class KeyValueBagUtilTests
     }
 
     [Fact]
-    public void Serialize_MessageData_ThenDeserializeMessageData_ByteArray_DoesNotRoundTrip()
+    public void Serialize_MessageData_ThenDeserializeMessageData_ByteArray_ShouldRoundTrip()
     {
-        // Documents a real, known limitation (not asserting desired behavior): System.Text.Json
-        // encodes byte[] as a base64 string, and the JSON round-trip has no way to distinguish that
-        // from an ordinary string on the way back in -- same ambiguity that got byte[] support
-        // removed from Metadata entirely. MessageData still exposes SetByteArrayValue/GetByteArrayValue,
-        // but only for callers that never serialize in between (e.g. same-process use before the
-        // MsgData ever becomes a persisted JSON string) -- once serialized, GetByteArrayValue throws.
-        IWriteableMessageData msgData = new MessageData()
-            .SetByteArrayValue("blob", new byte[] { 1, 2, 3, 255 });
+        // System.Text.Json writes byte[] as a base64 string; GetByteArrayValue decodes it back.
+        var bytes = new byte[] { 1, 2, 3, 255 };
+        IWriteableMessageData msgData = new MessageData().SetByteArrayValue("blob", bytes);
 
         var json = KeyValueBagUtil.Serialize(msgData);
         var recovered = KeyValueBagUtil.DeserializeMessageData(json).ToReadable();
 
-        var act = () => recovered.GetByteArrayValue("blob");
-        act.Should().Throw<KeyNotFoundException>();
+        recovered.GetByteArrayValue("blob").Should().Equal(bytes);
+    }
+
+    [Fact]
+    public void Serialize_MessageData_ThenDeserializeMessageData_RandomByteArrays_ShouldRoundTrip()
+    {
+        // Guards the outer layer's DateTime/Guid string normalization from ever claiming a base64 value.
+        var random = new Random(12345);
+        for (var i = 0; i < 20_000; i++)
+        {
+            var bytes = new byte[random.Next(1, 48)];
+            random.NextBytes(bytes);
+            IWriteableMessageData msgData = new MessageData().SetByteArrayValue("blob", bytes);
+
+            var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+            recovered.GetByteArrayValue("blob").Should().Equal(bytes, $"base64 '{Convert.ToBase64String(bytes)}'");
+        }
+    }
+
+    [Theory]
+    [InlineData("Blue")]
+    [InlineData("blue")]
+    [InlineData("2")]
+    public void TryGetEnumValue_WhenStringIsMember_ReturnsIt(string stored)
+    {
+        var msgData = new MessageData().SetStringValue("color", stored).ToReadable();
+
+        msgData.TryGetEnumValue<TestColor>("color").Should().Be(TestColor.Blue);
+    }
+
+    [Theory]
+    [InlineData("WRONG")]
+    [InlineData("7")]
+    [InlineData("Red, Blue")] // ORs to a member value; still not a single member of a non-[Flags] enum
+    public void TryGetEnumValue_WhenStringIsNotMember_Throws(string stored)
+    {
+        var msgData = new MessageData().SetStringValue("color", stored).ToReadable();
+
+        var act = () => msgData.TryGetEnumValue<TestColor>("color");
+
+        act.Should().Throw<InvalidOperationException>();
+        msgData.TryGetEnumValue<TestColor>("color", ignoreInvalidValues: true).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenSetAsIntegerType_ReadsMemberInMemoryAndAfterPersistence()
+    {
+        IWriteableMessageData msgData = new MessageData()
+            .SetByteValue("byte", 1).SetByteValue("byteInvalid", 7)
+            .SetShortValue("short", 1).SetShortValue("shortInvalid", 7)
+            .SetIntValue("int", 1).SetIntValue("intInvalid", 7)
+            .SetLongValue("long", 1L).SetLongValue("longInvalid", 7L);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            foreach (var key in new[] { "byte", "short", "int", "long" })
+            {
+                readable.TryGetEnumValue<TestColor>(key).Should().Be(TestColor.Green, key);
+                var act = () => readable.TryGetEnumValue<TestColor>(key + "Invalid");
+                act.Should().Throw<InvalidOperationException>(key + "Invalid");
+            }
+        }
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenPersistedNumberIsNotMember_Throws()
+    {
+        // SetEnumValue stores a number; a member removed in a later version comes back as an undefined one.
+        IWriteableMessageData msgData = new MessageData().SetEnumValue("color", (TestColor)7);
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        var act = () => recovered.GetEnumValue<TestColor>("color");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenFlagsCombination_AcceptsDefinedBitsOnly()
+    {
+        var valid = new MessageData().SetEnumValue("p", TestPermissions.Read | TestPermissions.Delete).ToReadable();
+        var validString = new MessageData().SetStringValue("p", "Read, Write").ToReadable();
+        var unknownBit = new MessageData().SetIntValue("p", 8).ToReadable();
+
+        valid.TryGetEnumValue<TestPermissions>("p").Should().Be(TestPermissions.Read | TestPermissions.Delete);
+        validString.TryGetEnumValue<TestPermissions>("p").Should().Be(TestPermissions.Read | TestPermissions.Write);
+        var act = () => unknownBit.TryGetEnumValue<TestPermissions>("p");
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void TryGetJson_WhenValueIsNotValidForType_Throws()
+    {
+        var msgData = new MessageData().SetStringValue("payload", "{\"Count\":\"not-a-number\"}").ToReadable();
+
+        var act = () => msgData.TryGetJson<TestPayload>("payload");
+
+        act.Should().Throw<InvalidOperationException>().Which.Message.Should().NotContain("not-a-number");
+    }
+
+    [Fact]
+    public void TryGetJson_WhenIgnoringDeserializationErrors_ReturnsNull()
+    {
+        var msgData = new MessageData().SetStringValue("payload", "{\"Count\":\"not-a-number\"}").ToReadable();
+
+        msgData.TryGetJson<TestPayload>("payload", ignoreDeserializationErrors: true).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetJson_WhenKeyMissingOrSetToNull_ReturnsNull()
+    {
+        var msgData = new MessageData().SetJson<TestPayload>("payload", null).ToReadable();
+
+        msgData.TryGetJson<TestPayload>("payload").Should().BeNull();
+        msgData.TryGetJson<TestPayload>("missing").Should().BeNull();
     }
 
     [Fact]

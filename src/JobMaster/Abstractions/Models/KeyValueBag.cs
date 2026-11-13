@@ -35,9 +35,12 @@ internal class KeyValueBag
     public void SetJson<T>(string key, T? value) where T : new()
     {
         if (value is null)
+        {
             Set(key, null);
+            return;
+        }
 
-        var json = JobMasterMessageJson.Serialize<T>(value!);
+        var json = JobMasterMessageJson.Serialize<T>(value);
         SetStringValue(key, json);
     }
     
@@ -98,39 +101,50 @@ internal class KeyValueBag
     public byte[]? TryGetByteArrayValue(string key)
     {
         if (!values.TryGetValue(key, out var v) || v is null) return null;
-        return v as byte[];
+        if (v is byte[] bytes) return bytes;
+
+        // Persisted MsgData comes back with byte[] as the base64 string System.Text.Json wrote.
+        if (v is string s)
+        {
+            try { return Convert.FromBase64String(s); }
+            catch (FormatException) { return null; }
+        }
+
+        return null;
     }
 
-    public TEnum? TryGetEnumValue<TEnum>(string key) where TEnum : struct, Enum
+    public TEnum? TryGetEnumValue<TEnum>(string key, bool ignoreInvalidValues = false) where TEnum : struct, Enum
     {
         if (!values.TryGetValue(key, out var v) || v is null) return null;
-        if (v is TEnum te) return te;
-        if (v is string s && Enum.TryParse<TEnum>(s, true, out var parsedByName)) return parsedByName;
 
-        try
-        {
-            var underlying = Convert.ToInt64(v);
-            return (TEnum)Enum.ToObject(typeof(TEnum), underlying);
-        }
-        catch
-        {
-            return null;
-        }
+        var parsed = ParseEnum<TEnum>(v);
+        if (parsed.HasValue && IsDefinedEnumValue(parsed.Value)) return parsed;
+
+        if (ignoreInvalidValues) return null;
+        
+        throw new InvalidOperationException($"Key '{key}' does not hold a valid {typeof(TEnum).Name} value.");
     }
 
-    public T? TryGetJson<T>(string key) where T : new()
+    public T? TryGetJson<T>(string key, bool ignoreDeserializationErrors = false) where T : new()
     {
+        if (!values.TryGetValue(key, out var v) || v is null) return default;
+
         try
         {
-            if (!values.TryGetValue(key, out var v) || v is null) return default;
             if (v is string s)
                 return JobMasterMessageJson.Deserialize<T>(s);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            if (ignoreDeserializationErrors) return default;
+
+            // Inner exception not attached: some serializers echo the offending payload in their message.
+            throw new InvalidOperationException(
+                $"Key '{key}' could not be deserialized as {typeof(T).Name} ({ex.GetType().Name}).");
         }
 
-        return default;
+        if (ignoreDeserializationErrors) return default;
+        throw new InvalidOperationException($"Key '{key}' does not hold a JSON string and cannot be deserialized as {typeof(T).Name}.");
     }
 
     // ========= Read API (Get*) =========
@@ -150,7 +164,7 @@ internal class KeyValueBag
     public T GetJson<T>(string key) where T : new()
     {
         var value = TryGetJson<T>(key);
-        if (value is null) throw new KeyNotFoundException($"Key '{key}' not found or not a valid {typeof(T).Name}.");
+        if (value is null) throw new KeyNotFoundException($"Key '{key}' not found.");
         return value;
     }
 
@@ -177,6 +191,49 @@ internal class KeyValueBag
     {
         if (value is null) throw new KeyNotFoundException($"Key '{key}' not found or not a valid {target}.");
         return value;
+    }
+
+    private static TEnum? ParseEnum<TEnum>(object v) where TEnum : struct, Enum
+    {
+        if (v is TEnum te) return te;
+
+        if (v is string s)
+        {
+            // Enum.TryParse ORs "A, B" together even on a non-[Flags] enum.
+            if (s.IndexOf(',') >= 0 && !IsFlagsEnum(typeof(TEnum))) return null;
+            return Enum.TryParse<TEnum>(s, true, out var parsed) ? parsed : null;
+        }
+
+        try
+        {
+            return (TEnum)Enum.ToObject(typeof(TEnum), Convert.ToInt64(v));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static bool IsDefinedEnumValue<TEnum>(TEnum value) where TEnum : struct, Enum
+    {
+        var type = typeof(TEnum);
+        if (!IsFlagsEnum(type)) return Enum.IsDefined(type, value);
+
+        // [Flags]: every set bit must belong to a defined member.
+        ulong definedBits = 0;
+        foreach (var member in Enum.GetValues(type))
+            definedBits |= ToEnumBits(member);
+
+        return (ToEnumBits(value) & ~definedBits) == 0;
+    }
+
+    private static bool IsFlagsEnum(Type enumType) => enumType.IsDefined(typeof(FlagsAttribute), false);
+
+    private static ulong ToEnumBits(object enumValue)
+    {
+        return Type.GetTypeCode(Enum.GetUnderlyingType(enumValue.GetType())) == TypeCode.UInt64
+            ? Convert.ToUInt64(enumValue)
+            : unchecked((ulong)Convert.ToInt64(enumValue));
     }
 
     private T? TryConvertNumber<T>(string key, Func<object, T> projector) where T : struct

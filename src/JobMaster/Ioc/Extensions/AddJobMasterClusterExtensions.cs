@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Utils;
+using JobMaster.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Ioc.Extensions;
@@ -14,9 +15,19 @@ namespace JobMaster.Ioc.Extensions;
 public static class AddJobMasterClusterExtensions
 {
     /// <summary>
-    /// Registers a custom JSON serializer used for job message payloads.
-    /// Call this before <see cref="AddJobMasterCluster(IServiceCollection, Action{IClusterConfigSelector})"/>
-    /// if you need to override the default serializer.
+    /// Defines the serializer for message data values stored with <c>SetJson</c> and read with <c>GetJson</c> / <c>TryGetJson</c>.
+    /// Call this before <see cref="AddJobMasterCluster(IServiceCollection, Action{IClusterConfigSelector})"/>.
+    /// The default is <see cref="DefaultJobMasterMessageJsonSerializer"/>.
+    /// <para>
+    /// It applies to the whole process. Every process that schedules or runs these jobs must define the same
+    /// serializer with the same settings. Values already stored aren't converted: to change serializer, use
+    /// <see cref="FallbackJobMasterMessageJsonSerializer"/> to keep reading them.
+    /// </para>
+    /// <para>
+    /// <b>Security:</b> never let the JSON choose the type to create (Newtonsoft.Json: keep <c>TypeNameHandling</c>
+    /// at <c>None</c>). Message data can be written by anyone who can schedule jobs or write to the job storage, and a
+    /// crafted payload could run code on your workers. See <see cref="IJobMasterMessageJsonSerializer"/>.
+    /// </para>
     /// </summary>
     /// <param name="services">The application service collection.</param>
     /// <param name="serializer">The custom serializer to register.</param>

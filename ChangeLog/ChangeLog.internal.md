@@ -5,7 +5,7 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 885/885 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 904/904 unit tests pass on `net8.0` and `net10.0`.
 
 #### Hybrid agent connection (Plan0.0.12Alpha item 8 / PlanHybridAgentConnection.md)
 - Format (Hugo): `hybrid:<transport>&&<execution>` for both `RepositoryTypeId` and fingerprint, in
@@ -90,6 +90,38 @@
   connection and on a leg, NATS `TransientThreshold` on transport vs execution, Single / Hybrid dispatcher and resolver,
   double `Initialize`, `BucketRunnersFactory`, throttler batch sizes). 885/885 unit tests; RavenDB RepoConformance
   160 passed / 3 skipped.
+
+#### Message data JSON / byte[] reads (Hugo, 2026-11-13)
+- `KeyValueBag.TryGetJson<T>(key, ignoreDeserializationErrors = false)` (also `IReadableMessageData`, `MessageData`):
+  null only for a missing / null value; a failed deserialize or a non-string value throws `InvalidOperationException`
+  with key + `typeof(T).Name` + exception type name. The inner exception is not attached, since a custom serializer may
+  echo the payload in its message. `GetJson<T>` keeps `KeyNotFoundException` for missing only.
+- `KeyValueBag.TryGetEnumValue<TEnum>(key, ignoreInvalidValues = false)` (same rule as JSON, Hugo): parse, then
+  `Enum.IsDefined`; `[Flags]` enums accept any value whose bits all belong to defined members. A comma string on a
+  non-`[Flags]` enum is rejected before `Enum.TryParse`, which would OR it into a possibly defined value. Invalid →
+  `InvalidOperationException` (key + enum name, no value).
+- `SetJson(key, null)` now returns after setting null. It used to fall through and overwrite the key with the string
+  `"null"`, which the stricter `TryGetJson` would have rejected.
+- `TryGetByteArrayValue` decodes a string value from base64 (`Convert.FromBase64String`, since `TryFromBase64String`
+  isn't on `netstandard2.0`): STJ writes `byte[]` as base64, and `InternalJobMasterSerializer`'s dictionary
+  normalization hands it back as a string. Test with 20,000 seeded random arrays (1–47 bytes) checks that the DateTime /
+  Guid string normalization never claims a base64 value.
+- `JobMasterMessageJson` made internal. `IJobMasterMessageJsonSerializer` / `DefineJobMasterMessageJsonSerializer` stay
+  public, with XML docs on process-wide scope, same config on every node, no conversion of stored values, and a
+  `TypeNameHandling` / `SerializationBinder` security warning (message data is writable by anyone with schedule or
+  storage access and deserialized on workers).
+- Both `TryDeserialize` overloads removed from `IJobMasterMessageJsonSerializer`, its implementations and the internal
+  facade (Hugo): never called, and `TryGetJson` / the fallback rely on `Deserialize` throwing. Both `Deserialize`
+  overloads stay; their docs now require throwing instead of returning `null` / `default`.
+- `DefaultJobMasterMessageJsonSerializer` moved from the `JobMaster` root to `JobMaster.Serialization` (Hugo: not
+  `Abstractions`, it isn't an extension point) and made `public sealed`; documented as fixed-format (STJ default
+  options) so it's safe as a fallback. The interface stays in `JobMaster.Abstractions.Serialization`.
+- New `FallbackJobMasterMessageJsonSerializer` (`JobMaster.Serialization`, `public sealed`):
+  `(primary, params fallbacks)`, nulls rejected. `Serialize` → primary. Reads call each reader's `Deserialize` in
+  order and return the first success. All failed → `InvalidOperationException` listing reader + exception type names, no inner
+  exception (payload). Documented limits: fallback only on throw (silent mismatches stop the chain; use strict options
+  such as STJ `UnmappedMemberHandling.Disallow`), and the two-step rolling deploy `(old, new)` then `(new, old)`.
+  `FallbackJobMasterMessageJsonSerializerTests` (fakes, no Newtonsoft dependency).
 
 #### `UseSqlTablePrefixForMaster` / `UseSqlTablePrefixForAgent` removed
 - Deleted from `JobMaster.SqlBase/ConfigExtensions.cs` (obsolete since 0.0.11; replaced by each provider's `tablePrefix`

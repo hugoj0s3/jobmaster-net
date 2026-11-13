@@ -24,8 +24,13 @@ public interface IReadableMessageData
     public double? TryGetDoubleValue(string key);
     /// <summary>Returns the <see cref="DateTime"/> value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
     public DateTime? TryGetDateTimeValue(string key);
-    /// <summary>Returns the enum value of type <typeparamref name="TEnum"/> for <paramref name="key"/>, or <c>null</c> if absent.</summary>
-    public TEnum? TryGetEnumValue<TEnum>(string key) where TEnum : struct, Enum;
+    /// <summary>
+    /// Returns the enum value of type <typeparamref name="TEnum"/> for <paramref name="key"/>, or <c>null</c> if absent.
+    /// Throws <see cref="InvalidOperationException"/> if the value is not a member of <typeparamref name="TEnum"/>
+    /// (for a <see cref="FlagsAttribute"/> enum, a combination of its members),
+    /// unless <paramref name="ignoreInvalidValues"/> is <c>true</c>, in which case it returns <c>null</c>.
+    /// </summary>
+    public TEnum? TryGetEnumValue<TEnum>(string key, bool ignoreInvalidValues = false) where TEnum : struct, Enum;
     /// <summary>Returns the <see cref="byte"/> array value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
     public byte[]? TryGetByteArrayValue(string key);
     /// <summary>Returns the <see cref="decimal"/> value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
@@ -36,8 +41,12 @@ public interface IReadableMessageData
     public byte? TryGetByteValue(string key);
     /// <summary>Returns the <see cref="Guid"/> value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
     public Guid? TryGetGuidValue(string key);
-    /// <summary>Deserializes the JSON stored under <paramref name="key"/> to <typeparamref name="T"/>, or <c>null</c> if absent or invalid.</summary>
-    public T? TryGetJson<T>(string key) where T : new();
+    /// <summary>
+    /// Deserializes the JSON stored under <paramref name="key"/> to <typeparamref name="T"/>, or <c>null</c> if absent.
+    /// Throws <see cref="InvalidOperationException"/> if the value cannot be deserialized,
+    /// unless <paramref name="ignoreDeserializationErrors"/> is <c>true</c>, in which case it returns <c>null</c>.
+    /// </summary>
+    public T? TryGetJson<T>(string key, bool ignoreDeserializationErrors = false) where T : new();
 
     /// <summary>Returns the <see cref="string"/> value for <paramref name="key"/>. Throws if absent or wrong type.</summary>
     public string GetStringValue(string key);
@@ -53,7 +62,10 @@ public interface IReadableMessageData
     public double GetDoubleValue(string key);
     /// <summary>Returns the <see cref="DateTime"/> value for <paramref name="key"/>. Throws if absent or wrong type.</summary>
     public DateTime GetDateTimeValue(string key);
-    /// <summary>Returns the enum value of type <typeparamref name="TEnum"/> for <paramref name="key"/>. Throws if absent or wrong type.</summary>
+    /// <summary>
+    /// Returns the enum value of type <typeparamref name="TEnum"/> for <paramref name="key"/>.
+    /// Throws <see cref="KeyNotFoundException"/> if absent, or <see cref="InvalidOperationException"/> if the value is not a member of <typeparamref name="TEnum"/>.
+    /// </summary>
     public TEnum GetEnumValue<TEnum>(string key) where TEnum : struct, Enum;
     /// <summary>Returns the <see cref="byte"/> array value for <paramref name="key"/>. Throws if absent or wrong type.</summary>
     public byte[] GetByteArrayValue(string key);
@@ -65,7 +77,10 @@ public interface IReadableMessageData
     public byte GetByteValue(string key);
     /// <summary>Returns the <see cref="Guid"/> value for <paramref name="key"/>. Throws if absent or wrong type.</summary>
     public Guid GetGuidValue(string key);
-    /// <summary>Deserializes the JSON stored under <paramref name="key"/> to <typeparamref name="T"/>. Throws if absent or invalid.</summary>
+    /// <summary>
+    /// Deserializes the JSON stored under <paramref name="key"/> to <typeparamref name="T"/>.
+    /// Throws <see cref="KeyNotFoundException"/> if absent, or <see cref="InvalidOperationException"/> if the value cannot be deserialized.
+    /// </summary>
     public T GetJson<T>(string key) where T : new();
 
     /// <summary>Returns all entries as a dictionary.</summary>

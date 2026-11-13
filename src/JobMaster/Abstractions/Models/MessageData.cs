@@ -45,8 +45,8 @@ internal class MessageData : IReadableMessageData, IWriteableMessageData
     public DateTime? TryGetDateTimeValue(string key) => bag.TryGetDateTimeValue(key);
     public Guid? TryGetGuidValue(string key) => bag.TryGetGuidValue(key);
     public byte[]? TryGetByteArrayValue(string key) => bag.TryGetByteArrayValue(key);
-    public TEnum? TryGetEnumValue<TEnum>(string key) where TEnum : struct, Enum => bag.TryGetEnumValue<TEnum>(key);
-    public T? TryGetJson<T>(string key) where T : new() => bag.TryGetJson<T>(key);
+    public TEnum? TryGetEnumValue<TEnum>(string key, bool ignoreInvalidValues = false) where TEnum : struct, Enum => bag.TryGetEnumValue<TEnum>(key, ignoreInvalidValues);
+    public T? TryGetJson<T>(string key, bool ignoreDeserializationErrors = false) where T : new() => bag.TryGetJson<T>(key, ignoreDeserializationErrors);
 
     // ========= Read API (Get*) =========
     public string GetStringValue(string key) => bag.GetStringValue(key);

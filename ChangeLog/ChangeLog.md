@@ -96,9 +96,22 @@
   - Master: `UsePostgresForMaster(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForMaster` / `UseSqlServerForMaster`, and `UsePostgres` / `UseMySql` / `UseSqlServer` for standalone clusters.
   - Agent connection: `UsePostgresForAgent(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForAgent` / `UseSqlServerForAgent`.
   - JSON config: `"ConnectionOptions": { "tablePrefix": "jm_" }`.
+- **`TryGetJson<T>` now throws when the stored value can't be deserialized as `T`.** It used to return `null`, the same as a missing key, so a payload that no longer matched its type was silently treated as absent. It still returns `null` when the key is missing or the value is `null`. Pass `ignoreDeserializationErrors: true` to get `null` on failure instead. `GetJson<T>` also throws `InvalidOperationException` on a deserialization failure; it now throws `KeyNotFoundException` only when the key is missing.
+- **`TryGetEnumValue<TEnum>` now throws when the stored value isn't a member of `TEnum`.** Before, a name it couldn't parse (`"WRONG"`) returned `null`, and a number that isn't a member, such as a member removed in a later version, came back as an undefined enum value. Both now throw `InvalidOperationException`; for a `[Flags]` enum, any combination of its members is accepted. A missing key still returns `null`. Pass `ignoreInvalidValues: true` to get `null` instead. `GetEnumValue<TEnum>` throws the same way.
+- **`IJobMasterMessageJsonSerializer` no longer has `TryDeserialize` methods.** JobMaster never called them. If you implemented the interface, delete both `TryDeserialize` overloads. `Deserialize` must throw when a value can't be deserialized, never return `null`/`default`: that's how a broken value is reported instead of being treated as missing.
+- **`JobMasterMessageJson` is no longer public.** It was the framework's internal hook for `SetJson` / `GetJson`. To produce or read the same JSON, use `DefaultJobMasterMessageJsonSerializer` (or the serializer you defined) directly.
 
 ### Added
 
+- **`FallbackJobMasterMessageJsonSerializer` (`JobMaster.Serialization`): change the `SetJson` / `GetJson` serializer and keep reading values stored before the change.** It writes with the first serializer and, on reads, tries the others in order whenever one throws:
+
+  ```csharp
+  services.DefineJobMasterMessageJsonSerializer(
+      new FallbackJobMasterMessageJsonSerializer(new MyNewtonsoftSerializer(), new DefaultJobMasterMessageJsonSerializer()));
+  ```
+
+  A fallback is only tried when a serializer throws, so configure each one to reject data it doesn't own. When apps update one by one, deploy in two steps: `(old, new)` everywhere first, then `(new, old)`.
+- **`DefaultJobMasterMessageJsonSerializer` is now public** (`JobMaster.Serialization`), so it can be listed as a fallback. It's the default `SetJson` / `GetJson` serializer, `System.Text.Json` with default options, and its format stays the same across versions.
 - **`WriteableMessageData.FromDictionary(dictionary)`**, like `WritableMetadata.FromDictionary`: a message data builder pre-populated with a copy of the dictionary.
 - **.NET 10 builds.** Every package now also targets `net10.0`: `JobMaster`, the storage and recurrence providers (`net10.0`, `net8.0`, `netstandard2.0`), and `JobMaster.Api` / `JobMaster.Dashboard` (`net10.0`, `net8.0`). Apps on .NET 10 get the `net10.0` build; nothing changes for .NET 8 or `netstandard2.0` apps.
 - **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
@@ -220,6 +233,7 @@
 
 ### Fixed
 
+- **`GetByteArrayValue` / `TryGetByteArrayValue` now work in a handler.** Message data is stored as JSON, which holds a byte array as base64 text, so in a handler `TryGetByteArrayValue` returned `null` and `GetByteArrayValue` threw. They now read the stored value back as the original bytes.
 - **With a single cluster not marked as default, startup now catches a handler whose priority is disabled on it.** The check skipped handlers without their own cluster id in that setup; the call failed only when scheduling.
 - **Message data and metadata are no longer written to the logs.** When a job or recurring schedule couldn't be queued, the Critical log included up to 500 characters of its message data and metadata, which can hold personal or sensitive data. The log now shows only their sizes, along with the id, status and other job details. Logs written by earlier versions may still contain them; purge them if that matters to you.
 - **Worker lanes ignore case everywhere.** `GET /workers?workerLane=Billing` returned nothing for a `"billing"` worker while `/workers/count` counted it; both now ignore case, like job routing already did.

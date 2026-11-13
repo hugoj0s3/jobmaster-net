@@ -1,8 +1,24 @@
 namespace JobMaster.Abstractions.Serialization;
 
 /// <summary>
-/// Defines the JSON serializer used by JobMaster to serialize and deserialize job messages.
-/// Register a custom implementation via the cluster configuration to override the default.
+/// Serializes the values stored with <c>SetJson</c> and read with <c>GetJson</c> / <c>TryGetJson</c> on message data.
+/// The rest of a job (message data entries, metadata, the job itself) always uses JobMaster's own format.
+/// <para>
+/// Define it with <c>services.DefineJobMasterMessageJsonSerializer(...)</c>. The default is
+/// <c>JobMaster.Serialization.DefaultJobMasterMessageJsonSerializer</c>.
+/// </para>
+/// <para>
+/// One serializer applies to the whole process, every cluster included. Every process that schedules or runs
+/// these jobs must use the same serializer with the same settings, or values written by one can't be read, or are
+/// read wrongly, by another. Changing it doesn't convert values already stored; use
+/// <c>JobMaster.Serialization.FallbackJobMasterMessageJsonSerializer</c> to keep reading them.
+/// </para>
+/// <para>
+/// <b>Security:</b> message data can be written by anyone who can schedule jobs or write to the job storage or
+/// transport, and it is deserialized on the workers. Never let the JSON choose the type to create: with
+/// Newtonsoft.Json, keep <c>TypeNameHandling</c> at <c>None</c>, or restrict types with a <c>SerializationBinder</c>
+/// if you need polymorphism. Otherwise a crafted payload can run code on your workers.
+/// </para>
 /// </summary>
 public interface IJobMasterMessageJsonSerializer
 {
@@ -11,25 +27,14 @@ public interface IJobMasterMessageJsonSerializer
 
     /// <summary>
     /// Deserializes <paramref name="json"/> to <typeparamref name="T"/>.
-    /// Throws if the JSON is null, empty, or malformed.
+    /// Must throw if the JSON is null, empty, malformed, or can't be read as <typeparamref name="T"/>, never return
+    /// <c>default</c>: JobMaster relies on the exception to report a broken value instead of treating it as missing.
     /// </summary>
     T Deserialize<T>(string json);
 
     /// <summary>
-    /// Deserializes <paramref name="json"/> to <typeparamref name="T"/>.
-    /// Returns <c>default</c> instead of throwing on failure.
-    /// </summary>
-    T? TryDeserialize<T>(string json);
-
-    /// <summary>
     /// Deserializes <paramref name="json"/> to the specified <paramref name="type"/>.
-    /// Throws if the JSON is null, empty, or malformed.
+    /// Must throw if the JSON is null, empty, malformed, or can't be read as <paramref name="type"/>, never return <c>null</c>.
     /// </summary>
     object Deserialize(string json, Type type);
-
-    /// <summary>
-    /// Deserializes <paramref name="json"/> to the specified <paramref name="type"/>.
-    /// Returns <c>null</c> instead of throwing on failure.
-    /// </summary>
-    object? TryDeserialize(string json, Type type);
 }

@@ -39,10 +39,19 @@ One-time and dynamic-recurring scheduling via `IJobMasterScheduler.Advanced` (`J
 Still open: `RecurringScheduleDefinitionCollection.Add<Th>()` (static recurring schedules) has the same
 handler-type coupling and hasn't been given the same treatment yet.
 
+## Public API / Namespaces
+- **Clean up `JobMaster.Abstractions`**: It should hold only interfaces meant for external implementation (still the intent, e.g. storage providers), even though many of those implementations were later made internal. Over time concrete public types landed there too (`JobDefinitionConfig`, `JobMasterDefaults`, `NeverRecursExprCompiler`, `RecurrenceCompilerFactory`, the handler attributes in `Abstractions.Models.Attributes`, model enums, ...). Move them to namespaces that match their role, the way `JobMaster.Serialization` now holds the concrete serializers while `IJobMasterMessageJsonSerializer` stays in `Abstractions.Serialization`. Breaking namespace change for users: do it in one pass during alpha (ChangeLog entry, no `[Obsolete]`), not piecemeal.
+
 ## Tests
 - **Exact-text `WithMessage` assertions**: A handful of tests assert on exact or substring exception message text (e.g. `JobMasterSchedulerClusterAwareTests.cs` asserts the full string `"Cluster mode is archived"`; several others assert `"*keyword*"` substrings). Prefer asserting exception type (and, where the specific culprit matters, a targeted property) instead — message text is easy to reword incidentally and breaks these tests for no functional reason. Left as-is for now (out of scope for the 0.0.10-alpha PR); worth a pass to check every `WithMessage`/`.Message.Should()` usage across the suite and loosen or remove where the wording isn't the actual thing under test.
 
 ## Serialization
+- **Enum store format: `SetEnumValue<TEnum>(key, value, StoreFormat = Number)`**: Today `SetEnumValue` (MsgData) is persisted as a number, because `InternalJobMasterSerializer` uses default STJ options. `StoreFormat` (`Number` / `Name`) is needed, not just nice to have (Hugo): both formats carry a versioning risk, so the user picks the one that fits how their enum evolves. A number breaks when members are renumbered or reordered (implicit values); a name breaks when a member is renamed. Only the write side changes: `TryGetEnumValue` already accepts a name or a number and checks it's a defined member (`[Flags]`: all bits defined), so either risk surfaces as an exception, not a wrong value.
+- **Hypothesis: put enum support back on Metadata**: It was removed in 0.0.11 (with `byte[]`) because it "round-trips ambiguously". That no longer holds for reads: the read is typed, so a stored number or name is rebuilt and checked, as MsgData does since 0.0.12. What's left to decide is how it looks where metadata is used:
+  - **Dashboard / API**: a number shows as `1`, a name as `Green`.
+  - **Metadata filters**: they match the stored value, so `Color = 1` or `Color = "Green"`. Mixing formats on one key means a filter only matches half the data, so the format should be one per key (or per cluster), not per call.
+  - **Write side**: `SetEnumValue` should come back with `StoreFormat`, same reason as MsgData. Smallest first step if needed: only `TryGetEnumValue` / `GetEnumValue` on `IReadableMetadata`, with users writing through `SetStringValue` / `SetIntValue` (as the 0.0.11 ChangeLog already advises), which already lets them choose the format.
+  - `byte[]` stays off Metadata: useless for filtering and display, and metadata should stay small.
 - **Source Generator Context (`JsonSerializerContext`)**: Upgrade `InternalJobMasterSerializer` to use `System.Text.Json` Source Generators. By declaring the exact types being serialized (e.g., `JobRawModel`, `Dictionary<string, object?>`), we can completely eliminate runtime reflection for JSON parsing, achieving AOT-level speed with zero allocations.
 
 ## Benchmarks
