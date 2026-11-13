@@ -5,13 +5,13 @@ namespace JobMaster.Abstractions.Serialization;
 /// The rest of a job (message data entries, metadata, the job itself) always uses JobMaster's own format.
 /// <para>
 /// Define it with <c>services.DefineJobMasterMessageJsonSerializer(...)</c>. The default is
-/// <c>JobMaster.Serialization.DefaultJobMasterMessageJsonSerializer</c>.
+/// <c>new JobMaster.Serialization.SystemTextJsonMessageSerializer()</c>.
 /// </para>
 /// <para>
 /// One serializer applies to the whole process, every cluster included. Every process that schedules or runs
 /// these jobs must use the same serializer with the same settings, or values written by one can't be read, or are
 /// read wrongly, by another. Changing it doesn't convert values already stored; use
-/// <c>JobMaster.Serialization.FallbackJobMasterMessageJsonSerializer</c> to keep reading them.
+/// <c>JobMaster.Serialization.FallbackMessageJsonSerializer</c> to keep reading them.
 /// </para>
 /// <para>
 /// <b>Security:</b> message data can be written by anyone who can schedule jobs or write to the job storage or

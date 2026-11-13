@@ -31,7 +31,11 @@ public interface IReadableMessageData
     /// unless <paramref name="ignoreInvalidValues"/> is <c>true</c>, in which case it returns <c>null</c>.
     /// </summary>
     public TEnum? TryGetEnumValue<TEnum>(string key, bool ignoreInvalidValues = false) where TEnum : struct, Enum;
-    /// <summary>Returns the <see cref="byte"/> array value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
+    /// <summary>
+    /// Returns the <see cref="byte"/> array value for <paramref name="key"/>, or <c>null</c> if absent.
+    /// A stored string is decoded from base64, so any string that happens to be valid base64 (for example <c>"abcd"</c>)
+    /// comes back as bytes; a string that isn't base64 returns <c>null</c>.
+    /// </summary>
     public byte[]? TryGetByteArrayValue(string key);
     /// <summary>Returns the <see cref="decimal"/> value for <paramref name="key"/>, or <c>null</c> if absent.</summary>
     public decimal? TryGetDecimalValue(string key);

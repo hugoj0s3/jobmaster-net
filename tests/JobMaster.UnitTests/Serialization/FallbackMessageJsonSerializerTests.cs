@@ -4,7 +4,7 @@ using JobMaster.Serialization;
 
 namespace JobMaster.UnitTests.Serialization;
 
-public class FallbackJobMasterMessageJsonSerializerTests
+public class FallbackMessageJsonSerializerTests
 {
     private sealed class FakeSerializer : IJobMasterMessageJsonSerializer
     {
@@ -34,7 +34,7 @@ public class FallbackJobMasterMessageJsonSerializerTests
     [Fact]
     public void Serialize_UsesPrimary()
     {
-        var serializer = new FallbackJobMasterMessageJsonSerializer(new FakeSerializer("primary"), new FakeSerializer("fallback"));
+        var serializer = new FallbackMessageJsonSerializer(new FakeSerializer("primary"), new FakeSerializer("fallback"));
 
         serializer.Serialize(new object()).Should().Be("primary");
     }
@@ -43,7 +43,7 @@ public class FallbackJobMasterMessageJsonSerializerTests
     public void Deserialize_WhenPrimarySucceeds_DoesNotTryFallback()
     {
         var fallback = new FakeSerializer("fallback");
-        var serializer = new FallbackJobMasterMessageJsonSerializer(new FakeSerializer("primary"), fallback);
+        var serializer = new FallbackMessageJsonSerializer(new FakeSerializer("primary"), fallback);
 
         serializer.Deserialize<string>("{}").Should().Be("primary");
         fallback.ReadCalls.Should().Be(0);
@@ -52,7 +52,7 @@ public class FallbackJobMasterMessageJsonSerializerTests
     [Fact]
     public void Deserialize_WhenEarlierReadersThrow_ReturnsFirstSuccessInOrder()
     {
-        var serializer = new FallbackJobMasterMessageJsonSerializer(
+        var serializer = new FallbackMessageJsonSerializer(
             new FakeSerializer("primary", throws: true),
             new FakeSerializer("first", throws: true),
             new FakeSerializer("second"),
@@ -65,7 +65,7 @@ public class FallbackJobMasterMessageJsonSerializerTests
     [Fact]
     public void Deserialize_WhenAllThrow_ThrowsWithoutPayload()
     {
-        var serializer = new FallbackJobMasterMessageJsonSerializer(
+        var serializer = new FallbackMessageJsonSerializer(
             new FakeSerializer("primary", throws: true),
             new FakeSerializer("fallback", throws: true));
 
@@ -83,9 +83,9 @@ public class FallbackJobMasterMessageJsonSerializerTests
     {
         var valid = new FakeSerializer("valid");
 
-        var nullPrimary = () => new FallbackJobMasterMessageJsonSerializer(null!, valid);
-        var nullArray = () => new FallbackJobMasterMessageJsonSerializer(valid, null!);
-        var nullEntry = () => new FallbackJobMasterMessageJsonSerializer(valid, valid, null!);
+        var nullPrimary = () => new FallbackMessageJsonSerializer(null!, valid);
+        var nullArray = () => new FallbackMessageJsonSerializer(valid, null!);
+        var nullEntry = () => new FallbackMessageJsonSerializer(valid, valid, null!);
 
         nullPrimary.Should().Throw<ArgumentNullException>();
         nullArray.Should().Throw<ArgumentNullException>();

@@ -13,7 +13,7 @@ public class KeyValueBagUtilTests
     // is normally set up during host startup -- initialize it here so a bare unit test can exercise it.
     static KeyValueBagUtilTests()
     {
-        JobMasterMessageJson.SetMessageSerializerIfNotSet(new DefaultJobMasterMessageJsonSerializer());
+        JobMasterMessageJson.SetMessageSerializerIfNotSet(new SystemTextJsonMessageSerializer());
     }
 
     private enum TestColor
@@ -30,6 +30,12 @@ public class KeyValueBagUtilTests
         Read = 1,
         Write = 2,
         Delete = 4
+    }
+
+    private enum TestSmallCode : byte
+    {
+        A = 1,
+        B = 44
     }
 
     private class TestPayload
@@ -214,7 +220,7 @@ public class KeyValueBagUtilTests
         var random = new Random(12345);
         for (var i = 0; i < 20_000; i++)
         {
-            var bytes = new byte[random.Next(1, 48)];
+            var bytes = new byte[random.Next(0, 48)];
             random.NextBytes(bytes);
             IWriteableMessageData msgData = new MessageData().SetByteArrayValue("blob", bytes);
 
@@ -272,6 +278,44 @@ public class KeyValueBagUtilTests
     }
 
     [Fact]
+    public void TryGetEnumValue_WhenValueIsNotIntegral_ThrowsInsteadOfRounding()
+    {
+        // 1.6 would round to 2 (Blue); persisted it comes back as decimal 1.6. true / 'a' would become 1 / 97.
+        IWriteableMessageData msgData = new MessageData()
+            .SetDoubleValue("double", 1.6)
+            .SetDecimalValue("decimal", 1.6m)
+            .SetBoolValue("bool", true)
+            .SetCharValue("char", (char)1);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            foreach (var key in new[] { "double", "decimal", "bool", "char" })
+            {
+                var act = () => readable.TryGetEnumValue<TestColor>(key);
+                act.Should().Throw<InvalidOperationException>(key);
+            }
+        }
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenNumberOverflowsUnderlyingType_ThrowsInsteadOfTruncating()
+    {
+        // 300 truncated to a byte is 44, which is a defined member.
+        IWriteableMessageData msgData = new MessageData().SetIntValue("code", 300).SetIntValue("valid", 44);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            var act = () => readable.TryGetEnumValue<TestSmallCode>("code");
+            act.Should().Throw<InvalidOperationException>();
+            readable.TryGetEnumValue<TestSmallCode>("valid").Should().Be(TestSmallCode.B);
+        }
+    }
+
+    [Fact]
     public void TryGetEnumValue_WhenPersistedNumberIsNotMember_Throws()
     {
         // SetEnumValue stores a number; a member removed in a later version comes back as an undefined one.
@@ -312,6 +356,20 @@ public class KeyValueBagUtilTests
         var msgData = new MessageData().SetStringValue("payload", "{\"Count\":\"not-a-number\"}").ToReadable();
 
         msgData.TryGetJson<TestPayload>("payload", ignoreDeserializationErrors: true).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData(" null ")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryGetJson_WhenStoredValueIsEmptyOrJsonNull_ReturnsNull(string stored)
+    {
+        // A stored JSON null literal or an empty value reads as missing, not as a broken payload.
+        var json = KeyValueBagUtil.Serialize(new MessageData().SetStringValue("payload", stored));
+        var recovered = KeyValueBagUtil.DeserializeMessageData(json).ToReadable();
+
+        recovered.TryGetJson<TestPayload>("payload").Should().BeNull();
     }
 
     [Fact]

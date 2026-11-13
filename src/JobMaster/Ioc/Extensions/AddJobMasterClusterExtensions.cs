@@ -17,11 +17,11 @@ public static class AddJobMasterClusterExtensions
     /// <summary>
     /// Defines the serializer for message data values stored with <c>SetJson</c> and read with <c>GetJson</c> / <c>TryGetJson</c>.
     /// Call this before <see cref="AddJobMasterCluster(IServiceCollection, Action{IClusterConfigSelector})"/>.
-    /// The default is <see cref="DefaultJobMasterMessageJsonSerializer"/>.
+    /// The default is <c>new <see cref="SystemTextJsonMessageSerializer"/>()</c>.
     /// <para>
     /// It applies to the whole process. Every process that schedules or runs these jobs must define the same
     /// serializer with the same settings. Values already stored aren't converted: to change serializer, use
-    /// <see cref="FallbackJobMasterMessageJsonSerializer"/> to keep reading them.
+    /// <see cref="FallbackMessageJsonSerializer"/> to keep reading them.
     /// </para>
     /// <para>
     /// <b>Security:</b> never let the JSON choose the type to create (Newtonsoft.Json: keep <c>TypeNameHandling</c>
@@ -59,7 +59,7 @@ public static class AddJobMasterClusterExtensions
 
         if (BootstrapBlueprintDefinitions.JobMasterJsonSerializer == null)
         {
-            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new DefaultJobMasterMessageJsonSerializer();
+            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new SystemTextJsonMessageSerializer();
         }
         JobMasterMessageJson.SetMessageSerializerIfNotSet(BootstrapBlueprintDefinitions.JobMasterJsonSerializer);
 
@@ -95,7 +95,7 @@ public static class AddJobMasterClusterExtensions
 
         if (BootstrapBlueprintDefinitions.JobMasterJsonSerializer == null)
         {
-            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new DefaultJobMasterMessageJsonSerializer();
+            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new SystemTextJsonMessageSerializer();
         }
         JobMasterMessageJson.SetMessageSerializerIfNotSet(BootstrapBlueprintDefinitions.JobMasterJsonSerializer);
 

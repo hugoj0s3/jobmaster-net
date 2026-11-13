@@ -27,12 +27,17 @@ internal static class JobMasterMessageJson
         }
     }
 
+    /// <summary>Throws if no serializer is set.</summary>
+    public static void EnsureSerializerInitialized()
+    {
+        if (serializerInstance == null) throw new InvalidOperationException("Set the serializer first");
+    }
+
     /// <summary>Serializes <paramref name="obj"/> to a JSON string.</summary>
     public static string Serialize<T>(T obj)
     {
-        if (serializerInstance == null) throw new InvalidOperationException("Set the serializer first");
-
-        return serializerInstance.Serialize<T>(obj);
+        EnsureSerializerInitialized();
+        return serializerInstance!.Serialize<T>(obj);
     }
 
     /// <summary>
@@ -41,9 +46,8 @@ internal static class JobMasterMessageJson
     /// </summary>
     public static T Deserialize<T>(string json)
     {
-        if (serializerInstance == null) throw new InvalidOperationException("Set the serializer first");
-
-        return serializerInstance.Deserialize<T>(json);
+        EnsureSerializerInitialized();
+        return serializerInstance!.Deserialize<T>(json);
     }
 
     /// <summary>
@@ -52,8 +56,7 @@ internal static class JobMasterMessageJson
     /// </summary>
     public static object Deserialize(string json, Type type)
     {
-        if (serializerInstance == null) throw new InvalidOperationException("Set the serializer first");
-
-        return serializerInstance.Deserialize(json, type);
+        EnsureSerializerInitialized();
+        return serializerInstance!.Deserialize(json, type);
     }
 }

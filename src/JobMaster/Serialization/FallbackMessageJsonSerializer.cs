@@ -15,17 +15,17 @@ namespace JobMaster.Serialization;
 /// <para>
 /// A fallback is only tried when a serializer <b>throws</b>. A serializer that reads data in another format without
 /// throwing (for example, <c>System.Text.Json</c> reading camelCase JSON into PascalCase properties returns an object
-/// with empty properties) stops the chain with a wrong result. Configure each serializer to reject data it doesn't
-/// own, for example <c>System.Text.Json</c> with <c>UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow</c>.
+/// with empty properties) stops the chain with a wrong result. Every serializer except the last must reject data it
+/// doesn't own. For <see cref="SystemTextJsonMessageSerializer"/>, pass <c>rejectUnknownProperties: true</c>.
 /// </para>
 /// <para>
 /// To switch serializer without downtime, deploy in two steps: first every node with
-/// <c>new FallbackJobMasterMessageJsonSerializer(oldSerializer, newSerializer)</c> (still writing the old format,
+/// <c>new FallbackMessageJsonSerializer(strictOldSerializer, newSerializer)</c> (still writing the old format,
 /// already reading the new one), then, once every node runs it,
-/// <c>new FallbackJobMasterMessageJsonSerializer(newSerializer, oldSerializer)</c>.
+/// <c>new FallbackMessageJsonSerializer(strictNewSerializer, oldSerializer)</c>.
 /// </para>
 /// </summary>
-public sealed class FallbackJobMasterMessageJsonSerializer : IJobMasterMessageJsonSerializer
+public sealed class FallbackMessageJsonSerializer : IJobMasterMessageJsonSerializer
 {
     private readonly IJobMasterMessageJsonSerializer primary;
     private readonly IReadOnlyList<IJobMasterMessageJsonSerializer> readers;
@@ -33,7 +33,7 @@ public sealed class FallbackJobMasterMessageJsonSerializer : IJobMasterMessageJs
     /// <summary>Creates a serializer that writes with <paramref name="primary"/> and reads with it, then with <paramref name="fallbacks"/> in order.</summary>
     /// <param name="primary">Used for every write, and tried first on reads.</param>
     /// <param name="fallbacks">Tried in order on reads when the previous serializer throws.</param>
-    public FallbackJobMasterMessageJsonSerializer(IJobMasterMessageJsonSerializer primary, params IJobMasterMessageJsonSerializer[] fallbacks)
+    public FallbackMessageJsonSerializer(IJobMasterMessageJsonSerializer primary, params IJobMasterMessageJsonSerializer[] fallbacks)
     {
         if (primary is null) throw new ArgumentNullException(nameof(primary));
         if (fallbacks is null) throw new ArgumentNullException(nameof(fallbacks));

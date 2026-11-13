@@ -5,7 +5,7 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 904/904 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 914/914 unit tests pass on `net8.0` and `net10.0`.
 
 #### Hybrid agent connection (Plan0.0.12Alpha item 8 / PlanHybridAgentConnection.md)
 - Format (Hugo): `hybrid:<transport>&&<execution>` for both `RepositoryTypeId` and fingerprint, in
@@ -94,17 +94,23 @@
 #### Message data JSON / byte[] reads (Hugo, 2026-11-13)
 - `KeyValueBag.TryGetJson<T>(key, ignoreDeserializationErrors = false)` (also `IReadableMessageData`, `MessageData`):
   null only for a missing / null value; a failed deserialize or a non-string value throws `InvalidOperationException`
-  with key + `typeof(T).Name` + exception type name. The inner exception is not attached, since a custom serializer may
+  with key + `typeof(T).Name` + exception type name. A missing serializer setup is checked before the `try`
+  (`JobMasterMessageJson.EnsureSerializerInitialized`), so it throws even with `ignoreDeserializationErrors: true`. The inner exception is not attached, since a custom serializer may
   echo the payload in its message. `GetJson<T>` keeps `KeyNotFoundException` for missing only.
 - `KeyValueBag.TryGetEnumValue<TEnum>(key, ignoreInvalidValues = false)` (same rule as JSON, Hugo): parse, then
   `Enum.IsDefined`; `[Flags]` enums accept any value whose bits all belong to defined members. A comma string on a
-  non-`[Flags]` enum is rejected before `Enum.TryParse`, which would OR it into a possibly defined value. Invalid →
+  non-`[Flags]` enum is rejected before `Enum.TryParse`, which would OR it into a possibly defined value. Numbers
+  must be integral (`sbyte`…`ulong`): the old `Convert.ToInt64` rounded `1.6` (in memory, or `decimal` after
+  storage) to 2 and turned `true` / `char` into numbers. A number that doesn't fit the underlying type is rejected
+  instead of truncated (`Enum.ToObject` turns 300 into 44 on a `byte` enum). Invalid →
   `InvalidOperationException` (key + enum name, no value).
 - `SetJson(key, null)` now returns after setting null. It used to fall through and overwrite the key with the string
-  `"null"`, which the stricter `TryGetJson` would have rejected.
+  `"null"`, which the stricter `TryGetJson` would have rejected. 0.0.11 shipped that bug, so jobs and schedules stored
+  by it can hold `"null"`: `TryGetJson` treats a stored JSON `null` literal, or an empty / whitespace value, as
+  missing, so they still run on 0.0.12 workers during a rolling upgrade.
 - `TryGetByteArrayValue` decodes a string value from base64 (`Convert.FromBase64String`, since `TryFromBase64String`
   isn't on `netstandard2.0`): STJ writes `byte[]` as base64, and `InternalJobMasterSerializer`'s dictionary
-  normalization hands it back as a string. Test with 20,000 seeded random arrays (1–47 bytes) checks that the DateTime /
+  normalization hands it back as a string. Test with 20,000 seeded random arrays (0–47 bytes, empty included) checks that the DateTime /
   Guid string normalization never claims a base64 value.
 - `JobMasterMessageJson` made internal. `IJobMasterMessageJsonSerializer` / `DefineJobMasterMessageJsonSerializer` stay
   public, with XML docs on process-wide scope, same config on every node, no conversion of stored values, and a
@@ -113,15 +119,22 @@
 - Both `TryDeserialize` overloads removed from `IJobMasterMessageJsonSerializer`, its implementations and the internal
   facade (Hugo): never called, and `TryGetJson` / the fallback rely on `Deserialize` throwing. Both `Deserialize`
   overloads stay; their docs now require throwing instead of returning `null` / `default`.
-- `DefaultJobMasterMessageJsonSerializer` moved from the `JobMaster` root to `JobMaster.Serialization` (Hugo: not
-  `Abstractions`, it isn't an extension point) and made `public sealed`; documented as fixed-format (STJ default
-  options) so it's safe as a fallback. The interface stays in `JobMaster.Abstractions.Serialization`.
-- New `FallbackJobMasterMessageJsonSerializer` (`JobMaster.Serialization`, `public sealed`):
+- 0.0.11's internal `DefaultJobMasterMessageJsonSerializer` (`JobMaster` root) became the public sealed
+  `SystemTextJsonMessageSerializer` in `JobMaster.Serialization` (Hugo: not `Abstractions`, it isn't an extension
+  point; no `JobMaster` prefix, the namespace scopes it, even though MassTransit has a class of the same name in
+  `MassTransit.Serialization`). Documented as
+  fixed-format (STJ default options) so it's safe as a fallback. New ctor flag `rejectUnknownProperties` (reads use
+  `UnmappedMemberHandling.Disallow`; writes unchanged): as the first reader of the step-1 fallback, the lenient
+  default reads new-format (camelCase) JSON as an empty object without throwing, so the chain would never reach the
+  new serializer. Narrow flag instead of `JsonSerializerOptions`, so the write format can't drift. The
+  interface stays in `JobMaster.Abstractions.Serialization`.
+- New `FallbackMessageJsonSerializer` (`JobMaster.Serialization`, `public sealed`):
   `(primary, params fallbacks)`, nulls rejected. `Serialize` → primary. Reads call each reader's `Deserialize` in
   order and return the first success. All failed → `InvalidOperationException` listing reader + exception type names, no inner
-  exception (payload). Documented limits: fallback only on throw (silent mismatches stop the chain; use strict options
-  such as STJ `UnmappedMemberHandling.Disallow`), and the two-step rolling deploy `(old, new)` then `(new, old)`.
-  `FallbackJobMasterMessageJsonSerializerTests` (fakes, no Newtonsoft dependency).
+  exception (payload). Documented limits: fallback only on throw, so every reader but the last must be strict; and the
+  two-step rolling deploy (strict old, new) then (strict new, old).
+  `FallbackMessageJsonSerializerTests` (fakes) and `SystemTextJsonMessageSerializerTests` (real STJ, including
+  the step-1-node-reads-camelCase scenario).
 
 #### `UseSqlTablePrefixForMaster` / `UseSqlTablePrefixForAgent` removed
 - Deleted from `JobMaster.SqlBase/ConfigExtensions.cs` (obsolete since 0.0.11; replaced by each provider's `tablePrefix`

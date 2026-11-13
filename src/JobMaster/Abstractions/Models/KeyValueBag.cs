@@ -129,10 +129,15 @@ internal class KeyValueBag
     {
         if (!values.TryGetValue(key, out var v) || v is null) return default;
 
+        if (v is string s && (string.IsNullOrWhiteSpace(s) || s.Trim() == "null")) return default;
+
+        // Outside the try: a missing serializer setup must never read as "no value".
+        JobMasterMessageJson.EnsureSerializerInitialized();
+
         try
         {
-            if (v is string s)
-                return JobMasterMessageJson.Deserialize<T>(s);
+            if (v is string json)
+                return JobMasterMessageJson.Deserialize<T>(json);
         }
         catch (Exception ex)
         {
@@ -204,15 +209,15 @@ internal class KeyValueBag
             return Enum.TryParse<TEnum>(s, true, out var parsed) ? parsed : null;
         }
 
-        try
-        {
-            return (TEnum)Enum.ToObject(typeof(TEnum), Convert.ToInt64(v));
-        }
-        catch
-        {
-            return null;
-        }
+        // Integral types only: Convert.ToInt64 would round 1.6 to 2, and turn true / 'a' into 1 / 97.
+        if (v is not (sbyte or byte or short or ushort or int or uint or long or ulong)) return null;
+
+        // Enum.ToObject truncates to the underlying type (300 on a byte enum becomes 44).
+        var result = (TEnum)Enum.ToObject(typeof(TEnum), v);
+        return ToEnumBits(result) == ToIntegralBits(v) ? result : null;
     }
+
+    private static ulong ToIntegralBits(object integral) => integral is ulong u ? u : unchecked((ulong)Convert.ToInt64(integral));
 
     private static bool IsDefinedEnumValue<TEnum>(TEnum value) where TEnum : struct, Enum
     {

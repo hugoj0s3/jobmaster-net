@@ -99,19 +99,24 @@
 - **`TryGetJson<T>` now throws when the stored value can't be deserialized as `T`.** It used to return `null`, the same as a missing key, so a payload that no longer matched its type was silently treated as absent. It still returns `null` when the key is missing or the value is `null`. Pass `ignoreDeserializationErrors: true` to get `null` on failure instead. `GetJson<T>` also throws `InvalidOperationException` on a deserialization failure; it now throws `KeyNotFoundException` only when the key is missing.
 - **`TryGetEnumValue<TEnum>` now throws when the stored value isn't a member of `TEnum`.** Before, a name it couldn't parse (`"WRONG"`) returned `null`, and a number that isn't a member, such as a member removed in a later version, came back as an undefined enum value. Both now throw `InvalidOperationException`; for a `[Flags]` enum, any combination of its members is accepted. A missing key still returns `null`. Pass `ignoreInvalidValues: true` to get `null` instead. `GetEnumValue<TEnum>` throws the same way.
 - **`IJobMasterMessageJsonSerializer` no longer has `TryDeserialize` methods.** JobMaster never called them. If you implemented the interface, delete both `TryDeserialize` overloads. `Deserialize` must throw when a value can't be deserialized, never return `null`/`default`: that's how a broken value is reported instead of being treated as missing.
-- **`JobMasterMessageJson` is no longer public.** It was the framework's internal hook for `SetJson` / `GetJson`. To produce or read the same JSON, use `DefaultJobMasterMessageJsonSerializer` (or the serializer you defined) directly.
+- **`JobMasterMessageJson` is no longer public.** It was the framework's internal hook for `SetJson` / `GetJson`. To produce or read the same JSON, use `new SystemTextJsonMessageSerializer()` (or the serializer you defined) directly.
 
 ### Added
 
-- **`FallbackJobMasterMessageJsonSerializer` (`JobMaster.Serialization`): change the `SetJson` / `GetJson` serializer and keep reading values stored before the change.** It writes with the first serializer and, on reads, tries the others in order whenever one throws:
+- **`FallbackMessageJsonSerializer` (`JobMaster.Serialization`): change the `SetJson` / `GetJson` serializer and keep reading values stored before the change.** It writes with the first serializer and, on reads, tries the others in order whenever one throws. A fallback is only tried when a serializer throws, so every serializer except the last must reject data it doesn't own: JSON in another format read without an error comes back as an object with empty properties. When apps update one by one, deploy in two steps:
 
   ```csharp
-  services.DefineJobMasterMessageJsonSerializer(
-      new FallbackJobMasterMessageJsonSerializer(new MyNewtonsoftSerializer(), new DefaultJobMasterMessageJsonSerializer()));
-  ```
+  // Step 1, on every app: still writes the default format, already reads the new one.
+  services.DefineJobMasterMessageJsonSerializer(new FallbackMessageJsonSerializer(
+      new SystemTextJsonMessageSerializer(rejectUnknownProperties: true),
+      new MyNewtonsoftSerializer()));
 
-  A fallback is only tried when a serializer throws, so configure each one to reject data it doesn't own. When apps update one by one, deploy in two steps: `(old, new)` everywhere first, then `(new, old)`.
-- **`DefaultJobMasterMessageJsonSerializer` is now public** (`JobMaster.Serialization`), so it can be listed as a fallback. It's the default `SetJson` / `GetJson` serializer, `System.Text.Json` with default options, and its format stays the same across versions.
+  // Step 2, once every app runs step 1: writes the new format, still reads the old one.
+  services.DefineJobMasterMessageJsonSerializer(new FallbackMessageJsonSerializer(
+      new MyStrictNewtonsoftSerializer(), // e.g. MissingMemberHandling.Error
+      new SystemTextJsonMessageSerializer()));
+  ```
+- **`SystemTextJsonMessageSerializer` (`JobMaster.Serialization`)**, the `System.Text.Json` serializer JobMaster uses by default for `SetJson` / `GetJson` (`new SystemTextJsonMessageSerializer()`, default options). Its format stays the same across versions, so it can be listed as a fallback. `rejectUnknownProperties: true` makes reads throw on JSON with properties the type doesn't have, for use before other serializers in a fallback; writes are unchanged.
 - **`WriteableMessageData.FromDictionary(dictionary)`**, like `WritableMetadata.FromDictionary`: a message data builder pre-populated with a copy of the dictionary.
 - **.NET 10 builds.** Every package now also targets `net10.0`: `JobMaster`, the storage and recurrence providers (`net10.0`, `net8.0`, `netstandard2.0`), and `JobMaster.Api` / `JobMaster.Dashboard` (`net10.0`, `net8.0`). Apps on .NET 10 get the `net10.0` build; nothing changes for .NET 8 or `netstandard2.0` apps.
 - **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
