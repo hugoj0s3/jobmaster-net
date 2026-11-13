@@ -267,6 +267,38 @@ public sealed class ScenarioRunner : IAsyncDisposable
         };
     }
 
+    private static void TrackProvider(
+        JsonElement providerConfig,
+        string repoTypePropertyName,
+        HashSet<string> repoTypes,
+        Dictionary<string, HashSet<string>> databaseNamesByRepoType)
+    {
+        if (!providerConfig.TryGetProperty(repoTypePropertyName, out var repoTypeElement) || repoTypeElement.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        var repoType = repoTypeElement.GetString()!;
+        repoTypes.Add(repoType);
+
+        var connectionString = providerConfig.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
+            ? cs.GetString()
+            : null;
+        var databaseName = ExtractDatabaseName(connectionString);
+        if (databaseName is null)
+        {
+            return;
+        }
+
+        if (!databaseNamesByRepoType.TryGetValue(repoType, out var names))
+        {
+            names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            databaseNamesByRepoType[repoType] = names;
+        }
+
+        names.Add(databaseName);
+    }
+
     /// <summary>
     /// Lazily starts and provisions only the shared database engine(s) this container's rendered
     /// cluster configs actually reference (master RepoType + every agent connection's
@@ -283,58 +315,22 @@ public sealed class ScenarioRunner : IAsyncDisposable
         // up front.
         var databaseNamesByRepoType = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        void Track(string repoType, string? connectionString)
-        {
-            repoTypes.Add(repoType);
-
-            var databaseName = ExtractDatabaseName(connectionString);
-            if (databaseName is null)
-            {
-                return;
-            }
-
-            if (!databaseNamesByRepoType.TryGetValue(repoType, out var names))
-            {
-                names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                databaseNamesByRepoType[repoType] = names;
-            }
-
-            names.Add(databaseName);
-        }
-
-        void TrackProvider(JsonElement providerConfig)
-        {
-            if (providerConfig.TryGetProperty("RepositoryType", out var providerRepoType) && providerRepoType.ValueKind == JsonValueKind.String)
-            {
-                var connectionString = providerConfig.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
-                    ? cs.GetString()
-                    : null;
-                Track(providerRepoType.GetString()!, connectionString);
-            }
-        }
-
         foreach (var clusterConfig in containerDef.ClusterConfigTemplates)
         {
-            if (clusterConfig.TryGetProperty("RepoType", out var repoType) && repoType.ValueKind == JsonValueKind.String)
-            {
-                var connectionString = clusterConfig.TryGetProperty("ConnectionString", out var cs) && cs.ValueKind == JsonValueKind.String
-                    ? cs.GetString()
-                    : null;
-                Track(repoType.GetString()!, connectionString);
-            }
+            TrackProvider(clusterConfig, "RepoType", repoTypes, databaseNamesByRepoType);
 
             if (clusterConfig.TryGetProperty("AgentConnections", out var agentConnections) && agentConnections.ValueKind == JsonValueKind.Array)
             {
                 foreach (var agentConnection in agentConnections.EnumerateArray())
                 {
-                    TrackProvider(agentConnection);
+                    TrackProvider(agentConnection, "RepositoryType", repoTypes, databaseNamesByRepoType);
 
                     // A hybrid connection names its providers in "Transport" and "Execution" instead.
                     foreach (var leg in new[] { "Transport", "Execution" })
                     {
                         if (agentConnection.TryGetProperty(leg, out var legConfig) && legConfig.ValueKind == JsonValueKind.Object)
                         {
-                            TrackProvider(legConfig);
+                            TrackProvider(legConfig, "RepositoryType", repoTypes, databaseNamesByRepoType);
                         }
                     }
                 }

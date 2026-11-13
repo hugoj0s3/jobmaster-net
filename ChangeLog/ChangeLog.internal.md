@@ -30,16 +30,18 @@
   caller's selector type (`UsePostgresForAgent<T>`, `UseMySqlForAgent<T>`, `UseSqlServerForAgent<T>`,
   `UseNatsJetStream<T>`, agent `UseRavenDb<T>`); `IConnectionOptionsBinder.SetOptions` takes
   `IAgentConnectionProviderSelector` too. JSON: `AgentConnectionJsonConfig.Transport` / `Execution`
-  (`AgentConnectionTargetJsonConfig`) with per-leg `ConnectionOptions`; mixing them with top-level
+  (`AgentProviderJsonConfig`) with per-leg `ConnectionOptions`; mixing them with top-level
   `RepositoryType` / `ConnectionString` / `ConnectionOptions` throws.
-- `AgentConnectionDefinition`: `Transport` / `Execution` (`AgentConnectionTargetDefinition`) replace the 0.0.11
-  `AgentRepoType` / `AgentConnString` / `AgentAdditionalConnConfig` setters. A single connection has one target in both
+- `AgentConnectionDefinition`: `Transport` / `Execution` (`AgentProviderDefinition`) replace the 0.0.11
+  `AgentRepoType` / `AgentConnString` / `AgentAdditionalConnConfig` setters. A single connection has one provider in both
   (same instance), so `IsHybrid` is `!ReferenceEquals(Transport, Execution)` and those three are now read-only, computed
   (hybrid: formatted repo type once both legs are valid, null connection string / config). `UseHybrid()` switches to two
-  targets and throws if a single-provider repo type, connection string or additional config is already set; the
+  providers and throws if a single-provider repo type, connection string or additional config is already set; the
   single-provider selector setters throw after `UseHybrid()`.
 - `JobMasterAgentConnectionConfig`: `ConnectionString` / `AdditionalConnConfig` moved to two `JobMasterAgentProviderConfig`
-  legs, `TransportConfig` and `ExecutionConfig` (the same instance for a single connection); `IsHybrid` added.
+  legs, `TransportConfig` and `ExecutionConfig` (the same instance for a single connection); `IsHybrid` added. Built
+  only through `NewSingle(...)` / `NewHybrid(...)` (constructors are private); `NewHybrid` throws when both legs are the
+  same instance.
   `JobMasterClusterConnectionConfig.GetAllAgentProviderConfigs()` returns the reference-distinct legs for
   schema/collation/index provisioning (`SqlJobMasterRuntimeSetup`, `PostgresJobMasterRuntimeSetup`,
   `RavenDbJobMasterRuntimeSetup`) and `MarkAsReady` locking. New internal `IHasAdditionalConnConfig`, implemented by

@@ -7,6 +7,6 @@ internal sealed class AgentConnectionJsonConfig
     public string? ConnectionString { get; set; }
     public bool? ProtectConnectionChanges { get; set; }
     public Dictionary<string, object>? ConnectionOptions { get; set; }
-    public AgentConnectionTargetJsonConfig? Transport { get; set; }
-    public AgentConnectionTargetJsonConfig? Execution { get; set; }
+    public AgentProviderJsonConfig? Transport { get; set; }
+    public AgentProviderJsonConfig? Execution { get; set; }
 }

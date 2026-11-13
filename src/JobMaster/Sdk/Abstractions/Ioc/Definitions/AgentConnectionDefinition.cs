@@ -3,19 +3,12 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Ioc.Definitions;
 
-internal sealed class AgentConnectionTargetDefinition
-{
-    public string? AgentRepoType { get; set; }
-    public string? AgentConnString { get; set; }
-    public JobMasterConfigDictionary? AgentAdditionalConnConfig { get; set; }
-}
-
 internal sealed class AgentConnectionDefinition
 {
     public AgentConnectionDefinition()
     {
-        // Single provider by default: one target serves both roles.
-        var single = new AgentConnectionTargetDefinition();
+        // Single provider by default: one provider serves both roles.
+        var single = new AgentProviderDefinition();
         Transport = single;
         Execution = single;
     }
@@ -25,9 +18,9 @@ internal sealed class AgentConnectionDefinition
     public bool ProtectConnectionChanges { get; set; } = true;
 
     /// <summary>Same instance as <see cref="Execution"/> for a single-provider connection.</summary>
-    public AgentConnectionTargetDefinition Transport { get; private set; }
+    public AgentProviderDefinition Transport { get; private set; }
     /// <summary>Same instance as <see cref="Transport"/> for a single-provider connection.</summary>
-    public AgentConnectionTargetDefinition Execution { get; private set; }
+    public AgentProviderDefinition Execution { get; private set; }
 
     public bool IsHybrid => !ReferenceEquals(Transport, Execution);
 
@@ -35,7 +28,7 @@ internal sealed class AgentConnectionDefinition
     public string? AgentConnString => IsHybrid ? null : Transport.AgentConnString;
     public JobMasterConfigDictionary? AgentAdditionalConnConfig => IsHybrid ? null : Transport.AgentAdditionalConnConfig;
 
-    /// <summary>Switches to separate transport and execution targets. No-op when already hybrid.</summary>
+    /// <summary>Switches to separate transport and execution providers. No-op when already hybrid.</summary>
     public void UseHybrid()
     {
         if (IsHybrid)
@@ -48,8 +41,8 @@ internal sealed class AgentConnectionDefinition
             throw new InvalidOperationException("Cannot configure both a single provider and UseHybrid() on the same agent connection.");
         }
 
-        Transport = new AgentConnectionTargetDefinition();
-        Execution = new AgentConnectionTargetDefinition();
+        Transport = new AgentProviderDefinition();
+        Execution = new AgentProviderDefinition();
     }
 
     public void Validate()
@@ -109,7 +102,7 @@ internal sealed class AgentConnectionDefinition
             ? RepoTypeAndFingerprintUtil.FormatHybridRepoType(Transport.AgentRepoType!, Execution.AgentRepoType!)
             : null;
 
-    private (bool IsValid, string? Error) IsValidLeg(AgentConnectionTargetDefinition leg, string role)
+    private (bool IsValid, string? Error) IsValidLeg(AgentProviderDefinition leg, string role)
     {
         if (string.IsNullOrWhiteSpace(leg.AgentConnString) ||
             string.IsNullOrWhiteSpace(leg.AgentRepoType))

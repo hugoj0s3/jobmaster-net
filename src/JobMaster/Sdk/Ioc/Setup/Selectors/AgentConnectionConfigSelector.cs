@@ -7,35 +7,35 @@ namespace JobMaster.Sdk.Ioc.Setup.Selectors;
 
 internal sealed class AgentConnectionProviderSelector : IAgentConnectionProviderSelector
 {
-    private readonly AgentConnectionTargetDefinition target;
+    private readonly AgentProviderDefinition provider;
 
-    public AgentConnectionProviderSelector(AgentConnectionTargetDefinition target)
+    public AgentConnectionProviderSelector(AgentProviderDefinition provider)
     {
-        this.target = target;
+        this.provider = provider;
     }
 
     public IAgentConnectionProviderSelector AgentRepoType(string repoType)
     {
-        target.AgentRepoType = repoType;
+        provider.AgentRepoType = repoType;
         return this;
     }
 
     public IAgentConnectionProviderSelector AgentConnString(string connString)
     {
-        target.AgentConnString = connString;
+        provider.AgentConnString = connString;
         return this;
     }
 
     public IAgentConnectionProviderSelector AgentAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig)
     {
-        target.AgentAdditionalConnConfig = additionalConnConfig;
+        provider.AgentAdditionalConnConfig = additionalConnConfig;
         return this;
     }
 
     public IAgentConnectionProviderSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
     {
-        target.AgentAdditionalConnConfig ??= new JobMasterConfigDictionary();
-        target.AgentAdditionalConnConfig.SetValue(namespaceKey, key, value);
+        provider.AgentAdditionalConnConfig ??= new JobMasterConfigDictionary();
+        provider.AgentAdditionalConnConfig.SetValue(namespaceKey, key, value);
         return this;
     }
 }
@@ -101,34 +101,34 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
         return new HybridAgentConnectionConfigSelector(def);
     }
 
-    // Single-provider setters write into the shared target (def.Transport == def.Execution).
+    // Single-provider setters write into the shared provider (def.Transport == def.Execution).
     public IAgentConnectionProviderSelector AgentRepoType(string repoType)
     {
-        SingleTarget().AgentRepoType = repoType;
+        SingleProvider().AgentRepoType = repoType;
         return this;
     }
 
     public IAgentConnectionProviderSelector AgentConnString(string connString)
     {
-        SingleTarget().AgentConnString = connString;
+        SingleProvider().AgentConnString = connString;
         return this;
     }
 
     public IAgentConnectionProviderSelector AgentAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig)
     {
-        SingleTarget().AgentAdditionalConnConfig = additionalConnConfig;
+        SingleProvider().AgentAdditionalConnConfig = additionalConnConfig;
         return this;
     }
 
     public IAgentConnectionProviderSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
     {
-        var target = SingleTarget();
-        target.AgentAdditionalConnConfig ??= new JobMasterConfigDictionary();
-        target.AgentAdditionalConnConfig.SetValue(namespaceKey, key, value);
+        var provider = SingleProvider();
+        provider.AgentAdditionalConnConfig ??= new JobMasterConfigDictionary();
+        provider.AgentAdditionalConnConfig.SetValue(namespaceKey, key, value);
         return this;
     }
 
-    private AgentConnectionTargetDefinition SingleTarget()
+    private AgentProviderDefinition SingleProvider()
     {
         if (def.IsHybrid)
         {

@@ -14,6 +14,9 @@ using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Services;
@@ -755,7 +758,7 @@ public class HybridAgentConnectionTests
         raw.Setup(r => r.GiveYourFingerprintAsync("C1", "C1:single")).ReturnsAsync("fp-raw");
 
         var resolver = new SingleAgentFingerprintResolver("Postgres", raw.Object);
-        var cfg = new JobMasterAgentConnectionConfig("C1", "single", "Host=localhost", "Postgres");
+        var cfg = JobMasterAgentConnectionConfig.NewSingle("C1", "single", "Host=localhost", "Postgres");
 
         resolver.Initialize(cfg);
 
@@ -832,6 +835,120 @@ public class HybridAgentConnectionTests
     }
 
     [Fact]
+    public async Task HybridDispatcher_EveryOperation_TouchesOnlyItsOwnLeg()
+    {
+        var clusterId = UniqueClusterId();
+        var builder = CreateBuilder(clusterId);
+        builder.UsePostgresForMaster("Host=localhost;Database=master;Username=u;Password=p");
+        builder.Finish();
+        var clusterCfg = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
+
+        var transport = NewRawRepositoryMock();
+        var execution = NewRawRepositoryMock();
+        var dispatcher = new HybridJobsDispatcherRepository(
+            clusterCfg, "hybrid:Postgres&&MySql", transport.Object, execution.Object, Mock.Of<IJobMasterLogger>());
+
+        const string bucketId = "b1";
+        var job = NewRoutingJob(clusterId, bucketId);
+        var recur = new RecurringScheduleRawModel(clusterId)
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            JobDefinitionId = "def",
+            CreatedAt = DateTime.UtcNow,
+            BucketId = bucketId,
+        };
+
+        dispatcher.PushForSaving(recur);
+        await dispatcher.PushForSavingAsync(recur);
+        dispatcher.PushSavePendingJob(job);
+        await dispatcher.PushSavePendingJobAsync(job);
+        await dispatcher.BulkPushSavePendingJobAsync(bucketId, new List<JobRawModel> { job });
+        await dispatcher.PullSavePendingRecurAsync(bucketId, 10);
+        await dispatcher.PullSavePendingJobsAsync(bucketId, 10);
+        dispatcher.PushForProcessing(job);
+        await dispatcher.PushForProcessingAsync(job);
+        await dispatcher.BulkPushForProcessingAsync(bucketId, new List<JobRawModel> { job });
+        await dispatcher.PullForProcessingAsync(bucketId, 10, null);
+        await dispatcher.HasJobsAsync(bucketId);
+        await dispatcher.CreateBucketAsync(bucketId);
+        await dispatcher.DestroyBucketAsync(bucketId);
+
+        var savePending = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(bucketId);
+        var recurSavePending = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
+        var processing = FullBucketAddressIdsUtil.GetJobProcessingBucketAddress(bucketId);
+
+        AddressedCalls(transport).Should().BeEquivalentTo(new[]
+        {
+            ("PushMessage", recurSavePending),
+            ("PushMessageAsync", recurSavePending),
+            ("PushMessage", savePending),
+            ("PushMessageAsync", savePending),
+            ("BulkPushMessageAsync", savePending),
+            ("PullMessagesAsync", recurSavePending),
+            ("PullMessagesAsync", savePending),
+            ("HasJobsAsync", savePending),
+            ("HasJobsAsync", recurSavePending),
+            ("CreateBucketAsync", savePending),
+            ("CreateBucketAsync", recurSavePending),
+            ("DestroyBucketAsync", savePending),
+            ("DestroyBucketAsync", recurSavePending),
+        });
+
+        AddressedCalls(execution).Should().BeEquivalentTo(new[]
+        {
+            ("PushMessage", processing),
+            ("PushMessageAsync", processing),
+            ("BulkPushMessageAsync", processing),
+            ("PullMessagesAsync", processing),
+            ("HasJobsAsync", processing),
+            ("CreateBucketAsync", processing),
+            ("DestroyBucketAsync", processing),
+        });
+    }
+
+    // Polling-based on both legs so the Pull* methods reach the raw repositories; HasJobs returns
+    // false so all three checks run.
+    private static Mock<IAgentRawMessagesDispatcherRepository> NewRawRepositoryMock()
+    {
+        var mock = new Mock<IAgentRawMessagesDispatcherRepository>();
+        mock.SetupGet(r => r.IsPollingBased).Returns(true);
+        mock.Setup(r => r.PushMessage(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns("id");
+        mock.Setup(r => r.PushMessageAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<string>()))
+            .ReturnsAsync("id");
+        mock.Setup(r => r.BulkPushMessageAsync(It.IsAny<string>(), It.IsAny<IList<(string payload, DateTime referenceTime, string correlationId)>>()))
+            .ReturnsAsync(new List<string> { "id" });
+        mock.Setup(r => r.PullMessagesAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTime?>()))
+            .ReturnsAsync(new List<JobMasterRawMessage>());
+        mock.Setup(r => r.HasJobsAsync(It.IsAny<string>())).ReturnsAsync(false);
+        mock.Setup(r => r.CreateBucketAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
+        mock.Setup(r => r.DestroyBucketAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
+        return mock;
+    }
+
+    // Every call that takes a bucket address, as (method, address).
+    private static IEnumerable<(string Method, string Address)> AddressedCalls(Mock<IAgentRawMessagesDispatcherRepository> mock)
+    {
+        return mock.Invocations
+            .Where(i => i.Arguments.Count > 0 && i.Arguments[0] is string)
+            .Select(i => (i.Method.Name, (string)i.Arguments[0]))
+            .ToList();
+    }
+
+    private static JobRawModel NewRoutingJob(string clusterId, string bucketId) => new(clusterId)
+    {
+        Id = JobMasterRandomUtil.NewGuid4(),
+        JobDefinitionId = "def",
+        CreatedAt = DateTime.UtcNow,
+        ScheduledAt = DateTime.UtcNow,
+        NextPlanExecutionAt = DateTime.UtcNow,
+        Priority = JobMasterPriority.Medium,
+        Status = JobMasterJobStatus.OnMaster,
+        Timeout = TimeSpan.FromSeconds(30),
+        BucketId = bucketId,
+    };
+
+    [Fact]
     public async Task HybridAgentFingerprintResolver_ComposesTransportAndExecutionFingerprints()
     {
         var mockTransport = new Mock<IAgentRawFingerprintResolver>();
@@ -849,7 +966,7 @@ public class HybridAgentConnectionTests
 
         var tCfg = new JobMasterAgentProviderConfig("NatsJetStream", "nats://localhost:4222");
         var eCfg = new JobMasterAgentProviderConfig("RavenDB", "Urls=http://localhost:8080;Database=db");
-        var hCfg = new JobMasterAgentConnectionConfig("C1", "hyb", tCfg, eCfg);
+        var hCfg = JobMasterAgentConnectionConfig.NewHybrid("C1", "hyb", tCfg, eCfg);
 
         resolver.Initialize(hCfg);
 

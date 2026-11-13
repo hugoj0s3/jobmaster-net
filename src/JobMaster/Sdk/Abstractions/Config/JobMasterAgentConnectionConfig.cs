@@ -3,58 +3,55 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
-internal class JobMasterAgentProviderConfig : IHasAdditionalConnConfig
-{
-    public JobMasterAgentProviderConfig(
-        string repositoryTypeId,
-        string connectionString,
-        JobMasterConfigDictionary? additionalConnConfig = null)
-    {
-        RepositoryTypeId = repositoryTypeId;
-        ConnectionString = connectionString;
-        AdditionalConnConfig = additionalConnConfig ?? new JobMasterConfigDictionary();
-    }
-
-    public string RepositoryTypeId { get; private set; }
-    public string ConnectionString { get; private set; }
-    public JobMasterConfigDictionary AdditionalConnConfig { get; private set; }
-}
-
 internal class JobMasterAgentConnectionConfig
 {
-    public JobMasterAgentConnectionConfig(
+    public static JobMasterAgentConnectionConfig NewSingle(
         string clusterId,
         string name,
         string connectionString,
         string repositoryTypeId,
         JobMasterConfigDictionary? additionalConnConfig = null)
     {
-        ClusterId = clusterId;
-        Name = name;
-        Id = new AgentConnectionId(clusterId, name).IdValue;
-        RepositoryTypeId = repositoryTypeId;
-        IsHybrid = false;
-        // One store serves both roles.
         var providerConfig = new JobMasterAgentProviderConfig(repositoryTypeId, connectionString, additionalConnConfig);
-        TransportConfig = providerConfig;
-        ExecutionConfig = providerConfig;
+        return new JobMasterAgentConnectionConfig(clusterId, name, false, repositoryTypeId, providerConfig, providerConfig);
     }
 
-    public JobMasterAgentConnectionConfig(
+    public static JobMasterAgentConnectionConfig NewHybrid(
         string clusterId,
         string name,
         JobMasterAgentProviderConfig transportConfig,
         JobMasterAgentProviderConfig executionConfig)
     {
+        if (transportConfig is null)
+            throw new ArgumentNullException(nameof(transportConfig));
+        if (executionConfig is null)
+            throw new ArgumentNullException(nameof(executionConfig));
+        if (ReferenceEquals(transportConfig, executionConfig))
+            throw new ArgumentException("Transport and execution configs must be different instances for a hybrid connection.");
+        
+        var repositoryTypeId = RepoTypeAndFingerprintUtil.FormatHybridRepoType(
+            transportConfig.RepositoryTypeId,
+            executionConfig.RepositoryTypeId);
+        
+        return new JobMasterAgentConnectionConfig(clusterId, name, true, repositoryTypeId, transportConfig, executionConfig);
+    }
+    
+    private JobMasterAgentConnectionConfig(
+        string clusterId,
+        string name,
+        bool isHybrid,
+        string repositoryTypeId,
+        JobMasterAgentProviderConfig transportConfig,
+        JobMasterAgentProviderConfig executionConfig)
+    {
         TransportConfig = transportConfig ?? throw new ArgumentNullException(nameof(transportConfig));
         ExecutionConfig = executionConfig ?? throw new ArgumentNullException(nameof(executionConfig));
+        
         ClusterId = clusterId;
         Name = name;
         Id = new AgentConnectionId(clusterId, name).IdValue;
-        RepositoryTypeId = RepoTypeAndFingerprintUtil.FormatHybridRepoType(
-            transportConfig.RepositoryTypeId,
-            executionConfig.RepositoryTypeId);
-        IsHybrid = true;
+        RepositoryTypeId = repositoryTypeId;
+        IsHybrid = isHybrid;
     }
 
     public string Id { get; private set; }

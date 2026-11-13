@@ -1,6 +1,6 @@
 ﻿namespace JobMaster.Sdk.Ioc.Setup.Json;
 
-internal sealed class AgentConnectionTargetJsonConfig
+internal sealed class AgentProviderJsonConfig
 {
     public string? RepositoryType { get; set; }
     public string? ConnectionString { get; set; }
