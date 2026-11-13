@@ -56,7 +56,7 @@ public sealed class PostgresRepositoryFixture : RepositoryFixtureBase
             .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
                 ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(PostgresRepositoryConstants.RepositoryTypeId)
             );
-        rawRepo.Initialize(agentConfig);
+        rawRepo.Initialize(agentConfig.Id, agentConfig.TransportConfig);
         AgentMessages = rawRepo;
 
         AgentConnectionId = new AgentConnectionId(ClusterId, RepoConformanceBootstrap.PostgresAgentConnectionName);

@@ -7,29 +7,40 @@ using Raven.Client.Documents.Operations.CompareExchange;
 
 namespace JobMaster.RavenDB.Agents;
 
-internal sealed class RavenDbAgentFingerprintResolver : IAgentFingerprintResolver
+internal sealed class RavenDbAgentRawFingerprintResolver : IAgentRawFingerprintResolver
 {
     private readonly IRavenDbDocumentStoreManager storeManager;
     private IDocumentStore store = null!;
     private string prefix = RavenDbConfigKeys.DefaultCollectionPrefix;
 
-    public RavenDbAgentFingerprintResolver(IRavenDbDocumentStoreManager storeManager)
+    public RavenDbAgentRawFingerprintResolver(IRavenDbDocumentStoreManager storeManager)
     {
         this.storeManager = storeManager;
     }
 
     public string AgentRepoTypeId => RavenDbRepositoryConstants.RepositoryTypeId;
 
-    public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
+    private readonly object initializeLock = new();
+
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig agentConnConfig)
     {
-        store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString, agentConnConfig.GetCertificate(), agentConnConfig.GetRequestTimeout(), agentConnConfig.GetPooledConnectionLifetime(), agentConnConfig.GetPooledConnectionIdleTimeout());
-        prefix = agentConnConfig.GetCollectionPrefix();
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+            store = storeManager.GetOrCreateStore(agentConnConfig.ConnectionString, agentConnConfig.GetCertificate(), agentConnConfig.GetRequestTimeout(), agentConnConfig.GetPooledConnectionLifetime(), agentConnConfig.GetPooledConnectionIdleTimeout());
+            prefix = agentConnConfig.GetCollectionPrefix();
+            IsInitialized = true;
+        }
     }
 
     public async ValueTask<string> GiveYourFingerprintAsync(string clusterId, string agentConnectionId)
     {
         var cxKey = RavenDbDocumentNaming.DocumentId(prefix, clusterId, RavenDbCollectionNames.Fingerprint, agentConnectionId);
-        var fingerprint = JobMasterRandomUtil.NewGuid4().ToString("N");
+        var fingerprint = RepoTypeAndFingerprintUtil.GenerateSingleFingerprint();
 
         // Create-if-absent: index 0 means "nothing should currently exist for this key". Unlike SQL's
         // duplicate-key exception or NATS KV's create exception, RavenDB reports the conflict via

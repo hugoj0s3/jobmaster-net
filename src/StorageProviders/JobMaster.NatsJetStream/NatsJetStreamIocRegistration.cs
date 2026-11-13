@@ -15,10 +15,10 @@ internal static class NatsJetStreamIocRegistration
     
     public static void RegisterForAgent(ClusterIocRegistration registration, string clusterId)
     {
-        registration.AddFingerprintResolver<NatsJetStreamAgentFingerprintResolver>(RepositoryType);
+        registration.AddFingerprintResolver<NatsJetStreamAgentRawFingerprintResolver>(RepositoryType);
 
         // Wire the generic dispatcher to use NatsJetStream raw repositories
-        registration.AddRepositoryDispatcher<NatsJetStreamJobsDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository>(RepositoryType);
+        registration.AddRepositoryDispatcher<NatsJetStreamRawMessagesDispatcherRepository, NatsJetStreamRawMessagesDispatcherRepository>(RepositoryType);
        
         // Bucket-aware runners for JetStream transport
         registration.AddBucketAwareRunner<IJobsExecutionRunner, NatsJetStreamJobsExecutionRunner>(RepositoryType);

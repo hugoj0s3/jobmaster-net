@@ -116,7 +116,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             var bucketId = bucketGroup.Key;
             var bucketJobs = bucketGroup.ToList();
             var agentConnectionId = bucketJobs[0].AgentConnectionId!;
-            var maxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(agentConnectionId.IdValue);
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetAgentTransportMaxBatchSize(agentConnectionId.IdValue);
             foreach (var partition in bucketJobs.Partition(maxBatchSize))
             {
                 var partitionJobs = partition.ToList();

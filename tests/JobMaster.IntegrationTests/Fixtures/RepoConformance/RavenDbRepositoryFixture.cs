@@ -61,7 +61,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
     // only registers the master side of UseRavenDb, so RegisterForAgent never runs and there's no
-    // DI-resolved IAgentFingerprintResolver available. RavenDbAgentFingerprintResolverConformanceTests constructs the
+    // DI-resolved IAgentFingerprintResolver available. RavenDbAgentRawFingerprintResolverConformanceTests constructs the
     // resolver directly instead (same document store, no full agent-connection DI wiring needed).
     internal IRavenDbDocumentStoreManager DocumentStoreManager { get; private set; } = null!;
     internal string ConnectionString { get; private set; } = string.Empty;
@@ -138,13 +138,13 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         var rawRepo = factory.ClusterServiceProvider
             .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
                 ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(RavenDbRepositoryConstants.RepositoryTypeId));
-        rawRepo.Initialize(agentConfig);
+        rawRepo.Initialize(agentConfig.Id, agentConfig.TransportConfig);
         AgentMessages = rawRepo;
 
         // Normally deployed by RavenDbJobMasterRuntimeSetup.OnBeforeStartAsync, which this fixture
         // deliberately never invokes (see the class doc above) -- without it, RavenDbRawMessagesDispatcherRepository's
         // queries (which target this index by name) throw IndexDoesNotExistException.
-        var messageCollectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
+        var messageCollectionName = agentConfig.TransportConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
         await RavenDbMessageIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(agentConnectionString), messageCollectionName);
 
         // Same reasoning, for AcquireAndFetchAsync's static index -- lives in the master database.

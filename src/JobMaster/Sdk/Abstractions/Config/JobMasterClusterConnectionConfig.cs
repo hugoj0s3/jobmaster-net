@@ -5,7 +5,7 @@ using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
-internal class JobMasterClusterConnectionConfig
+internal class JobMasterClusterConnectionConfig : IHasAdditionalConnConfig
 {
     private static readonly object StaticLock = new();
     private readonly object InstanceLock = new();
@@ -76,24 +76,59 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (InstanceLock)
         {
-            if (IsReady)
+            EnsureAgentConnectionCanBeAdded(name);
+
+            if (string.IsNullOrEmpty(connectionString))
             {
-                throw new InvalidOperationException("Cannot modify configuration while the cluster is active and running.");
+                throw new ArgumentException("Connection string cannot be null or empty.", nameof(connectionString));
             }
             
-            if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(connectionString))
-            {
-                throw new ArgumentNullException("UniqueName or ConnectionString cannot be null or empty.");
-            }
-            
-            if (TryGetAgentConnectionConfig(name) != null)
-            {
-                throw new ArgumentException($"Agent connection string '{name}' already exists.", nameof(name));
-            }
-            
-            var agentConnConfig = new JobMasterAgentConnectionConfig(this.ClusterId, name, connectionString, repositoryTypeId, additionalConnConfig);
+            var agentConnConfig = JobMasterAgentConnectionConfig.NewSingle(this.ClusterId, name, connectionString, repositoryTypeId, additionalConnConfig);
             var id = agentConnConfig.Id;
             AgentConnectionConfigs[id] = agentConnConfig;
+        }
+    }
+
+    public void AddHybridAgentConnectionConfig(
+        string name,
+        string transportConnectionString,
+        string transportRepositoryTypeId,
+        JobMasterConfigDictionary? transportAdditionalConnConfig,
+        string executionConnectionString,
+        string executionRepositoryTypeId,
+        JobMasterConfigDictionary? executionAdditionalConnConfig)
+    {
+        lock (InstanceLock)
+        {
+            EnsureAgentConnectionCanBeAdded(name);
+
+            if (string.IsNullOrEmpty(transportConnectionString))
+            {
+                throw new ArgumentException("Transport connection string cannot be null or empty.", nameof(transportConnectionString));
+            }
+
+            if (string.IsNullOrEmpty(executionConnectionString))
+            {
+                throw new ArgumentException("Execution connection string cannot be null or empty.", nameof(executionConnectionString));
+            }
+
+            var transportConfig = new JobMasterAgentProviderConfig(
+                transportRepositoryTypeId,
+                transportConnectionString,
+                transportAdditionalConnConfig);
+
+            var executionConfig = new JobMasterAgentProviderConfig(
+                executionRepositoryTypeId,
+                executionConnectionString,
+                executionAdditionalConnConfig);
+
+            var hybridConfig = JobMasterAgentConnectionConfig.NewHybrid(
+                this.ClusterId,
+                name,
+                transportConfig,
+                executionConfig);
+
+            AgentConnectionConfigs[hybridConfig.Id] = hybridConfig;
         }
     }
 
@@ -101,7 +136,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (InstanceLock)
         {
-            var agentConnConfig = new JobMasterAgentConnectionConfig(
+            var agentConnConfig = JobMasterAgentConnectionConfig.NewSingle(
                 this.ClusterId,
                 JobMasterConstants.StandaloneAgentConnName,
                 this.ConnectionString,
@@ -118,7 +153,7 @@ internal class JobMasterClusterConnectionConfig
     {
         lock (InstanceLock)
         {
-            var agentConnConfig = new JobMasterAgentConnectionConfig(
+            var agentConnConfig = JobMasterAgentConnectionConfig.NewSingle(
                 this.ClusterId,
                 JobMasterConstants.MasterFallbackAgentConnName,
                 this.ConnectionString,
@@ -183,6 +218,15 @@ internal class JobMasterClusterConnectionConfig
     {
         return AgentConnectionConfigs.Values.ToList();
     }
+
+    public IList<JobMasterAgentProviderConfig> GetAllAgentProviderConfigs()
+    {
+        // Reference-distinct: a non-hybrid connection's transport and execution are the same instance.
+        return AgentConnectionConfigs.Values
+            .SelectMany(c => new[] { c.TransportConfig, c.ExecutionConfig })
+            .Distinct()
+            .ToList();
+    }
     
     public void MarkAsReady()
     {
@@ -192,9 +236,9 @@ internal class JobMasterClusterConnectionConfig
             
             AdditionalConnConfig.LockChanges();
             
-            foreach (var agentConnConfig in AgentConnectionConfigs.Values)
+            foreach (var providerConfig in GetAllAgentProviderConfigs())
             {
-                agentConnConfig.AdditionalConnConfig.LockChanges();
+                providerConfig.AdditionalConnConfig.LockChanges();
             }
         }
     }
@@ -290,5 +334,23 @@ internal class JobMasterClusterConnectionConfig
     public static IList<JobMasterClusterConnectionConfig> GetAllConfigs()
     {
         return ClusterConfigs.ToList();
+    }
+
+    private void EnsureAgentConnectionCanBeAdded(string name)
+    {
+        if (IsReady)
+        {
+            throw new InvalidOperationException("Cannot modify configuration while the cluster is active and running.");
+        }
+
+        if (string.IsNullOrEmpty(name))
+        {
+            throw new ArgumentException("Agent connection name cannot be null or empty.", nameof(name));
+        }
+
+        if (TryGetAgentConnectionConfig(name) != null)
+        {
+            throw new ArgumentException($"Agent connection string '{name}' already exists.", nameof(name));
+        }
     }
 }

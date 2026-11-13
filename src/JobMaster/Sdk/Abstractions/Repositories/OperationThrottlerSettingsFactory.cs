@@ -21,7 +21,8 @@ internal static class OperationThrottlerSettingsFactory
     private static readonly ConcurrentDictionary<string, OperationThrottler> MasterThrottlers = new();
     private static readonly ConcurrentDictionary<string, OperationThrottler> InternalAgentThrottlers = new();
     private static readonly ConcurrentDictionary<string, OperationThrottler> SchedulingAgentThrottlers = new();
-    
+    private static readonly ConcurrentDictionary<string, OperationThrottler> BucketLifecycleThrottlers = new();
+
     private static readonly OperationThrottler NotStartedThrottler = new(3, 250);
     private const int NotStartedMaxBatchSize = 10;
 
@@ -38,13 +39,33 @@ internal static class OperationThrottlerSettingsFactory
 
     public static OperationThrottler GetInternalAgentThrottler(string agentConnectionId)
     {
+        return GetInternalAgentTransportThrottler(agentConnectionId);
+    }
+
+    public static OperationThrottler GetInternalAgentTransportThrottler(string agentConnectionId)
+    {
         if (!JobMasterRuntimeSingleton.Instance.Started)
         {
             return NotStartedThrottler;
         }
 
-        return InternalAgentThrottlers.GetOrAdd(agentConnectionId, _ =>
-            OperationThrottlerSettingsTemplateFactory.GetInternalAgentThrottlerTemplate(AgentRepositoryTypeId(agentConnectionId)).Create());
+        var config = ResolveAgentConfig(agentConnectionId);
+        var cacheKey = config.IsHybrid ? $"{agentConnectionId}:transport" : agentConnectionId;
+        return InternalAgentThrottlers.GetOrAdd(cacheKey, _ =>
+            OperationThrottlerSettingsTemplateFactory.GetInternalAgentThrottlerTemplate(config.TransportConfig.RepositoryTypeId).Create());
+    }
+
+    public static OperationThrottler GetInternalAgentExecutionThrottler(string agentConnectionId)
+    {
+        if (!JobMasterRuntimeSingleton.Instance.Started)
+        {
+            return NotStartedThrottler;
+        }
+
+        var config = ResolveAgentConfig(agentConnectionId);
+        var cacheKey = config.IsHybrid ? $"{agentConnectionId}:execution" : agentConnectionId;
+        return InternalAgentThrottlers.GetOrAdd(cacheKey, _ =>
+            OperationThrottlerSettingsTemplateFactory.GetInternalAgentThrottlerTemplate(config.ExecutionConfig.RepositoryTypeId).Create());
     }
 
     public static OperationThrottler GetSchedulingAgentThrottler(string agentConnectionId)
@@ -55,7 +76,22 @@ internal static class OperationThrottlerSettingsFactory
         }
 
         return SchedulingAgentThrottlers.GetOrAdd(agentConnectionId, _ =>
-            OperationThrottlerSettingsTemplateFactory.GetSchedulingAgentThrottlerTemplate(AgentRepositoryTypeId(agentConnectionId)).Create());
+        {
+            var config = ResolveAgentConfig(agentConnectionId);
+            return OperationThrottlerSettingsTemplateFactory.GetSchedulingAgentThrottlerTemplate(config.TransportConfig.RepositoryTypeId).Create();
+        });
+    }
+
+    // One at a time per agent connection, for the rare bucket operations that touch both legs
+    // (HasJobs / CreateBucket / DestroyBucket). Same for every provider.
+    public static OperationThrottler GetBucketLifecycleThrottler(string agentConnectionId)
+    {
+        if (!JobMasterRuntimeSingleton.Instance.Started)
+        {
+            return NotStartedThrottler;
+        }
+
+        return BucketLifecycleThrottlers.GetOrAdd(agentConnectionId, _ => new OperationThrottler(1, 1000));
     }
 
     public static int GetMasterMaxBatchSize(string clusterId)
@@ -69,22 +105,37 @@ internal static class OperationThrottlerSettingsFactory
     }
 
     public static int GetAgentMaxBatchSize(string agentConnectionId)
+        => GetAgentTransportMaxBatchSize(agentConnectionId);
+
+    public static int GetAgentTransportMaxBatchSize(string agentConnectionId)
     {
         if (!JobMasterRuntimeSingleton.Instance.Started)
         {
             return NotStartedMaxBatchSize;
         }
 
-        return OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepositoryTypeId(agentConnectionId));
+        var config = ResolveAgentConfig(agentConnectionId);
+        return OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(config.TransportConfig.RepositoryTypeId);
+    }
+
+    public static int GetAgentExecutionMaxBatchSize(string agentConnectionId)
+    {
+        if (!JobMasterRuntimeSingleton.Instance.Started)
+        {
+            return NotStartedMaxBatchSize;
+        }
+
+        var config = ResolveAgentConfig(agentConnectionId);
+        return OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(config.ExecutionConfig.RepositoryTypeId);
     }
 
     private static string MasterRepositoryTypeId(string clusterId) =>
         JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true).RepositoryTypeId;
 
-    private static string AgentRepositoryTypeId(string agentConnectionId)
+    private static JobMasterAgentConnectionConfig ResolveAgentConfig(string agentConnectionId)
     {
         var id = new AgentConnectionId(agentConnectionId);
         return JobMasterClusterConnectionConfig.Get(id.ClusterId, includeNotReady: true)
-            .GetAgentConnectionConfig(id.Name).RepositoryTypeId;
+            .GetAgentConnectionConfig(id.Name);
     }
 }

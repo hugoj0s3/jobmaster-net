@@ -330,21 +330,6 @@ Fix direction (not implemented): prefix each provider's methods with its name
 old ambiguous methods `[Obsolete]` rather than removing them, defer deduping the two classes' identical
 bodies until the obsolete methods are actually removed later.
 
-## Hybrid worker concept: independent transport configuration per connection role
-
-Raised 2026-08-25 during a benchmarking session. Idea: let a worker's save/dispatch path and its execution
-path be configured against different connections independently, rather than assuming both roles share one
-implicit configuration. Just a concept at this point, not designed or scoped -- worth revisiting later.
-
-Rough shape sketched at the time, for reference only (not an actual API, naming/structure not settled):
-
-```csharp
-AddWorker("worker-1")
-    .ConfigHybridConnection()
-    .SaveTransport([nats-connection])
-    .Execution([raven-db]);
-```
-
 ## `JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` re-scans all assemblies per distinct handler type
 
 On a cache miss it does a full assembly scan but only caches the one entry it was looking for, so N

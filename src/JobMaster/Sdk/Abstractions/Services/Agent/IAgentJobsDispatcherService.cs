@@ -6,11 +6,12 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 namespace JobMaster.Sdk.Abstractions.Services.Agent;
 
 /// <summary>
-/// Every method takes an optional <see cref="OperationThrottler"/>. Leave it null to use the
+/// The message methods take an optional <see cref="OperationThrottler"/>. Leave it null to use the
 /// dispatcher's own internal-process throttler (the existing per-agent-connection limiter) --
 /// pass one explicitly to override it, e.g. an unbounded throttler for a caller that is always
 /// external-facing and shouldn't be artificially gated by app-level throttling (see
-/// <c>JobMasterSchedulerClusterAware</c>).
+/// <c>JobMasterSchedulerClusterAware</c>). The bucket operations (<c>HasJobsAsync</c>,
+/// <c>CreateBucketAsync</c>, <c>DestroyBucketAsync</c>) always use the per-connection bucket throttler.
 /// </summary>
 internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 {
@@ -33,9 +34,9 @@ internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 
     Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null);
 
-    Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null);
+    Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId);
 
-    Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null);
+    Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId);
 
-    Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null);
+    Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId);
 }

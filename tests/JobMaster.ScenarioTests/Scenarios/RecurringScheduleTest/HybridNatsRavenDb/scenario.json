@@ -1,0 +1,7 @@
+{
+  "scenarioName": "recurring-hybrid-nats-ravendb",
+  "phases": [
+    { "name": "phase-1", "containers": ["hybrid-recurring"] }
+  ],
+  "api": { "container": "api" }
+}

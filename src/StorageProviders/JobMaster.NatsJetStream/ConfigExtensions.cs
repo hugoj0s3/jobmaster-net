@@ -16,11 +16,12 @@ public static class ConfigExtensions
     /// <param name="connectionString">NATS connection string (e.g. <c>nats://localhost:4222</c>).</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
-    public static IAgentConnectionConfigSelector UseNatsJetStream(
-        this IAgentConnectionConfigSelector agentConfigSelector,
+    public static T UseNatsJetStream<T>(
+        this T agentConfigSelector,
         string connectionString,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
+        where T : IAgentConnectionProviderSelector
     {
         agentConfigSelector.AgentConnString(connectionString);
         agentConfigSelector.AgentRepoType(NatsJetStreamConstants.RepositoryTypeId);
@@ -48,13 +49,14 @@ public static class ConfigExtensions
     /// <param name="password">NATS password.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="connOpts">Optional NATS TLS options.</param>
-    public static IAgentConnectionConfigSelector UseNatsJetStream(
-        this IAgentConnectionConfigSelector agentConfigSelector,
+    public static T UseNatsJetStream<T>(
+        this T agentConfigSelector,
         string url,
         string userName,
         string password,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? connOpts = null)
+        where T : IAgentConnectionProviderSelector
     {
         var connectionString = BuildConnectionString(url, userName, password);
 
@@ -69,8 +71,8 @@ public static class ConfigExtensions
     /// <param name="connectionStrings">Array of <c>(url, userName, password)</c> tuples for each NATS server.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
-    public static IAgentConnectionConfigSelector UseNatsJetStream(
-        this IAgentConnectionConfigSelector agentConfigSelector,
+    public static T UseNatsJetStream<T>(
+        this T agentConfigSelector,
         (
             string url,
             string userName,
@@ -78,6 +80,7 @@ public static class ConfigExtensions
         )[] connectionStrings,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
+        where T : IAgentConnectionProviderSelector
     {
         return agentConfigSelector.UseNatsJetStream(connectionStrings.Select(x => BuildConnectionString(x.url, x.userName, x.password)).ToArray(), authOpts, tlsOpts);
     }
@@ -90,11 +93,12 @@ public static class ConfigExtensions
     /// <param name="connectionStrings">Array of NATS connection strings.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
-    public static IAgentConnectionConfigSelector UseNatsJetStream(
-        this IAgentConnectionConfigSelector agentConfigSelector,
+    public static T UseNatsJetStream<T>(
+        this T agentConfigSelector,
         string[] connectionStrings,
         NatsAuthOpts? authOpts = null,
         NatsTlsOpts? tlsOpts = null)
+        where T : IAgentConnectionProviderSelector
     {
         var connectionString = string.Join(",", connectionStrings);
         return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, tlsOpts);

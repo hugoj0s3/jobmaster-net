@@ -146,26 +146,27 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         // Register agents
         foreach (var agentConnDefinition in clusterDefinition.AgentConnections)
         {
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnectionName))
-            {
-                throw new ArgumentException("AgentConnectionName must be defined via AgentConnectionName(...)");
-            }
+            agentConnDefinition.Validate();
 
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnString))
+            if (agentConnDefinition.IsHybrid)
             {
-                throw new ArgumentException("AgentConnString must be defined via AgentConnString(...)");
+                clusterCnnConfig.AddHybridAgentConnectionConfig(
+                    agentConnDefinition.AgentConnectionName,
+                    agentConnDefinition.Transport.AgentConnString!,
+                    agentConnDefinition.Transport.AgentRepoType!,
+                    agentConnDefinition.Transport.AgentAdditionalConnConfig,
+                    agentConnDefinition.Execution.AgentConnString!,
+                    agentConnDefinition.Execution.AgentRepoType!,
+                    agentConnDefinition.Execution.AgentAdditionalConnConfig);
             }
-            
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentRepoType))
+            else
             {
-                throw new ArgumentException("AgentRepoType must be defined via AgentRepoType(...)");
+                clusterCnnConfig.AddAgentConnectionString(
+                    agentConnDefinition.AgentConnectionName,
+                    agentConnDefinition.AgentConnString ?? string.Empty,
+                    agentConnDefinition.AgentRepoType!,
+                    agentConnDefinition.AgentAdditionalConnConfig);
             }
-            
-            clusterCnnConfig.AddAgentConnectionString(
-                agentConnDefinition.AgentConnectionName,
-                agentConnDefinition.AgentConnString ?? string.Empty,
-                agentConnDefinition.AgentRepoType!,
-                agentConnDefinition.AgentAdditionalConnConfig);
         }
         
         if (clusterDefinition.IsStandalone == true)
@@ -208,9 +209,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
 
         JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
-        
-        var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
-        agentRepoTypes.Add(finalClusterRepoType); // for standalone agents
+
+        var agentRepoTypes = new HashSet<string>(
+            clusterDefinition.AgentConnections.SelectMany(a => a.GetProviderRepoTypes()),
+            StringComparer.OrdinalIgnoreCase);
+        agentRepoTypes.Add(finalClusterRepoType); // Add the cluster repo type to the list of agent repo types.
         
         foreach (var agentRepoType in agentRepoTypes)
         {
@@ -413,13 +416,10 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             throw new ArgumentException("Invalid agentConnectionName use 0-9, Aa-Zz and - _ only");
         }
         
-        var def = new AgentConnectionDefinition
-        {
-            AgentConnectionName = agentConnectionName,
-            AgentRepoType = repoType,
-            AgentConnString = cnnString,
-            AgentAdditionalConnConfig = additionalConnConfig,
-        };
+        var def = new AgentConnectionDefinition { AgentConnectionName = agentConnectionName };
+        def.Transport.AgentRepoType = repoType;
+        def.Transport.AgentConnString = cnnString;
+        def.Transport.AgentAdditionalConnConfig = additionalConnConfig;
         clusterDefinition.AgentConnections.Add(def);
         return new AgentConnectionConfigSelector(def);
     }
@@ -552,11 +552,54 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
             foreach (var agent in config.AgentConnections ?? [])
             {
-                var agentSel = AddAgentConnectionConfig(agent.Name!, agent.RepositoryType, agent.ConnectionString);
-                if (agent.ProtectConnectionChanges.HasValue)
-                    agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
-                if (agent.ConnectionOptions != null && agent.RepositoryType != null)
-                    ConnectionOptionsBinderFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+                bool hasHybrid = agent.Transport != null || agent.Execution != null;
+                bool hasSingle = !string.IsNullOrEmpty(agent.RepositoryType) || !string.IsNullOrEmpty(agent.ConnectionString) || agent.ConnectionOptions != null;
+
+                if (hasHybrid && hasSingle)
+                {
+                    throw new ArgumentException($"Agent connection '{agent.Name}' cannot mix single-provider fields (RepositoryType/ConnectionString/ConnectionOptions) with hybrid fields (Transport/Execution).");
+                }
+
+                if (hasHybrid)
+                {
+                    if (agent.Transport == null || agent.Execution == null)
+                    {
+                        throw new ArgumentException($"Hybrid agent connection '{agent.Name}' must specify both 'Transport' and 'Execution' sections.");
+                    }
+
+                    var agentSel = AddAgentConnectionConfig(agent.Name!);
+                    var hybridSel = agentSel.UseHybrid();
+                    if (agent.ProtectConnectionChanges.HasValue)
+                        hybridSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
+
+                    hybridSel.Transport(t =>
+                    {
+                        if (agent.Transport.RepositoryType != null)
+                            t.AgentRepoType(agent.Transport.RepositoryType);
+                        if (agent.Transport.ConnectionString != null)
+                            t.AgentConnString(agent.Transport.ConnectionString);
+                        if (agent.Transport.ConnectionOptions != null && agent.Transport.RepositoryType != null)
+                            ConnectionOptionsBinderFactory.Create(agent.Transport.RepositoryType).SetOptions(t, ToIgnoreCase(agent.Transport.ConnectionOptions));
+                    });
+
+                    hybridSel.Execution(e =>
+                    {
+                        if (agent.Execution.RepositoryType != null)
+                            e.AgentRepoType(agent.Execution.RepositoryType);
+                        if (agent.Execution.ConnectionString != null)
+                            e.AgentConnString(agent.Execution.ConnectionString);
+                        if (agent.Execution.ConnectionOptions != null && agent.Execution.RepositoryType != null)
+                            ConnectionOptionsBinderFactory.Create(agent.Execution.RepositoryType).SetOptions(e, ToIgnoreCase(agent.Execution.ConnectionOptions));
+                    });
+                }
+                else
+                {
+                    var agentSel = AddAgentConnectionConfig(agent.Name!, agent.RepositoryType, agent.ConnectionString);
+                    if (agent.ProtectConnectionChanges.HasValue)
+                        agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
+                    if (agent.ConnectionOptions != null && agent.RepositoryType != null)
+                        ConnectionOptionsBinderFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+                }
             }
 
             foreach (var w in config.Workers ?? [])

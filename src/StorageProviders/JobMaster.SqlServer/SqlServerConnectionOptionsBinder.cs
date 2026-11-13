@@ -23,7 +23,7 @@ internal sealed class SqlServerConnectionOptionsBinder : IConnectionOptionsBinde
         }
     }
 
-    public void SetOptions(IAgentConnectionConfigSelector selector, IDictionary<string, object> options)
+    public void SetOptions(IAgentConnectionProviderSelector selector, IDictionary<string, object> options)
     {
         ValidateKeys(options);
         var tablePrefix = GetString(options, "tablePrefix");

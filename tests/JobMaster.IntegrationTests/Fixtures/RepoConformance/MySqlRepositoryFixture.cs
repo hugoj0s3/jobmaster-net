@@ -57,7 +57,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
             .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
                 ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(MySqlRepositoryConstants.RepositoryTypeId)
             );
-        rawRepo.Initialize(agentConfig);
+        rawRepo.Initialize(agentConfig.Id, agentConfig.TransportConfig);
         AgentMessages = rawRepo;
 
         AgentConnectionId = new AgentConnectionId(ClusterId, RepoConformanceBootstrap.MySqlAgentConnectionName);

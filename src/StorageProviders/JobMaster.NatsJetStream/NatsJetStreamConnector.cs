@@ -34,18 +34,21 @@ internal sealed class NatsJetStreamConnector
 
     private NatsJetStreamConnector() { }
 
-    // Static facade to preserve current call sites
-    public static (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnection(JobMasterAgentConnectionConfig config)
-        => Instance.GetOrCreateConnectionInternal(config);
+    private static string GetEntryKey(string agentConnectionId, JobMasterAgentProviderConfig config)
+        => $"{agentConnectionId}::{config.ConnectionString}";
 
-    public static Task EnsureStreamAsync(JobMasterAgentConnectionConfig config)
-        => Instance.EnsureStreamInternalAsync(config);
+    // Static facade to preserve current call sites
+    public static (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnection(string agentConnectionId, JobMasterAgentProviderConfig config)
+        => Instance.GetOrCreateConnectionInternal(agentConnectionId, config);
+
+    public static Task EnsureStreamAsync(string agentConnectionId, JobMasterAgentProviderConfig config)
+        => Instance.EnsureStreamInternalAsync(agentConnectionId, config);
     
-    public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId)
-        => Instance.GetOrCreateConsumerInternalAsync(config, fullBucketAddressId);
+    public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(string agentConnectionId, JobMasterAgentProviderConfig config, string fullBucketAddressId)
+        => Instance.GetOrCreateConsumerInternalAsync(agentConnectionId, config, fullBucketAddressId);
     
-    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, TimeSpan transientThreshold, CancellationToken ct)
-        => Instance.CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, transientThreshold, ct);
+    public static ValueTask<INatsJSConsumer> CreateOrUpdateConsumerAsync(string agentConnectionId, JobMasterAgentProviderConfig config, string fullBucketAddressId, int actualBatchSize, TimeSpan bucketBufferLeadTime, TimeSpan transientThreshold, CancellationToken ct)
+        => Instance.CreateOrUpdateConsumerInternalAsync(agentConnectionId, config, fullBucketAddressId, actualBatchSize, bucketBufferLeadTime, transientThreshold, ct);
 
 #if NET6_0_OR_GREATER
     public static ValueTask DisposeAllAsync() => Instance.DisposeAsync();
@@ -55,9 +58,9 @@ internal sealed class NatsJetStreamConnector
     public static void DisposeOne(string agentConnectionId) => Instance.DisposeOneInternal(agentConnectionId);
 #endif
 
-    private (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnectionInternal(JobMasterAgentConnectionConfig config)
+    private (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnectionInternal(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        var key = config.Id;
+        var key = GetEntryKey(agentConnectionId, config);
         if (entries.TryGetValue(key, out var existing))
         {
             return (existing.Nats, existing.Js, existing.StreamName);
@@ -77,8 +80,8 @@ internal sealed class NatsJetStreamConnector
 
             // Build options (TLS/auth customizations can be added later)
             var url = NormalizeNatsUrl(config.ConnectionString);
-            var clientName = NatsJetStreamUtils.GetStreamName(config.Id);
-            var streamNameInit = NatsJetStreamUtils.GetStreamName(config.Id);
+            var clientName = NatsJetStreamUtils.GetStreamName(agentConnectionId);
+            var streamNameInit = NatsJetStreamUtils.GetStreamName(agentConnectionId);
 
             var opts = NatsOpts.Default with { Url = url, Name = clientName };
             if (authOpts is not null)
@@ -110,10 +113,10 @@ internal sealed class NatsJetStreamConnector
         }
     }
 
-    private async Task EnsureStreamInternalAsync(JobMasterAgentConnectionConfig config)
+    private async Task EnsureStreamInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        GetOrCreateConnectionInternal(config);
-        var e = entries[config.Id];
+        GetOrCreateConnectionInternal(agentConnectionId, config);
+        var e = entries[GetEntryKey(agentConnectionId, config)];
         if (e.StreamEnsured) return;
 
         // Serialize stream ensure globally and per-entry; try once each and proceed regardless
@@ -130,7 +133,7 @@ internal sealed class NatsJetStreamConnector
             }
             catch (NatsJSApiException)
             {
-                var cfg = new StreamConfig(e.StreamName, new[] { $"{NatsJetStreamConstants.Prefix}{config.Id}.>" })
+                var cfg = new StreamConfig(e.StreamName, new[] { $"{NatsJetStreamConstants.Prefix}{agentConnectionId}.>" })
                 {
                     DuplicateWindow = TimeSpan.FromMinutes(2),
                 };
@@ -146,7 +149,7 @@ internal sealed class NatsJetStreamConnector
     }
     
     private async ValueTask<INatsJSConsumer> CreateOrUpdateConsumerInternalAsync(
-        JobMasterAgentConnectionConfig config,
+        string agentConnectionId, JobMasterAgentProviderConfig config,
         string fullBucketAddressId,
         int? bufferSize = null,
         TimeSpan? bucketBufferLeadTime = null,
@@ -154,9 +157,9 @@ internal sealed class NatsJetStreamConnector
         CancellationToken ct = default)
     {
         // Ensure connection and stream are available
-        _ = GetOrCreateConnectionInternal(config);
-        await EnsureStreamInternalAsync(config);
-        var entry = entries[config.Id];
+        _ = GetOrCreateConnectionInternal(agentConnectionId, config);
+        await EnsureStreamInternalAsync(agentConnectionId, config);
+        var entry = entries[GetEntryKey(agentConnectionId, config)];
 
         // 1. Check if the consumer is already cached to avoid redundant network calls
         if (entry.Consumers.TryGetValue(fullBucketAddressId, out var existing))
@@ -186,11 +189,16 @@ internal sealed class NatsJetStreamConnector
                 var token = cts?.Token ?? ct;
 
                 var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
-                var subject = NatsJetStreamUtils.GetSubjectName(config.Id, fullBucketAddressId);
+                var subject = NatsJetStreamUtils.GetSubjectName(agentConnectionId, fullBucketAddressId);
 
                 bufferSize ??= new WorkerDefinition().BucketBufferSize; // Get default buffer size if not specified.
-                transientThreshold ??= NatsJetStreamConstants.MaxThreshold;
-                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value, transientThreshold.Value);
+                var effectiveThreshold = transientThreshold ?? NatsJetStreamConstants.MaxThreshold;
+                if (effectiveThreshold > NatsJetStreamConstants.MaxThreshold)
+                {
+                    effectiveThreshold = NatsJetStreamConstants.MaxThreshold;
+                }
+
+                var maxAckPending = NatsJetStreamConstants.CalcMaxAckPending(bufferSize.Value, effectiveThreshold);
                 
                 bucketBufferLeadTime ??= new WorkerDefinition().BucketBufferLeadTime;
                 var ackWait = NatsJetStreamConstants.CalcAckWait(bucketBufferLeadTime.Value);
@@ -225,16 +233,16 @@ internal sealed class NatsJetStreamConnector
         }
     }
     
-    private async ValueTask<INatsJSConsumer> GetOrCreateConsumerInternalAsync(JobMasterAgentConnectionConfig config, string fullBucketAddressId)
+    private async ValueTask<INatsJSConsumer> GetOrCreateConsumerInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config, string fullBucketAddressId)
     {
         // Return cached consumer if present
-        var entry = entries[config.Id];
+        var entry = entries[GetEntryKey(agentConnectionId, config)];
         if (entry.Consumers.TryGetValue(fullBucketAddressId, out var existing))
         {
             return existing;
         }
 
-        return await CreateOrUpdateConsumerInternalAsync(config, fullBucketAddressId);
+        return await CreateOrUpdateConsumerInternalAsync(agentConnectionId, config, fullBucketAddressId);
     } 
     
     private static string NormalizeNatsUrl(string? url)
@@ -317,11 +325,18 @@ internal sealed class NatsJetStreamConnector
 
     private async ValueTask DisposeOneInternalAsync(string agentConnectionId)
     {
-        if (!entries.TryRemove(agentConnectionId, out var e))
-            return;
+        var keys = entries.Keys
+            .Where(k => k == agentConnectionId || k.StartsWith($"{agentConnectionId}::", StringComparison.Ordinal))
+            .ToList();
 
-        try { await e.Nats.DisposeAsync(); } catch { }
-        try { e.Lock.Dispose(); } catch { }
+        foreach (var key in keys)
+        {
+            if (!entries.TryRemove(key, out var e))
+                continue;
+
+            try { await e.Nats.DisposeAsync(); } catch { }
+            try { e.Lock.Dispose(); } catch { }
+        }
     }
 #else
     public void Dispose()
@@ -336,11 +351,18 @@ internal sealed class NatsJetStreamConnector
 
     private void DisposeOneInternal(string agentConnectionId)
     {
-        if (!entries.TryRemove(agentConnectionId, out var e))
-            return;
+        var keys = entries.Keys
+            .Where(k => k == agentConnectionId || k.StartsWith($"{agentConnectionId}::", StringComparison.Ordinal))
+            .ToList();
 
-        try { AsyncContext.Run(async () => await e.Nats.DisposeAsync()); } catch { }
-        try { e.Lock.Dispose(); } catch { }
+        foreach (var key in keys)
+        {
+            if (!entries.TryRemove(key, out var e))
+                continue;
+
+            try { AsyncContext.Run(async () => await e.Nats.DisposeAsync()); } catch { }
+            try { e.Lock.Dispose(); } catch { }
+        }
     }
 #endif
 }

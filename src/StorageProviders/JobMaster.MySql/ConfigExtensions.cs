@@ -27,7 +27,8 @@ public static class ConfigExtensions
     /// Configures an agent connection to use MySQL with the given connection string.
     /// </summary>
     /// <param name="tablePrefix">Custom table prefix for all JobMaster tables created in this database. Defaults to <c>JM_</c> when not specified.</param>
-    public static IAgentConnectionConfigSelector UseMySqlForAgent(this IAgentConnectionConfigSelector agentConfigSelector, string connectionString, string? tablePrefix = null)
+    public static T UseMySqlForAgent<T>(this T agentConfigSelector, string connectionString, string? tablePrefix = null)
+        where T : IAgentConnectionProviderSelector
     {
         agentConfigSelector.AgentConnString(connectionString);
         agentConfigSelector.AgentRepoType(MySqlRepositoryConstants.RepositoryTypeId);

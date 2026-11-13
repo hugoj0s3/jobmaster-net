@@ -353,6 +353,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(agentConfig.Id);
                 var agentFingerprint = await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
 
+                if (!RepoTypeAndFingerprintUtil.IsValid(agentConfig.RepositoryTypeId, agentFingerprint))
+                {
+                    throw new InvalidOperationException(
+                        $"Agent connection '{agentDefinition.AgentConnectionName}' has an invalid repository type ('{agentConfig.RepositoryTypeId}') or fingerprint ('{agentFingerprint}').");
+                }
+
                 State.AgentFingerprints[agentConfig.Id] 
                     = new ResolvedAgentFingerprint(clusterCnnCfg.ClusterId, agentConfig.Id, masterConnection?.Fingerprint, agentFingerprint);
 
@@ -529,13 +535,14 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             var agentDefinitions = clusterDefinition.AgentConnections;
 
-            var missingCnnStringOrRepoType = agentDefinitions.Where(x =>
-                string.IsNullOrWhiteSpace(x.AgentConnString) || string.IsNullOrWhiteSpace(x.AgentRepoType)).ToList();
-            if (missingCnnStringOrRepoType.Any())
+            // Safety net: ClusterConfigBuilder.Finish() already ran Validate() on every agent connection.
+            foreach (var agentDefinition in agentDefinitions)
             {
-                var agentNames = string.Join(", ", missingCnnStringOrRepoType.Select(x => x.AgentConnectionName));
-                errors.Add(
-                    @$"Agent connection is missing connection string or repository type. Connection: {agentNames}");
+                var (isValid, error) = agentDefinition.IsValid();
+                if (!isValid)
+                {
+                    errors.Add(error!);
+                }
             }
 
             var workerDefinitions = clusterDefinition.Workers;

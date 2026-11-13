@@ -9,7 +9,7 @@ using JobMaster.SqlBase.Scripts;
 
 namespace JobMaster.SqlBase.Agents;
 
-internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
+internal abstract class SqlAgentRawFingerprintResolver : IAgentRawFingerprintResolver
 {
     private readonly IDbConnectionManager dbConnectionManager;
     private readonly IKnownExceptionIdentifier knownExceptionIdentifier;
@@ -18,7 +18,7 @@ internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
     private string connString = string.Empty;
     private ISqlGenerator sql = null!;
 
-    protected SqlAgentFingerprintResolver(IDbConnectionManager dbConnectionManager, IKnownExceptionIdentifier knownExceptionIdentifier)
+    protected SqlAgentRawFingerprintResolver(IDbConnectionManager dbConnectionManager, IKnownExceptionIdentifier knownExceptionIdentifier)
     {
         this.dbConnectionManager = dbConnectionManager;
         this.knownExceptionIdentifier = knownExceptionIdentifier;
@@ -34,7 +34,7 @@ internal abstract class SqlAgentFingerprintResolver : IAgentFingerprintResolver
             return fingerprint!;
         }
 
-        fingerprint = JobMasterRandomUtil.NewGuid4().ToString();
+        fingerprint = RepoTypeAndFingerprintUtil.GenerateSingleFingerprint();
 
         try
         {
@@ -68,11 +68,22 @@ where cluster_id = @clusterId and
       agent_connection_id = @agentConnectionId", new { clusterId, agentConnectionId });
     }
 
-    public void Initialize(JobMasterAgentConnectionConfig config)
+    private readonly object initializeLock = new();
+
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        this.connString = config.ConnectionString;
-        this.additionalConnConfig = config.AdditionalConnConfig;
-        this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+            this.connString = config.ConnectionString;
+            this.additionalConnConfig = config.AdditionalConnConfig;
+            this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
+            IsInitialized = true;
+        }
     }
 
     public abstract string AgentRepoTypeId { get; }

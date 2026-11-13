@@ -52,14 +52,12 @@ internal class PostgresJobMasterRuntimeSetup : SqlJobMasterRuntimeSetup
         
         var agentConfigs = JobMasterClusterConnectionConfig
             .GetAllConfigs()
-            .SelectMany(x => x.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == RepositoryTypeId)
+            .SelectMany(x => x.GetAllAgentProviderConfigs().Select(a => (ClusterConfig: x, AgentConfig: a)))
+            .Where(x => x.AgentConfig.RepositoryTypeId == RepositoryTypeId)
             .ToList();
 
-        foreach (var config in agentConfigs)
+        foreach (var (clusterConfig, config) in agentConfigs)
         {
-            var clusterConfig = JobMasterClusterConnectionConfig
-                .Get(config.ClusterId, includeNotReady:true);
             if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
             {
                 continue;

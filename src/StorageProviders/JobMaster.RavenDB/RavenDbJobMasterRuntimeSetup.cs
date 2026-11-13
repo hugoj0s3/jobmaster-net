@@ -47,8 +47,8 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         }
 
         var allAgentConfigs = JobMasterClusterConnectionConfig.GetAllConfigs()
-            .SelectMany(c => c.GetAllAgentConnectionConfigs())
-            .Where(a => a.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
+            .SelectMany(c => c.GetAllAgentProviderConfigs().Select(a => (ClusterConfig: c, AgentConfig: a)))
+            .Where(x => x.AgentConfig.RepositoryTypeId == RavenDbRepositoryConstants.RepositoryTypeId)
             .ToList();
 
         // The Message collection lives in each agent connection's own database (never the master's,
@@ -56,9 +56,9 @@ internal sealed class RavenDbJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         // now guaranteed to already be in GetAllAgentConnectionConfigs() by the force-registration above).
         // Deployed unconditionally, not gated behind an opt-in like document expiration -- this only
         // reduces indexing overhead, it doesn't change any behavior a user would need to opt into.
-        foreach (var agentConfig in allAgentConfigs)
+        foreach (var (clusterConfig, agentConfig) in allAgentConfigs)
         {
-            var factory = JobMasterClusterAwareComponentFactories.GetFactory(agentConfig.ClusterId);
+            var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var storeManager = factory.ClusterServiceProvider.GetRequiredService<IRavenDbDocumentStoreManager>();
             var store = storeManager.GetOrCreateStore(agentConfig.ConnectionString, agentConfig.GetCertificate(), agentConfig.GetRequestTimeout(), agentConfig.GetPooledConnectionLifetime(), agentConfig.GetPooledConnectionIdleTimeout());
             var collectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;

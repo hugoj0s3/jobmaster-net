@@ -51,10 +51,21 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
 
     private string ClusterId => ClusterConnConfig.ClusterId;
 
-    public void Initialize(JobMasterAgentConnectionConfig config)
+    private readonly object initializeLock = new();
+
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
     {
-        store = storeManager.GetOrCreateStore(config.ConnectionString, config.GetCertificate(), config.GetRequestTimeout(), config.GetPooledConnectionLifetime(), config.GetPooledConnectionIdleTimeout());
-        prefix = config.GetCollectionPrefix();
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+            store = storeManager.GetOrCreateStore(config.ConnectionString, config.GetCertificate(), config.GetRequestTimeout(), config.GetPooledConnectionLifetime(), config.GetPooledConnectionIdleTimeout());
+            prefix = config.GetCollectionPrefix();
+            IsInitialized = true;
+        }
     }
 
     private string CollectionName => $"{prefix}{RavenDbCollectionNames.Message}";

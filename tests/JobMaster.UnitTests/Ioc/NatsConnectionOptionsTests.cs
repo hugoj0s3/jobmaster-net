@@ -25,11 +25,12 @@ public class NatsConnectionOptionsTests
 
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentConnName(string _) => this;
         IAgentConnectionConfigSelector IAgentConnectionConfigSelector.ProtectConnectionChanges(bool _) => this;
-        IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentAdditionalConnConfig(JobMasterConfigDictionary _) => this;
-        IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentRepoType(string _) => this;
-        IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AgentConnString(string _) => this;
+        IHybridAgentConnectionConfigSelector IAgentConnectionConfigSelector.UseHybrid() => throw new NotSupportedException();
 
-        IAgentConnectionConfigSelector IAgentConnectionConfigSelector.AppendAdditionalConnConfigValue(
+        IAgentConnectionProviderSelector IAgentConnectionProviderSelector.AgentAdditionalConnConfig(JobMasterConfigDictionary _) => this;
+        IAgentConnectionProviderSelector IAgentConnectionProviderSelector.AgentRepoType(string _) => this;
+        IAgentConnectionProviderSelector IAgentConnectionProviderSelector.AgentConnString(string _) => this;
+        IAgentConnectionProviderSelector IAgentConnectionProviderSelector.AppendAdditionalConnConfigValue(
             JobMasterNamespaceUniqueKey namespaceKey, string key, object value)
         {
             Captured.Add((namespaceKey, key, value));

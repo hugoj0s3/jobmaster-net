@@ -37,10 +37,3 @@ internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareCompon
     bool IsPollingBasedForSaving { get; }
     bool IsPollingBasedForProcessing { get; }
 }
-
-internal interface IAgentJobsDispatcherRepository<TSavePending, TProcessing> : IAgentJobsDispatcherRepository
-    where TSavePending : class, IAgentRawMessagesDispatcherRepository
-    where TProcessing : class, IAgentRawMessagesDispatcherRepository
-{
-}
-

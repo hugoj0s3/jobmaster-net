@@ -27,7 +27,7 @@ public class JobMasterClusterConnectionConfigTests
         var fallbackConfig = config.TryGetAgentConnectionConfig(JobMasterConstants.MasterFallbackAgentConnName);
 
         fallbackConfig.Should().NotBeNull();
-        fallbackConfig!.ConnectionString.Should().Be(config.ConnectionString);
+        fallbackConfig!.TransportConfig.ConnectionString.Should().Be(config.ConnectionString);
         fallbackConfig.RepositoryTypeId.Should().Be(config.RepositoryTypeId);
         fallbackConfig.Id.Should().Be($"{config.ClusterId}:{JobMasterConstants.MasterFallbackAgentConnName}");
     }
