@@ -58,6 +58,8 @@ internal static class ClustersEndpoints
             DefaultJobTimeout = model.DefaultJobTimeout,
             TransientThreshold = model.TransientThreshold,
             DefaultMaxOfRetryCount = model.DefaultMaxOfRetryCount,
+            RetryDelays = model.RetryDelays,
+            RetryInterceptor = model.RetryInterceptor,
             ClusterMode = model.ClusterMode,
             MaxMessageByteSize = model.MaxMessageByteSize,
             IanaTimeZoneId = model.IanaTimeZoneId,

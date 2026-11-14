@@ -15,6 +15,7 @@ using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
@@ -174,6 +175,19 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount =
                 clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
+            // Informational, never read back. Only a process that executes jobs reports its retry settings: a
+            // publisher or coordinator-only process would show settings no job runs under.
+            if (workerDefinitions.Any(w => w.Mode.IsFullOr(AgentWorkerMode.Execution)))
+            {
+                var replacedLog = clusterCnnCfg.RetrySettings.ReplacedStoredSettingsLog(modelToSave.RetryDelays, modelToSave.RetryInterceptor);
+                if (replacedLog != null)
+                {
+                    logger.Info(replacedLog, JobMasterLogCategory.Cluster, clusterCnnCfg.ClusterId);
+                }
+
+                modelToSave.RetryDelays = clusterCnnCfg.RetrySettings.Delays.ToList();
+                modelToSave.RetryInterceptor = clusterCnnCfg.RetrySettings.InterceptorDescription;
+            }
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
             modelToSave.MaxMessageByteSize = clusterDefinition.MaxMessageByteSize ?? modelToSave.MaxMessageByteSize;
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
@@ -557,14 +571,11 @@ internal class JobMasterRuntime : IJobMasterRuntime
             // StartAsync uses later (clusterDefinition.IsStandalone ?? modelToSave.IsStandalone).
             var isStandalone = clusterDefinition.IsStandalone ?? existingClusterConfig?.IsStandalone ?? false;
 
-            if (clusterDefinition.IanaTimeZoneId != null &&
-                existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
+            var timeZoneError = ValidateOmittedTimeZone(clusterDefinition.ClusterId!, clusterDefinition.IanaTimeZoneId,
+                existingTimezoneId, TimeZoneUtils.GetLocalIanaTimeZoneId());
+            if (timeZoneError != null && !clusterDefinition.AllowOmittedTimeZone)
             {
-                errors.Add(
-                    "if you want to use agents in different regions please explicitly set the IanaTimeZoneId for the cluster. " +
-                    "The cluster IanaTimeZoneId does not match the local timezone" +
-                    " ClusterId: " + clusterDefinition.ClusterId + ", Defined IanaTimeZoneId: " +
-                    clusterDefinition.IanaTimeZoneId + ", Existing IanaTimeZoneId Configured: " + existingTimezoneId);
+                errors.Add(timeZoneError);
             }
 
             // Ensure no duplicates
@@ -769,6 +780,20 @@ internal class JobMasterRuntime : IJobMasterRuntime
     private static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
         w.Mode == AgentWorkerMode.Coordinator ||
         (clusterDefinition.ClusterMode == ClusterMode.Archived && w.Mode == AgentWorkerMode.Full);
+
+    // Only a process that didn't set the zone can silently disagree with the cluster: one that sets it saves it.
+    internal static string? ValidateOmittedTimeZone(string clusterId, string? definedTimeZoneId, string existingTimeZoneId, string localTimeZoneId)
+    {
+        if (definedTimeZoneId != null || existingTimeZoneId == localTimeZoneId)
+        {
+            return null;
+        }
+
+        return $"Cluster '{clusterId}' uses the time zone '{existingTimeZoneId}', but this machine's local time zone is " +
+               $"'{localTimeZoneId}'. When instances run in different local time zones, every instance must set " +
+               $"IanaTimeZoneId explicitly (here: IanaTimeZoneId(\"{existingTimeZoneId}\")), including instances that " +
+               "never set it before.";
+    }
 
     /// <summary>
     /// Reads the cluster's previously-saved configuration, if any -- used by <see cref="ValidateClusterDefinitions"/>

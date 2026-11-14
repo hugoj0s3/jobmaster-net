@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.IntegrationTests.Fixtures.RepoConformance;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Utils;
 using Xunit;
@@ -46,6 +47,28 @@ public abstract class RepositoryGenericRecordsConformanceTests<TFixture>
         Assert.NotNull(fromDb);
 
         AssertEntryEquivalent(record, fromDb!);
+    }
+
+    [Fact]
+    public async Task Upsert_ShouldRoundTrip_ClusterConfigurationRetrySettings()
+    {
+        // Stored at startup for the API / dashboard: the delays list must survive each provider's value storage.
+        // Own entry id, so the fixture's real cluster configuration isn't overwritten.
+        var model = new ClusterConfigurationModel(Fixture.ClusterId)
+        {
+            RetryDelays = new List<TimeSpan> { TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1) },
+            RetryInterceptor = "MyApp.Billing.BillingRetryInterceptor",
+        };
+        var entryId = "retry-settings-" + JobMasterRandomUtil.NewGuid4().ToString("N");
+        var entry = GenericRecordEntry.Create(Fixture.ClusterId, MasterGenericRecordGroupIds.ClusterConfiguration, entryId, model);
+
+        await Fixture.MasterGenericRecords.UpsertAsync(entry);
+
+        var fromDb = await Fixture.MasterGenericRecords.GetAsync(MasterGenericRecordGroupIds.ClusterConfiguration, entryId);
+        Assert.NotNull(fromDb);
+        var restored = fromDb!.ToObject<ClusterConfigurationModel>();
+        Assert.Equal(model.RetryDelays, restored.RetryDelays);
+        Assert.Equal(model.RetryInterceptor, restored.RetryInterceptor);
     }
 
     [Fact]

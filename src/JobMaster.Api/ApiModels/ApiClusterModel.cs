@@ -13,6 +13,14 @@ public class ApiClusterModel : ApiClusterBaseModel
     public TimeSpan TransientThreshold { get; set; }
     /// <summary>Default maximum number of automatic retries per failed job.</summary>
     public int DefaultMaxOfRetryCount { get; set; }
+    /// <summary>
+    /// Wait before each retry (the last one repeats), as configured by the last process running jobs (Full or Execution
+    /// worker) that started. For information: each worker retries by its own configuration, and every failed
+    /// execution's message records the delay actually applied.
+    /// </summary>
+    public IList<TimeSpan> RetryDelays { get; set; } = new List<TimeSpan>();
+    /// <summary>The cluster's retry interceptor: <c>None</c>, <c>Delegate</c>, or the interceptor type's full name; same source as <see cref="RetryDelays"/>.</summary>
+    public string RetryInterceptor { get; set; } = string.Empty;
     /// <summary>Current operational mode of the cluster.</summary>
     public ClusterMode ClusterMode { get; set; }
     /// <summary>Maximum allowed byte size for job messages.</summary>

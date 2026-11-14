@@ -25,6 +25,7 @@ public static class JobMasterClusterApiExtensions
         return AddJobMasterClusterExtensions.AddJobMasterCluster(services, clusterId, selector =>
         {
             configure(selector);
+            selector.AllowOmittedTimeZone();
             EnsureApiDefaultSet(selector);
         });
     }
@@ -41,6 +42,7 @@ public static class JobMasterClusterApiExtensions
         return AddJobMasterClusterExtensions.AddJobMasterCluster(services, selector =>
         {
             configure(selector);
+            selector.AllowOmittedTimeZone();
             EnsureApiDefaultSet(selector);
         });
     }

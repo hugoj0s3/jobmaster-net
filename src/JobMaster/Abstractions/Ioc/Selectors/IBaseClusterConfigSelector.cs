@@ -32,5 +32,6 @@ public interface IBaseClusterConfigSelector<TSelector> where TSelector : IBaseCl
     internal TSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
     internal TSelector ClusterAdditionalConfig(JobMasterConfigDictionary additionalConfig);
     internal TSelector AppendAdditionalConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
+    internal TSelector AllowOmittedTimeZone();
     internal void Finish();
 }

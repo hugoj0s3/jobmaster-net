@@ -170,7 +170,8 @@ public class JobConvertUtilTests
     public void Job_ShouldExposeAllJobContextPropertyNames()
     {
         var jobPropNames = GetRelevantPublicPropertyNames(typeof(Job), "IsValid");
-        var ctxPropNames = GetRelevantPublicPropertyNames(typeof(JobContext), "RecurringSchedule");
+        // Set by the engine at run time, not copied from the job.
+        var ctxPropNames = GetRelevantPublicPropertyNames(typeof(JobContext), "RecurringSchedule", "CancellationToken");
 
         var missingOnJob = ctxPropNames.Except(jobPropNames).OrderBy(x => x).ToArray();
         missingOnJob.Should().BeEmpty("Job should contain all JobContext properties (by name)");

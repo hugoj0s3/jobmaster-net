@@ -10,7 +10,7 @@ namespace JobMaster.ScenarioTests.Scenarios.ArchivedModeTest;
 /// SqlServerPure, PostgresNats, RavenDbPure): one container hosts two clusters (DeleteOldFinalJobsRunner
 /// cross-cluster forwards via <c>JobMasterClusterAwareComponentFactories.TryGetFactory</c>, which
 /// only resolves clusters registered in the same process) -- an entirely ordinary Active source
-/// (but with DataRetentionTtl set to JobMasterDefaults.MinDataRetentionTtl -- 10 minutes, the
+/// (but with DataRetentionTtl set to JobMasterLimits.MinDataRetentionTtl -- 10 minutes, the
 /// framework's floor -- and TargetArchivedClusterId set) and an Archived target (no agent
 /// connections, only a Coordinator, per ValidateClusterDefinitions' "Archive clusters only run Coordinator").
 /// Proves the real, unmodified archive-then-delete flow (DeleteOldFinalJobsRunner's adaptive poll
