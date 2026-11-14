@@ -5,7 +5,20 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 919/919 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 920/920 unit tests pass on `net8.0` and `net10.0`.
+
+#### `JobMasterLogger` flushes on process exit (Hugo, 2026-11-14)
+- `Dispose()` (with its final flush) never ran: the per-cluster containers are registered in the main container as
+  instances, which MS DI never disposes, and there's no stop entry point (no `StopJobMasterRuntimeAsync`, no
+  `IHostedService`, `JobMasterRuntime.Stop()` has no caller; the old reminder assumed item 7 added one, it didn't).
+- The logger now subscribes to `AppDomain.CurrentDomain.ProcessExit` (raised on a normal exit, hosted apps included)
+  and runs `Dispose()` from it; `Interlocked` guard since it can be reached twice, unsubscribes in `Dispose`.
+- The final flush drained only one batch (`FlushCoreAsync` takes `MaxBatchSize` = 100) while up to `MaxQueueLimit`
+  (10,000) can be queued. It now loops until empty, capped at `FinalFlushTimeout` (5 s) so a down database can't
+  hang exit; a failed insert still dequeues its batch, so the loop always ends.
+- Test: `JobMasterLoggerTests.Dispose_WhenMoreThanOneBatchIsBuffered_ShouldWriteAllOfThem` (slow insert keeps the
+  background flush on the lock so 250 pile up). Verified by putting back the single-batch flush: it fails.
+- A real stop path (graceful worker stop, then flush) stays a separate design item (`src/JobMaster/Reminders.md`).
 
 #### Archive / migrate delete only what the target confirmed (Hugo, 2026-11-14)
 - `DeleteOldFinalJobsRunner`, `DeleteOldInactiveRecurringSchedulesRunner`, `MigrateJobsRunner` and

@@ -3,6 +3,7 @@ using Moq;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -46,6 +47,33 @@ public class JobMasterLoggerTests
         flushed.Count.Should().BeLessThanOrEqualTo(100);
 
         repo.Verify(x => x.BulkInsertAsync(It.IsAny<IList<LogItem>>()), Times.AtLeastOnce);
+    }
+
+    [Fact]
+    public void Dispose_WhenMoreThanOneBatchIsBuffered_ShouldWriteAllOfThem()
+    {
+        // Final flush on shutdown must drain the whole queue, not one batch. The slow insert keeps the first
+        // background flush holding the lock, so the rest piles up in the queue as with a slow database.
+        var clusterConfig = CreateClusterConfig(NewClusterId());
+
+        var inserted = 0;
+        var repo = new Mock<IMasterLogsRepository>(MockBehavior.Strict);
+        repo.Setup(x => x.BulkInsertAsync(It.IsAny<IList<LogItem>>()))
+            .Returns<IList<LogItem>>(async items =>
+            {
+                await Task.Delay(200);
+                Interlocked.Add(ref inserted, items.Count);
+            });
+
+        var sut = new JobMasterLogger(clusterConfig, repo.Object);
+        for (var i = 0; i < 350; i++)
+        {
+            sut.Log(JobMasterLogLevel.Info, $"m{i}", JobMasterLogCategory.Job, "s");
+        }
+
+        sut.Dispose();
+
+        inserted.Should().Be(350);
     }
 
     [Fact]

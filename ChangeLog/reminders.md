@@ -411,14 +411,6 @@ No ordering makes it safe; noted so it isn't mistaken for a gap that a reorder f
 `MigrateTo`) move late jobs/schedules there (`MigrateJobsRunner` / `MigrateRecurringSchedulesRunner`). The race itself stays; a
 late job just isn't stuck anymore, as long as a Coordinator of the archived cluster runs next to the target cluster.
 
-## `JobMasterLogger`'s final flush on `Dispose` never runs
-
-Found 2026-10-26 (Plan 0.0.12 item 7). The per-cluster component containers are built in
-`ClusterIocRegistration.BuildFactory` and registered in the main container as *instances*, which MS DI never
-disposes, and `JobMasterRuntime.Stop()` has no caller. So `JobMasterLogger.Dispose()` (and its "FORCE Final
-Flush") doesn't run on host shutdown: up to 15s / 100 buffered log rows are lost. Item 7 added
-`StopJobMasterRuntimeAsync()`; the logger flush could hook into the same path.
-
 ## Message data in failure logs, and an optional dead-letter handler
 
 Raised 2026-10-30. Some `Critical` logs write user message data/metadata (possibly sensitive) to the master logs table,

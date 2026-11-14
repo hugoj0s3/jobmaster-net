@@ -26,12 +26,16 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
     private const int MaxBatchSize = 100;
     private static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(15);
 
+    // Upper bound for draining the queue on shutdown, so a down database can't hang process exit.
+    private static readonly TimeSpan FinalFlushTimeout = TimeSpan.FromSeconds(5);
+
     private readonly ConcurrentQueue<LogItem> queue = new();
     private int queuedCount = 0;
 
     private readonly Timer timer;
     private readonly SemaphoreSlim flushLock = new(1, 1);
     private volatile bool disposed;
+    private int disposeStarted;
 
 
     private Action<LogItem>? MirrorLog { get; }
@@ -46,6 +50,16 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         this.timer = new Timer(static state => _ = ((JobMasterLogger)state!).SafeFlushAsync(), this, FlushInterval, FlushInterval);
 
         MirrorLog = clusterConnConfig.MirrorLog;
+
+        // Nothing disposes this logger on host shutdown (the per-cluster containers are registered as instances,
+        // which DI never disposes), so flush what's buffered when the process exits normally (SIGTERM, Ctrl+C,
+        // host stop). A hard kill or a crash can't be helped.
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
+    }
+
+    private void OnProcessExit(object? sender, EventArgs e)
+    {
+        Dispose();
     }
 
     public void Log(
@@ -123,7 +137,10 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
 
     public void Dispose()
     {
-        if (disposed) return;
+        // Can be reached twice: an explicit Dispose and ProcessExit.
+        if (Interlocked.Exchange(ref disposeStarted, 1) == 1) return;
+
+        AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
 
         // 1. Stop the timer first to prevent new flush triggers
         try { timer.Dispose(); } catch { }
@@ -137,8 +154,14 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
             {
                 try
                 {
-                    // Run synchronously (Sync-over-Async) because we are in Dispose
-                    FlushCoreAsync().GetAwaiter().GetResult();
+                    // Drain everything, not one batch: up to MaxQueueLimit can be buffered. A failed insert still
+                    // dequeues its batch, so this always ends; the timeout only covers a slow database.
+                    // Run synchronously (Sync-over-Async) because we are in Dispose.
+                    var deadline = DateTime.UtcNow.Add(FinalFlushTimeout);
+                    while (queuedCount > 0 && DateTime.UtcNow < deadline)
+                    {
+                        FlushCoreAsync().GetAwaiter().GetResult();
+                    }
                 }
                 finally
                 {
