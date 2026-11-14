@@ -39,6 +39,32 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
         await ConfigAgentsAsync();
     }
 
+    /// <summary>Clusters on this provider whose master tables get created; opting out one cluster never affects another.</summary>
+    internal IList<JobMasterClusterConnectionConfig> GetClustersToProvision()
+    {
+        return JobMasterClusterConnectionConfig
+            .GetAllConfigs()
+            .Where(c => c.RepositoryTypeId == RepositoryTypeId && c.IsAutoProvisionSqlSchemaEnabled())
+            .ToList();
+    }
+
+    /// <summary>Agent provider configs on this provider whose tables get created; the opt-out comes from the owning cluster.</summary>
+    internal IList<(JobMasterClusterConnectionConfig ClusterConfig, JobMasterAgentProviderConfig AgentConfig)> GetAgentConfigsToProvision()
+    {
+        return GetAgentConfigs()
+            .Where(x => x.ClusterConfig.IsAutoProvisionSqlSchemaEnabled())
+            .ToList();
+    }
+
+    private IList<(JobMasterClusterConnectionConfig ClusterConfig, JobMasterAgentProviderConfig AgentConfig)> GetAgentConfigs()
+    {
+        return JobMasterClusterConnectionConfig
+            .GetAllConfigs()
+            .SelectMany(x => x.GetAllAgentProviderConfigs().Select(a => (ClusterConfig: x, AgentConfig: a)))
+            .Where(x => x.AgentConfig.RepositoryTypeId == RepositoryTypeId)
+            .ToList();
+    }
+
     private async Task ConfigClustersAsync()
     {
         var configs = JobMasterClusterConnectionConfig.GetAllConfigs().Where(cfg => cfg.RepositoryTypeId == RepositoryTypeId).ToList();
@@ -55,13 +81,8 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             }
         }
         
-        foreach (var clusterConfig in configs)
+        foreach (var clusterConfig in GetClustersToProvision())
         {
-            if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
-            {
-                return;
-            }
-            
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var connManager = factory.ClusterServiceProvider.GetRequiredKeyedService<IDbConnectionManager>(this.RepositoryTypeId);
             
@@ -140,13 +161,7 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
 
     private async Task ConfigAgentsAsync()
     {
-        var agentConfigs = JobMasterClusterConnectionConfig
-            .GetAllConfigs()
-            .SelectMany(x => x.GetAllAgentProviderConfigs().Select(a => (ClusterConfig: x, AgentConfig: a)))
-            .Where(x => x.AgentConfig.RepositoryTypeId == RepositoryTypeId)
-            .ToList();
-
-        foreach (var (_, agentConfig) in agentConfigs)
+        foreach (var (_, agentConfig) in GetAgentConfigs())
         {
             var agentTablePrefix =
                 agentConfig.AdditionalConnConfig.TryGetValue<string>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey);
@@ -157,13 +172,8 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             }
         }
 
-        foreach (var (clusterConfig, agentConfig) in agentConfigs)
+        foreach (var (clusterConfig, agentConfig) in GetAgentConfigsToProvision())
         {
-            if (!clusterConfig.IsAutoProvisionSqlSchemaEnabled())
-            {
-                return;
-            }
-
             var factory = JobMasterClusterAwareComponentFactories.GetFactory(clusterConfig.ClusterId);
             var connManager = factory.ClusterServiceProvider.GetRequiredKeyedService<IDbConnectionManager>(agentConfig.RepositoryTypeId);
             

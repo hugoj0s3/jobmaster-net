@@ -477,3 +477,20 @@ interface vs three.
 
 Also: bare `catch` without logging the exception in `PollingSavePendingJobsRunner` (~128) and
 `PollingSaveRecurringScheduleRunner` (~130); the jobs one also omits category and reference id.
+
+## Idea: generate the SQL schema script from the command line
+
+Raised 2026-11-13, after plan item 24; not in 0.0.12. For users with `DisableAutoProvisionSqlSchema()` who manage the
+schema themselves. The scripts are already plain strings from an `ISqlGenerator` + table prefix
+(`MasterTableCreatorScripts`, `AgentTableCreatorScripts`, Postgres `CreateCaseInsensitiveCollationSql`), no connection
+needed. Shape: a public method (e.g. `SqlSchemaScripts.Generate(provider, prefix, master, agent)`) plus an optional thin
+`dotnet tool` (`dotnet jobmaster sql-script --provider postgres --prefix JM_ --master --agent`).
+
+Open:
+- Scripts aren't idempotent: existence is checked in C# (`SqlJobMasterRuntimeSetup`), so a dump is plain `CREATE TABLE`.
+  Re-runnable output needs a per-provider `IF NOT EXISTS` form.
+- Upgrades: auto-provision only creates missing tables, no ALTER/migration concept. Create-only covers first install;
+  decide whether this grows into versioned upgrade scripts.
+- Master and agent generated separately (different DBs/providers, hybrid legs); the master DB also needs the agent
+  tables for the fallback connection (`ProvisionAgentTablesAsync` in `ConfigClustersAsync`).
+- Scripts and generators are `internal`: public API in SqlBase, or `InternalsVisibleTo` for a tool project.
