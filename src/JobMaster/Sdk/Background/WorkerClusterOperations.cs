@@ -10,10 +10,12 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background;
 
@@ -124,8 +126,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         catch (Exception ex)
         {
             logger.Error($"Failed to bulk dispatch {toBulkDispatch.Count} jobs to bucket {bucket.Id}.", JobMasterLogCategory.Job, toBulkDispatch[0].Id, exception: ex);
+            // The caller partitioned by the agent's batch size; master's can be smaller (e.g. NATS agents).
             var idsToHeldOnMaster = toBulkDispatch.Select(x => x.Id).ToList();
-            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), masterJobsService.AcquireThrottler);
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+            foreach (var partition in idsToHeldOnMaster.Partition(maxBatchSize))
+            {
+                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()), masterJobsService.AcquireThrottler);
+            }
             throw;
         }
     }

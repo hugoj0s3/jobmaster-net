@@ -7,8 +7,10 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.JobAndRecurringScheduleLifeCycleControl;
 
@@ -146,8 +148,11 @@ internal class CancelJobsFromRecurScheduleInactiveOrCanceledRunner : JobMasterRu
             return;
         }
 
-        var bulkUpdateRequest = BulkJobUpdateRequest.Cancel(jobIdsToCancel);
-        await masterJobsService.BulkUpdateAsync(bulkUpdateRequest);
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobIdsToCancel.Partition(maxBatchSize))
+        {
+            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.Cancel(partition.ToList()));
+        }
 
         recurringScheduleRawModel.HasCancelJobsFinish();
         await masterRecurringSchedulesService.UpdateAsync(recurringScheduleRawModel);

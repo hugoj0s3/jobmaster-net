@@ -22,6 +22,11 @@
   they passed up to `TransferBatchSize` at once). The existing per-batch body became a private `ArchivePartitionAsync`
   / `MigratePartitionAsync` called per partition, so executions and logs are queried per partition (no split needed)
   and each partition is confirmed and deleted before the next.
+- Two more unpartitioned master bulk calls: `CancelJobsFromRecurScheduleInactiveOrCanceledRunner`'s cancel (up to
+  `TransferBatchSize` ids in one `BulkUpdateAsync`), and `WorkerClusterOperations.BulkDispatchJobsToBucketAsync`'s
+  held-on-master fallback (caller partitions by the agent's batch size, master's can be smaller, e.g. NATS). Both now
+  loop by `GetMasterMaxBatchSize(this cluster)`. Repositories chunk internally, but inside one transaction (SQL) or one
+  `SaveChanges` (RavenDB), so only caller partitioning keeps each transaction small.
 - Tests: `MasterJobIntakeServiceTests` (missing job not confirmed, only non-inserted ids checked),
   `DeleteOldFinalJobsRunnerTests` / `DeleteOldInactiveRecurringSchedulesRunnerTests` (unconfirmed row + its logs kept).
   Verified by breaking the intake check and the runner delete: the new tests fail.
