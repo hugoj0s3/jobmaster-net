@@ -127,10 +127,9 @@ internal class PollingSaveRecurringScheduleRunner : BucketAwareRunner, ISaveRecu
                 {
                     await agentJobsDispatcherService.AddSavePendingRecurAsync(schedule);
                 }
-                catch
+                catch (Exception e)
                 {
-                    // Log Critical
-                    logger.Critical($"Failed to add recurring schedule to queue. Data: {schedule.ToLogSummary()}", JobMasterLogCategory.RecurringSchedule, schedule.Id);
+                    logger.Critical($"Failed to add recurring schedule to queue. Data: {schedule.ToLogSummary()}", JobMasterLogCategory.RecurringSchedule, schedule.Id, exception: e);
                 }
             }
         }

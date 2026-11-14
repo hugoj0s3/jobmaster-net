@@ -444,10 +444,6 @@ than "lost", since most cases may already be saved). Context carries ids, `IRead
 (`SaveAndRequeueFailed` / `DrainSaveFailed` / `UnreadablePayload`) and the exception; raw payload for unreadable ones.
 Call guarded (try/catch + timeout). Open: per-cluster registration (like `EnableMirrorLog`) vs global DI; one
 interface vs three.
-
-Also: bare `catch` without logging the exception in `PollingSavePendingJobsRunner` (~128) and
-`PollingSaveRecurringScheduleRunner` (~130); the jobs one also omits category and reference id.
-
 ## Idea: generate the SQL schema script from the command line
 
 Raised 2026-11-13, after plan item 24; not in 0.0.12. For users with `DisableAutoProvisionSqlSchema()` who manage the

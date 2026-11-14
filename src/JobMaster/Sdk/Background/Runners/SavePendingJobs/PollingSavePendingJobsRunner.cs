@@ -126,9 +126,9 @@ internal class PollingSavePendingJobsRunner : BucketAwareRunner, ISavePendingJob
                 {
                     await agentJobsDispatcherService.AddSavePendingJobAsync(job);
                 }
-                catch 
-                { 
-                    logger.Critical($"Failed to add job to queue. jobId: {job.Id.ToBase64()} Data: {job.ToLogSummary()}");
+                catch (Exception e)
+                {
+                    logger.Critical($"Failed to add job to queue. Data: {job.ToLogSummary()}", JobMasterLogCategory.Job, job.Id, exception: e);
                 }
             }
         }
