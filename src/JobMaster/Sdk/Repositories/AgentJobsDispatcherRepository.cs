@@ -1,4 +1,3 @@
-using System.Text.Json;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -163,9 +162,10 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
                 var recurringSchedule = InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(message.Payload);
                 results.Add(recurringSchedule);
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize recurring schedule. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                // Any exception: the batch is already pulled (deleted on SQL/RavenDB), so one bad message must not lose the rest.
+                logger.Critical($"Failed to deserialize recurring schedule. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
@@ -199,9 +199,10 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
                     results.Add(job);
                 }
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                // Any exception: the batch is already pulled (deleted on SQL/RavenDB), so one bad message must not lose the rest.
+                logger.Critical($"Failed to deserialize job. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
@@ -228,9 +229,10 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
                 var job = InternalJobMasterSerializer.Deserialize<JobRawModel>(message.Payload);
                 results.Add(job);
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                // Any exception: the batch is already pulled (deleted on SQL/RavenDB), so one bad message must not lose the rest.
+                logger.Critical($"Failed to deserialize job. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 

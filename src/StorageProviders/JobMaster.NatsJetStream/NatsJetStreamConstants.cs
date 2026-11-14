@@ -16,8 +16,8 @@ internal class NatsJetStreamConstants
     public const string HeaderHeartbeat = "jm-heartbeat";
     public const string HeaderConcurrencyRisk = "jm-concurrency-risk";
     
-    public const uint MaxMsgRetriesForLostRisk = 30;
-    public const uint MaxMsgRetriesForNoLostRisk = 3;
+    public const uint MaxMsgRetriesForLostRisk = 50;
+    public const uint MaxMsgRetriesForNoLostRisk = 5;
 
     // Centralized timing configuration
     public static readonly TimeSpan AckWaitSafetyMargin = JobMasterConstants.ClockSkewPadding + TimeSpan.FromSeconds(30);

@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using System.Text.Json;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
@@ -235,7 +234,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                                 msg.Headers?.TryGetValue(NatsJetStreamConstants.HeaderSignature, out var signatureValue);
                                 if (!IsSignatureValid(signatureValue))
                                 {
-                                    LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Preview: Sig={signatureValue}");
+                                    LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Sig={signatureValue}");
 
                                     using var termCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
                                     await msg.AckTerminateAsync(cancellationToken: termCts.Token).ConfigureAwait(false);
@@ -329,8 +328,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         // Safety check: NATS delivery count exceeds MaxAckPending threshold
         if (natsDeliveryCount > NatsJetStreamConstants.MaxDeliver - 1)
         {
-            var preview = msg.Data != null ? NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data), 128) : "null";
-            LogCriticalOrError($"{GetRunnerDescription()}: NATS delivery count exceeded MaxAckPending threshold. NumDelivered={natsDeliveryCount} Preview: {preview} CorrId={correlationId} MsgId={messageId}");
+            LogCriticalOrError($"{GetRunnerDescription()}: NATS delivery count exceeded MaxAckPending threshold. NumDelivered={natsDeliveryCount} {msg.ToLogSummary()}");
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
             return;
         }
@@ -349,8 +347,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         var json = Encoding.UTF8.GetString(msg.Data);
         if (!IsSignatureValid(signature))
         {
-            var preview = NatsJetStreamUtils.LogPreview(json, 128);
-            LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch. Preview: {preview} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MsgId={messageId}");
+            LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch. {msg.ToLogSummary()} RefTime={referenceTimeUtc} Sig={signature}");
 
             await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
             return;
@@ -361,12 +358,20 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         {
             payload = Deserialize(json);
         }
-        catch (JsonException jex)
+        catch (Exception ex)
         {
-            var preview = NatsJetStreamUtils.LogPreview(json, 128);
-            LogCriticalOrError($"{GetRunnerDescription()}: malformed JSON. Preview: {preview} MsgId={messageId}", jex);
+            // Any failure, JSON included, is retried with backoff without faulting the consumer, with the same retry
+            // limit as a processing failure: it may be transient (e.g. memory pressure) or readable by another worker
+            // (e.g. a newer version during a rolling upgrade).
+            if (ackGuard.FailureCount >= GetMaxFailureRetries())
+            {
+                LogCriticalOrError($"{GetRunnerDescription()}: failed to deserialize, exhausted retries. {msg.ToLogSummary()}", ex);
+                await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
+                return;
+            }
 
-            await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
+            this.logger.Error($"{GetRunnerDescription()}: failed to deserialize (failureAttempts={ackGuard.FailureCount}), retrying. {msg.ToLogSummary()}", JobMasterLogCategory.Bucket, BucketId, ex);
+            await ackGuard.TryNakFailAsync().ConfigureAwait(false);
             return;
         }
 
@@ -422,7 +427,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             sw = Stopwatch.StartNew();
 
             logger.Debug(
-                $"Processing {GetRunnerDescription()} payload {payload} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MessageId={messageId} FailureAttempts={attempts}",
+                $"Processing {GetRunnerDescription()} CorrId={correlationId} RefTime={referenceTimeUtc} Sig={signature} MessageId={messageId} FailureAttempts={attempts}",
                 JobMasterLogCategory.Bucket,
                 BucketId);
 
@@ -435,13 +440,10 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         catch (Exception ex)
         {
             var (sig, corr, rtime, mid) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
-            ulong maxRetries = LostRisk() ? NatsJetStreamConstants.MaxMsgRetriesForLostRisk : NatsJetStreamConstants.MaxMsgRetriesForNoLostRisk;
-
             // Check current failure count before incrementing
-            if (ackGuard.FailureCount >= maxRetries)
+            if (ackGuard.FailureCount >= GetMaxFailureRetries())
             {
-                var preview = NatsJetStreamUtils.LogPreview(Encoding.UTF8.GetString(msg.Data ?? Array.Empty<byte>()), 128);
-                LogCriticalOrError($"{GetRunnerDescription()}: exhausted retries. Preview: {preview} CorrId: {corr} RefTime: {rtime} Sig: {sig} MsgId: {mid}", ex);
+                LogCriticalOrError($"{GetRunnerDescription()}: exhausted retries. {msg.ToLogSummary()} RefTime: {rtime} Sig: {sig}", ex);
                 await ackGuard.TryAckTerminateAsync().ConfigureAwait(false);
                 this.logger.Debug($"{GetRunnerDescription()}: ack-terminate (failureAttempts={ackGuard.FailureCount}) CorrId={corr} MsgId={mid}", JobMasterLogCategory.Bucket, BucketId);
                 return;
@@ -550,6 +552,13 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     // Hooks
     protected abstract string GetFullBucketAddressId(string bucketId);
     protected abstract bool LostRisk();
+
+    /// <summary>Failed attempts (deserialize or processing) before a message is terminated.</summary>
+    private ulong GetMaxFailureRetries()
+    {
+        return LostRisk() ? NatsJetStreamConstants.MaxMsgRetriesForLostRisk : NatsJetStreamConstants.MaxMsgRetriesForNoLostRisk;
+    }
+    
     protected abstract string GetRunnerDescription();
     protected abstract IReadOnlyCollection<BucketStatus> ValidBucketStatuses();
     protected abstract TPayload Deserialize(string json);

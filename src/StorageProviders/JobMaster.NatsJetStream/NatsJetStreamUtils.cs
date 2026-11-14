@@ -63,16 +63,6 @@ internal static class NatsJetStreamUtils
     }
 
     
-    public static string LogPreview(string s, int maxBytes)
-    {
-        if (string.IsNullOrEmpty(s) || maxBytes <= 0) return string.Empty;
-        var utf8 = Encoding.UTF8;
-        var bytes = utf8.GetBytes(s);
-        if (bytes.Length <= maxBytes) return s;
-        var truncated = utf8.GetString(bytes, 0, maxBytes);
-        return truncated + "…";
-    }
-    
     public static (string? signature, string? correlationId, DateTime? referenceTimeUtc, string? messageId) GetHeaderValues(NatsHeaders? headers)
     {
         string? signature = GetHeaderMessageId(headers, NatsJetStreamConstants.HeaderSignature);

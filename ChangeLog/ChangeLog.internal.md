@@ -5,7 +5,31 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 914/914 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 916/916 unit tests pass on `net8.0` and `net10.0`.
+
+#### Agent messages: no payload in logs, one bad message per batch (Hugo, 2026-11-13)
+- Payload in logs (finding from item 17's "checked" claim, which missed these): `AgentJobsDispatcherRepository`'s three
+  deserialize-failure Criticals logged the whole `message.Payload`; NATS `NatsJetStreamRunnerBase` logged
+  `LogPreview(payload, 128)` on delivery-count exceeded, signature mismatch, malformed JSON and exhausted retries.
+  Now `ToLogSummary()` extensions on `JobMasterRawMessage` (core `Sdk.Abstractions.Extensions`) and `INatsJSMsg<byte[]>`
+  (`NatsJetStreamMsgExtensions`), both via `JobMasterRawMessageExtensions.FormatLogSummary`: `Id` (CorrelationId →
+  base64), `MessageId`, `PayloadLength`. `LogPreview` deleted; a debug line's `{payload}` dropped.
+- `AgentJobsDispatcherRepository` pull loops catch `Exception`, not `JsonException`: SQL / RavenDB delete on pull, so a
+  non-JSON exception lost the whole batch (already-parsed ones included). Now only that message is skipped.
+- NATS deserialize: any exception, `JsonException` included (Hugo) → `TryNakFailAsync`, terminated after the same
+  limit as processing failures via new `GetMaxFailureRetries()`. Retrying may help: transient (e.g. memory), or a newer
+  worker can read it during a rolling upgrade; bad JSON otherwise only comes from data written directly to the store.
+  Before, `JsonException` terminated at once and any other exception faulted the consumer and looped until
+  `MaxDeliver` (10000).
+- `MaxMsgRetriesForLostRisk` 30 → 50, `MaxMsgRetriesForNoLostRisk` 3 → 5 (Hugo). With the 1/5/15/30/60s backoff:
+  about 47 min on transport runners, about 2 min on execution runners.
+
+#### SQL auto-provision: one opted-out cluster skipped the rest (Plan0.0.12Alpha item 24)
+- `SqlJobMasterRuntimeSetup.ConfigClustersAsync` / `ConfigAgentsAsync` did `return` instead of `continue` on a cluster
+  with `DisableAutoProvisionSqlSchema()`. `GetAllConfigs()` is a `HashSet` (randomized string hash per process), so
+  which clusters were skipped could change between restarts. Affected Postgres too (its tables come from the base).
+- Fixed by moving the filter into `GetClustersToProvision()` / `GetAgentConfigsToProvision()`; the loops have no skip
+  left. `SqlAutoProvisionSelectionTests` (no DB; order-independent since the result is a filtered set).
 
 #### Hybrid agent connection (Plan0.0.12Alpha item 8 / PlanHybridAgentConnection.md)
 - Format (Hugo): `hybrid:<transport>&&<execution>` for both `RepositoryTypeId` and fingerprint, in
@@ -200,8 +224,8 @@
 - Security (Hugo): `JobRawModel` / `RecurringScheduleRawModel.ToLogSummary()` no longer include `MsgData` / `Metadata`
   content (first 500 chars before), only `MsgDataLength` / `MetadataLength`. Callers: the Critical "failed to add to
   queue" logs in `PollingSavePendingJobsRunner` / `PollingSaveRecurringScheduleRunner` and the drain-safeguard log in
-  `JobSavePendingOperation`. Size kept because those failures can be caused by an oversized message. Checked: no other
-  log line interpolates message data or metadata. Tests: `JobRawModelTests.ToLogSummary_*`.
+  `JobSavePendingOperation`. Size kept because those failures can be caused by an oversized message. (The "no other log
+  line" check missed the raw agent message logs; fixed 2026-11-13, see above.) Tests: `JobRawModelTests.ToLogSummary_*`.
 - `ParseFlexible` is a plain static call, not a `string` extension (Hugo): `GuidBase64Util.ParseFlexible(value)`;
   `ToBase64()` stays a `Guid` extension.
 - Tests: `ApiLogItemTests` (Guid → base64, non-Guid unchanged, returned id → `ReferenceGuid` → stored value);
