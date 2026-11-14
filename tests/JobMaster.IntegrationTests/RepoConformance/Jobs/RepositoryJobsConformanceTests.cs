@@ -1795,6 +1795,37 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce()
+    {
+        // Several writers insert the same rows at once, each in its own order, so some of them hit another's commit
+        // between the pre-read and the insert (duplicate key / deadlock): that must fall back, not throw.
+        // Metadata on every row: its entries are what collide when the guarded row insert alone would skip silently.
+        const int rows = 30, writers = 6, rounds = 5;
+        var def = "defBulkInsertConcurrent-" + JobMasterRandomUtil.NewGuid4();
+
+        for (var round = 0; round < rounds; round++)
+        {
+            var jobs = Enumerable.Range(0, rows).Select(_ => NewJobWithMetadata(def)).ToList();
+
+            var results = await Task.WhenAll(Enumerable.Range(0, writers).Select(_ => Task.Run(() =>
+                Fixture.MasterJobs.BulkInsertIfNotExistsAsync(
+                    jobs.Select(j => Clone(j)).OrderBy(_ => Guid.NewGuid()).ToList(), Array.Empty<JobExecution>()))));
+
+            var reportedInserted = results.SelectMany(r => r).ToList();
+            var ids = jobs.Select(j => j.Id).ToList();
+            Assert.Equal(ids.OrderBy(x => x), reportedInserted.OrderBy(x => x)); // each row by exactly one writer
+            Assert.Equal(rows, (await Fixture.MasterJobs.QueryExistingIdsAsync(ids)).Count);
+        }
+    }
+
+    private JobRawModel NewJobWithMetadata(string def)
+    {
+        var job = NewJob(def, JobMasterJobStatus.OnMaster);
+        job.Metadata = "{\"race\":\"yes\"}";
+        return job;
+    }
+
+    [Fact]
     public async Task QueryExistingIds_ShouldReturnOnlyIdsOnMaster()
     {
         var def = "defQueryExistingIds-" + JobMasterRandomUtil.NewGuid4();

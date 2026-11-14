@@ -20,7 +20,8 @@ internal class MySqlMasterRecurringSchedulesRepository : SqlMasterRecurringSched
 {
     public MySqlMasterRecurringSchedulesRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connectionManager) : base(clusterConnectionConfig, connectionManager)
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 

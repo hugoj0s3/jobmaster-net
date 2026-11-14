@@ -18,7 +18,8 @@ internal class SqlServerMasterRecurringSchedulesRepository : SqlMasterRecurringS
 {
     public SqlServerMasterRecurringSchedulesRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
-        IDbConnectionManager connectionManager) : base(clusterConnectionConfig, connectionManager)
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 

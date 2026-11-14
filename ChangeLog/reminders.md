@@ -370,31 +370,17 @@ public selector/receipt XML docs `cref` it and users may reuse values (e.g. `Min
 that's worth the public surface; making it internal means stating values inline in those docs + a ChangeLog
 breaking entry.
 
-## SQL `BulkInsertIfNotExistsAsync` races with concurrent inserts of the same id (duplicate key → rollback)
+## SQL `BulkInsertIfNotExistsAsync` still checks then inserts (not atomic)
 
-Found 2026-10-27 (Plan 0.0.12 item 7, ConfirmOnMaster review). `SqlMasterJobsRepository` /
-`SqlMasterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync` check then insert under READ COMMITTED:
-1. Pre-read existing ids (`genericUtil.BuildQueryExistingIdsSql`).
-2. Guarded `INSERT ... SELECT ... WHERE NOT EXISTS` (ANSI-portable, not atomic with the insert).
-3. Metadata entries for every id step 1 called "new", with no guard at all.
-
-If another writer commits the same id in between (agent's save racing `ConfirmOnMasterAsync`, or two confirms of the
-same receipts), steps 2 or 3 hit the primary key: duplicate key error, the whole transaction rolls back (the other
-rows of that partition included). No corruption, nothing written twice; calling again succeeds since the re-read
-sees the row. Deadlocks between the same writers have the same outcome. If the agent loses, its save already
-treats the duplicate as "already saved"; if Confirm loses, the user gets the raw DB exception.
-
-Fix directions (not implemented, rare race, JobMaster is at-least-once):
-- Short term: a Deadlock + DuplicateKey retry policy around `BulkInsertIfNotExistsAsync` in `MasterJobsService` /
-  `MasterRecurringSchedulesService` (a few attempts, jittered). The existing `RetryDeadlockPolicy` is not enough: it
-  only retries `JobMasterKnownExceptionId.Deadlock`, so the race (`DuplicateKey`) still fails. Either a new policy
-  or `RetryDeadlockPolicy` taking the set of retryable ids. `MasterJobsService` has no policy field yet.
+`SqlMasterJobsRepository` / `SqlMasterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync` pre-read existing ids,
+then a guarded `INSERT ... WHERE NOT EXISTS`, then metadata entries for the ids the pre-read called new. The race with a
+concurrent insert of the same id (duplicate key or deadlock → rollback) is handled since 2026-11-14 by a per-row
+fallback, so nothing surfaces to callers. Left for later:
 - Proper: atomic per-provider insert-if-absent for jobs and metadata (Postgres `ON CONFLICT DO NOTHING`, MySQL
-  `INSERT IGNORE` / `ON DUPLICATE KEY`, SQL Server `MERGE`/`UPDLOCK, HOLDLOCK`), and derive "new" ids from what
-  was actually inserted instead of the pre-read.
-
-Related: `BuildQueryExistingIdsSql` (step 1) has no `cluster_id` filter, so a same-DB migrate can see another
-cluster's row as existing and skip copying its metadata/executions/logs.
+  `INSERT IGNORE` / `ON DUPLICATE KEY`, SQL Server `MERGE`/`UPDLOCK, HOLDLOCK`), deriving "new" ids from what was
+  actually inserted instead of the pre-read. Would remove the fallback's extra round trips after a race.
+- `BuildQueryExistingIdsSql` (the pre-read) has no `cluster_id` filter, so a same-DB, same-prefix migrate can see the
+  source cluster's row as existing and skip copying its metadata/executions/logs.
 
 ## The archived check before a master write can't close the archived race
 

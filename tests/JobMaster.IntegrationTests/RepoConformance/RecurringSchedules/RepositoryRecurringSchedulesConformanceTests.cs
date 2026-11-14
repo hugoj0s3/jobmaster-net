@@ -824,6 +824,35 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce()
+    {
+        // Same as the jobs test: concurrent writers of the same rows must fall back on the race, not throw.
+        const int rows = 30, writers = 6, rounds = 5;
+        var def = "defBulkInsertConcurrent-" + JobMasterRandomUtil.NewGuid4();
+
+        for (var round = 0; round < rounds; round++)
+        {
+            var schedules = Enumerable.Range(0, rows).Select(_ => NewScheduleWithMetadata(def)).ToList();
+
+            var results = await Task.WhenAll(Enumerable.Range(0, writers).Select(_ => Task.Run(() =>
+                Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(
+                    schedules.Select(s => Clone(s)).OrderBy(_ => Guid.NewGuid()).ToList()))));
+
+            var reportedInserted = results.SelectMany(r => r).ToList();
+            var ids = schedules.Select(s => s.Id).ToList();
+            Assert.Equal(ids.OrderBy(x => x), reportedInserted.OrderBy(x => x)); // each row by exactly one writer
+            Assert.Equal(rows, (await Fixture.MasterRecurringSchedules.QueryExistingIdsAsync(ids)).Count);
+        }
+    }
+
+    private RecurringScheduleRawModel NewScheduleWithMetadata(string def)
+    {
+        var schedule = NewSchedule(def);
+        schedule.Metadata = "{\"race\":\"yes\"}";
+        return schedule;
+    }
+
+    [Fact]
     public async Task QueryExistingIds_ShouldReturnOnlyIdsOnMaster()
     {
         var def = "defQueryExistingIds-" + JobMasterRandomUtil.NewGuid4();

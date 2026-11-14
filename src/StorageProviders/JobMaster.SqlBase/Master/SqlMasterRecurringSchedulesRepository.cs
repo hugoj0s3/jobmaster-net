@@ -29,12 +29,15 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
     protected string connString = string.Empty;
     protected JobMasterConfigDictionary additionalConnConfig = null!;
     protected GenericRecordSqlUtil genericUtil = null!;
+    protected readonly IKnownExceptionIdentifier knownExceptionIdentifier;
 
     protected SqlMasterRecurringSchedulesRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
-        IDbConnectionManager connManager) : base(clusterConnConfig)
+        IDbConnectionManager connManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) : base(clusterConnConfig)
     {
         this.connManager = connManager;
+        this.knownExceptionIdentifier = knownExceptionIdentifier;
         sql = SqlGeneratorFactory.Get(this.MasterRepoTypeId);
         connString = clusterConnConfig.ConnectionString;
         additionalConnConfig = clusterConnConfig.AdditionalConnConfig;
@@ -531,6 +534,44 @@ FROM schedules_page s
     {
         if (schedules.Count == 0) return new List<Guid>();
 
+        try
+        {
+            return await InsertIfNotExistsInOneTransactionAsync(schedules);
+        }
+        catch (Exception ex) when (IsBatchConflict(ex))
+        {
+            // Another writer committed one of these ids between our pre-read and insert (or we deadlocked with it),
+            // so the whole transaction rolled back: retry one row per transaction, like RavenDB's fallback.
+            return await InsertIfNotExistsPerRowAsync(schedules);
+        }
+    }
+
+    private async Task<IList<Guid>> InsertIfNotExistsPerRowAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        var insertedIds = new List<Guid>();
+        foreach (var schedule in schedules)
+        {
+            try
+            {
+                insertedIds.AddRange(await InsertIfNotExistsInOneTransactionAsync(new List<RecurringScheduleRawModel> { schedule }));
+            }
+            catch (Exception ex) when (knownExceptionIdentifier.Identify(MasterRepoTypeId, ex) == JobMasterKnownExceptionId.DuplicateKey)
+            {
+                // Saved by the other writer: already exists, not inserted by us.
+            }
+        }
+
+        return insertedIds;
+    }
+
+    private bool IsBatchConflict(Exception ex)
+    {
+        var id = knownExceptionIdentifier.Identify(MasterRepoTypeId, ex);
+        return id is JobMasterKnownExceptionId.DuplicateKey or JobMasterKnownExceptionId.Deadlock;
+    }
+
+    private async Task<IList<Guid>> InsertIfNotExistsInOneTransactionAsync(IList<RecurringScheduleRawModel> schedules)
+    {
         var t = TableName();
         var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
         var insertedIds = new List<Guid>();

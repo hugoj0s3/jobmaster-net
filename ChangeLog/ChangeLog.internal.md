@@ -7,6 +7,24 @@
 ### JobMaster 0.0.12-alpha
 > Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 920/920 unit tests pass on `net8.0` and `net10.0`.
 
+#### SQL `BulkInsertIfNotExistsAsync`: per-row fallback on a race (Hugo, 2026-11-14)
+- Check-then-insert under READ COMMITTED: another writer committing the same id between the pre-read and the insert
+  (agent's save vs `ConfirmOnMasterAsync`, two confirms of the same receipts) hit the primary key, rolled back the whole
+  transaction and threw. Deadlocks between the same writers likewise.
+- Same shape as RavenDB's fallback: the old body is now `InsertIfNotExistsInOneTransactionAsync`; on `DuplicateKey` or
+  `Deadlock` (`IsBatchConflict`) the public method retries one row per transaction (`InsertIfNotExistsPerRowAsync`),
+  a duplicate there meaning "already saved, not inserted by us". Differences from RavenDB: no partition step (callers
+  already partition to the master batch size), sequential, and other errors still throw (the repos have no logger;
+  callers verify with `QueryExistingIdsAsync` or retry on the next tick).
+- `SqlMasterRecurringSchedulesRepository` now takes `IKnownExceptionIdentifier` (constructor of the base + the three
+  providers), like the jobs repository already did.
+- Tests: `BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce` (jobs and
+  recurring RepoConformance, all providers): 5 rounds of 6 writers inserting the same 30 rows in shuffled order; no
+  throw, each row reported inserted by exactly one writer, all on master. Rows carry metadata, since without entries
+  the guarded insert can skip silently and the pre-read still reports the row (the reminder's pre-read gap).
+  Verified with the fallback disabled: all 6 SQL variants fail, with duplicate keys (MySQL, SQL Server, on the row and
+  on the metadata entries) and deadlocks (Postgres, MySQL), so deadlocks belong in the fallback too.
+
 #### `JobMasterLogger` flushes on process exit (Hugo, 2026-11-14)
 - `Dispose()` (with its final flush) never ran: the per-cluster containers are registered in the main container as
   instances, which MS DI never disposes, and there's no stop entry point (no `StopJobMasterRuntimeAsync`, no

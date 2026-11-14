@@ -17,8 +17,11 @@ namespace JobMaster.Postgres.Master;
 
 internal class PostgresMasterRecurringSchedulesRepository : SqlMasterRecurringSchedulesRepository
 {
-    public PostgresMasterRecurringSchedulesRepository(JobMasterClusterConnectionConfig clusterConnectionConfig, IDbConnectionManager connectionManager) :
-        base(clusterConnectionConfig, connectionManager)
+    public PostgresMasterRecurringSchedulesRepository(
+        JobMasterClusterConnectionConfig clusterConnectionConfig,
+        IDbConnectionManager connectionManager,
+        IKnownExceptionIdentifier knownExceptionIdentifier) :
+        base(clusterConnectionConfig, connectionManager, knownExceptionIdentifier)
     {
     }
 

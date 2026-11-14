@@ -637,9 +637,48 @@ FROM jobs_page j
     {
         if (jobs.Count == 0) return new List<Guid>();
 
+        var executionsByJobId = jobExecutions.ToLookup(e => e.JobId);
+        try
+        {
+            return await InsertIfNotExistsInOneTransactionAsync(jobs, executionsByJobId);
+        }
+        catch (Exception ex) when (IsBatchConflict(ex))
+        {
+            // Another writer committed one of these ids between our pre-read and insert (or we deadlocked with it),
+            // so the whole transaction rolled back: retry one row per transaction, like RavenDB's fallback.
+            return await InsertIfNotExistsPerRowAsync(jobs, executionsByJobId);
+        }
+    }
+
+    private async Task<IList<Guid>> InsertIfNotExistsPerRowAsync(IList<JobRawModel> jobs, ILookup<Guid, JobExecution> executionsByJobId)
+    {
+        var insertedIds = new List<Guid>();
+        
+        foreach (var job in jobs)
+        {
+            try
+            {
+                insertedIds.AddRange(await InsertIfNotExistsInOneTransactionAsync(new List<JobRawModel> { job }, executionsByJobId));
+            }
+            catch (Exception ex) when (IsDupeViolation(job.Id, ex))
+            {
+                // Saved by the other writer: already exists, not inserted by us.
+            }
+        }
+
+        return insertedIds;
+    }
+
+    private bool IsBatchConflict(Exception ex)
+    {
+        var id = knownExceptionIdentifier.Identify(this.ClusterConnConfig.RepositoryTypeId, ex);
+        return id is JobMasterKnownExceptionId.DuplicateKey or JobMasterKnownExceptionId.Deadlock;
+    }
+
+    private async Task<IList<Guid>> InsertIfNotExistsInOneTransactionAsync(IList<JobRawModel> jobs, ILookup<Guid, JobExecution> executionsByJobId)
+    {
         var t = TableName();
         var maxBatch = OperationThrottlerSettingsTemplateFactory.GetMasterMaxBatchSize(ClusterConnConfig.RepositoryTypeId);
-        var executionsByJobId = jobExecutions.ToLookup(e => e.JobId);
         var insertedIds = new List<Guid>();
 
         using var conn = await connManager.OpenAsync(connString, additionalConnConfig);
