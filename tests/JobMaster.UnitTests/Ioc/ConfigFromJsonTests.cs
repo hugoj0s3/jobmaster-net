@@ -172,6 +172,37 @@ public class ConfigFromJsonTests
     // ── agent connections ────────────────────────────────────────────────────
 
     [Fact]
+    public void ConfigFromJson_RepoTypesInAnyCasing_UseTheBuiltInCasing()
+    {
+        // Matched ignoring case (ConnectionOptions included, so the binder lookup is exercised too); stored with the
+        // built-in casing, hybrid id included.
+        const string json = """
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "postgres",
+            "ConnectionString": "Host=localhost;",
+            "ConnectionOptions": { "TablePrefix": "Custom_" },
+            "AgentConnections": [
+                { "Name": "Nats-1", "RepositoryType": "NATSJETSTREAM", "ConnectionString": "nats://localhost" },
+                {
+                    "Name": "Hybrid-1",
+                    "Transport": { "RepositoryType": "natsjetstream", "ConnectionString": "nats://localhost" },
+                    "Execution": { "RepositoryType": "ravendb", "ConnectionString": "Urls=http://localhost:8080;Database=Db" }
+                }
+            ]
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+        var d = b.clusterDefinition;
+
+        d.RepoType.Should().Be("Postgres");
+        d.AgentConnections[0].AgentRepoType.Should().Be("NatsJetStream");
+        d.AgentConnections[1].AgentRepoType.Should().Be("hybrid:NatsJetStream&&RavenDB");
+    }
+
+    [Fact]
     public void ConfigFromJson_String_MapsAgentConnections()
     {
         const string json = """

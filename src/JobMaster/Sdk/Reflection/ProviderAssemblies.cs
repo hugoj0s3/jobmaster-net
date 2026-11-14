@@ -19,6 +19,24 @@ internal static class ProviderAssemblies
         ["NatsJetStream"] = "JobMaster.NatsJetStream",
     };
 
+    /// <summary>
+    /// The built-in casing of <paramref name="repositoryType"/> when it matches a built-in type ignoring case
+    /// (<c>"postgres"</c> → <c>"Postgres"</c>), else the value unchanged (a third-party provider keeps its own name).
+    /// Repository types are matched ignoring case, but what's stored and used as a key is always this casing.
+    /// </summary>
+    public static string ToKnownRepositoryType(string repositoryType)
+    {
+        foreach (var known in AssemblyNameByRepositoryType.Keys)
+        {
+            if (string.Equals(known, repositoryType, StringComparison.OrdinalIgnoreCase))
+            {
+                return known;
+            }
+        }
+
+        return repositoryType;
+    }
+
     public static void EnsureLoaded(string repositoryType)
     {
         if (!AssemblyNameByRepositoryType.TryGetValue(repositoryType, out var assemblyName))
@@ -42,6 +60,6 @@ internal static class ProviderAssemblies
     {
         return AssemblyNameByRepositoryType.TryGetValue(repositoryType, out var assemblyName)
             ? $"Install the {assemblyName} package."
-            : $"Repository types are case-sensitive; the built-in ones are: {string.Join(", ", AssemblyNameByRepositoryType.Keys)}.";
+            : $"The built-in repository types are: {string.Join(", ", AssemblyNameByRepositoryType.Keys)}.";
     }
 }

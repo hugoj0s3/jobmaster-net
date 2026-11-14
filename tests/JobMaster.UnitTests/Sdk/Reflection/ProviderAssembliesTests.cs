@@ -46,10 +46,32 @@ public class ProviderAssembliesTests
     public void RegisterProviderExtensions_WhenNoProviderMatches_Throws()
     {
         var act = () => JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(
-            Mock.Of<IClusterIocRegistration>(), "postgres", "c1");
+            Mock.Of<IClusterIocRegistration>(), "NotAProvider", "c1");
 
         act.Should().Throw<InvalidOperationException>()
-            .WithMessage("No JobMaster provider found*'postgres'*'c1'*case-sensitive*Postgres*");
+            .WithMessage("No JobMaster provider found*'NotAProvider'*'c1'*Postgres*");
+    }
+
+    [Theory]
+    [MemberData(nameof(Providers))]
+    public void ToKnownRepositoryType_AnyCasing_ReturnsTheBuiltInCasing(string repositoryType, string _)
+    {
+        ProviderAssemblies.ToKnownRepositoryType(repositoryType.ToLowerInvariant()).Should().Be(repositoryType);
+        ProviderAssemblies.ToKnownRepositoryType(repositoryType.ToUpperInvariant()).Should().Be(repositoryType);
+        ProviderAssemblies.ToKnownRepositoryType(repositoryType).Should().Be(repositoryType);
+    }
+
+    [Fact]
+    public void ToKnownRepositoryType_WhenNotBuiltIn_ReturnsItUnchanged()
+    {
+        // A third-party provider keeps its own exact name.
+        ProviderAssemblies.ToKnownRepositoryType("myCustomProvider").Should().Be("myCustomProvider");
+    }
+
+    [Fact]
+    public void FormatHybridRepoType_AnyCasing_UsesTheBuiltInCasing()
+    {
+        RepoTypeAndFingerprintUtil.FormatHybridRepoType("natsjetstream", "RAVENDB").Should().Be("hybrid:NatsJetStream&&RavenDB");
     }
 
     [Fact]

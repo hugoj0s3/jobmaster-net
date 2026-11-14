@@ -5,7 +5,23 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 920/920 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 928/928 unit tests pass on `net8.0` and `net10.0`.
+
+#### Repository types ignore case (Hugo, 2026-11-14)
+- Same rule as cluster ids (`ToConfiguredClusterId`): matched ignoring case at the input, stored and used as a key in
+  one casing, so DI keys, throttler templates, `SqlGeneratorFactory` and the runtime-setup filters keep comparing
+  exactly. New `ProviderAssemblies.ToKnownRepositoryType`: the built-in casing from `AssemblyNameByRepositoryType`
+  when it matches ignoring case, else unchanged (third-party providers keep their exact name).
+- Applied where a repo type string comes in: `ClusterConfigBuilder.ClusterRepoType` (both builders),
+  `AddAgentConnectionConfig`, `AgentConnectionProviderSelector` / `AgentConnectionConfigSelector.AgentRepoType`,
+  `ConnectionOptionsBinderFactory.Create` (`ConfigFromJson` calls it with the raw JSON value) and
+  `JobMasterIocRegistrationAttribute.RegisterProviderExtensions`. `FormatHybridRepoType` formats both legs with it,
+  so a hybrid id always reads `hybrid:NatsJetStream&&RavenDB` (Hugo).
+- `MissingProviderHint` no longer says "case-sensitive".
+- Tests: `ProviderAssembliesTests` (every built-in in lower / upper / own casing, unknown unchanged, hybrid format;
+  the no-provider test now uses an unknown name), `ConfigFromJsonTests.ConfigFromJson_RepoTypesInAnyCasing_UseTheBuiltInCasing`
+  (cluster, single agent, both hybrid legs, `ConnectionOptions` for the binder lookup). Verified: with an ordinal
+  match the 7 new cases fail.
 
 #### SQL `BulkInsertIfNotExistsAsync`: per-row fallback on a race (Hugo, 2026-11-14)
 - Check-then-insert under READ COMMITTED: another writer committing the same id between the pre-read and the insert
@@ -459,9 +475,10 @@
   Hardcoded because core can't reference the providers' constants; `ProviderAssembliesTests` guards it against each
   provider's `RepositoryType`.
 - `RegisterProviderExtensionsForMaster/Agent` share one `RegisterProviderExtensions` (were copies): loads first,
-  then throws when nothing registered. Two messages: no provider for the type (install hint, or the case-sensitive
-  list of built-in types) vs a provider without that role (`NatsJetStream` has no `RegisterForMaster`). Repo types
-  stay case-sensitive: they're also DI keys.
+  then throws when nothing registered. Two messages: no provider for the type (install hint, or the list of built-in
+  types) vs a provider without that role (`NatsJetStream` has no `RegisterForMaster`). Repo types were kept
+  case-sensitive here because they're also DI keys; since 2026-11-14 they're normalized at the input instead (see
+  "Repository types ignore case").
 - `ConnectionOptionsBinderFactory.Create` loads the provider before its rescan (`connectionOptions` in JSON is bound
   before `Finish`).
 

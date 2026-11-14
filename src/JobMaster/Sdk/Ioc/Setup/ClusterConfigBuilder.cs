@@ -264,7 +264,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterRepoType(string repoType)
     {
-        this.clusterDefinition.RepoType = repoType;
+        this.clusterDefinition.RepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
 
@@ -417,7 +417,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         
         var def = new AgentConnectionDefinition { AgentConnectionName = agentConnectionName };
-        def.Transport.AgentRepoType = repoType;
+        def.Transport.AgentRepoType = repoType == null ? null : ProviderAssemblies.ToKnownRepositoryType(repoType);
         def.Transport.AgentConnString = cnnString;
         def.Transport.AgentAdditionalConnConfig = additionalConnConfig;
         clusterDefinition.AgentConnections.Add(def);
@@ -760,7 +760,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
 
     public IClusterStandaloneConfigSelector ClusterRepoType(string repoType)
     {
-        clusterDefinition.RepoType = repoType;
+        clusterDefinition.RepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
     

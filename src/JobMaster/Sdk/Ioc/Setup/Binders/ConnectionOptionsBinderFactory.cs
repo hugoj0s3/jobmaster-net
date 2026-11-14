@@ -9,6 +9,7 @@ internal static class ConnectionOptionsBinderFactory
 
     public static IConnectionOptionsBinder Create(string repoType)
     {
+        repoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         if (binders.TryGetValue(repoType, out var binder))
             return binder;
 

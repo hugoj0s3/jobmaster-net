@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Reflection;
 
 namespace JobMaster.Sdk.Ioc.Setup.Selectors;
 
@@ -16,7 +17,7 @@ internal sealed class AgentConnectionProviderSelector : IAgentConnectionProvider
 
     public IAgentConnectionProviderSelector AgentRepoType(string repoType)
     {
-        provider.AgentRepoType = repoType;
+        provider.AgentRepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
 
@@ -104,7 +105,7 @@ internal sealed class AgentConnectionConfigSelector : IAgentConnectionConfigSele
     // Single-provider setters write into the shared provider (def.Transport == def.Execution).
     public IAgentConnectionProviderSelector AgentRepoType(string repoType)
     {
-        SingleProvider().AgentRepoType = repoType;
+        SingleProvider().AgentRepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
 

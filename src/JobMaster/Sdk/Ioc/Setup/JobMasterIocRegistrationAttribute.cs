@@ -40,6 +40,7 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
         string role)
     {
         RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryType);
+        repositoryType = ProviderAssemblies.ToKnownRepositoryType(repositoryType);
         ProviderAssemblies.EnsureLoaded(repositoryType);
 
         var providerFound = false;

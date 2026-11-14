@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Reflection;
+
 namespace JobMaster.Sdk.Utils;
 
 internal static class RepoTypeAndFingerprintUtil
@@ -12,7 +14,7 @@ internal static class RepoTypeAndFingerprintUtil
         ValidateSingleRepoTypeId(transportRepoType);
         ValidateSingleRepoTypeId(executionRepoType);
 
-        return $"{Prefix}{transportRepoType}{Separator}{executionRepoType}";
+        return $"{Prefix}{ProviderAssemblies.ToKnownRepositoryType(transportRepoType)}{Separator}{ProviderAssemblies.ToKnownRepositoryType(executionRepoType)}";
     }
     
     public static string FormatHybridFingerprint(string transportFingerprint, string executionFingerprint)
