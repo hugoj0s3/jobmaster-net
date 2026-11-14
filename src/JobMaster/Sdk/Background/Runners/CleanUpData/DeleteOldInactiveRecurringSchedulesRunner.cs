@@ -3,8 +3,11 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
@@ -77,10 +80,10 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
             {
                 var archiveService = archiveFactory.GetComponent<IMasterRecurringScheduleIntakeService>();
                 var candidates = await schedulesRepo.QueryTerminatedToPurgeAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
-                if (candidates.Count > 0)
+                var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(cfg.TargetArchivedClusterId!);
+                foreach (var partition in candidates.Partition(maxBatchSize))
                 {
-                    await archiveService.BulkInsertIfNotExistsAsync(candidates);
-                    deleted = await schedulesRepo.DeleteByIdsAsync(candidates.Select(s => s.Id).ToList());
+                    deleted += await ArchivePartitionAsync(archiveService, partition.ToList(), cfg.TargetArchivedClusterId!);
                 }
             }
             else
@@ -95,6 +98,24 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
         {
             locker.ReleaseLock(lockKeys.RecurringSchedulesCleanupLock(), lockToken);
         }
+    }
+
+    private async Task<int> ArchivePartitionAsync(IMasterRecurringScheduleIntakeService archiveService, IList<RecurringScheduleRawModel> candidates, string archiveClusterId)
+    {
+        // Only delete what the archive confirmed; the rest stays here and is retried next tick.
+        var confirmedIds = await archiveService.BulkInsertIfNotExistsAsync(candidates);
+        var confirmedSet = new HashSet<Guid>(confirmedIds);
+        var notConfirmed = candidates.Count(s => !confirmedSet.Contains(s.Id));
+        if (notConfirmed > 0)
+        {
+            logger.Error(
+                $"{notConfirmed} terminated recurring schedule(s) could not be confirmed on archive cluster '{archiveClusterId}'. " +
+                "They were kept here and will be retried.",
+                JobMasterLogCategory.Cluster,
+                BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        }
+
+        return confirmedIds.Count > 0 ? await schedulesRepo.DeleteByIdsAsync(confirmedIds) : 0;
     }
 
     public override TimeSpan SucceedInterval

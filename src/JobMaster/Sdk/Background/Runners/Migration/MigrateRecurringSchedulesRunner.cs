@@ -4,8 +4,10 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.Migration;
 
@@ -85,10 +87,34 @@ internal sealed class MigrateRecurringSchedulesRunner : JobMasterRunner
             return OnTickResult.Skipped(this);
 
         var intakeService = targetFactory.GetComponent<IMasterRecurringScheduleIntakeService>();
-        await intakeService.BulkInsertIfNotExistsAsync(schedules);
-        await schedulesRepo.DeleteByIdsAsync(schedules.Select(s => s.Id).ToList());
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(cfg.TargetActiveClusterId!);
+        foreach (var partition in schedules.Partition(maxBatchSize))
+        {
+            await MigratePartitionAsync(intakeService, partition.ToList(), cfg.TargetActiveClusterId!);
+        }
 
         return OnTickResult.Success(this);
+    }
+
+    private async Task MigratePartitionAsync(IMasterRecurringScheduleIntakeService intakeService, IList<RecurringScheduleRawModel> schedules, string targetClusterId)
+    {
+        // Only delete what the target confirmed; the rest stays here and is retried once its lock expires.
+        var confirmedIds = await intakeService.BulkInsertIfNotExistsAsync(schedules);
+        var confirmedSet = new HashSet<Guid>(confirmedIds);
+        var notConfirmed = schedules.Count(s => !confirmedSet.Contains(s.Id));
+        if (notConfirmed > 0)
+        {
+            logger.Error(
+                $"{notConfirmed} recurring schedule(s) could not be confirmed on target cluster '{targetClusterId}'. " +
+                "They were kept here and will be retried.",
+                JobMasterLogCategory.Cluster,
+                BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        }
+
+        if (confirmedIds.Count > 0)
+        {
+            await schedulesRepo.DeleteByIdsAsync(confirmedIds);
+        }
     }
 
     // Archived clusters only get the odd late schedule; Migrating ones are draining real traffic.

@@ -19,6 +19,8 @@ internal interface IMasterRecurringScheduleIntakeService : IJobMasterClusterAwar
     /// first. The required incoming status depends on this cluster's own mode: a final status on an
     /// Archived cluster, <c>Active</c> on an Active cluster (receiving a migrated schedule) — throws
     /// otherwise. Existing rows are left untouched.
+    /// Returns the ids confirmed in this cluster (inserted now or already there). Callers must only delete
+    /// these from the source: a schedule missing from the result may not have been saved.
     /// </summary>
-    Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
+    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
 }

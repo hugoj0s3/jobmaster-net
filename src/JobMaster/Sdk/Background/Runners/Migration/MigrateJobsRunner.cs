@@ -5,8 +5,10 @@ using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.Migration;
 
@@ -91,6 +93,17 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
             return OnTickResult.Skipped(this);
 
         var intakeService = targetFactory.GetComponent<IMasterJobIntakeService>();
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(cfg.TargetActiveClusterId!);
+        foreach (var partition in jobs.Partition(maxBatchSize))
+        {
+            await MigratePartitionAsync(intakeService, partition.ToList(), cfg.TargetActiveClusterId!);
+        }
+
+        return OnTickResult.Success(this);
+    }
+
+    private async Task MigratePartitionAsync(IMasterJobIntakeService intakeService, IList<JobRawModel> jobs, string targetClusterId)
+    {
         var jobIds = jobs.Select(j => j.Id).ToList();
         var executions = await jobsRepo.QueryJobExecutionsForJobsAsync(jobIds);
         // "N" format (no dashes) -- matches how JobMasterLoggerExtensions stores ReferenceId for every
@@ -98,14 +111,30 @@ internal sealed class MigrateJobsRunner : JobMasterRunner
         var jobLogs = await logsRepo.QueryForReferenceIdsAsync(
             JobMasterLogCategory.JobExecution, jobIds.Select(id => id.ToString("N")).ToList());
 
-        await intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs);
-        await jobsRepo.DeleteByIdsAsync(jobIds);
-        if (jobLogs.Count > 0)
+        // Only delete what the target confirmed; the rest stays held here and is retried once its lock expires.
+        var confirmedIds = await intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs);
+        var confirmedSet = new HashSet<Guid>(confirmedIds);
+        var notConfirmed = jobIds.Count(id => !confirmedSet.Contains(id));
+        if (notConfirmed > 0)
         {
-            await logsRepo.DeleteByIdsAsync(jobLogs.Select(l => l.Id).ToList());
+            logger.Error(
+                $"{notConfirmed} job(s) could not be confirmed on target cluster '{targetClusterId}'. " +
+                "They were kept here and will be retried.",
+                JobMasterLogCategory.Cluster,
+                BackgroundAgentWorker.ClusterConnConfig.ClusterId);
         }
 
-        return OnTickResult.Success(this);
+        if (confirmedIds.Count > 0)
+        {
+            await jobsRepo.DeleteByIdsAsync(confirmedIds);
+        }
+
+        var confirmedIdStrings = new HashSet<string>(confirmedIds.Select(id => id.ToString("N")));
+        var confirmedJobLogs = jobLogs.Where(l => l.ReferenceId != null && confirmedIdStrings.Contains(l.ReferenceId)).ToList();
+        if (confirmedJobLogs.Count > 0)
+        {
+            await logsRepo.DeleteByIdsAsync(confirmedJobLogs.Select(l => l.Id).ToList());
+        }
     }
 
     // Archived clusters only get the odd late job; Migrating ones are draining real traffic.

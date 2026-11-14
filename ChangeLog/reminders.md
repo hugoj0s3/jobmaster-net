@@ -370,21 +370,6 @@ public selector/receipt XML docs `cref` it and users may reuse values (e.g. `Min
 that's worth the public surface; making it internal means stating values inline in those docs + a ChangeLog
 breaking entry.
 
-## Bulk master calls should partition by `GetMasterMaxBatchSize` before calling
-
-Raised 2026-10-26 (Plan 0.0.12 item 7). Standard: callers split with
-`list.Partition(OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(clusterId))` and make one bulk call per
-partition (as `AssignJobsToBucketsRunner`, `HeldOnMasterDeadlineTimeoutJobsRunner`, `JobsExecutionEngine`,
-`PollingDrainProcessingJobsRunner` and the new `ConfirmOnMaster` path do). These callers of
-`BulkInsertIfNotExistsAsync` only bound the list by their query limit (`TransferBatchSize`) and pass it whole, so
-the repository chunks it inside one transaction (SQL) or one session (RavenDB):
-- `MigrateJobsRunner` (`intakeService.BulkInsertIfNotExistsAsync(jobs, executions, jobLogs)`)
-- `MigrateRecurringSchedulesRunner`
-- `DeleteOldFinalJobsRunner` (archive-then-delete)
-- `DeleteOldInactiveRecurringSchedulesRunner` (archive-then-delete)
-
-Fix: partition before the intake/archive call. For jobs, executions and logs have to be split along with their jobs.
-
 ## SQL `BulkInsertIfNotExistsAsync` races with concurrent inserts of the same id (duplicate key → rollback)
 
 Found 2026-10-27 (Plan 0.0.12 item 7, ConfirmOnMaster review). `SqlMasterJobsRepository` /
@@ -410,21 +395,6 @@ Fix directions (not implemented, rare race, JobMaster is at-least-once):
 
 Related: `BuildQueryExistingIdsSql` (step 1) has no `cluster_id` filter, so a same-DB migrate can see another
 cluster's row as existing and skip copying its metadata/executions/logs.
-
-## RavenDB jobs `BulkInsertIfNotExistsAsync` swallows per-row errors, so archive-then-delete can lose jobs
-
-Found 2026-10-27 (Plan 0.0.12 item 7). `RavenDbMasterJobsRepository.BulkInsertIfNotExistsAsync` falls back
-batch → partitions → per-row; the per-row step catches any non-`ConcurrencyException` error, logs it and continues
-("Deliberately swallowed"). The method then returns normally with that row missing.
-
-`ConfirmOnMasterAsync` is safe (it compares the returned inserted ids and checks existence for the rest). But
-`DeleteOldFinalJobsRunner` ignores the result: `archiveService.BulkInsertIfNotExistsAsync(candidates, ...)` then
-`jobsRepo.DeleteByIdsAsync(purgedIds)` deletes every candidate, so a job whose archive insert failed is deleted from
-the source and never archived. `DeleteOldInactiveRecurringSchedulesRunner` has the same shape (its RavenDB per-row
-fallback only catches `ConcurrencyException`, so less exposed, but it also ignores the result).
-
-Fix direction (not implemented): delete only ids that are confirmed on the archive (inserted ∪ `QueryExistingIdsAsync`
-of the rest), same check as `ConfirmOnMasterAsync`; or make the per-row fallback rethrow non-concurrency errors.
 
 ## The archived check before a master write can't close the archived race
 

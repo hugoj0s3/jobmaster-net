@@ -4,8 +4,10 @@ using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
 
@@ -74,51 +76,84 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
                     BackgroundAgentWorker.ClusterConnConfig.ClusterId);
             }
 
-            IList<Guid> purgedIds;
+            var purgeCount = 0;
             if (archiveFactory != null)
             {
                 var archiveService = archiveFactory.GetComponent<IMasterJobIntakeService>();
                 var candidates = await jobsRepo.QueryFinalizedToPurgeAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
-                purgedIds = candidates.Select(j => j.Id).ToList();
-                if (candidates.Count > 0)
+                var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(cfg.TargetArchivedClusterId!);
+                foreach (var partition in candidates.Partition(maxBatchSize))
                 {
-                    var executions = await jobsRepo.QueryJobExecutionsForJobsAsync(purgedIds);
-                    // "N" format (no dashes) -- matches how JobMasterLoggerExtensions stores ReferenceId
-                    // for every JobExecution-category log (referenceId.ToString("N")).
-                    var jobLogs = await logsRepo.QueryForReferenceIdsAsync(
-                        JobMasterLogCategory.JobExecution, purgedIds.Select(id => id.ToString("N")).ToList());
-
-                    await archiveService.BulkInsertIfNotExistsAsync(candidates, executions, jobLogs);
-                    await jobsRepo.DeleteByIdsAsync(purgedIds);
+                    purgeCount += await ArchivePartitionAsync(archiveService, partition.ToList(), cfg.TargetArchivedClusterId!);
                 }
             }
             else
             {
-                purgedIds = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
-            }
+                var purgedIds = await jobsRepo.PurgeFinalizedAsync(cutoff, BackgroundAgentWorker.TransferBatchSize);
 
-            if (purgedIds.Count > 0)
-            {
-                // Unconditional: JobExecution-category logs for a purged job are cleaned up here regardless
-                // of whether archiving happened — DeleteOldLogsRunner deliberately excludes this category
-                // from its own blanket purge, so this is the only place these logs are ever removed. When
-                // there's no archive target, they're simply lost, same as the job/execution rows already
-                // are in that case.
-                var idStrings = purgedIds.Select(id => id.ToString("N")).ToList();
-                var logsToDelete = await logsRepo.QueryForReferenceIdsAsync(JobMasterLogCategory.JobExecution, idStrings);
-                if (logsToDelete.Count > 0)
+                // JobExecution-category logs of a purged job are removed here (archive path: in
+                // ArchivePartitionAsync) — DeleteOldLogsRunner deliberately excludes this category from its own
+                // blanket purge, so this is the only place these logs are ever removed. Without an archive
+                // target they're simply lost, same as the job/execution rows already are in that case.
+                var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+                foreach (var partition in purgedIds.Partition(maxBatchSize))
                 {
-                    await logsRepo.DeleteByIdsAsync(logsToDelete.Select(l => l.Id).ToList());
+                    var idStrings = partition.Select(id => id.ToString("N")).ToList();
+                    var logsToDelete = await logsRepo.QueryForReferenceIdsAsync(JobMasterLogCategory.JobExecution, idStrings);
+                    if (logsToDelete.Count > 0)
+                    {
+                        await logsRepo.DeleteByIdsAsync(logsToDelete.Select(l => l.Id).ToList());
+                    }
                 }
+                
+                purgeCount = purgedIds.Count;
             }
 
-            var next = burstLimiter.Next(desiredNext, burstNext, purgedIds.Count);
+            var next = burstLimiter.Next(desiredNext, burstNext, purgeCount);
             return OnTickResult.Success(next);
         }
         finally
         {
             locker.ReleaseLock(lockKeys.JobsCleanupLock(), lockToken);
         }
+    }
+
+    private async Task<int> ArchivePartitionAsync(IMasterJobIntakeService archiveService, IList<JobRawModel> candidates, string archiveClusterId)
+    {
+        var candidateIds = candidates.Select(j => j.Id).ToList();
+        var executions = await jobsRepo.QueryJobExecutionsForJobsAsync(candidateIds);
+        // "N" format (no dashes) -- matches how JobMasterLoggerExtensions stores ReferenceId
+        // for every JobExecution-category log (referenceId.ToString("N")).
+        var jobLogs = await logsRepo.QueryForReferenceIdsAsync(
+            JobMasterLogCategory.JobExecution, candidateIds.Select(id => id.ToString("N")).ToList());
+
+        // Only delete what the archive confirmed; the rest stays here and is retried next tick.
+        var confirmedIds = await archiveService.BulkInsertIfNotExistsAsync(candidates, executions, jobLogs);
+        var confirmedSet = new HashSet<Guid>(confirmedIds);
+        var notConfirmed = candidateIds.Count(id => !confirmedSet.Contains(id));
+        if (notConfirmed > 0)
+        {
+            logger.Error(
+                $"{notConfirmed} finalized job(s) could not be confirmed on archive cluster '{archiveClusterId}'. " +
+                "They were kept here and will be retried.",
+                JobMasterLogCategory.Cluster,
+                BackgroundAgentWorker.ClusterConnConfig.ClusterId);
+        }
+
+        if (confirmedIds.Count > 0)
+        {
+            await jobsRepo.DeleteByIdsAsync(confirmedIds);
+        }
+
+        // Logs already loaded above: delete those of the confirmed jobs (same as MigrateJobsRunner).
+        var confirmedIdStrings = new HashSet<string>(confirmedIds.Select(id => id.ToString("N")));
+        var confirmedJobLogs = jobLogs.Where(l => l.ReferenceId != null && confirmedIdStrings.Contains(l.ReferenceId)).ToList();
+        if (confirmedJobLogs.Count > 0)
+        {
+            await logsRepo.DeleteByIdsAsync(confirmedJobLogs.Select(l => l.Id).ToList());
+        }
+
+        return confirmedIds.Count;
     }
 
     public override TimeSpan SucceedInterval

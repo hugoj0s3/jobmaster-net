@@ -5,7 +5,28 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 916/916 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 919/919 unit tests pass on `net8.0` and `net10.0`.
+
+#### Archive / migrate delete only what the target confirmed (Hugo, 2026-11-14)
+- `DeleteOldFinalJobsRunner`, `DeleteOldInactiveRecurringSchedulesRunner`, `MigrateJobsRunner` and
+  `MigrateRecurringSchedulesRunner` copied rows to another cluster, then deleted every source row without looking at
+  the result. `RavenDbMasterJobsRepository.BulkInsertFallbackPerRowAsync` logs and swallows non-`ConcurrencyException`
+  errors (on purpose: parallel rows, throwing would drop the ids that succeeded), so such a job was deleted and never
+  saved. The migrate pair was missing from the old reminder and is the worse case (unrun jobs).
+- `IMasterJobIntakeService` / `IMasterRecurringScheduleIntakeService.BulkInsertIfNotExistsAsync` now return the ids
+  confirmed on the target: inserted + `QueryExistingIdsAsync` of the rest (same rule as `ConfirmOnMasterAsync`; both
+  providers scope that query to the target cluster). The runners delete only those (for jobs, only their
+  JobExecution logs) and log an Error with the count kept; the rest is retried next tick (migrate: after the lock
+  expires). RavenDB's per-row swallow stays: the return value is the contract on every provider.
+- Same four runners now partition by `GetMasterMaxBatchSize(target cluster)` before the intake call (the standard;
+  they passed up to `TransferBatchSize` at once). The existing per-batch body became a private `ArchivePartitionAsync`
+  / `MigratePartitionAsync` called per partition, so executions and logs are queried per partition (no split needed)
+  and each partition is confirmed and deleted before the next.
+- Tests: `MasterJobIntakeServiceTests` (missing job not confirmed, only non-inserted ids checked),
+  `DeleteOldFinalJobsRunnerTests` / `DeleteOldInactiveRecurringSchedulesRunnerTests` (unconfirmed row + its logs kept).
+  Verified by breaking the intake check and the runner delete: the new tests fail.
+- Not covered (reminder kept): SQL's pre-insert read `BuildQueryExistingIdsSql` has no `cluster_id` filter, so a
+  same-DB, same-prefix migrate skips copying metadata / executions / logs for the job.
 
 #### Agent messages: no payload in logs, one bad message per batch (Hugo, 2026-11-13)
 - Payload in logs (finding from item 17's "checked" claim, which missed these): `AgentJobsDispatcherRepository`'s three
