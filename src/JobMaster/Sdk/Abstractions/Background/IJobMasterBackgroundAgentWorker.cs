@@ -48,7 +48,7 @@ internal interface IJobMasterBackgroundAgentWorker
     
     IWorkerClusterOperations WorkerClusterOperations { get; }
     
-    IList<IJobMasterRunner> Runners { get; }
+    RunnerRegistry Runners { get; }
     
     bool IsOnWarmUpTime();
     IJobsExecutionEngine? GetEngine(string bucketId);

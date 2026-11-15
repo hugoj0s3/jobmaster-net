@@ -100,9 +100,6 @@ internal static class RunnerFakes
             DeleteWorker(workerId);
             return Task.CompletedTask;
         }
-
-        public Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null)
-            => throw new NotImplementedException();
     }
     
     internal sealed class FakeJobsService : IMasterJobsService

@@ -8,8 +8,8 @@ namespace JobMaster.UnitTests.Background.Runners;
 /// <summary>
 /// Unit tests for <see cref="CleanupDeadWorkerRunner"/>.
 /// Covers: no-op when all workers are alive, skipping the current worker even if dead,
-/// preserving workers within their grace period or with a recent heartbeat, and deleting
-/// workers that are genuinely eligible for cleanup.
+/// preserving workers with a recent heartbeat, and deleting workers that are genuinely
+/// eligible for cleanup.
 /// </summary>
 public class CleanupDeadWorkerRunnerTests
 {
@@ -17,17 +17,11 @@ public class CleanupDeadWorkerRunnerTests
 
     private const string TestClusterId = "test-cluster";
 
-    private static AgentWorkerModel DeadWorker(
-        string id,
-        DateTime? lastHeartbeat = null,
-        DateTime? stopRequestedAt = null,
-        TimeSpan? stopGracePeriod = null)
+    private static AgentWorkerModel DeadWorker(string id, DateTime? lastHeartbeat = null)
         => new(TestClusterId)
         {
             Id = id,
             LastHeartbeat = lastHeartbeat ?? DateTime.UtcNow.AddHours(-2),
-            StopRequestedAt = stopRequestedAt,
-            StopGracePeriod = stopGracePeriod,
         };
 
     private static AgentWorkerModel AliveWorker(string id)
@@ -66,25 +60,6 @@ public class CleanupDeadWorkerRunnerTests
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenDeadWorkerIsWithinGracePeriod_ShouldNotDeleteIt()
-    {
-        var f = RunnerFixture.Create();
-
-        // StopGracePeriod of 1 hour means the worker is still within its grace window.
-        var worker = DeadWorker(
-            "dead-grace",
-            lastHeartbeat: DateTime.UtcNow.AddMinutes(-1),
-            stopGracePeriod: TimeSpan.FromHours(1));
-
-        f.AgentWorkers.Workers.Add(worker);
-
-        var runner = new CleanupDeadWorkerRunner(f.Worker.Object);
-        await runner.OnTickAsync(CancellationToken.None);
-
-        f.AgentWorkers.Workers.Should().ContainSingle(w => w.Id == "dead-grace");
-    }
-
-    [Fact]
     public async Task OnTickAsync_WhenDeadWorkerHasRecentHeartbeat_ShouldNotDeleteIt()
     {
         var f = RunnerFixture.Create();
@@ -104,7 +79,7 @@ public class CleanupDeadWorkerRunnerTests
     {
         var f = RunnerFixture.Create();
 
-        // Old heartbeat, no grace period — clearly eligible for cleanup.
+        // Old heartbeat — clearly eligible for cleanup.
         var worker = DeadWorker("dead-old", lastHeartbeat: DateTime.UtcNow.AddHours(-2));
         f.AgentWorkers.Workers.Add(worker);
         f.AgentWorkers.Workers.Add(AliveWorker("alive-1"));

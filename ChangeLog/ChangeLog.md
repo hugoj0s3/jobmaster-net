@@ -11,6 +11,7 @@
 ### Breaking changes
 
 - **`JobMasterDefaults.MinDataRetentionTtl` moved to the new `JobMasterLimits`.** `JobMasterDefaults` now holds only values you can change; `JobMasterLimits` holds the fixed ones: `MinDataRetentionTtl` (10 minutes), and the new `MinRetryDelay` (30 seconds) and `RetryInterceptorTimeout` (10 seconds). Use `JobMasterLimits.MinDataRetentionTtl` instead.
+- **Workers API: `Status`, `StopRequestedAt` and `StopGracePeriod` removed from the worker, and the `Status` filter from the list and count queries.** The `AgentWorkerStatus` enum is removed too. A worker's status was always the same as `IsAlive` (the stop fields were never set), so use `IsAlive` in the response and the `IsAlive` filter instead.
 - **`JobMaster.RavenDb` is now `JobMaster.RavenDB`**, matching the RavenDB client's casing. The package, assembly and namespace are renamed:
   - Reference the `JobMaster.RavenDB` package (NuGet ids ignore case, so an existing `JobMaster.RavenDb` reference still resolves).
   - Change `using JobMaster.RavenDb;` to `using JobMaster.RavenDB;`.

@@ -8,6 +8,62 @@ docs / benchmarks / positioning.
 
 # Bugs / gaps
 
+## Agent pull deletes before save: a stop or kill loses the batch in flight (SQL, RavenDB)
+
+Found 2026-11-15 with `DrainModeTest` (PostgresDist / MySqlDist: master + agent = 4646 of 5000 right after phase 1's
+`docker stop`; 500 = 2 × `BucketBufferSize` pulled by one executor, 146 saved, 354 lost, no log). Existing since 0.0.11: confirmed 2026-11-15 on `v0.0.11-alpha.3`, 1 of 3 runs lost 105
+jobs (master 323 + agent 4572 = 4895 right after the stop, then stuck).
+`PullSavePendingJobsAsync` / `PullSavePendingRecurAsync` (and the processing pull) delete the rows they return, so a
+pulled batch lives only in the worker's memory until saved. Nothing reacts to process exit today (no runner stops, the
+save batch's `batchTimeoutCts` isn't linked to the runner token), so even a graceful stop loses it. A first fix
+(process-exit hook stopping the pull-and-save runners + put-back) worked 3/3 but was reverted 2026-11-15 to redo it as
+part of the runner cleanup (stop every worker via `StopImmediatelyAsync` / `OnStopAsync`). Also found then:
+`JobMasterParallelUtil.ForEachAsyncLegacy` (netstandard2.0) throws at once when cancelled in the semaphore wait while
+items still run (and doesn't throw at all after the `break`), unlike `Parallel.ForEachAsync`; redo with the runner work.
+SIGKILL, OOM or a crash would still lose it even after that. Fix (Hugo: nice change, needs a bit of work): lease instead of delete -- mark
+rows leased until a time, return them, delete only after the save; expired leases are pulled again (at-least-once, as
+NATS ack/nak already gives). Needs: lease columns / RavenDB metadata, a delete-by-ids after save in the runners, and
+the duplicate save of a re-pulled row handled as already saved (the master insert paths already treat a duplicate id
+as "exists").
+
+Design discussed 2026-11-15 (Hugo):
+- Status on the message table: `status` (`Pending` default, so existing rows stay valid / `InProgress`),
+  `leased_until`, `leased_by` (worker id); index on bucket + status + lease. Provisioning adds them; existing installs
+  need a migration script (`misc/migrations`). Lease > longest batch (save batch times out at 2.5 min) → ~5 min.
+- Repository contract (structural seam, Hugo): `Pull(bucket, n)`, `Ack(bucket, ids)` = saved / done,
+  `Release(bucket, messages)` = not saved / available again; same on the dispatcher service for jobs and recurring.
+  Introduce it first with today's semantics (Ack = no-op, Release = re-insert, so `Release` takes id + payload and the
+  lease version ignores the payload), then switch the implementation: Pull = lock + `InProgress` + lease (same
+  SKIP LOCKED / OUTPUT / RETURNING shapes), Ack = `DELETE` by id, Release = status back to `Pending`. NATS: ack / nak.
+  Runners only use the contract, so the lease is a repository-only change and the re-insert code goes away
+  (`pendingTracker`, cancel-catch re-queue, `RequeueSavePendingAsync`, drain safe-guard re-enqueue).
+- Auto-release (Hugo): both (1) the pull also takes `InProgress` rows whose lease expired (correct even with no
+  coordinator; the drainer uses the same pull), and (2) dead-worker detection (`MarkBucketAsLostRunner`) releases the
+  leases of a dead `leased_by` right away (faster than the lease, keeps the status accurate for a dashboard count).
+- Execution pull deletes on pull too; a re-pulled job there means running it again, so it needs a guard (skip jobs
+  already final on master) before applying the lease to it.
+- RavenDB has no SKIP LOCKED: status as a document field + patch with optimistic concurrency; check its current pull
+  first.
+- Order (Hugo): first the runner refactor (stop on process exit via `StopAsync` / `OnStopAsync` for all runners in
+  parallel; Ack/Release contract with today's semantics; one shared base for the 4 pull-and-save runners), then this.
+
+## `RecurringScheduleTest.HybridNatsRavenDb`: two `static-cronos` runs 73 s apart (once, under load)
+
+2026-11-15, first EC2 run (`m5.xlarge`, peak load 7.8 on 4 vCPU): `static-cronos` (`*/6 * * * *`) had 2 executions
+73 s apart (expected ~360 s), different job ids. Passed twice since (`m5.2xlarge`, and locally). Undecided between: the
+first `:x6` slot ran ~4–5 min late (startup under load, timing only), or two jobs were planned for the same slot (real
+duplicate-planning bug). The spacing check now prints each job's `ScheduledAt` / `ExecutedAt` on failure (same
+`ScheduledAt` twice = duplicate planning). To settle it: repeat the unit several times on `m5.xlarge` (needs a repeat
+option in `misc/scenario-cloud/run-scenarios.sh`).
+Hugo: a late first run would be a problem (a slot missed after start / deploy); extra runs right after a cancel are
+fine (already-planned burst). Test gap: Cronos / NCrontab skip the first-firing check (`ChecksFirstFiringTiming:
+false`, since `CreatedAt + Interval` is wrong for grid-aligned cron); re-enable it with the right expectation (first
+`:x6` mark after `CreatedAt`, same 1 min tolerance) so a slow first start fails clearly.
+Fix when porting the scenario to the flavor matrix (Hugo): per execution, check (1) the job's `ScheduledAt` is a real
+occurrence of the expression (grid marks for cron, `CreatedAt + n × interval` otherwise), (2) `ExecutedAt − ScheduledAt`
+within a tolerance, (3) each `ScheduledAt` only once, (4) count over the window ≈ occurrences in it; the average-gap
+check then goes. Today it only checks count ≥ 2, unique job ids, average gap and (non-cron) first-run timing.
+
 ## `OpenApiJsonConfigSeeder` trusts the request's `Host` header for a server-side fetch (SSRF)
 
 Bare `FromOpenApiJson()` with no explicit `ApiUrl` builds its self-fetch URL from the client-controlled
@@ -197,6 +253,18 @@ something provisioned only on "the one database"; plan item 24 was this kind of 
 ---
 
 # Design follow-ups
+
+## Graceful worker stop is not reachable
+
+Found 2026-11-15 (worker stop cleanup). `WorkerStopCoordinatorRunner` reacts to two lock keys
+(`WorkerGracefulStopLock` → `RequestStop()`, `WorkerImmediateStopLock` → `StopImmediatelyAsync()`), but nothing sets
+them as a signal, and `JobMasterRuntime.Stop()` (calls `RequestStop()`) has no caller. The record-side fields
+(`StopRequestedAt`, `StopGracePeriod`, `AgentWorkerStatus.Stopping`) were removed as never written; the in-memory
+deadline on the worker stays (Hugo: may be good to keep). If graceful stop is finished: a public way to request it,
+and exclude a stopping worker from `AssignedLostBucketsRunner`'s candidates (today a just-stopped worker's heartbeat is
+fresh for ~30 s, so it can be picked as drainer of its own bucket; recovered via `MarkBucketAsLostRunner`, only
+slower). Also `CleanupDeadWorkerRunner` takes `WorkerImmediateStopLock(deadWorker)` as its delete mutex, the same key
+the coordinator reads as "stop now" -- give it its own key.
 
 ## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
 

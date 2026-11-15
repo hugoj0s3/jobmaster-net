@@ -261,7 +261,11 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
 
             if (tasksToStop.Count > 0)
             {
-                tasksToStop.ForEach(x => x?.Dispose());
+                tasksToStop.ForEach(x =>
+                {
+                    x?.Abort();
+                    x?.Dispose();
+                });
             }
         }
         

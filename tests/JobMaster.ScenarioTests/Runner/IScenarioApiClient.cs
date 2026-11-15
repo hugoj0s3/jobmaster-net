@@ -92,7 +92,10 @@ public sealed record ApiJob(
     int NumberOfFailures = 0,
     string? BucketId = null,
     string? AgentConnectionId = null,
-    DateTime? NextPlanExecutionAt = null);
+    DateTime? NextPlanExecutionAt = null,
+    DateTime? ScheduledAt = null,
+    DateTime? CreatedAt = null,
+    string? SourceId = null);
 
 public sealed record ApiJobExecution(string Id, string JobId, DateTime StartedAt, JsonElement Outcome);
 
@@ -106,10 +109,8 @@ public sealed record ApiAgentWorker(
     string? AgentConnectionId,
     string? AgentConnectionName,
     bool IsAlive,
-    DateTime? StopRequestedAt,
     DateTime LastHeartbeat,
-    JsonElement Mode,
-    JsonElement Status);
+    JsonElement Mode);
 
 public sealed record ApiLogItem(string Id, JsonElement? Category, string? ReferenceId, string Message, DateTime TimestampUtc);
 

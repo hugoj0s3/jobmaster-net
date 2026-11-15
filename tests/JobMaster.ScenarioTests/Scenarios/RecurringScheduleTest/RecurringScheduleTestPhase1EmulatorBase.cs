@@ -211,9 +211,12 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             var gaps = executions.Zip(executions.Skip(1), (a, b) => (b.ExecutedAtUtc - a.ExecutedAtUtc).TotalSeconds).ToList();
             var averageGapSeconds = gaps.Average();
             var toleranceSeconds = Interval.TotalSeconds * SpacingTolerance;
+            var spacingDetails = averageGapSeconds < Interval.TotalSeconds - toleranceSeconds || averageGapSeconds > Interval.TotalSeconds + toleranceSeconds
+                ? await DescribeExecutionsAsync(api, executions)
+                : string.Empty;
             averageGapSeconds.Should().BeInRange(
                 Interval.TotalSeconds - toleranceSeconds, Interval.TotalSeconds + toleranceSeconds,
-                $"'{combo.TestIdentifier}' consecutive executions should be spaced ~{Interval.TotalMinutes} minutes apart");
+                $"'{combo.TestIdentifier}' consecutive executions should be spaced ~{Interval.TotalMinutes} minutes apart{spacingDetails}");
         }
 
         // Cross-check via the API -- proves the schedule is visible/correct there too, not just
@@ -247,6 +250,20 @@ public abstract class RecurringScheduleTestPhase1EmulatorBase<TPhaseEnum>(Scenar
             "cancelling the dynamic NaturalCron schedule should stop further firings (at most one in-flight execution tolerated)");
         afterCancelAdvanced.Count.Should().BeLessThanOrEqualTo(countAtCancelAdvanced + 1,
             "cancelling the dynamic Advanced (JobDefinitionConfigAttribute) schedule should stop further firings (at most one in-flight execution tolerated)");
+    }
+
+    // For a failed spacing check: when each job was scheduled for vs when it ran, so a late first run
+    // (different ScheduledAt) can be told apart from two jobs planned for the same occurrence (same ScheduledAt).
+    private async Task<string> DescribeExecutionsAsync(IScenarioApiClient api, IReadOnlyList<ExecutionRecord> executions)
+    {
+        var lines = new List<string> { "", "JobId | ScheduledAt | CreatedAt | ExecutedAt | SourceId" };
+        foreach (var execution in executions)
+        {
+            var job = await api.GetJobAsync(ClusterId, execution.JobId);
+            lines.Add($"{execution.JobId} | {job?.ScheduledAt:O} | {job?.CreatedAt:O} | {execution.ExecutedAtUtc:O} | {job?.SourceId}");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static async Task AssertApiAsync(IScenarioApiClient api, string clusterId, string testIdentifier, Guid recurringScheduleId, string expectedExpressionTypeId, string expectedExpression, string expectedJobDefinitionId)

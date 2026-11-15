@@ -11,10 +11,8 @@ namespace JobMaster.Sdk.Background.Runners;
 /// <summary>
 /// Periodically scans all registered agent workers and removes records for those that are
 /// dead (<see cref="JobMaster.Sdk.Abstractions.Models.Agents.AgentWorkerModel.IsAlive"/>() = false)
-/// once their grace window has closed and their last heartbeat is older than the combined
-/// heartbeat-threshold + cleanup-grace-period.
-/// The current worker is always skipped; workers still within their
-/// <see cref="JobMaster.Sdk.Abstractions.Models.Agents.AgentWorkerModel.StopGracePeriod"/> are left untouched.
+/// once their last heartbeat is older than the combined heartbeat-threshold + cleanup-grace-period.
+/// The current worker is always skipped.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
 internal class CleanupDeadWorkerRunner : JobMasterRunner
@@ -47,13 +45,6 @@ internal class CleanupDeadWorkerRunner : JobMasterRunner
             {
                 // Skip if it's the current worker (shouldn't happen, but safety check)
                 if (deadWorker.Id == BackgroundAgentWorker.AgentWorkerId)
-                {
-                    continue;
-                }
-                
-                var stopDeadline = (deadWorker.StopRequestedAt ?? deadWorker.LastHeartbeat)
-                    .Add(deadWorker.StopGracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod);
-                if (DateTime.UtcNow.AddMinutes(5) < stopDeadline)
                 {
                     continue;
                 }

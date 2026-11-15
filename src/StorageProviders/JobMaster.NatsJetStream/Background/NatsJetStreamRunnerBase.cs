@@ -493,12 +493,6 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         await StopConsumptionTaskAsync();
     }
 
-    public override async Task OnTerminateFailureAsync(Exception lastException)
-    {
-        await base.OnTerminateFailureAsync(lastException);
-        await StopConsumptionTaskAsync();
-    }
-
 
     private static bool IsSignatureValid(string? signature) =>
         signature == NatsJetStreamConfigKey.NamespaceUniqueKey.ToString();

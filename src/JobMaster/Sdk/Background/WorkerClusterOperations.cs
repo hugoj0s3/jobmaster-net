@@ -347,35 +347,16 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         await masterBucketsService.UpdateAsync(bucket);
     }
 
-    public void MarkBucketAsLost(BucketModel bucket)
-    {
-        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
-        if (lockToken == null)
-        {
-            return;
-        }
-
-        try
-        {
-            bucket.MarkAsLost();
-            masterBucketsService.Update(bucket);
-        }
-        finally
-        {
-            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
-        }
-    }
-    
     public async Task<int> CountActiveCoordinatorWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && x.Mode.IsFullOr(AgentWorkerMode.Coordinator));
+        return workers.Count(x => x.IsAlive() && x.Mode.IsFullOr(AgentWorkerMode.Coordinator));
     }
     
     public async Task<int> CountWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active);
+        return workers.Count(x => x.IsAlive());
     }
 
     public async Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200)

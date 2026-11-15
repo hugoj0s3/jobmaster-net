@@ -20,6 +20,4 @@ internal interface IMasterAgentWorkersService : IJobMasterClusterAwareService
     
     void DeleteWorker(string workerId);
     Task DeleteWorkerAsync(string workerId);
-    
-    Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null);
 }

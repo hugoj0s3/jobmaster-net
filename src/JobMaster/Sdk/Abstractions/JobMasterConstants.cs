@@ -27,9 +27,8 @@ internal static class JobMasterConstants
     public static readonly TimeSpan HostsAllowDiscrepancy = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Cache freshness window for the agent workers list. Kept short because
-    /// <c>StopRequestedAt</c> flows from this cache through to each agent's stop-graceful
-    /// path — stale reads here directly delay graceful shutdown.
+    /// Cache freshness window for the agent workers list. Kept short because worker
+    /// liveness read from it drives bucket assignment.
     /// </summary>
     public static readonly TimeSpan AgentWorkersAllowDiscrepancy = TimeSpan.FromSeconds(10);
 

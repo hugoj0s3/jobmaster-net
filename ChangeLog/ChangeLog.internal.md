@@ -5,7 +5,78 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 967/967 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 974/974 unit tests pass on `net8.0` and `net10.0` (933/933 on the `netstandard2.0` build).
+
+#### Worker stop cleanup (Hugo, 2026-11-15)
+- `OnTerminateFailureAsync` removed (`IJobMasterRunner`, `JobMasterRunner`, overrides in `WorkerStopCoordinatorRunner`,
+  `AssignJobsToBucketsRunner`, `NatsJetStreamRunnerBase`): a runner that hit the failure threshold always stops next
+  (`StopAsync`, or `StopImmediatelyAsync` → every runner's `StopAsync`), so `OnStopAsync` always ran too and every
+  override repeated its `OnStopAsync` (buckets marked Lost / fallback ready-to-delete / NATS consumer stopped twice).
+  `lastFailureException` went with it (only read there).
+- `JobMasterBackgroundAgentWorker.StopImmediatelyAsync`:
+  - The flag is set first under `mutex` and repeat calls return (it was set after the runner loop, so every infra
+    runner whose loop ended re-ran the whole stop).
+  - Runners stop in parallel (`Task.WhenAll`, was one by one); a runner whose stop throws is logged and doesn't skip
+    the rest.
+  - One fresh pass over master marks Lost every bucket this worker owns except Lost / ReadyToDelete
+    (`SelectBucketsToHandOver`), Draining / ReadyToDrain included so their drain restarts on another worker. Replaces
+    the `BucketsCreatedOnRuntime` loop (wrote stale in-memory snapshots back) and the master loop (no ReadyToDelete
+    exemption, so a drained bucket could go back to Lost), both run synchronously inside `mutex`.
+  - Removed the 30 s wait and `DeleteWorkerAsync` (it threw "in use" whenever the worker was still `IsAlive()` after
+    the wait, i.e. most of the time); `CleanupDeadWorkerRunner` removes the record later.
+  - `WorkerStopCoordinatorRunner.OnStopAsync` / `MarkAllBucketAsLostAsync` removed (same pass, coordinator-capable
+    workers only, skipped Draining); its 3 unused services too. `IWorkerClusterOperations.MarkBucketAsLost` (sync)
+    removed, no caller left. `BucketAwareRunner.OnStopAsync` stays: single-runner stops (its Draining exemption is right
+    there, the worker isn't going away).
+- Graceful-stop record fields removed (never written in practice): `AgentWorkerModel.StopRequestedAt` /
+  `StopGracePeriod` (the record's fields weren't even mapped in `ToModel`), `AgentWorkerModel.Status()` and the public
+  `AgentWorkerStatus` enum (`Stopping` unreachable, so it equalled `IsAlive()`; callers use `IsAlive()`),
+  `IMasterAgentWorkersService.StopGracefulWorkerAsync` (no caller), `ApiAgentWorker.Status` / `StopRequestedAt` /
+  `StopGracePeriod`, `ApiAgentWorkerCriteria.Status`, dashboard `schema.d.ts` entries (pages use `isAlive`).
+  `RequestStop()` now sets the in-memory deadline to now + `DefaultGracefulStopPeriod`. `CleanupDeadWorkerRunner`'s
+  stop-deadline check went (`LastHeartbeat + 15 min`, always covered by the `LastHeartbeat + 30.5 min` check).
+- Tests: `StopImmediatelyBucketHandOverTests` (all statuses: Draining / ReadyToDrain in, Lost / ReadyToDelete out;
+  other workers' buckets out); `CleanupDeadWorkerRunnerTests` grace-period case removed.
+- `JobMasterRunner` stop lifecycle:
+  - Bug: a runner stopping from inside itself waited `StopTimeoutSeconds` (10 s) on its own task and logged "did not
+    stop": bucket runners at loop end (`StopAsync()`), `NatsJetStreamRunnerBase` (unresponsive consumer →
+    `this.StopAsync()` in its tick), `WorkerStopCoordinatorRunner` (tick → `StopImmediatelyAsync` → its own
+    `StopAsync`). And when the stop landed during a delay (the usual case), `Task.Delay` threw and the loop-end step
+    never ran, so cleanup only came from an outside `StopAsync`, which also ran `OnStopAsync` next to the loop's own.
+  - Now the runner's task does its cleanup in `finally` (remove from `Runners`, `OnStopAsync` with errors logged, then
+    `StopImmediatelyAsync` for infra runners as before): once, however the loop ended. `StopAsync` only cancels and
+    waits (10 s, Warn if late); called from the runner's own flow (`AsyncLocal` current runner) it doesn't wait.
+  - `StartAsync` adds to `Runners` before `Task.Run` (a quick end could remove before the add), and `Task.Run` gets no
+    token (cancelled before starting, it skipped `RunAsync` and its cleanup).
+  - Tests: `JobMasterRunnerLifecycleTests` (outside stop mid-delay: prompt, cleanup once, removed; stop from own tick:
+    no 10 s self-wait, cleanup once). Verified the self-wait test fails with the guard removed.
+- Worker `Runners`: was a plain `List` mutated from many runner tasks (each removes itself when it ends, and
+  `StopImmediatelyAsync` now stops them in parallel) while stops and `DrainRunnersCoordinator` enumerated it, so a
+  concurrent `Remove` could throw "Collection was modified" mid-enumeration or corrupt the list. Now a locked
+  `RunnerRegistry` (`Add` / `Remove` / `Snapshot()`); readers work on the snapshot.
+- Execution flush at stop: `TaskQueueControl.ShutdownAsync` disposed jobs still running after its 5 s wait, and
+  `TaskQueueItem.Dispose` called `Task.Dispose()` on them, which throws on a task not completed. The throw aborted
+  `ShutdownAsync`, so `JobsExecutionEngine.FlushToMasterAsync` never wrote the onboarded and waiting jobs (already
+  taken out of their queues) back as HeldOnMaster; they came back only by deadline. Now `TaskQueueItem.Dispose` no
+  longer disposes the task (nothing uses its wait handle), and `ShutdownAsync` aborts those jobs before disposing them
+  (they never got the cancellation before). Cancel-then-dispose is safe for the job still holding the token: checked
+  on net8.0 / net10.0 that a cancelled token whose source is disposed still reports cancelled, throws
+  `OperationCanceledException`, and works with `Register`, `SemaphoreSlim.WaitAsync`, `Task.Delay` (only `WaitHandle`
+  throws, unused here).
+  - Test: `TaskQueueItemTests` (running job aborted + disposed: no throw, the job sees the cancellation). Verified it
+    fails with `Task.Dispose()` back.
+- Process exit stops the workers. Nothing in JobMaster reacted to process shutdown (no `IHostedService`,
+  `JobMasterRuntime.Stop()` has no caller), so the process ended with runners mid-tick: no `OnStopAsync`, no execution
+  flush, no bucket hand-over. Now (no new dependency, works without a .NET host):
+  - `ProcessShutdown` (new, internal): the single `ProcessExit` hook. Runs the shutdown steps (in parallel), then the
+    final flushes, once; a failing step or flush doesn't skip the rest. Needed because separate `ProcessExit`
+    handlers run in subscription order and the loggers subscribe before the runtime starts, so they flushed before
+    the stop's logs existed. `JobMasterLogger` registers its `Dispose` there instead of `ProcessExit`.
+  - `JobMasterRuntime.StartAsync` registers `StopWorkersAsync(6 s)` once, before the workers start: every worker's
+    `StopImmediatelyAsync` in parallel, Warn per worker not done in time. 6 s + the loggers' flush is meant to fit
+    Docker's default 10 s stop grace (time the host spends stopping before `ProcessExit` counts too).
+  - Tests: `ProcessShutdownTests` (steps end before any flush, once; a throwing step / flush skips nothing; a removed
+    flush doesn't run).
 
 #### `JobMasterLimits` for fixed values (Hugo, 2026-11-14)
 - `JobMasterDefaults` read as "can be changed", but `MinDataRetentionTtl` (released), `MinRetryDelay` and

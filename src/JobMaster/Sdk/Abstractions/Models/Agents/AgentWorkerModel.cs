@@ -21,9 +21,6 @@ internal class AgentWorkerModel : JobMasterBaseModel
     public AgentConnectionId? AgentConnectionId { get; set; }
     public DateTime CreatedAt { get; set; }
 
-    public DateTime? StopRequestedAt { get; set; }
-    public TimeSpan? StopGracePeriod { get; set; }
-
     public DateTime LastHeartbeat { get; set; }
 
     public bool IsAlive() => LastHeartbeat > DateTime.UtcNow - JobMasterConstants.ResourceAliveThreshold;
@@ -35,20 +32,4 @@ internal class AgentWorkerModel : JobMasterBaseModel
     public double ParallelismFactor { get; set; } = 1;
 
     public override bool IsValid() => base.IsValid() && JobMasterStringUtils.IsValidForId(Name) && JobMasterStringUtils.IsValidForId(Id);
-
-    public AgentWorkerStatus Status()
-    {
-        if (!IsAlive())
-        {
-            return AgentWorkerStatus.Dead;
-        }
-        
-        if (StopRequestedAt.HasValue)
-        {
-            return AgentWorkerStatus.Stopping;
-        }
-        
-        return AgentWorkerStatus.Active;
-    }
-
 }

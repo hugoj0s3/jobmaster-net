@@ -38,6 +38,10 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
     public DateTime? StartingAt { get; private set; }
 
+    // Leaves room in Docker's default 10 s stop grace for the loggers' final flush after it.
+    internal static readonly TimeSpan ShutdownStopTimeout = TimeSpan.FromSeconds(6);
+    private int shutdownHooked;
+
     public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() =>
         new List<IJobMasterBackgroundAgentWorker>(Workers);
 
@@ -276,6 +280,11 @@ internal class JobMasterRuntime : IJobMasterRuntime
         foreach (var def in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
             def.MarkAsReady();
+        }
+
+        if (Interlocked.Exchange(ref shutdownHooked, 1) == 0)
+        {
+            ProcessShutdown.Default.OnShutdown(() => StopWorkersAsync(ShutdownStopTimeout));
         }
 
         foreach (var worker in Workers)
@@ -827,6 +836,27 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
 
         return Workers.Count(w => w.ClusterConnConfig.ClusterId == clusterId);
+    }
+
+    /// <summary>
+    /// Process exit: stops every worker the way any immediate stop does (its runners' cleanup, then its buckets handed
+    /// over), all in parallel, each within <paramref name="timeout"/>.
+    /// </summary>
+    internal async Task StopWorkersAsync(TimeSpan timeout)
+    {
+        var workers = new List<JobMasterBackgroundAgentWorker>(Workers);
+        await Task.WhenAll(workers.Select(w => StopWorkerAsync(w, timeout)));
+    }
+
+    private static async Task StopWorkerAsync(JobMasterBackgroundAgentWorker worker, TimeSpan timeout)
+    {
+        var stopping = worker.StopImmediatelyAsync();
+        if (await Task.WhenAny(stopping, Task.Delay(timeout)) != stopping)
+        {
+            worker.GetClusterAwareService<IJobMasterLogger>().Warn(
+                $"Process exit: worker didn't finish stopping within {timeout}; the process ends with it still stopping.",
+                JobMasterLogCategory.AgentWorker, worker.AgentWorkerId);
+        }
     }
 
     public void Stop()

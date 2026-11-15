@@ -423,12 +423,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         await MarkFallbackBucketAsReadyToDeleteAsync();
     }
 
-    public override async Task OnTerminateFailureAsync(Exception ex)
-    {
-        await base.OnTerminateFailureAsync(ex);
-        await MarkFallbackBucketAsReadyToDeleteAsync();
-    }
-
     private async Task MarkFallbackBucketAsReadyToDeleteAsync()
     {
         if (!string.IsNullOrEmpty(this.fallbackBucket?.Id))

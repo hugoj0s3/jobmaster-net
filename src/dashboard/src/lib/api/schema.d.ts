@@ -991,7 +991,6 @@ export interface paths {
                     AgentConnectionId?: string;
                     HostId?: string;
                     WorkerLane?: string;
-                    Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
                     IsAlive?: boolean;
                     CountLimit?: number;
@@ -1037,7 +1036,6 @@ export interface paths {
                     AgentConnectionId?: string;
                     HostId?: string;
                     WorkerLane?: string;
-                    Status?: components["schemas"]["AgentWorkerStatus"];
                     Mode?: components["schemas"]["AgentWorkerMode"];
                     IsAlive?: boolean;
                     CountLimit?: number;
@@ -1117,11 +1115,6 @@ export interface components {
          * @enum {integer}
          */
         AgentWorkerMode: 1 | 2 | 3 | 4;
-        /**
-         * Format: int32
-         * @enum {integer}
-         */
-        AgentWorkerStatus: 0 | 1 | 2;
         ApiAgentConnection: {
             id?: string | null;
             name?: string | null;
@@ -1144,16 +1137,11 @@ export interface components {
             createdAt?: string;
             isAlive?: boolean;
             /** Format: date-time */
-            stopRequestedAt?: string | null;
-            /** Format: date-span */
-            stopGracePeriod?: string | null;
-            /** Format: date-time */
             lastHeartbeat?: string;
             mode?: components["schemas"]["AgentWorkerMode"];
             workerLane?: string | null;
             /** Format: double */
             parallelismFactor?: number;
-            status?: components["schemas"]["AgentWorkerStatus"];
             hostId?: string | null;
             hostDisplayName?: string | null;
         };

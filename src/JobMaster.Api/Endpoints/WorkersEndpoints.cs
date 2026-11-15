@@ -99,8 +99,6 @@ internal static class WorkersEndpoints
             workers = workers.Where(w => w.Mode == criteria.Mode.Value).ToList();
         if (criteria.IsAlive.HasValue)
             workers = workers.Where(w => w.IsAlive() == criteria.IsAlive.Value).ToList();
-        if (criteria.Status.HasValue)
-            workers = workers.Where(w => w.Status() == criteria.Status.Value).ToList();
         if (!string.IsNullOrEmpty(criteria.AgentConnectionId))
             workers = workers.Where(w => string.Equals(w.AgentConnectionId?.IdValue, criteria.AgentConnectionId, StringComparison.OrdinalIgnoreCase)).ToList();
         if (!string.IsNullOrEmpty(criteria.HostId))

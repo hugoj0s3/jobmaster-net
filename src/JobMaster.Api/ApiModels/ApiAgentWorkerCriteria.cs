@@ -11,8 +11,6 @@ public class ApiAgentWorkerCriteria
     public string? HostId { get; set; }
     /// <summary>Filter by worker lane.</summary>
     public string? WorkerLane { get; set; }
-    /// <summary>Filter by worker status.</summary>
-    public AgentWorkerStatus? Status { get; set; }
     /// <summary>Filter by worker mode.</summary>
     public AgentWorkerMode? Mode { get; set; }
     /// <summary>Filter by alive status.</summary>

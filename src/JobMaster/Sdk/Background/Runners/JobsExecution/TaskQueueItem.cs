@@ -94,7 +94,8 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
             disposable.Dispose();
         }
         
+        // Not Task.Dispose(): it throws on a task still running (shutdown disposes those), and a task needs no
+        // disposing unless its wait handle was used.
         cancellationTokenSource?.Dispose();
-        Task.Dispose();
     }
 }

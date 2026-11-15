@@ -106,7 +106,7 @@ internal sealed record RunnerFixture(
         worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
         worker.SetupGet(x => x.BucketAwareSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.MainSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
-        worker.SetupGet(x => x.Runners).Returns(new List<IJobMasterRunner>());
+        worker.SetupGet(x => x.Runners).Returns(new RunnerRegistry());
         worker.SetupGet(x => x.WorkerClusterOperations).Returns(workerClusterOps.Object);
         worker.SetupGet(x => x.IsInitialized).Returns(true);
 

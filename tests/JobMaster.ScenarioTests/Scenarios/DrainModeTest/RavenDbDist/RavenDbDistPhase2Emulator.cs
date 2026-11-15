@@ -67,6 +67,7 @@ public sealed class RavenDbDistPhase2Emulator(ScenarioGlobalEnvironment global, 
         await PollingWaitUtil.WaitUntilAsync(AllJobsSavedTimeout,
             async () => await api.GetJobCountAsync(ClusterId) == DrainModeTestPlan.TotalJobs,
             "every job to be durably saved in the master store",
-            pollInterval: TimeSpan.FromSeconds(5));
+            pollInterval: TimeSpan.FromSeconds(5),
+            describeLastState: async () => $"master has {await api.GetJobCountAsync(ClusterId)} of {DrainModeTestPlan.TotalJobs} jobs");
     }
 }

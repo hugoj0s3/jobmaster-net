@@ -74,7 +74,8 @@ public sealed class ScenarioRunner : IAsyncDisposable
         ScenarioGlobalEnvironment global, string scenarioName, CancellationToken ct = default)
     {
         // scenarioName is the logical (kebab-case) identifier; the physical folder is its PascalCase form.
-        var scenarioFolder = Path.Combine(RepoRootLocator.Find(), "Tests", "JobMaster.ScenarioTests", "Scenarios", scenarioName.ToPascalCase());
+        // Exact casing: Linux paths are case-sensitive.
+        var scenarioFolder = Path.Combine(RepoRootLocator.Find(), "tests", "JobMaster.ScenarioTests", "Scenarios", scenarioName.ToPascalCase());
         var runner = new ScenarioRunner(global, scenarioFolder);
         await runner.InitializeAsync(ct);
         return runner;

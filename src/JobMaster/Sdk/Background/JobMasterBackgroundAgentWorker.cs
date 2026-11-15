@@ -59,7 +59,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public IServiceProvider ServiceProvider { get; private set; } = null!;
 
-    public IList<IJobMasterRunner> Runners { get; private set; } = new List<IJobMasterRunner>();
+    public RunnerRegistry Runners { get; } = new RunnerRegistry();
     public bool IsOnWarmUpTime()
     {
         return SkipWarmUpTime == false && Runtime?.IsOnWarmUpTime() == true;
@@ -86,7 +86,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     // Services
     private IMasterBucketsService masterBucketsService = null!;
-    private IMasterAgentWorkersService masterAgentWorkersService = null!;
 
     private IJobMasterLogger logger = null!;
 
@@ -101,7 +100,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     private void InitializeDependencies()
     {
         masterBucketsService = this.GetClusterAwareService<IMasterBucketsService>();
-        masterAgentWorkersService = this.GetClusterAwareService<IMasterAgentWorkersService>();
         BucketRunnersFactory = this.GetClusterAwareComponent<IBucketRunnersFactory>();
         WorkerClusterOperations = this.GetClusterAwareComponent<IWorkerClusterOperations>();
 
@@ -498,11 +496,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StopImmediatelyAsync()
     {
-        foreach (var runner in new List<IJobMasterRunner>(this.Runners))
-        {
-            await runner.StopAsync();
-        }
-
         lock (this.mutex)
         {
             if (this.StopImmediatelyRequested)
@@ -511,43 +504,48 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
 
             this.StopImmediatelyRequested = true;
-
-            foreach (var bucket in this.BucketsCreatedOnRuntime)
-            {
-                if (bucket.Status == BucketStatus.Lost) continue;
-
-                WorkerClusterOperations.MarkBucketAsLost(bucket);
-            }
-
-            var buckets = this.masterBucketsService.QueryAllNoCache();
-            foreach (var bucket in buckets)
-            {
-                if (bucket.AgentWorkerId != this.AgentWorkerId) continue;
-                if (bucket.Status == BucketStatus.Lost) continue;
-
-                WorkerClusterOperations.MarkBucketAsLost(bucket);
-            }
         }
 
-        await RunnerDelayUtil.DelayAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        await Task.WhenAll(this.Runners.Snapshot().Select(StopRunnerAsync));
 
-        await this.masterAgentWorkersService.DeleteWorkerAsync(this.AgentWorkerId);
+        await MarkOwnedBucketsAsLostAsync();
     }
+
+    private async Task StopRunnerAsync(IJobMasterRunner runner)
+    {
+        try
+        {
+            await runner.StopAsync();
+        }
+        catch (Exception e)
+        {
+            // One runner's failed cleanup mustn't skip the others or the bucket hand-over.
+            logger.Error($"Runner {runner.GetType().Name} failed to stop.", JobMasterLogCategory.AgentWorker, this.AgentWorkerId, exception: e);
+        }
+    }
+
+    // The worker is going away: hand every bucket it still owns to another worker now (draining ones included, so
+    // their drain restarts elsewhere) instead of waiting for the dead-worker detection.
+    private async Task MarkOwnedBucketsAsLostAsync()
+    {
+        var buckets = await this.masterBucketsService.QueryAllNoCacheAsync();
+        foreach (var bucket in SelectBucketsToHandOver(buckets, this.AgentWorkerId))
+        {
+            await WorkerClusterOperations.MarkBucketAsLostAsync(bucket);
+        }
+    }
+
+    internal static IList<BucketModel> SelectBucketsToHandOver(IEnumerable<BucketModel> buckets, string agentWorkerId) =>
+        buckets
+            .Where(b => b.AgentWorkerId == agentWorkerId)
+            .Where(b => b.Status is not (BucketStatus.Lost or BucketStatus.ReadyToDelete))
+            .ToList();
 
     public void RequestStop()
     {
 
-        var workerModel = this.masterAgentWorkersService.GetWorker(this.AgentWorkerId);
-        if (workerModel == null)
-        {
-            this.StopRequestedAt = DateTime.UtcNow;
-            this.StopGracePeriod = JobMasterConstants.DefaultGracefulStopPeriod;
-        }
-        else
-        {
-            this.StopRequestedAt = workerModel.StopRequestedAt ?? DateTime.UtcNow;
-            this.StopGracePeriod = workerModel.StopGracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
-        }
+        this.StopRequestedAt = DateTime.UtcNow;
+        this.StopGracePeriod = JobMasterConstants.DefaultGracefulStopPeriod;
 
         foreach (var bucket in this.BucketsCreatedOnRuntime)
         {
