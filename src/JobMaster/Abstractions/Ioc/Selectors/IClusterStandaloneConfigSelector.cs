@@ -60,6 +60,15 @@ public interface IClusterStandaloneConfigSelector
     [Obsolete("Use DefaultMaxRetryCount instead.")]
     public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount);
 
+    /// <inheritdoc cref="IClusterConfigSelector.RetryDelays"/>
+    public IClusterStandaloneConfigSelector RetryDelays(params TimeSpan[] delays);
+
+    /// <inheritdoc cref="IClusterConfigSelector.InterceptRetry(Func{JobRetryContext, JobRetryDecision})"/>
+    public IClusterStandaloneConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor);
+
+    /// <inheritdoc cref="IClusterConfigSelector.InterceptRetry{TInterceptor}"/>
+    public IClusterStandaloneConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor;
+
     /// <summary>
     /// Sets the maximum byte size for job messages exchanged through the internal pipeline.
     /// Jobs whose payload exceeds this limit will be rejected at submission time.
@@ -92,7 +101,7 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterLimits.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>

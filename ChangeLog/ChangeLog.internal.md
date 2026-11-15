@@ -5,7 +5,133 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 928/928 unit tests pass on `net8.0` and `net10.0`.
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 967/967 unit tests pass on `net8.0` and `net10.0`.
+
+#### `JobMasterLimits` for fixed values (Hugo, 2026-11-14)
+- `JobMasterDefaults` read as "can be changed", but `MinDataRetentionTtl` (released), `MinRetryDelay` and
+  `RetryInterceptorTimeout` (both new) are fixed. Moved to a new public static `JobMasterLimits` (same namespace).
+  Public, not internal, so selector / interceptor XML docs keep their `cref`s and users can read the values. Plain move,
+  no `[Obsolete]` forwarder (alpha); one breaking line for `MinDataRetentionTtl`. Older-release ChangeLog entries keep
+  the old name. `Worker.MaxParallelismFactor` stays: it caps the default parallelism, so it is a default.
+
+#### `IanaTimeZoneId` startup check inverted (Hugo, 2026-11-14)
+- Bug: `ValidateClusterDefinitions` errored when `clusterDefinition.IanaTimeZoneId != null` and the stored zone ≠ the
+  machine's local zone. First start passed (nothing stored → falls back to local) and saved the explicit zone; every
+  restart then failed, though the value matched what's stored. A process that did *not* set it on a machine in another
+  zone passed silently, the case the message is about. Unnoticed since most run in UTC containers.
+- Fix: condition is now `== null`, in `internal static ValidateOmittedTimeZone(clusterId, defined, existing, local)`
+  (returns the error or null). The message names the local and the stored zone instead of the (null) defined one.
+- API-only exemption: with the fix, an API process on a machine in another zone would fail startup, and the API selector
+  (`IBaseClusterConfigSelector`) has no `IanaTimeZoneId`. `AddJobMasterClusterForApi` now calls the new internal
+  `AllowOmittedTimeZone()` (sets the internal `ClusterDefinition.AllowOmittedTimeZone`), which
+  skips the check. Safe: a process that doesn't set the zone plans with the stored one. Not unit-tested (plumbing).
+- Not done: a Warning when an explicit zone overwrites a different stored one. `GetFresh()` returns a default model
+  (zone = local) when nothing is stored, so first start can't be told apart from a change without another read.
+- Tests: `TimeZoneStartupCheckTests` (explicit zone ≠ local on restart passes, not set + differs asks to set it, not set
+  + matches passes).
+
+#### Failed-execution messages unified (Hugo, 2026-11-14)
+- Before: handler error / timeout wrote the same text to `JobExecution.OutcomeMessage` and the JobExecution log, but
+  only the log had the exception, so the attempt in the dashboard never said why it failed. The overlap path worded the
+  log and the execution differently and put a dashed GUID in the execution (against item 17's base64 rule);
+  "recurring schedule not found" had no log; the conflict path had its own long text.
+- New `JobExecutionMessages` (static, one method per path): `HandlerFailed(elapsedMs, exception, nextStep)`,
+  `TimedOut(elapsedMs, timeout, nextStep)`, `RecurringOverlap(id)`, `RecurringScheduleNotFound(id)`,
+  `ConcurrentChange(status)`. Shape: what happened → what's next (the retry `*Log` text) → "See the job's logs for the
+  full error." only when the log has a stack (handler error, conflict). Exception message on one line, capped at 500
+  chars (`outcome_message` is max-length; the cap keeps it a summary). Each path builds it once for both the execution
+  and the log; the log line is prefixed `Job <definition id>: ` (`ForLog`) since the log list mixes jobs. The timeout
+  path's `TimeoutException` (for the retry interceptor) gets its own short text.
+- The `JobExecution` log category means "kept with the job" (job id as reference, archived / purged with it), not
+  "about one attempt"; left as is (stored by name), to document.
+- Tests: `JobExecutionMessagesTests` (full handler-failed text, long multi-line exception kept to one short line,
+  empty message → type name, timeout without pointer, base64 ids, conflict status + pointer).
+
+#### `JobContext.CancellationToken` (Hugo, 2026-11-14)
+- Finding: the job timeout never stopped a running handler. `TaskQueueItem.Start()` does `CancelAfter(Timeout + 2.5 s)`
+  and passes the token to `ExecuteJobAsync`, which only checks it before the handler; `HandleAsync(JobContext)` had no
+  way to see it, and `TaskQueueControl` frees a slot only when the task completes. Verified with a throwaway
+  `TaskQueueItem` probe (token cancelled at 100 ms, work still running at 600 ms, ran to the end). Consequences: a
+  stuck handler holds its slot forever; the "timed out" catch was only reachable before the handler started; a
+  recurring run longer than `Timeout + 1 min` outlives its overlap lock.
+- Fix (Hugo picked option B over abandoning the task, which would let the retry overlap the still-running handler):
+  `JobContext.CancellationToken` (non-nullable, `None` outside a run: receipt context, retry interceptor context), set by
+  the engine to the attempt's timeout token right before `HandleAsync`. A handler that honours it throws
+  `OperationCanceledException`, which the existing timeout catch turns into a retry (`TimeoutException` for the
+  retry interceptor). `HandleAsync`'s signature is unchanged.
+- `JobConvertUtilTests` property-parity guard ignores it, like `RecurringSchedule` (set at run time, not on `Job`).
+- Test: `JobsExecutionEngineTests.Simulate_WhenHandlerHonoursTheCancellationToken_TimeoutStopsItAndRetries` (200 ms
+  timeout, handler waits on the token → retried, `NumberOfFailures` 1). Verified: with `CancellationToken.None` set
+  instead, it fails (the handler never returns).
+
+#### Retry delays and retry interceptors (Hugo, 2026-11-14)
+- Before: `JobRawModel.TryRetry()` hardcoded `30 s × 2^(failures−1)` plus `JobProcessDeadlineDefaultDuration` (10 min) on
+  every retry (in since the initial commit, no recorded reason), and `JobMasterConstants.MaxAllowedRetries = 10` capped
+  retries. Checked before dropping the 10 min: the retry is only computed after the handler's `await` returns (catch in
+  `ExecuteJobAsync`, `HandleErrorAsync`) and `ScheduleRetry` clears `ProcessDeadline`, so a short delay can't overlap
+  the attempt or be picked by `HeldOnMasterDeadlineTimeoutJobsRunner`.
+- Public: `IJobMasterRetryInterceptor.DecideAsync(JobRetryContext, CancellationToken)` → `Task<JobRetryDecision>`
+  (`JobMaster.Abstractions`); `JobRetryContext { Job, NumberOfFailures, Exception }` and readonly struct
+  `JobRetryDecision` (`RetryAfter` / `UseRetryDelays` / `StopEarly(reason)`, `default` = `UseRetryDelays`) in
+  `Abstractions.Models`; selectors `RetryDelays(params TimeSpan[])`, `InterceptRetry(Func<...>)`, `InterceptRetry<T>()`
+  on both cluster builders; `JobMasterDefaults.RetryDelays` (30 s, 2 m, 10 m, 30 m, 1 h), `MinRetryDelay` (30 s),
+  `RetryInterceptorTimeout` (10 s). Decisions (Hugo): per cluster only (branch on `Job.JobDefinitionId` / `WorkerLane`
+  in the interceptor); one method returning a decision rather than separate delay / stop-early methods;
+  "interceptor", not "policy" (first name): a policy reads as owning the retry count (as in Polly), an interceptor
+  hooks into a retry JobMaster owns and can adjust or cancel it, never add attempts; `InterceptRetry` over `OnRetry`
+  (Polly's `OnRetry` is a notification, and it runs before the retry is decided); `UseRetryDelays`
+  named after the config method so `RetryDelays` + an interceptor read as they work; `NumberOfFailures` aligned with the
+  internal name, counted (1 on the first failure); `Task` like `IJobMasterHandler`; no reason enum, a timeout passes
+  a `TimeoutException`; `StopEarly` rather than `Stop`, so it reads as "before `MaxNumberOfRetries`".
+- `ClusterDefinition.SetRetryDelays` (non-empty, each ≥ 30 s) / `SetRetryInterceptor` / `SetRetryInterceptorType`
+  (one interceptor, else `InvalidOperationException`) → `Finish()` copies `JobMasterRetrySettings` to
+  `JobMasterClusterConnectionConfig` and `TryAddScoped`s the interceptor type. `ConfigFromJson`: `RetryDelays` string
+  array only.
+- `JobRetryDecider` (per engine): no interceptor → `DelayFor(n)` (last repeats); delegate → called directly; DI
+  interceptor → new async scope, `CancellationTokenSource(RetryInterceptorTimeout)` covering the resolve, `Task.WhenAny`
+  so an interceptor ignoring the token still can't hold the slot. Throw / timeout → `UseRetryDelays` + two logs
+  (Hugo): Warn in `JobExecution` (job id), no exception, pointing to the cluster's logs (the attempt's own failure is
+  the Error there, and the job still retries); Error in `Cluster` (cluster id) with the exception (the interceptor is
+  per cluster, so it's broken for every job on it). `RetryAfter` clamped to
+  `MinRetryDelay`. The context's `Job` is built after counting the failure.
+- `JobRawModel.TryRetry()` → `HasRetriesLeft()` + `ScheduleRetry(delay)`; the engine's `RetryOrFailAsync` (both call
+  sites) fails without calling the interceptor once retries are used up, and `StopEarly` fails with "Stopped early by
+  retry interceptor: reason" in the execution message.
+- Versioning (Hugo's concern): retries are decided on the executing worker, but the stored settings came from
+  whichever process started last, publishers and coordinators included, so the cluster view could show a rule no
+  job runs under. Fixed two ways (Hugo picked both): (2) only a process with a Full or Execution worker writes them
+  (`workerDefinitions.Any(w => w.Mode.IsFullOr(Execution))`); mixed versions during a deploy stay last-writer-wins,
+  accepted. (3) Every failed execution's message ends with what was applied, from methods on the settings:
+  `RetryingLog(delay, resolution)`, `StoppedEarlyLog(reason)`, `MaxRetriesReachedLog(max)`; `JobRetryOutcome` carries a
+  `JobRetryResolution` (RetryDelays / InterceptorUsedRetryDelays / InterceptorCustomDelay / InterceptorBelowMinimum /
+  InterceptorFailed / InterceptorStoppedEarly; `IsStopEarly` reads it, so a stop never carries a meaningless
+  `default` resolution). Not job
+  metadata: that's the user's space (shown, filtered, size-limited). Checked the other stored cluster settings: they
+  only overwrite when set (`?? modelToSave.X`) and are shared configuration read from master, so they don't have this
+  problem. The writer condition has no test (it's inside `StartAsync`); the texts and sources do.
+- Unlike the shared settings (sticky: `?? stored`), retry settings are overwritten by every executing worker at
+  startup, so removing `RetryDelays(...)` goes back to the built-in delays. Logged when it happens (Hugo):
+  `ReplacedStoredSettingsLog(storedDelays, storedInterceptor)` returns the Info text only when they differ (null otherwise,
+  so restarts with the same config stay quiet); `StartAsync` logs it in the Cluster category before overwriting.
+- Stored for information (Hugo): `ClusterConfigurationModel.RetryDelays` / `RetryInterceptor` (from
+  `JobMasterRetrySettings.InterceptorDescription`: `None` / `Delegate` / type full name), written in `StartAsync` from
+  the process's effective settings and never read back; no schema change (JSON generic record). `ApiClusterModel`
+  exposes both. Dashboard display left for later (reminder). Tests: `RetryConfigTests` (`InterceptorDescription` None /
+  Delegate / type name; delays + interceptor round-trip through the record; a record saved before these fields reads the built-in
+  defaults) and generic-record RepoConformance `Upsert_ShouldRoundTrip_ClusterConfigurationRetrySettings` (all four
+  providers, own entry id so the fixture's cluster configuration isn't overwritten). The unit tests drop
+  `AdditionalConfig` from the in-memory record: a `JobMasterConfigDictionary` stays a dictionary object until a
+  provider serializes the values, and `ToObject` calls `ToString()` on it (fine on every provider, not in memory).
+- Cap removed: `MaxAllowedRetries` deleted; attribute, scheduler (jobs and recurring) and static definitions now only
+  reject negative values.
+- Found by the context test: `JobConvertUtil.ToJobContext(Job)` never copied `NumberOfFailures`, so handlers always saw
+  0. Fixed.
+- Tests: `JobRetryDeciderTests` (built-in and cluster delays incl. repeat, floor, `StopEarly` + reason, `UseRetryDelays`,
+  throwing interceptor, counted context + exception, DI interceptor with a new scope per call, slow interceptor
+  cancelled + fallback), `RetryConfigTests` (under 30 s / empty throw, delays + interceptor allowed, two interceptors
+  throw incl. standalone,
+  `ConfigFromJson`, `ScheduleRetry` waits exactly the delay). Verified: without the floor or the throw / timeout
+  fallback, those tests fail. 947/947.
 
 #### Repository types ignore case (Hugo, 2026-11-14)
 - Same rule as cluster ids (`ToConfiguredClusterId`): matched ignoring case at the input, stored and used as a key in
@@ -52,7 +178,7 @@
   hang exit; a failed insert still dequeues its batch, so the loop always ends.
 - Test: `JobMasterLoggerTests.Dispose_WhenMoreThanOneBatchIsBuffered_ShouldWriteAllOfThem` (slow insert keeps the
   background flush on the lock so 250 pile up). Verified by putting back the single-batch flush: it fails.
-- A real stop path (graceful worker stop, then flush) stays a separate design item (`src/JobMaster/Reminders.md`).
+- A real stop path (graceful worker stop, then flush) stays a separate item (`reminders.md`, "No stop entry point").
 
 #### Archive / migrate delete only what the target confirmed (Hugo, 2026-11-14)
 - `DeleteOldFinalJobsRunner`, `DeleteOldInactiveRecurringSchedulesRunner`, `MigrateJobsRunner` and

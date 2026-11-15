@@ -255,10 +255,9 @@ public sealed class RecurringScheduleDefinitionCollection
 
     private static void ValidateDefinition(StaticRecurringScheduleDefinition cfg)
     {
-        if (cfg.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        if (cfg.MaxNumberOfRetries < 0)
         {
-            throw new ArgumentException(
-                $"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+            throw new ArgumentException("MaxNumberOfRetries cannot be negative.");
         }
 
         if (cfg.CompiledExpr == null) throw new ArgumentException("CompiledExpr is required.");

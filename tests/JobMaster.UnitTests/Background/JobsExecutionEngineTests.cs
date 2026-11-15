@@ -525,6 +525,33 @@ public class JobsExecutionEngineTests
         AssertControlsEmpty(f);
     }
 
+    [Fact]
+    public async Task Simulate_WhenHandlerHonoursTheCancellationToken_TimeoutStopsItAndRetries()
+    {
+        // The handler gets JobContext.CancellationToken, cancelled at its timeout (Timeout + 2.5 s grace): a handler
+        // passing it on stops, and the attempt counts as timed out and is retried.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.MasterHandler.RunUntilCancelled = true;
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.Timeout = TimeSpan.FromMilliseconds(200);
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(4));
+
+        var retried = f.SingleUpdateWatcher.Should().ContainSingle(j => j.Status == JobMasterJobStatus.OnMaster).Subject;
+        retried.NumberOfFailures.Should().Be(1);
+        retried.NextPlanExecutionAt.Should().BeAfter(DateTime.UtcNow);
+        f.MasterHandler.ExecutionCount.Should().Be(0);
+
+        AssertControlsEmpty(f);
+    }
+
     // ── CheckDeadlineJobsAsync ────────────────────────────────────────────────
 
     [Fact]

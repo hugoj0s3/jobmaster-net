@@ -44,7 +44,7 @@ public abstract class DataRetentionPhase2EmulatorBase<TPhaseEnum>(ScenarioGlobal
     : BasePhaseEmulator<TPhaseEnum>(global, runner)
     where TPhaseEnum : struct, Enum
 {
-    // JobMasterDefaults.MinDataRetentionTtl is 10 minutes -- the JSON config for TtlOnlyClusterId
+    // JobMasterLimits.MinDataRetentionTtl is 10 minutes -- the JSON config for TtlOnlyClusterId
     // must set exactly this (the framework's floor, so the fastest allowed). The purge runner's own
     // poll interval is derived from the TTL itself (max(5min, min(ttl/2, 1hr)) => 5 minutes at a
     // 10-minute TTL), so budget the wait generously past both the TTL and at least one extra tick.

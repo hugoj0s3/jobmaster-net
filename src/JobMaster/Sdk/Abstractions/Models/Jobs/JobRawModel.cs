@@ -248,20 +248,15 @@ internal class JobRawModel : JobMasterBaseModel
         NextPlanExecutionAt = advanced > ScheduledAt ? advanced : ScheduledAt;
     }
     
-    public bool TryRetry()
+    public bool HasRetriesLeft()
     {
-        var maxNumberOfRetries = this.MaxNumberOfRetries;
-        if (NumberOfFailures >= maxNumberOfRetries)
-        {
-            MarkAsFailed();
-            return false;
-        }
-        
-        var secondsToWait = 30 * Math.Pow(2, this.NumberOfFailures - 1);
-        var timeToWait = TimeSpan.FromSeconds(secondsToWait);
-        timeToWait += JobMasterConstants.JobProcessDeadlineDefaultDuration;
-        
-        DelayNextExecutionPlan(timeToWait);
+        return NumberOfFailures < MaxNumberOfRetries;
+    }
+
+    // The delay comes from the cluster's retry settings (JobRetryDecider), at least JobMasterLimits.MinRetryDelay.
+    public void ScheduleRetry(TimeSpan delay)
+    {
+        DelayNextExecutionPlan(delay);
         ProcessDeadline = null;
         Status = JobMasterJobStatus.OnMaster;
         AgentConnectionId = null;
@@ -269,9 +264,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         NumberOfFailures++;
         FinalizedAt = DateTime.UtcNow;
-        return true;
     }
-    
+
     public void MarkAsFailed()
     {
         Status = JobMasterJobStatus.Failed;

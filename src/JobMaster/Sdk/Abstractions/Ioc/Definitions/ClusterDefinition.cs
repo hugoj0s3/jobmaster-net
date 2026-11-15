@@ -38,14 +38,63 @@ internal sealed class ClusterDefinition
     
     public bool? IsStandalone { get; set; }
 
+    // API-only clusters: nothing in the process plans in its local zone, and the API selector can't set it.
+    internal bool AllowOmittedTimeZone { get; set; }
+
+    public IReadOnlyList<TimeSpan>? RetryDelays { get; private set; }
+    public Func<JobRetryContext, JobRetryDecision>? RetryInterceptor { get; private set; }
+    public Type? RetryInterceptorType { get; private set; }
+
+    // Shared by both selectors' RetryDelays (and ConfigFromJson).
+    public void SetRetryDelays(IEnumerable<TimeSpan> delays)
+    {
+        if (delays == null) throw new ArgumentException("RetryDelays cannot be null.", nameof(delays));
+
+        var list = delays.ToList();
+        if (list.Count == 0)
+            throw new ArgumentException("RetryDelays needs at least one delay.", nameof(delays));
+
+        foreach (var delay in list)
+        {
+            if (delay < JobMasterLimits.MinRetryDelay)
+                throw new ArgumentException(
+                    $"Every RetryDelays value must be at least {JobMasterLimits.MinRetryDelay} (got {delay}).",
+                    nameof(delays));
+        }
+
+        RetryDelays = list;
+    }
+
+    // Shared by both selectors' InterceptRetry(delegate). Exactly one interceptor per cluster.
+    public void SetRetryInterceptor(Func<JobRetryContext, JobRetryDecision> interceptor)
+    {
+        if (interceptor == null) throw new ArgumentException("InterceptRetry cannot be null.", nameof(interceptor));
+        EnsureNoRetryInterceptor();
+        RetryInterceptor = interceptor;
+    }
+
+    // Shared by both selectors' InterceptRetry<T>(). Exactly one interceptor per cluster.
+    public void SetRetryInterceptorType(Type interceptorType)
+    {
+        EnsureNoRetryInterceptor();
+        RetryInterceptorType = interceptorType;
+    }
+
+    private void EnsureNoRetryInterceptor()
+    {
+        if (RetryInterceptor != null || RetryInterceptorType != null)
+            throw new InvalidOperationException(
+                $"Cluster '{ClusterId}' already has a retry interceptor. Use either InterceptRetry(...) or InterceptRetry<T>(), once.");
+    }
+
     // Shared by IClusterConfigSelector.DataRetentionTtl and IClusterStandaloneConfigSelector.ClusterDataRetentionTtl —
     // both selectors mutate the same ClusterDefinition, so the validation belongs here instead of being
     // duplicated in both builder classes.
     public void SetDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
-        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterDefaults.MinDataRetentionTtl)
+        if (dataRetentionTtl > TimeSpan.Zero && dataRetentionTtl < JobMasterLimits.MinDataRetentionTtl)
             throw new ArgumentException(
-                $"DataRetentionTtl must be at least {JobMasterDefaults.MinDataRetentionTtl} " +
+                $"DataRetentionTtl must be at least {JobMasterLimits.MinDataRetentionTtl} " +
                 $"or zero/negative for infinite retention. Use RetainDataForever() to disable purging.",
                 nameof(dataRetentionTtl));
         DataRetentionTtl = dataRetentionTtl <= TimeSpan.Zero ? TimeSpan.Zero : dataRetentionTtl;

@@ -106,6 +106,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             isDefault: clusterDefinition.IsDefault);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
+        clusterCnnConfig.SetRetrySettings(new JobMasterRetrySettings(
+            clusterDefinition.RetryDelays, clusterDefinition.RetryInterceptor, clusterDefinition.RetryInterceptorType));
+
+        // Same rule as handlers: registered scoped unless the app registered it itself.
+        if (clusterDefinition.RetryInterceptorType != null)
+            services.TryAddScoped(clusterDefinition.RetryInterceptorType);
 
         if (clusterDefinition.DisabledPriorities.Any())
             clusterCnnConfig.SetDisabledPriorities(clusterDefinition.DisabledPriorities);
@@ -251,6 +257,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    public IClusterConfigSelector AllowOmittedTimeZone()
+    {
+        this.clusterDefinition.AllowOmittedTimeZone = true;
+        return this;
+    }
+
     public IClusterConfigSelector ClusterId(string clusterId)
     {
         if (!JobMasterStringUtils.IsValidForSegment(clusterId, 25))
@@ -297,6 +309,24 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     }
 
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterConfigSelector RetryDelays(params TimeSpan[] delays)
+    {
+        this.clusterDefinition.SetRetryDelays(delays);
+        return this;
+    }
+
+    public IClusterConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor)
+    {
+        this.clusterDefinition.SetRetryInterceptor(interceptor);
+        return this;
+    }
+
+    public IClusterConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor
+    {
+        this.clusterDefinition.SetRetryInterceptorType(typeof(TInterceptor));
+        return this;
+    }
 
     public IClusterConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {
@@ -496,6 +526,8 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             DefaultJobTimeout(TimeSpan.Parse(config.DefaultJobTimeout, CultureInfo.InvariantCulture));
         if (config.DefaultMaxRetryCount.HasValue)
             DefaultMaxRetryCount(config.DefaultMaxRetryCount.Value);
+        if (config.RetryDelays != null)
+            RetryDelays(config.RetryDelays.Select(d => TimeSpan.Parse(d, CultureInfo.InvariantCulture)).ToArray());
         if (config.MaxMessageByteSize.HasValue)
             MaxMessageByteSize(config.MaxMessageByteSize.Value);
         if (config.IanaTimeZoneId != null)
@@ -678,6 +710,24 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     }
 
     public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterStandaloneConfigSelector RetryDelays(params TimeSpan[] delays)
+    {
+        clusterDefinition.SetRetryDelays(delays);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor)
+    {
+        clusterDefinition.SetRetryInterceptor(interceptor);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor
+    {
+        clusterDefinition.SetRetryInterceptorType(typeof(TInterceptor));
+        return this;
+    }
 
     public IClusterStandaloneConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {

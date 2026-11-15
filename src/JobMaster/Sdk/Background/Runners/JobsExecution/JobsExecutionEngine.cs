@@ -85,6 +85,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
     private readonly IMasterClusterConfigurationService masterClusterConfigurationService;
     private readonly IMasterJobsService masterJobsService;
+    private readonly JobRetryDecider retryDecider;
 
     private readonly List<JobRawModel> jobsToFlush = new();
     private readonly object jobsToFlushLock = new();
@@ -127,6 +128,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         this.masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         this.logger = backgroundAgentWorker.GetClusterAwareService<IJobMasterLogger>();
+        this.retryDecider = new JobRetryDecider(backgroundAgentWorker.ClusterConnConfig, backgroundAgentWorker.ServiceProvider, logger);
 
         this.lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         this.bucketId = bucketId;
@@ -839,12 +841,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     if (lockRecurringScheduleProcessingToken == null)
                     {
                         logger.Warn($"Recurring schedule {jobRawModel.SourceId.Value.ToBase64()} has an overlapping job still executing.", JobMasterLogCategory.RecurringSchedule, jobRawModel.SourceId.Value);
-                        logger.Error($"Job {jobRawModel.Id.ToBase64()} failed due to overlap — recurring schedule {jobRawModel.SourceId.Value.ToBase64()} is still executing.", JobMasterLogCategory.JobExecution, jobRawModel.Id);
-                        
+
+                        var overlapMessage = JobExecutionMessages.RecurringOverlap(jobRawModel.SourceId.Value);
+                        logger.Error(ForLog(jobRawModel, overlapMessage), JobMasterLogCategory.JobExecution, jobRawModel.Id);
+
                         execution = jobRawModel.ProcessingStarted();
-                        
+
                         jobRawModel.MarkAsFailed();
-                        execution.Fail($"Overlap — recurring schedule {jobRawModel.SourceId} is still executing.");
+                        execution.Fail(overlapMessage);
                         await this.UpdateSingleJobAsync(jobRawModel, execution);
                         
                         return;
@@ -859,9 +863,11 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     switch (validationResult)
                     {
                         case RecurringScheduleValidationResult.NotFound:
+                            var notFoundMessage = JobExecutionMessages.RecurringScheduleNotFound(jobRawModel.SourceId.Value);
+                            logger.Error(ForLog(jobRawModel, notFoundMessage), JobMasterLogCategory.JobExecution, jobRawModel.Id);
                             jobRawModel.MarkAsFailed();
                             execution = jobRawModel.ProcessingStarted();
-                            execution.Fail($"Recurring schedule was not found");
+                            execution.Fail(notFoundMessage);
                             await this.UpdateSingleJobAsync(jobRawModel, execution);
                             return;
 
@@ -887,6 +893,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 var job = jobRawModel.ToJob();
                 var jobContext = JobConvertUtil.ToJobContext(job);
                 jobContext.RecurringSchedule = recurringScheduleContext;
+                // The handler only stops at its timeout if it observes this token.
+                jobContext.CancellationToken = timeoutCancellationToken;
 
                 var jobHandler = scope.ServiceProvider.GetJobHandler(job.JobDefinitionId);
 
@@ -904,15 +912,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             catch (OperationCanceledException) when (timeoutCancellationToken.IsCancellationRequested)
             {
                 stopwatch.Stop();
-                string message = $"Job {jobRawModel.JobDefinitionId} timed out after {stopwatch.ElapsedMilliseconds}ms.";
-                if (!jobRawModel.TryRetry())
-                {
-                    message = $"Job {jobRawModel.JobDefinitionId} timed out after {stopwatch.ElapsedMilliseconds}ms. Reached max retries.";
-                }
+                var timeoutException = new TimeoutException(
+                    $"Timed out after {stopwatch.ElapsedMilliseconds} ms (timeout {jobRawModel.Timeout:c}).");
+                var nextStep = await RetryOrFailAsync(jobRawModel, timeoutException);
+                var message = JobExecutionMessages.TimedOut(stopwatch.ElapsedMilliseconds, jobRawModel.Timeout, nextStep);
 
                 execution?.Fail(message);
 
-                logger.Error(message, JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                logger.Error(ForLog(jobRawModel, message), JobMasterLogCategory.JobExecution, jobRawModel.Id);
 
                 await this.UpdateSingleJobAsync(jobRawModel, execution);
             }
@@ -931,11 +938,12 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     return;
                 }
 
-                logger.Error($"Job execution conflict. Job is probably running on another process. Recording this attempt as failed. Status: ({existingJob.Status})", JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: ce);
+                var conflictMessage = JobExecutionMessages.ConcurrentChange(existingJob.Status);
+                logger.Error(ForLog(jobRawModel, conflictMessage), JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: ce);
 
                 if (execution != null)
                 {
-                    execution.Fail($"Job execution conflict. Job is probably running on another process. Recording this attempt as failed. Status: ({existingJob.Status})");
+                    execution.Fail(conflictMessage);
                     await backgroundAgentWorker.WorkerClusterOperations
                         .ExecWithRetryAsync(o => o.AddJobExecutionAsync(execution), millisecondsToDelay: 50);
                 }
@@ -1025,23 +1033,51 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     }
 
     /// <summary>
+    /// Retries the failed job, with the delay from the cluster's retry settings, or fails it for good.
+    /// Returns what happened, appended to the failed execution's message: the delay and where it came from, or why
+    /// it failed for good. Recorded per attempt, so it's what this worker actually applied.
+    /// </summary>
+    private async Task<string> RetryOrFailAsync(JobRawModel job, Exception exception)
+    {
+        var settings = backgroundAgentWorker.ClusterConnConfig.RetrySettings;
+        if (!job.HasRetriesLeft())
+        {
+            job.MarkAsFailed();
+            return settings.MaxRetriesReachedLog(job.MaxNumberOfRetries);
+        }
+
+        var outcome = await retryDecider.DecideAsync(job, exception);
+        if (outcome.IsStopEarly)
+        {
+            job.MarkAsFailed();
+            return settings.StoppedEarlyLog(outcome.Reason);
+        }
+
+        job.ScheduleRetry(outcome.Delay);
+        return settings.RetryingLog(outcome.Delay, outcome.Resolution);
+    }
+
+    /// <summary>
     /// Handles an unexpected exception from job execution: logs the failure, increments
     /// the retry counter (or marks the job as permanently failed if retries are exhausted),
     /// records the failed execution, and persists the updated state.
     /// </summary>
     private async Task HandleErrorAsync(JobRawModel job, JobExecution? execution, Stopwatch stopwatch, Exception e)
     {
-        string message = $"Job {job.JobDefinitionId} failed after {stopwatch.ElapsedMilliseconds}ms.";
-        if (!job.TryRetry())
-        {
-            message = $"Job {job.JobDefinitionId} failed after {stopwatch.ElapsedMilliseconds}ms. Reached max retries.";
-        }
+        var nextStep = await RetryOrFailAsync(job, e);
+        var message = JobExecutionMessages.HandlerFailed(stopwatch.ElapsedMilliseconds, e, nextStep);
 
         execution?.Fail(message);
 
-        logger.Error(message, JobMasterLogCategory.JobExecution, job.Id, exception: e);
+        logger.Error(ForLog(job, message), JobMasterLogCategory.JobExecution, job.Id, exception: e);
 
         await this.UpdateSingleJobAsync(job, execution);
+    }
+
+    // The log list shows many jobs, so its line names the handler; the execution is already shown under its job.
+    private static string ForLog(JobRawModel job, string message)
+    {
+        return $"Job {job.JobDefinitionId}: {message}";
     }
 
     private enum RecurringScheduleValidationResult

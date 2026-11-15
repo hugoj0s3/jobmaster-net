@@ -68,6 +68,13 @@ internal class JobMasterClusterConnectionConfig : IHasAdditionalConnConfig
         MirrorLog = mirrorLog;
     }
 
+    public JobMasterRetrySettings RetrySettings { get; private set; } = JobMasterRetrySettings.BuiltIn;
+
+    public void SetRetrySettings(JobMasterRetrySettings retrySettings)
+    {
+        RetrySettings = retrySettings;
+    }
+
     public void AddAgentConnectionString(
         string name,
         string connectionString,

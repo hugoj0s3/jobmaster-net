@@ -1,5 +1,3 @@
-using JobMaster.Sdk.Abstractions;
-
 namespace JobMaster.Abstractions.Models.Attributes;
 
 /// <summary>
@@ -11,12 +9,12 @@ namespace JobMaster.Abstractions.Models.Attributes;
 public class JobMasterMaxNumberOfRetriesAttribute : Attribute
 {
     /// <summary>Initializes the attribute with the specified retry limit.</summary>
-    /// <param name="maxNumberOfRetries">The maximum number of retries. Must not exceed <see cref="JobMasterConstants.MaxAllowedRetries"/>.</param>
+    /// <param name="maxNumberOfRetries">The maximum number of retries; 0 or more.</param>
     public JobMasterMaxNumberOfRetriesAttribute(int maxNumberOfRetries)
     {
-        if (maxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        if (maxNumberOfRetries < 0)
         {
-            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+            throw new ArgumentException("MaxNumberOfRetries cannot be negative.", nameof(maxNumberOfRetries));
         }
         MaxNumberOfRetries = maxNumberOfRetries;
     }

@@ -50,6 +50,31 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount);
 
     /// <summary>
+    /// Sets the wait before each retry of a failed job: the first delay before the first retry, and so on; the last
+    /// delay repeats for every later retry. Each delay must be at least <see cref="JobMasterLimits.MinRetryDelay"/>.
+    /// Default: <see cref="JobMasterDefaults.RetryDelays"/>. A retry interceptor can keep these with
+    /// <see cref="JobRetryDecision.UseRetryDelays"/>.
+    /// </summary>
+    public IClusterConfigSelector RetryDelays(params TimeSpan[] delays);
+
+    /// <summary>
+    /// Intercepts the retry after each failed attempt with retries left: retry after another delay, keep
+    /// <see cref="RetryDelays"/>, or stop early (see <see cref="JobRetryDecision"/>). It never adds attempts:
+    /// <c>MaxNumberOfRetries</c> (per job, or <see cref="DefaultMaxRetryCount"/>) still caps them. Runs on the worker
+    /// that ran the job; keep it fast, and use <see cref="InterceptRetry{TInterceptor}"/> for anything that needs
+    /// dependencies or I/O. If it throws, the job is retried using <see cref="RetryDelays"/>. Only one retry
+    /// interceptor per cluster.
+    /// </summary>
+    public IClusterConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor);
+
+    /// <summary>
+    /// Like <see cref="InterceptRetry(Func{JobRetryContext, JobRetryDecision})"/>, with an
+    /// <see cref="IJobMasterRetryInterceptor"/> resolved from DI in a new scope for each failed attempt (registered as
+    /// scoped unless you registered it yourself). Only one retry interceptor per cluster.
+    /// </summary>
+    public IClusterConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor;
+
+    /// <summary>
     /// Sets the maximum byte size for job messages exchanged through the messaging layer.
     /// Jobs whose payload exceeds this limit will be rejected at submission time.
     /// Use -1 to disable the limit (not recommended in constrained environments).
@@ -81,7 +106,7 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterLimits.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>

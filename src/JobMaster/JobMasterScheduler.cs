@@ -630,9 +630,9 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
     // never the raw clusterId argument, which would silently fall back to the default cluster.
     private void EnsureCanSave(RecurringScheduleRawModel recurringSchMd)
     {
-        if (recurringSchMd.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        if (recurringSchMd.MaxNumberOfRetries < 0)
         {
-            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+            throw new ArgumentException("MaxNumberOfRetries cannot be negative.");
         }
 
         EnsureCanSave(recurringSchMd.ClusterId);
@@ -654,9 +654,9 @@ internal class JobMasterScheduler : IJobMasterScheduler, IJobMasterSchedulerAdva
 
     private void EnsureCanSave(JobRawModel job)
     {
-        if (job.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        if (job.MaxNumberOfRetries < 0)
         {
-            throw new ArgumentException($"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+            throw new ArgumentException("MaxNumberOfRetries cannot be negative.");
         }
 
         EnsureCanSave(job.ClusterId);
