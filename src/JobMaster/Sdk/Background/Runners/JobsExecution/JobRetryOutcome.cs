@@ -5,26 +5,28 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 /// <summary>What <see cref="JobRetryDecider"/> settled on: retry after <see cref="Delay"/>, or stop early.</summary>
 internal readonly struct JobRetryOutcome
 {
-    private JobRetryOutcome(bool stopEarly, TimeSpan delay, JobRetryDelaySource source, string? reason)
+    private JobRetryOutcome(TimeSpan delay, JobRetryResolution resolution, string? reason)
     {
-        IsStopEarly = stopEarly;
         Delay = delay;
-        Source = source;
+        Resolution = resolution;
         Reason = reason;
     }
 
-    public bool IsStopEarly { get; }
+    public bool IsStopEarly => Resolution == JobRetryResolution.InterceptorStoppedEarly;
     public TimeSpan Delay { get; }
-    public JobRetryDelaySource Source { get; }
+    public JobRetryResolution Resolution { get; }
     public string? Reason { get; }
 
-    public static JobRetryOutcome Retry(TimeSpan delay, JobRetryDelaySource source)
+    public static JobRetryOutcome Retry(TimeSpan delay, JobRetryResolution resolution)
     {
-        return new JobRetryOutcome(false, delay, source, null);
+        if (resolution == JobRetryResolution.InterceptorStoppedEarly)
+            throw new ArgumentException("Retry needs a delay; use StopEarly to stop.", nameof(resolution));
+
+        return new JobRetryOutcome(delay, resolution, null);
     }
 
     public static JobRetryOutcome StopEarly(string? reason)
     {
-        return new JobRetryOutcome(true, TimeSpan.Zero, default, reason);
+        return new JobRetryOutcome(TimeSpan.Zero, JobRetryResolution.InterceptorStoppedEarly, reason);
     }
 }

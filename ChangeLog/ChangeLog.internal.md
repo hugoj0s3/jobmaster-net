@@ -89,8 +89,10 @@
   array only.
 - `JobRetryDecider` (per engine): no interceptor → `DelayFor(n)` (last repeats); delegate → called directly; DI
   interceptor → new async scope, `CancellationTokenSource(RetryInterceptorTimeout)` covering the resolve, `Task.WhenAny`
-  so an interceptor ignoring
-  the token still can't hold the slot. Throw / timeout → Error log + `UseRetryDelays`. `RetryAfter` clamped to
+  so an interceptor ignoring the token still can't hold the slot. Throw / timeout → `UseRetryDelays` + two logs
+  (Hugo): Warn in `JobExecution` (job id), no exception, pointing to the cluster's logs (the attempt's own failure is
+  the Error there, and the job still retries); Error in `Cluster` (cluster id) with the exception (the interceptor is
+  per cluster, so it's broken for every job on it). `RetryAfter` clamped to
   `MinRetryDelay`. The context's `Job` is built after counting the failure.
 - `JobRawModel.TryRetry()` → `HasRetriesLeft()` + `ScheduleRetry(delay)`; the engine's `RetryOrFailAsync` (both call
   sites) fails without calling the interceptor once retries are used up, and `StopEarly` fails with "Stopped early by
@@ -100,9 +102,10 @@
   job runs under. Fixed two ways (Hugo picked both): (2) only a process with a Full or Execution worker writes them
   (`workerDefinitions.Any(w => w.Mode.IsFullOr(Execution))`); mixed versions during a deploy stay last-writer-wins,
   accepted. (3) Every failed execution's message ends with what was applied, from methods on the settings:
-  `RetryingLog(delay, source)`, `StoppedEarlyLog(reason)`, `MaxRetriesReachedLog(max)`; `JobRetryOutcome` carries a
-  `JobRetryDelaySource` (RetryDelays / InterceptorUsedRetryDelays / Interceptor / InterceptorBelowMinimum /
-  InterceptorFailed). Not job
+  `RetryingLog(delay, resolution)`, `StoppedEarlyLog(reason)`, `MaxRetriesReachedLog(max)`; `JobRetryOutcome` carries a
+  `JobRetryResolution` (RetryDelays / InterceptorUsedRetryDelays / InterceptorCustomDelay / InterceptorBelowMinimum /
+  InterceptorFailed / InterceptorStoppedEarly; `IsStopEarly` reads it, so a stop never carries a meaningless
+  `default` resolution). Not job
   metadata: that's the user's space (shown, filtered, size-limited). Checked the other stored cluster settings: they
   only overwrite when set (`?? modelToSave.X`) and are shared configuration read from master, so they don't have this
   problem. The writer condition has no test (it's inside `StartAsync`); the texts and sources do.

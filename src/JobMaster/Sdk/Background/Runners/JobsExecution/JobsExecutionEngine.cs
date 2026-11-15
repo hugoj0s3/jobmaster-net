@@ -1054,7 +1054,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         }
 
         job.ScheduleRetry(outcome.Delay);
-        return settings.RetryingLog(outcome.Delay, outcome.Source);
+        return settings.RetryingLog(outcome.Delay, outcome.Resolution);
     }
 
     /// <summary>

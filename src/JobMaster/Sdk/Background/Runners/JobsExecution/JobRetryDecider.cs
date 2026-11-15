@@ -44,13 +44,13 @@ internal sealed class JobRetryDecider
 
         if (settings.Interceptor == null && settings.InterceptorType == null)
         {
-            return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryDelaySource.RetryDelays);
+            return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryResolution.RetryDelays);
         }
 
         var decision = await RunInterceptorAsync(settings, job, numberOfFailures, exception);
         if (decision == null)
         {
-            return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryDelaySource.InterceptorFailed);
+            return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryResolution.InterceptorFailed);
         }
 
         switch (decision.Value.Kind)
@@ -59,10 +59,10 @@ internal sealed class JobRetryDecider
                 return JobRetryOutcome.StopEarly(decision.Value.Reason);
             case JobRetryDecisionKind.RetryAfter:
                 return decision.Value.Delay < JobMasterLimits.MinRetryDelay
-                    ? JobRetryOutcome.Retry(JobMasterLimits.MinRetryDelay, JobRetryDelaySource.InterceptorBelowMinimum)
-                    : JobRetryOutcome.Retry(decision.Value.Delay, JobRetryDelaySource.Interceptor);
+                    ? JobRetryOutcome.Retry(JobMasterLimits.MinRetryDelay, JobRetryResolution.InterceptorBelowMinimum)
+                    : JobRetryOutcome.Retry(decision.Value.Delay, JobRetryResolution.InterceptorCustomDelay);
             default:
-                return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryDelaySource.InterceptorUsedRetryDelays);
+                return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryResolution.InterceptorUsedRetryDelays);
         }
     }
 
@@ -81,7 +81,14 @@ internal sealed class JobRetryDecider
         }
         catch (Exception e)
         {
-            logger.Error($"Retry interceptor failed for job {job.Id.ToBase64()}; retrying with RetryDelays.", JobMasterLogCategory.JobExecution, job.Id, exception: e);
+            // Warn with the job: its attempt's failure is the Error there, and it still retries on RetryDelays.
+            // Error with the cluster: the interceptor is the cluster's, so it's broken for every job on it.
+            logger.Warn(
+                $"Retry interceptor {settings.InterceptorDescription} failed; retrying with RetryDelays. See the cluster's logs for the error.",
+                JobMasterLogCategory.JobExecution, job.Id);
+            logger.Error(
+                $"Retry interceptor {settings.InterceptorDescription} failed for job {job.Id.ToBase64()}; it was retried with RetryDelays.",
+                JobMasterLogCategory.Cluster, clusterConnConfig.ClusterId, exception: e);
             return null;
         }
     }

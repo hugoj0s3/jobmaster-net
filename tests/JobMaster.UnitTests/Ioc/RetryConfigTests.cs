@@ -110,17 +110,17 @@ public class RetryConfigTests
     }
 
     [Theory]
-    [InlineData((int)JobRetryDelaySource.RetryDelays, "Retrying in 00:02:00 (RetryDelays).")]
-    [InlineData((int)JobRetryDelaySource.InterceptorUsedRetryDelays, "Retrying in 00:02:00 (RetryDelays, chosen by retry interceptor MyInterceptor).")]
-    [InlineData((int)JobRetryDelaySource.Interceptor, "Retrying in 00:02:00 (retry interceptor MyInterceptor).")]
-    [InlineData((int)JobRetryDelaySource.InterceptorBelowMinimum, "Retrying in 00:02:00 (retry interceptor MyInterceptor, raised to the 00:00:30 minimum).")]
-    [InlineData((int)JobRetryDelaySource.InterceptorFailed, "Retrying in 00:02:00 (RetryDelays; retry interceptor MyInterceptor failed).")]
-    public void RetryingLog_SaysTheDelayAndWhereItCameFrom(int source, string expected)
+    [InlineData((int)JobRetryResolution.RetryDelays, "Retrying in 00:02:00 (RetryDelays).")]
+    [InlineData((int)JobRetryResolution.InterceptorUsedRetryDelays, "Retrying in 00:02:00 (RetryDelays, chosen by retry interceptor MyInterceptor).")]
+    [InlineData((int)JobRetryResolution.InterceptorCustomDelay, "Retrying in 00:02:00 (retry interceptor MyInterceptor).")]
+    [InlineData((int)JobRetryResolution.InterceptorBelowMinimum, "Retrying in 00:02:00 (retry interceptor MyInterceptor, raised to the 00:00:30 minimum).")]
+    [InlineData((int)JobRetryResolution.InterceptorFailed, "Retrying in 00:02:00 (RetryDelays; retry interceptor MyInterceptor failed).")]
+    public void RetryingLog_SaysTheDelayAndWhereItCameFrom(int resolution, string expected)
     {
         // Ends every failed execution's message: per attempt, what this worker actually applied.
         var settings = new JobMasterRetrySettings(null, null, typeof(MyInterceptor));
 
-        settings.RetryingLog(TimeSpan.FromMinutes(2), (JobRetryDelaySource)source)
+        settings.RetryingLog(TimeSpan.FromMinutes(2), (JobRetryResolution)resolution)
             .Should().Be(expected.Replace("MyInterceptor", typeof(MyInterceptor).FullName));
     }
 

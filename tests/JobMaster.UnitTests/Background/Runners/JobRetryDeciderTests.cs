@@ -26,7 +26,7 @@ public class JobRetryDeciderTests
 
         outcome.IsStopEarly.Should().BeFalse();
         outcome.Delay.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
-        outcome.Source.Should().Be(JobRetryDelaySource.RetryDelays);
+        outcome.Resolution.Should().Be(JobRetryResolution.RetryDelays);
     }
 
     [Fact]
@@ -47,7 +47,7 @@ public class JobRetryDeciderTests
         var outcome = await sut.DecideAsync(NewJob(0), new Exception());
 
         outcome.Delay.Should().Be(JobMasterLimits.MinRetryDelay);
-        outcome.Source.Should().Be(JobRetryDelaySource.InterceptorBelowMinimum);
+        outcome.Resolution.Should().Be(JobRetryResolution.InterceptorBelowMinimum);
     }
 
     [Fact]
@@ -60,8 +60,10 @@ public class JobRetryDeciderTests
         var retried = await sut.DecideAsync(NewJob(0), new InvalidOperationException());
 
         stopped.IsStopEarly.Should().BeTrue();
+        stopped.Resolution.Should().Be(JobRetryResolution.InterceptorStoppedEarly);
         stopped.Reason.Should().Be("invalid input");
         retried.IsStopEarly.Should().BeFalse();
+        retried.Resolution.Should().Be(JobRetryResolution.InterceptorUsedRetryDelays);
     }
 
     [Fact]
@@ -73,7 +75,7 @@ public class JobRetryDeciderTests
         var outcome = await sut.DecideAsync(NewJob(0), new Exception());
 
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(3));
-        outcome.Source.Should().Be(JobRetryDelaySource.InterceptorUsedRetryDelays);
+        outcome.Resolution.Should().Be(JobRetryResolution.InterceptorUsedRetryDelays);
     }
 
     [Fact]
@@ -87,7 +89,7 @@ public class JobRetryDeciderTests
 
         outcome.IsStopEarly.Should().BeFalse();
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(4));
-        outcome.Source.Should().Be(JobRetryDelaySource.InterceptorFailed);
+        outcome.Resolution.Should().Be(JobRetryResolution.InterceptorFailed);
     }
 
     [Fact]
@@ -120,7 +122,7 @@ public class JobRetryDeciderTests
         var second = await sut.DecideAsync(NewJob(0), new Exception());
 
         first.Delay.Should().Be(TimeSpan.FromMinutes(9));
-        first.Source.Should().Be(JobRetryDelaySource.Interceptor);
+        first.Resolution.Should().Be(JobRetryResolution.InterceptorCustomDelay);
         DependencyInterceptor.SeenDependencies.Should().HaveCount(2);
         DependencyInterceptor.SeenDependencies[0].Should().NotBeSameAs(DependencyInterceptor.SeenDependencies[1]); // a new scope each time
         second.Delay.Should().Be(TimeSpan.FromMinutes(9));
@@ -139,7 +141,7 @@ public class JobRetryDeciderTests
         var outcome = await sut.DecideAsync(NewJob(0), new Exception());
 
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(2));
-        outcome.Source.Should().Be(JobRetryDelaySource.InterceptorFailed);
+        outcome.Resolution.Should().Be(JobRetryResolution.InterceptorFailed);
         (await SlowInterceptor.TokenCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
     }
 

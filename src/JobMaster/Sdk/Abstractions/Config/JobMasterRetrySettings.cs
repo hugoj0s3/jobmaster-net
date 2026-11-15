@@ -6,7 +6,7 @@ namespace JobMaster.Sdk.Abstractions.Config;
 /// <summary>A cluster's retry configuration: its delays (or the built-in ones) and at most one interceptor.</summary>
 internal sealed class JobMasterRetrySettings
 {
-    public static readonly JobMasterRetrySettings BuiltIn = new(null, null, null);
+    public static readonly JobMasterRetrySettings BuiltIn = new(JobMasterDefaults.RetryDelays, interceptor: null, interceptorType: null);
 
     public JobMasterRetrySettings(
         IReadOnlyList<TimeSpan>? delays,
@@ -39,9 +39,9 @@ internal sealed class JobMasterRetrySettings
     // (the cluster-level stored settings only show the last worker that started).
 
     /// <summary>e.g. <c>Retrying in 00:02:00 (RetryDelays).</c></summary>
-    public string RetryingLog(TimeSpan delay, JobRetryDelaySource source)
+    public string RetryingLog(TimeSpan delay, JobRetryResolution resolution)
     {
-        return $"Retrying in {delay:c} ({DescribeSource(source)}).";
+        return $"Retrying in {delay:c} ({DescribeResolution(resolution)}).";
     }
 
     /// <summary>e.g. <c>Stopped early by retry interceptor MyApp.BillingRetryInterceptor: invalid input.</c></summary>
@@ -79,17 +79,17 @@ internal sealed class JobMasterRetrySettings
         return string.Join(", ", delays.Select(d => d.ToString("c")));
     }
 
-    private string DescribeSource(JobRetryDelaySource source)
+    private string DescribeResolution(JobRetryResolution resolution)
     {
-        switch (source)
+        switch (resolution)
         {
-            case JobRetryDelaySource.InterceptorUsedRetryDelays:
+            case JobRetryResolution.InterceptorUsedRetryDelays:
                 return $"RetryDelays, chosen by retry interceptor {InterceptorDescription}";
-            case JobRetryDelaySource.Interceptor:
+            case JobRetryResolution.InterceptorCustomDelay:
                 return $"retry interceptor {InterceptorDescription}";
-            case JobRetryDelaySource.InterceptorBelowMinimum:
+            case JobRetryResolution.InterceptorBelowMinimum:
                 return $"retry interceptor {InterceptorDescription}, raised to the {JobMasterLimits.MinRetryDelay:c} minimum";
-            case JobRetryDelaySource.InterceptorFailed:
+            case JobRetryResolution.InterceptorFailed:
                 return $"RetryDelays; retry interceptor {InterceptorDescription} failed";
             default:
                 return "RetryDelays";
