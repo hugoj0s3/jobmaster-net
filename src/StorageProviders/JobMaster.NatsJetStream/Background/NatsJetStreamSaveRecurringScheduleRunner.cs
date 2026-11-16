@@ -45,14 +45,10 @@ internal class NatsJetStreamSaveRecurringScheduleRunner : NatsJetStreamRunnerBas
 
     protected override async Task ProcessPayloadAsync(RecurringScheduleRawModel payload, MsgAckGuard ackGuard)
     {
-        try
+        // Not on master: nak, so the message comes back.
+        if (!await savePendingOperation.SaveAsync(payload))
         {
-            await savePendingOperation.SaveRecurringScheduleAsync(payload);
-        }
-        catch (Exception e)
-        {
-            this.logger.Error($"{GetRunnerDescription()} - Failed to save recurring schedule", JobMasterLogCategory.RecurringSchedule, payload.Id, e);
-            throw;
+            await ackGuard.TryNakFailAsync();
         }
     }
 

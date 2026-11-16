@@ -214,23 +214,13 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             job.MarkAsHeldOnMaster();
         }
 
-        var notInserted = new List<Guid>();
+        // Inserted now or already on master (e.g. the agent saved it first) is confirmed; anything else isn't.
+        var unConfirmed = new List<Guid>();
         var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
         foreach (var partition in jobs.Partition(maxBatchSize))
         {
-            var batch = partition.ToList();
-            var inserted = new HashSet<Guid>(await masterJobsService.BulkInsertIfNotExistsAsync(batch));
-            notInserted.AddRange(batch.Select(j => j.Id).Where(id => !inserted.Contains(id)));
-        }
-
-        // Not inserted means already on master (e.g. the agent saved it first) or a failed row the repository
-        // didn't throw for (RavenDB's per-row fallback logs and continues), so check.
-        var unConfirmed = new List<Guid>();
-        foreach (var partition in notInserted.Partition(maxBatchSize))
-        {
-            var ids = partition.ToList();
-            var existing = new HashSet<Guid>(await masterJobsService.QueryExistingIdsAsync(ids));
-            unConfirmed.AddRange(ids.Where(id => !existing.Contains(id)));
+            var result = await masterJobsService.BulkInsertIfNotExistsAsync(partition.ToList());
+            unConfirmed.AddRange(result[BulkInsertStatus.Unknow]);
         }
 
         if (unConfirmed.Count > 0)
@@ -253,22 +243,13 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             schedule.Active();
         }
 
-        var notInserted = new List<Guid>();
+        // Same rule as ConfirmJobsOnMasterAsync.
+        var unConfirmed = new List<Guid>();
         var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
         foreach (var partition in schedules.Partition(maxBatchSize))
         {
-            var batch = partition.ToList();
-            var inserted = new HashSet<Guid>(await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(batch));
-            notInserted.AddRange(batch.Select(s => s.Id).Where(id => !inserted.Contains(id)));
-        }
-
-        // Same check as ConfirmJobsOnMasterAsync: not inserted must mean already on master.
-        var unConfirmed = new List<Guid>();
-        foreach (var partition in notInserted.Partition(maxBatchSize))
-        {
-            var ids = partition.ToList();
-            var existing = new HashSet<Guid>(await masterRecurringSchedulesService.QueryExistingIdsAsync(ids));
-            unConfirmed.AddRange(ids.Where(id => !existing.Contains(id)));
+            var result = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(partition.ToList());
+            unConfirmed.AddRange(result[BulkInsertStatus.Unknow]);
         }
 
         if (unConfirmed.Count > 0)
@@ -283,8 +264,8 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
     {
         // Final status: the agent's later save sees a duplicate and drops its message, so it never runs.
         job.MarkAsCancelledBeforeSave();
-        var inserted = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
-        return inserted.Contains(job.Id);
+        var result = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+        return result[BulkInsertStatus.Inserted].Contains(job.Id);
     }
 
     public async Task<bool> InsertCancelledRecurringScheduleAsync(RecurringScheduleRawModel schedule)
@@ -294,8 +275,8 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             return false;
         }
 
-        var inserted = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
-        return inserted.Contains(schedule.Id);
+        var result = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+        return result[BulkInsertStatus.Inserted].Contains(schedule.Id);
     }
 
     public async Task<bool> CancelJobAsync(Guid jobId)

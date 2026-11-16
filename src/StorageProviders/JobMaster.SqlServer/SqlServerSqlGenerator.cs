@@ -57,6 +57,12 @@ internal class SqlServerSqlGenerator : SqlGenerator
         return $"SELECT 1 FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = '{fullTableName}'";
     }
 
+    public override string ColumnExistsSql(string tablePrefix, string table, string column)
+    {
+        var fullTableName = $"{tablePrefix}{table}";
+        return $"SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '{fullTableName}' AND COLUMN_NAME = '{column}'";
+    }
+
     public override string InClauseFor(string columnName, string parameterName)
     {
         // Dapper expands list parameters for SQL Server in the form: "... WHERE col IN @Ids"

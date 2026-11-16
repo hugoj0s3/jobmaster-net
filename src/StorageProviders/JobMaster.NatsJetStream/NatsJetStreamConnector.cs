@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using NATS.Client.Core;
 using NATS.Client.JetStream;
 
@@ -41,8 +44,8 @@ internal sealed class NatsJetStreamConnector
     public static (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnection(string agentConnectionId, JobMasterAgentProviderConfig config)
         => Instance.GetOrCreateConnectionInternal(agentConnectionId, config);
 
-    public static Task EnsureStreamAsync(string agentConnectionId, JobMasterAgentProviderConfig config)
-        => Instance.EnsureStreamInternalAsync(agentConnectionId, config);
+    public static Task EnsureStreamAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger logger)
+        => Instance.EnsureStreamInternalAsync(agentConnectionId, config, logger);
     
     public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(string agentConnectionId, JobMasterAgentProviderConfig config, string fullBucketAddressId)
         => Instance.GetOrCreateConsumerInternalAsync(agentConnectionId, config, fullBucketAddressId);
@@ -113,11 +116,18 @@ internal sealed class NatsJetStreamConnector
         }
     }
 
-    private async Task EnsureStreamInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config)
+    // Creates the stream, or brings an existing one to the configured MaxAge / replicas (last process to start wins).
+    // logger is null only from the consumer path, which runs after its callers ensured the stream.
+    private async Task EnsureStreamInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger? logger)
     {
         GetOrCreateConnectionInternal(agentConnectionId, config);
         var e = entries[GetEntryKey(agentConnectionId, config)];
         if (e.StreamEnsured) return;
+
+        var maxAge = config.AdditionalConnConfig.TryGetValue<TimeSpan?>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.StreamMaxAgeKey)
+                     ?? NatsJetStreamConstants.MaxAge;
+        var numReplicas = config.AdditionalConnConfig.TryGetValue<int?>(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.StreamNumReplicasKey)
+                          ?? NatsJetStreamConstants.DefaultNumReplicas;
 
         // Serialize stream ensure globally and per-entry; try once each and proceed regardless
         var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15));
@@ -127,18 +137,34 @@ internal sealed class NatsJetStreamConnector
 
             if (e.StreamEnsured) return;
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            INatsJSStream? existing = null;
             try
             {
-                await e.Js.GetStreamAsync(e.StreamName, cancellationToken: cts.Token);
+                existing = await e.Js.GetStreamAsync(e.StreamName, cancellationToken: cts.Token);
             }
             catch (NatsJSApiException)
             {
                 var cfg = new StreamConfig(e.StreamName, new[] { $"{NatsJetStreamConstants.Prefix}{agentConnectionId}.>" })
                 {
-                    DuplicateWindow = TimeSpan.FromMinutes(2),
+                    DuplicateWindow = NatsJetStreamConstants.DuplicateWindow,
+                    MaxAge = maxAge,
+                    NumReplicas = numReplicas,
                 };
                 await e.Js.CreateStreamAsync(cfg, cts.Token);
             }
+
+            if (existing is not null)
+            {
+                var current = existing.Info.Config;
+                if (current.MaxAge != maxAge || current.NumReplicas != numReplicas)
+                {
+                    await e.Js.UpdateStreamAsync(current with { MaxAge = maxAge, NumReplicas = numReplicas }, cts.Token);
+                    logger?.Info(
+                        $"NATS stream {e.StreamName} updated: MaxAge {current.MaxAge} -> {maxAge}, replicas {current.NumReplicas} -> {numReplicas}.",
+                        JobMasterLogCategory.Cluster);
+                }
+            }
+
             e.StreamEnsured = true;
         }
         finally
@@ -158,7 +184,7 @@ internal sealed class NatsJetStreamConnector
     {
         // Ensure connection and stream are available
         _ = GetOrCreateConnectionInternal(agentConnectionId, config);
-        await EnsureStreamInternalAsync(agentConnectionId, config);
+        await EnsureStreamInternalAsync(agentConnectionId, config, logger: null);
         var entry = entries[GetEntryKey(agentConnectionId, config)];
 
         // 1. Check if the consumer is already cached to avoid redundant network calls

@@ -22,9 +22,17 @@ internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareCompon
 
     Task<IList<JobRawModel>> PullForProcessingAsync(string bucketId, int numberOfJobs, DateTime? scheduleTo);
     
-    Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs);
+    /// <summary>
+    /// A message leased <see cref="JobMasterConstants.MaxSavePendingLeaseCount"/> times is not returned: it is moved
+    /// to the bucket's terminated address and logged. Same for <see cref="LeaseSavePendingRecurAsync"/>.
+    /// </summary>
+    Task<IList<(JobRawModel Job, string AckKey)>> LeaseSavePendingJobsAsync(string bucketId, int numberOfJobs, TimeSpan lease);
+
+    Task AckSavePendingJobsAsync(string bucketId, IList<string> ackKeys);
     
-    Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(string bucketId, int numberOfJobs);
+    Task<IList<(RecurringScheduleRawModel Schedule, string AckKey)>> LeaseSavePendingRecurAsync(string bucketId, int numberOfSchedules, TimeSpan lease);
+
+    Task AckSavePendingRecurAsync(string bucketId, IList<string> ackKeys);
     Task<bool> HasJobsAsync(string bucketId);
     
     Task CreateBucketAsync(string bucketId);

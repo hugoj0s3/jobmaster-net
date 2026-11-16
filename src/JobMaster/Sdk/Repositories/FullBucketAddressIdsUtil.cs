@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Abstractions;
+
 namespace JobMaster.Sdk.Repositories;
 
 internal static class FullBucketAddressIdsUtil
@@ -30,5 +32,18 @@ internal static class FullBucketAddressIdsUtil
         }
 
         return $"{bucketId}:RecurSchedule-SavePending";
+    }
+
+    /// <summary>
+    /// Where a message that can never be saved is kept (forever). "::" is not allowed in ids, so no bucket can take it.
+    /// </summary>
+    public static string GetTerminatedBucketAddress(string fullBucketAddressId)
+    {
+        if (string.IsNullOrEmpty(fullBucketAddressId))
+        {
+            throw new ArgumentNullException(nameof(fullBucketAddressId));
+        }
+
+        return $"{JobMasterConstants.ReservedAgentConnectionNamePrefix}Terminated::{fullBucketAddressId}";
     }
 }

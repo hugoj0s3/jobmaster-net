@@ -58,6 +58,17 @@ internal class NatsJetStreamConstants
     public static readonly TimeSpan MaxThreshold = TimeSpan.FromMinutes(5);
     public static uint MaxDeliver => 10000;
 
+    // A publish whose Nats-Msg-Id was seen within this window is dropped. Each publish gets a new id, so it only
+    // catches the same publish retried after a timeout. Same as the NATS default.
+    public static readonly TimeSpan DuplicateWindow = TimeSpan.FromMinutes(2);
+
+    // How long the stream keeps a message, acked or not (the stream's default is forever). Must outlast any outage:
+    // a message not consumed by then is deleted.
+    public static readonly TimeSpan MaxAge = TimeSpan.FromDays(30);
+
+    // Copies of the stream across NATS cluster servers (NATS default). NATS itself rejects invalid values.
+    public const int DefaultNumReplicas = 1;
+
     // Backoff delays when onboarding is busy. Length also drives the max retry count.
     public static readonly TimeSpan[] BusyRetryDelays =
     [

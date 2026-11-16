@@ -1,5 +1,6 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 
 namespace JobMaster.Sdk.Abstractions.Services.Master;
@@ -10,11 +11,11 @@ internal interface IMasterJobsService : IJobMasterClusterAwareService
     void Add(JobRawModel jobRaw);
 
     /// <summary>
-    /// Inserts each job that isn't on master yet; existing rows are left untouched. Unlike
-    /// <see cref="IMasterJobIntakeService"/>, no status rule: used by the scheduler's ConfirmOnMaster.
-    /// Returns the ids actually inserted.
+    /// Inserts each job that isn't on master yet (existing rows are left untouched) and returns every job's status:
+    /// inserted now, already on master, or not confirmed (safe to save again). All three keys are always present.
+    /// Unlike <see cref="IMasterJobIntakeService"/>, no status rule.
     /// </summary>
-    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
+    Task<IDictionary<BulkInsertStatus, IList<Guid>>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs);
 
     /// <summary>Returns which of <paramref name="jobIds"/> exist on master.</summary>
     Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds);

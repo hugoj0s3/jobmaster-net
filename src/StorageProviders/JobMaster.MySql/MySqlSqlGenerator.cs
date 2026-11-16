@@ -57,6 +57,12 @@ internal class MySqlSqlGenerator : SqlGenerator
         return $"SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND lower(table_name) = lower('{fullTableName}') LIMIT 1;";
     }
 
+    public override string ColumnExistsSql(string tablePrefix, string table, string column)
+    {
+        var fullTableName = $"{tablePrefix}{table}";
+        return $"SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND lower(table_name) = lower('{fullTableName}') AND lower(column_name) = lower('{column}') LIMIT 1;";
+    }
+
     public override string InClauseFor(string columnName, string parameterName)
     {
         // Dapper expands list parameters for MySQL in the form: "... WHERE col IN @Ids"

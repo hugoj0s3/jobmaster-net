@@ -1,6 +1,7 @@
 ﻿using System.Text;
 using JobMaster.Abstractions.Models;
 using JobMaster.NatsJetStream.Agents;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
 using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
@@ -62,13 +63,14 @@ internal sealed class NatsJetStreamSavePendingJobsRunner : NatsJetStreamRunnerBa
         var transientThreshold = configuration?.TransientThreshold ?? TimeSpan.FromMinutes(5);
         
         DateTime cutOffDate = DateTime.UtcNow.Add(transientThreshold);
-        
-        var result = await savePendingOperation.AddSavePendingJobAsync(job, cutOffDate);
-        
-        if (result.ResultCode == AddSavePendingResultCode.HeldOnMasterPublishedUnknown || 
-            result.ResultCode == AddSavePendingResultCode.PublishFailed)
+
+        var currentRunnerBucket = masterBucketsService.Get(BucketId!, JobMasterConstants.BucketFastAllowDiscrepancy);
+        var targetBucket = await savePendingOperation.AssignAsync(currentRunnerBucket, job, cutOffDate);
+
+        // Not on master: nak, so the message comes back.
+        if (!await savePendingOperation.SaveAndDispatchAsync(job, targetBucket))
         {
-            logger.Warn($"Failed {result.ResultCode}", JobMasterLogCategory.Job, job.Id, exception: result.Exception);
+            await ackGuard.TryNakFailAsync();
         }
     }
     

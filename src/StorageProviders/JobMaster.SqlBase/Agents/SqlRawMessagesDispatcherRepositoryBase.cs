@@ -242,6 +242,47 @@ WHERE {colBucket} = @Bucket";
         throw new InvalidOperationException("Dequeue retry logic failed unexpectedly");
     }
     
+    public virtual Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease)
+    {
+        throw new NotImplementedException();
+    }
+
+    public virtual async Task AckAsync(string fullBucketAddressId, IList<string> messageIds)
+    {
+        if (messageIds.Count == 0) return;
+
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var deleteSql = $"DELETE FROM {table} WHERE bucket_address_id = @Bucket AND {sql.InClauseFor(colMsgId, "@Ids")}";
+
+        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var partition in messageIds.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId)))
+        {
+            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = partition.ToArray() });
+        }
+    }
+
+    public virtual async Task UpdateBucketAsync(string fullBucketAddressId, IList<string> messageIds, string newFullBucketAddressId)
+    {
+        if (messageIds.Count == 0) return;
+
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var colLeasedUntil = AgentTableCreatorScripts.LeasedUntilColumn;
+        var updateSql = $"UPDATE {table} SET bucket_address_id = @NewBucket, {colLeasedUntil} = NULL WHERE bucket_address_id = @Bucket AND {sql.InClauseFor(colMsgId, "@Ids")}";
+
+        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var partition in messageIds.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId)))
+        {
+            await cnn.ExecuteAsync(updateSql, new { Bucket = fullBucketAddressId, NewBucket = newFullBucketAddressId, Ids = partition.ToArray() });
+        }
+    }
+
+    public virtual Task CreateBucketIfNotExistsAsync(string fullBucketAddressId)
+    {
+        throw new NotImplementedException();
+    }
+
     protected virtual async Task<IList<JobMasterRawMessage>> AttemptDequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {
         using var cnn = await this.connManager.OpenAsync(this.connString, additionalConnConfig);

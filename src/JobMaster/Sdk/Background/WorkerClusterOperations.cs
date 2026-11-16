@@ -60,6 +60,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     {
         var toBulkDispatch = new List<JobRawModel>();
 
+        // The bucket's engine can be on another worker of this process (bucket ids are unique runtime-wide, they
+        // include the cluster id): short-circuit into it too, saving the publish round-trip.
+        var engine = backgroundAgentWorker.GetEngine(bucket.Id)
+            ?? backgroundAgentWorker.Runtime?.GetAllWorkers()
+                .Select(w => w.GetEngine(bucket.Id))
+                .FirstOrDefault(e => e is not null);
+
         foreach (var jobRaw in jobs)
         {
             if (jobRaw.Status != JobMasterJobStatus.InBucket)
@@ -74,7 +81,6 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
             try
             {
-                var engine = backgroundAgentWorker.GetEngine(bucket.Id);
                 if (engine != null &&
                     jobRaw.IsWithinOnboardingWindow() &&
                     engine.HasOnBoardingAvailability())

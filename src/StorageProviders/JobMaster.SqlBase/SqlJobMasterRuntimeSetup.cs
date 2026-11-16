@@ -212,6 +212,23 @@ public abstract class SqlJobMasterRuntimeSetup : IJobMasterRuntimeSetup
             var messageDispatcherTableScript = AgentTableCreatorScripts.CreateMessageDispatcherTableScript(sql, tablePrefix);
             await conn.ExecuteAsync(messageDispatcherTableScript, transaction: transaction);
         }
+        else
+        {
+            // Tables created before 0.0.12 have no lease columns.
+            var leasedUntilExistsSql = sql.ColumnExistsSql(tablePrefix, "message_dispatcher", AgentTableCreatorScripts.LeasedUntilColumn);
+            var leasedUntilExists = await conn.QueryFirstOrDefaultAsync<bool>(leasedUntilExistsSql, transaction: transaction);
+            if (!leasedUntilExists)
+            {
+                await conn.ExecuteAsync(AgentTableCreatorScripts.AddLeasedUntilColumnScript(sql, tablePrefix), transaction: transaction);
+            }
+
+            var leaseCountExistsSql = sql.ColumnExistsSql(tablePrefix, "message_dispatcher", AgentTableCreatorScripts.LeaseCountColumn);
+            var leaseCountExists = await conn.QueryFirstOrDefaultAsync<bool>(leaseCountExistsSql, transaction: transaction);
+            if (!leaseCountExists)
+            {
+                await conn.ExecuteAsync(AgentTableCreatorScripts.AddLeaseCountColumnScript(sql, tablePrefix), transaction: transaction);
+            }
+        }
 
         var fingerprintTableExistsSql = sql.TableExistsSql(tablePrefix, "agent_conn_fingerprint");
         var fingerprintTableExists = await conn.QueryFirstOrDefaultAsync<bool>(fingerprintTableExistsSql, transaction: transaction);

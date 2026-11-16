@@ -16,11 +16,17 @@ public static class ConfigExtensions
     /// <param name="connectionString">NATS connection string (e.g. <c>nats://localhost:4222</c>).</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
+    /// <param name="streamMaxAge">How long NATS keeps a message, consumed or not. A message still waiting after that
+    /// (e.g. every worker of this connection down) is deleted, so keep it longer than any outage. Default 30 days.</param>
+    /// <param name="streamNumReplicas">How many NATS servers keep a copy of this connection's messages, at most your
+    /// NATS cluster size (NATS rejects more). With 1, losing that server loses its messages. Default 1.</param>
     public static T UseNatsJetStream<T>(
         this T agentConfigSelector,
         string connectionString,
         NatsAuthOpts? authOpts = null,
-        NatsTlsOpts? tlsOpts = null)
+        NatsTlsOpts? tlsOpts = null,
+        TimeSpan? streamMaxAge = null,
+        int? streamNumReplicas = null)
         where T : IAgentConnectionProviderSelector
     {
         agentConfigSelector.AgentConnString(connectionString);
@@ -37,6 +43,16 @@ public static class ConfigExtensions
             advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.NatsTlsOptsKey, tlsOpts);
         }
 
+        if (streamMaxAge is not null)
+        {
+            advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.StreamMaxAgeKey, streamMaxAge.Value);
+        }
+
+        if (streamNumReplicas is not null)
+        {
+            advancedSelector.AppendAdditionalConnConfigValue(NatsJetStreamConfigKey.NamespaceUniqueKey, NatsJetStreamConfigKey.StreamNumReplicasKey, streamNumReplicas.Value);
+        }
+
         return agentConfigSelector;
     }
 
@@ -49,18 +65,24 @@ public static class ConfigExtensions
     /// <param name="password">NATS password.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="connOpts">Optional NATS TLS options.</param>
+    /// <param name="streamMaxAge">How long NATS keeps a message, consumed or not. A message still waiting after that
+    /// (e.g. every worker of this connection down) is deleted, so keep it longer than any outage. Default 30 days.</param>
+    /// <param name="streamNumReplicas">How many NATS servers keep a copy of this connection's messages, at most your
+    /// NATS cluster size (NATS rejects more). With 1, losing that server loses its messages. Default 1.</param>
     public static T UseNatsJetStream<T>(
         this T agentConfigSelector,
         string url,
         string userName,
         string password,
         NatsAuthOpts? authOpts = null,
-        NatsTlsOpts? connOpts = null)
+        NatsTlsOpts? connOpts = null,
+        TimeSpan? streamMaxAge = null,
+        int? streamNumReplicas = null)
         where T : IAgentConnectionProviderSelector
     {
         var connectionString = BuildConnectionString(url, userName, password);
 
-        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, connOpts);
+        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, connOpts, streamMaxAge, streamNumReplicas);
     }
 
     /// <summary>
@@ -71,6 +93,10 @@ public static class ConfigExtensions
     /// <param name="connectionStrings">Array of <c>(url, userName, password)</c> tuples for each NATS server.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
+    /// <param name="streamMaxAge">How long NATS keeps a message, consumed or not. A message still waiting after that
+    /// (e.g. every worker of this connection down) is deleted, so keep it longer than any outage. Default 30 days.</param>
+    /// <param name="streamNumReplicas">How many NATS servers keep a copy of this connection's messages, at most your
+    /// NATS cluster size (NATS rejects more). With 1, losing that server loses its messages. Default 1.</param>
     public static T UseNatsJetStream<T>(
         this T agentConfigSelector,
         (
@@ -79,10 +105,12 @@ public static class ConfigExtensions
             string password
         )[] connectionStrings,
         NatsAuthOpts? authOpts = null,
-        NatsTlsOpts? tlsOpts = null)
+        NatsTlsOpts? tlsOpts = null,
+        TimeSpan? streamMaxAge = null,
+        int? streamNumReplicas = null)
         where T : IAgentConnectionProviderSelector
     {
-        return agentConfigSelector.UseNatsJetStream(connectionStrings.Select(x => BuildConnectionString(x.url, x.userName, x.password)).ToArray(), authOpts, tlsOpts);
+        return agentConfigSelector.UseNatsJetStream(connectionStrings.Select(x => BuildConnectionString(x.url, x.userName, x.password)).ToArray(), authOpts, tlsOpts, streamMaxAge, streamNumReplicas);
     }
 
     /// <summary>
@@ -93,15 +121,21 @@ public static class ConfigExtensions
     /// <param name="connectionStrings">Array of NATS connection strings.</param>
     /// <param name="authOpts">Optional NATS authentication options.</param>
     /// <param name="tlsOpts">Optional NATS TLS options.</param>
+    /// <param name="streamMaxAge">How long NATS keeps a message, consumed or not. A message still waiting after that
+    /// (e.g. every worker of this connection down) is deleted, so keep it longer than any outage. Default 30 days.</param>
+    /// <param name="streamNumReplicas">How many NATS servers keep a copy of this connection's messages, at most your
+    /// NATS cluster size (NATS rejects more). With 1, losing that server loses its messages. Default 1.</param>
     public static T UseNatsJetStream<T>(
         this T agentConfigSelector,
         string[] connectionStrings,
         NatsAuthOpts? authOpts = null,
-        NatsTlsOpts? tlsOpts = null)
+        NatsTlsOpts? tlsOpts = null,
+        TimeSpan? streamMaxAge = null,
+        int? streamNumReplicas = null)
         where T : IAgentConnectionProviderSelector
     {
         var connectionString = string.Join(",", connectionStrings);
-        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, tlsOpts);
+        return agentConfigSelector.UseNatsJetStream(connectionString, authOpts, tlsOpts, streamMaxAge, streamNumReplicas);
     }
 
     // Normalize base URL

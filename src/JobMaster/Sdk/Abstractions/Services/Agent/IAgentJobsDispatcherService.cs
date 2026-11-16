@@ -30,9 +30,13 @@ internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 
     Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null);
 
-    Task<IList<JobRawModel>> PullSavePendingJobsAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null);
+    Task<IList<(JobRawModel Job, string AckKey)>> LeaseSavePendingJobsAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, TimeSpan lease, OperationThrottler? throttler = null);
 
-    Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null);
+    Task AckSavePendingJobsAsync(AgentConnectionId agentConnectionId, string bucketId, IList<string> ackKeys, OperationThrottler? throttler = null);
+
+    Task<IList<(RecurringScheduleRawModel Schedule, string AckKey)>> LeaseSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfSchedules, TimeSpan lease, OperationThrottler? throttler = null);
+
+    Task AckSavePendingRecurAsync(AgentConnectionId agentConnectionId, string bucketId, IList<string> ackKeys, OperationThrottler? throttler = null);
 
     Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId);
 

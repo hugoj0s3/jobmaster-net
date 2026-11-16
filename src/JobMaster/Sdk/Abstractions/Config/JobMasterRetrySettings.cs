@@ -1,5 +1,6 @@
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Config;
 
@@ -31,7 +32,7 @@ internal sealed class JobMasterRetrySettings
     /// <summary>The delay before retry <paramref name="numberOfFailures"/> (1-based); the last delay repeats.</summary>
     public TimeSpan DelayFor(int numberOfFailures)
     {
-        var index = Math.Min(Math.Max(numberOfFailures, 1), Delays.Count) - 1;
+        var index = JobMasterMathUtil.Clamp(numberOfFailures, 1, Delays.Count) - 1;
         return Delays[index];
     }
 

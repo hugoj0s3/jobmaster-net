@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
@@ -15,8 +16,6 @@ internal class PollingDrainSavePendingRecurringScheduleRunner : BucketAwareRunne
     private readonly IAgentJobsDispatcherService agentJobsDispatcherService;
     private readonly IMasterBucketsService masterBucketsService;
     private readonly RecurringScheduleSavePendingOperation savePendingOperation;
-
-    private int failedSavedCountConsecutive = 0;
 
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
 
@@ -45,32 +44,18 @@ internal class PollingDrainSavePendingRecurringScheduleRunner : BucketAwareRunne
             return OnTickResult.Skipped(this);
         }
 
-        var recurringSchedules = await agentJobsDispatcherService.PullSavePendingRecurAsync(
+        var leasedSchedules = await agentJobsDispatcherService.LeaseSavePendingRecurAsync(
             bucket.AgentConnectionId,
             BucketId!,
-            BackgroundAgentWorker.BucketBufferSize);
+            BackgroundAgentWorker.BucketBufferSize,
+            JobSavePendingOperation.LeaseFor(BackgroundAgentWorker.BucketBufferSize));
 
-        if (recurringSchedules.Count <= 0)
+        if (leasedSchedules.Count <= 0)
         {
             return OnTickResult.Skipped(TimeSpan.FromMinutes(1));
         }
 
-        bool hasFailed = false;
-        foreach (var recurringScheduleRawModel in recurringSchedules)
-        {
-            var result = await savePendingOperation.SaveDrainWithSafeGuardAsync(recurringScheduleRawModel);
-            if (result == SaveDrainResultCode.Failed)
-                hasFailed = true;
-        }
-
-        if (hasFailed)
-        {
-            failedSavedCountConsecutive++;
-            var secondsToWait = Math.Min(60, 10 + failedSavedCountConsecutive * 5);
-            return OnTickResult.Skipped(TimeSpan.FromSeconds(secondsToWait));
-        }
-
-        failedSavedCountConsecutive = 0;
-        return OnTickResult.Success(this);
+        var saved = await savePendingOperation.SaveAndAckAsync(bucket, leasedSchedules);
+        return saved ? OnTickResult.Success(this) : OnTickResult.Failed(this);
     }
 }

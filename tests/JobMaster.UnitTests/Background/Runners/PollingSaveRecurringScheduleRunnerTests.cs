@@ -94,18 +94,20 @@ public class PollingSaveRecurringScheduleRunnerTests
     // ── OnTickAsync — processing paths ────────────────────────────────────────
 
     [Fact]
-    public async Task OnTickAsync_WhenPendingSchedulesExist_ShouldProcessThemAndReturnSuccess()
+    public async Task OnTickAsync_WhenPendingSchedulesExist_SavesThemActiveAndAcks()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId, TestBucketId));
+        var schedule = PendingSchedule(f.ClusterId, TestBucketId);
+        f.JobsDispatcher.PendingRecurQueue.Add(schedule);
 
         var runner = CreateRunner(f);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
-        f.JobsDispatcher.PendingRecurQueue.Should().BeEmpty(); // pulled from queue
-        f.JobsDispatcher.RequeuedRecurSchedules.Should().BeEmpty(); // no failure re-queue
+        f.RecurringSchedulesService.Schedules.Should().ContainSingle(s => s.Id == schedule.Id && s.Status == RecurringScheduleStatus.Active);
+        f.JobsDispatcher.AckedRecurKeys.Should().HaveCount(1);
+        f.JobsDispatcher.LeasedRecurSchedules.Should().BeEmpty();
     }
 
     [Fact]
@@ -122,48 +124,35 @@ public class PollingSaveRecurringScheduleRunnerTests
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenScheduleProcessingFails_ShouldRequeueScheduleAndReturnSkippedWithDelay()
+    public async Task OnTickAsync_WhenScheduleIsAlreadyOnMaster_KeepsMastersCopyAndAcks()
     {
+        // Master's copy wins: a re-leased message must not bring back a schedule cancelled on master.
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId, TestBucketId));
-
-        // Make ExecWithRetryAsync throw so SaveRecurringScheduleAsync fails.
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Action<IWorkerClusterOperations>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .Throws(new InvalidOperationException("simulated save failure"));
+        var schedule = PendingSchedule(f.ClusterId, TestBucketId);
+        f.RecurringSchedulesService.Schedules.Add(new RecurringScheduleRawModel(f.ClusterId) { Id = schedule.Id, Status = RecurringScheduleStatus.Canceled });
+        f.JobsDispatcher.PendingRecurQueue.Add(schedule);
 
         var runner = CreateRunner(f);
-        var result = await runner.OnTickAsync(CancellationToken.None);
+        await runner.OnTickAsync(CancellationToken.None);
 
-        result.Status.Should().Be(TicketResultStatus.Skipped);
-        result.Delay.Should().BeGreaterThan(TimeSpan.Zero);
-        f.JobsDispatcher.RequeuedRecurSchedules.Should().HaveCount(1);
+        f.RecurringSchedulesService.Schedules.Should().ContainSingle(s => s.Id == schedule.Id && s.Status == RecurringScheduleStatus.Canceled);
+        f.JobsDispatcher.AckedRecurKeys.Should().HaveCount(1);
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenConsecutiveFailures_ShouldIncreaseDelay()
+    public async Task OnTickAsync_WhenScheduleIsNotConfirmedOnMaster_LeavesItsMessageLeased()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Action<IWorkerClusterOperations>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .Throws(new InvalidOperationException("simulated failure"));
+        var schedule = PendingSchedule(f.ClusterId, TestBucketId);
+        f.RecurringSchedulesService.UnknownOnInsert.Add(schedule.Id);
+        f.JobsDispatcher.PendingRecurQueue.Add(schedule);
 
         var runner = CreateRunner(f);
+        await runner.OnTickAsync(CancellationToken.None);
 
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId, TestBucketId));
-        var result1 = await runner.OnTickAsync(CancellationToken.None);
-
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId, TestBucketId));
-        var result2 = await runner.OnTickAsync(CancellationToken.None);
-
-        result2.Delay.Should().BeGreaterThanOrEqualTo(result1.Delay);
+        f.JobsDispatcher.AckedRecurKeys.Should().BeEmpty();
+        f.JobsDispatcher.LeasedRecurSchedules.Values.Should().ContainSingle(s => s.Id == schedule.Id);
     }
 }

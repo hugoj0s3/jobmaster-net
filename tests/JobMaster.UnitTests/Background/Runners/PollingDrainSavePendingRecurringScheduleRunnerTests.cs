@@ -99,50 +99,23 @@ public class PollingDrainSavePendingRecurringScheduleRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.JobsDispatcher.PendingRecurQueue.Should().BeEmpty();
+        f.RecurringSchedulesService.Schedules.Should().ContainSingle(s => s.Status == RecurringScheduleStatus.Active);
+        f.JobsDispatcher.AckedRecurKeys.Should().HaveCount(1);
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenScheduleProcessingFails_ShouldReturnSkippedWithDelay()
+    public async Task OnTickAsync_WhenScheduleIsNotConfirmedOnMaster_LeavesItsMessageLeased()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.DrainingBucket(f.ClusterId, TestBucketId));
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId));
-
-        // Make ExecWithRetryAsync (action variant) throw so SaveDrainWithSafeGuardAsync fails.
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Action<IWorkerClusterOperations>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .Throws(new InvalidOperationException("simulated save failure"));
+        var schedule = PendingSchedule(f.ClusterId);
+        f.RecurringSchedulesService.UnknownOnInsert.Add(schedule.Id);
+        f.JobsDispatcher.PendingRecurQueue.Add(schedule);
 
         var runner = CreateRunner(f);
-        var result = await runner.OnTickAsync(CancellationToken.None);
+        await runner.OnTickAsync(CancellationToken.None);
 
-        result.Status.Should().Be(TicketResultStatus.Skipped);
-        result.Delay.Should().BeGreaterThan(TimeSpan.Zero);
-    }
-
-    [Fact]
-    public async Task OnTickAsync_WhenConsecutiveFailures_ShouldIncreaseDelay()
-    {
-        var f = RunnerFixture.Create();
-        f.Buckets.Buckets.Add(RunnerFixture.DrainingBucket(f.ClusterId, TestBucketId));
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Action<IWorkerClusterOperations>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .Throws(new InvalidOperationException("simulated failure"));
-
-        var runner = CreateRunner(f);
-
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId));
-        var result1 = await runner.OnTickAsync(CancellationToken.None);
-
-        f.JobsDispatcher.PendingRecurQueue.Add(PendingSchedule(f.ClusterId));
-        var result2 = await runner.OnTickAsync(CancellationToken.None);
-
-        result2.Delay.Should().BeGreaterThanOrEqualTo(result1.Delay);
+        f.JobsDispatcher.AckedRecurKeys.Should().BeEmpty();
+        f.JobsDispatcher.LeasedRecurSchedules.Values.Should().ContainSingle(s => s.Id == schedule.Id);
     }
 }

@@ -38,8 +38,14 @@ internal sealed class NatsJetStreamDrainSavePendingRecurringScheduleRunner
     protected override RecurringScheduleRawModel Deserialize(string json)
         => InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(json);
 
-    protected override Task ProcessPayloadAsync(RecurringScheduleRawModel recurring, MsgAckGuard ackGuard)
-        => savePendingOperation.SaveRecurringScheduleAsync(recurring);
+    protected override async Task ProcessPayloadAsync(RecurringScheduleRawModel recurring, MsgAckGuard ackGuard)
+    {
+        // Not on master: nak, so the message comes back.
+        if (!await savePendingOperation.SaveAsync(recurring))
+        {
+            await ackGuard.TryNakFailAsync();
+        }
+    }
 
     protected override async Task<bool> ShouldAckAfterLockAsync(RecurringScheduleRawModel payload, CancellationToken ct)
     {

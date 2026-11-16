@@ -424,19 +424,18 @@ public class JobMasterSchedulerClusterAwareTests
     }
 
     [Fact]
-    public async Task ConfirmJobsOnMasterAsync_MarksHeldOnMaster_AndSkipsExistenceCheckWhenAllInserted()
+    public async Task ConfirmJobsOnMasterAsync_MarksHeldOnMaster_AndSucceedsWhenAllInserted()
     {
         var clusterId = NewClusterId();
         var mocks = new Mocks(clusterId, ClusterMode.Active);
         var jobList = new List<JobRawModel> { NewJob(clusterId), NewJob(clusterId) };
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
-            .ReturnsAsync((IList<JobRawModel> batch) => batch.Select(j => j.Id).ToList());
+            .ReturnsAsync((IList<JobRawModel> batch) => Statuses(inserted: batch.Select(j => j.Id)));
 
         await mocks.CreateSut().ConfirmJobsOnMasterAsync(jobList);
 
         jobList.Should().OnlyContain(j => j.Status == JobMasterJobStatus.OnMaster);
-        mocks.Jobs.Verify(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()), Times.Never);
     }
 
     [Fact]
@@ -448,15 +447,11 @@ public class JobMasterSchedulerClusterAwareTests
         var alreadyThere = NewJob(clusterId);
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
-            .ReturnsAsync(new List<Guid> { inserted.Id });
-        mocks.Jobs
-            .Setup(x => x.QueryExistingIdsAsync(It.Is<IList<Guid>>(ids => ids.SequenceEqual(new[] { alreadyThere.Id }))))
-            .ReturnsAsync(new List<Guid> { alreadyThere.Id })
-            .Verifiable();
+            .ReturnsAsync(Statuses(inserted: new[] { inserted.Id }, alreadyInserted: new[] { alreadyThere.Id }));
 
-        await mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { inserted, alreadyThere });
+        var act = () => mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { inserted, alreadyThere });
 
-        mocks.Jobs.Verify();
+        await act.Should().NotThrowAsync();
     }
 
     [Fact]
@@ -467,10 +462,7 @@ public class JobMasterSchedulerClusterAwareTests
         var missing = NewJob(clusterId);
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
-            .ReturnsAsync(new List<Guid>());
-        mocks.Jobs
-            .Setup(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()))
-            .ReturnsAsync(new List<Guid>());
+            .ReturnsAsync(Statuses(unknown: new[] { missing.Id }));
 
         var act = () => mocks.CreateSut().ConfirmJobsOnMasterAsync(new List<JobRawModel> { missing });
 
@@ -489,7 +481,7 @@ public class JobMasterSchedulerClusterAwareTests
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
             .Callback<IList<JobRawModel>>(batches.Add)
-            .ReturnsAsync((IList<JobRawModel> batch) => batch.Select(j => j.Id).ToList());
+            .ReturnsAsync((IList<JobRawModel> batch) => Statuses(inserted: batch.Select(j => j.Id)));
 
         await mocks.CreateSut().ConfirmJobsOnMasterAsync(jobList);
 
@@ -517,12 +509,11 @@ public class JobMasterSchedulerClusterAwareTests
         var schedules = new List<RecurringScheduleRawModel> { NewRecurring(clusterId), NewRecurring(clusterId) };
         mocks.Recurs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
-            .ReturnsAsync((IList<RecurringScheduleRawModel> batch) => batch.Select(s => s.Id).ToList());
+            .ReturnsAsync((IList<RecurringScheduleRawModel> batch) => Statuses(inserted: batch.Select(s => s.Id)));
 
         await mocks.CreateSut().ConfirmRecurringSchedulesOnMasterAsync(schedules);
 
         schedules.Should().OnlyContain(s => s.Status == RecurringScheduleStatus.Active);
-        mocks.Recurs.Verify(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()), Times.Never);
     }
 
     [Fact]
@@ -534,10 +525,7 @@ public class JobMasterSchedulerClusterAwareTests
         var missing = NewRecurring(clusterId);
         mocks.Recurs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
-            .ReturnsAsync(new List<Guid>());
-        mocks.Recurs
-            .Setup(x => x.QueryExistingIdsAsync(It.IsAny<IList<Guid>>()))
-            .ReturnsAsync(new List<Guid> { alreadyThere.Id });
+            .ReturnsAsync(Statuses(alreadyInserted: new[] { alreadyThere.Id }, unknown: new[] { missing.Id }));
 
         var act = () => mocks.CreateSut().ConfirmRecurringSchedulesOnMasterAsync(
             new List<RecurringScheduleRawModel> { alreadyThere, missing });
@@ -589,7 +577,7 @@ public class JobMasterSchedulerClusterAwareTests
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
             .Callback<IList<JobRawModel>>(batch => sent = batch)
-            .ReturnsAsync(new List<Guid> { job.Id });
+            .ReturnsAsync(Statuses(inserted: new[] { job.Id }));
 
         (await mocks.CreateSut().InsertCancelledJobAsync(job)).Should().BeTrue();
 
@@ -607,11 +595,12 @@ public class JobMasterSchedulerClusterAwareTests
     {
         var clusterId = NewClusterId();
         var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var job = NewJob(clusterId);
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<JobRawModel>>()))
-            .ReturnsAsync(new List<Guid>());
+            .ReturnsAsync(Statuses(alreadyInserted: new[] { job.Id }));
 
-        (await mocks.CreateSut().InsertCancelledJobAsync(NewJob(clusterId))).Should().BeFalse();
+        (await mocks.CreateSut().InsertCancelledJobAsync(job)).Should().BeFalse();
     }
 
     [Fact]
@@ -622,7 +611,7 @@ public class JobMasterSchedulerClusterAwareTests
         var job = NewJob(clusterId);
         mocks.Jobs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.Is<IList<JobRawModel>>(l => l.Single().Status == JobMasterJobStatus.Cancelled)))
-            .ReturnsAsync(new List<Guid> { job.Id });
+            .ReturnsAsync(Statuses(inserted: new[] { job.Id }));
 
         (await mocks.CreateSut().InsertCancelledJobAsync(job)).Should().BeTrue();
     }
@@ -638,7 +627,7 @@ public class JobMasterSchedulerClusterAwareTests
         mocks.Recurs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
             .Callback<IList<RecurringScheduleRawModel>>(batch => sent = batch)
-            .ReturnsAsync(new List<Guid> { schedule.Id });
+            .ReturnsAsync(Statuses(inserted: new[] { schedule.Id }));
 
         (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeTrue();
 
@@ -653,11 +642,12 @@ public class JobMasterSchedulerClusterAwareTests
     {
         var clusterId = NewClusterId();
         var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var schedule = NewRecurring(clusterId);
         mocks.Recurs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
-            .ReturnsAsync(new List<Guid>());
+            .ReturnsAsync(Statuses(alreadyInserted: new[] { schedule.Id }));
 
-        (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(NewRecurring(clusterId))).Should().BeFalse();
+        (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeFalse();
     }
 
     [Fact]
@@ -668,10 +658,19 @@ public class JobMasterSchedulerClusterAwareTests
         var schedule = NewRecurring(clusterId);
         mocks.Recurs
             .Setup(x => x.BulkInsertIfNotExistsAsync(It.Is<IList<RecurringScheduleRawModel>>(l => l.Single().Status == RecurringScheduleStatus.Canceled)))
-            .ReturnsAsync(new List<Guid> { schedule.Id });
+            .ReturnsAsync(Statuses(inserted: new[] { schedule.Id }));
 
         (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeTrue();
     }
+
+    private static IDictionary<BulkInsertStatus, IList<Guid>> Statuses(
+        IEnumerable<Guid>? inserted = null, IEnumerable<Guid>? alreadyInserted = null, IEnumerable<Guid>? unknown = null)
+        => new Dictionary<BulkInsertStatus, IList<Guid>>
+        {
+            [BulkInsertStatus.Inserted] = (inserted ?? Array.Empty<Guid>()).ToList(),
+            [BulkInsertStatus.AlreadyInserted] = (alreadyInserted ?? Array.Empty<Guid>()).ToList(),
+            [BulkInsertStatus.Unknow] = (unknown ?? Array.Empty<Guid>()).ToList(),
+        };
 
     private sealed class Mocks
     {

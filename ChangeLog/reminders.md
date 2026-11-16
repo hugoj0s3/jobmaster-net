@@ -17,9 +17,8 @@ jobs (master 323 + agent 4572 = 4895 right after the stop, then stuck).
 pulled batch lives only in the worker's memory until saved. Nothing reacts to process exit today (no runner stops, the
 save batch's `batchTimeoutCts` isn't linked to the runner token), so even a graceful stop loses it. A first fix
 (process-exit hook stopping the pull-and-save runners + put-back) worked 3/3 but was reverted 2026-11-15 to redo it as
-part of the runner cleanup (stop every worker via `StopImmediatelyAsync` / `OnStopAsync`). Also found then:
-`JobMasterParallelUtil.ForEachAsyncLegacy` (netstandard2.0) throws at once when cancelled in the semaphore wait while
-items still run (and doesn't throw at all after the `break`), unlike `Parallel.ForEachAsync`; redo with the runner work.
+part of the runner cleanup (stop every worker via `StopImmediatelyAsync` / `OnStopAsync`). (The
+`ForEachAsyncLegacy` cancellation bug found then is fixed again, 2026-11-16, see ChangeLog.internal.)
 SIGKILL, OOM or a crash would still lose it even after that. Fix (Hugo: nice change, needs a bit of work): lease instead of delete -- mark
 rows leased until a time, return them, delete only after the save; expired leases are pulled again (at-least-once, as
 NATS ack/nak already gives). Needs: lease columns / RavenDB metadata, a delete-by-ids after save in the runners, and
@@ -553,6 +552,23 @@ than "lost", since most cases may already be saved). Context carries ids, `IRead
 (`SaveAndRequeueFailed` / `DrainSaveFailed` / `UnreadablePayload`) and the exception; raw payload for unreadable ones.
 Call guarded (try/catch + timeout). Open: per-cluster registration (like `EnableMirrorLog`) vs global DI; one
 interface vs three.
+
+## NATS: keep save-pending messages that keep failing in a KV store
+
+Raised 2026-11-16 (Hugo: future, not now). On SQL, a save-pending message leased `MaxSavePendingLeaseCount` (1000)
+times is logged Critical and moved to `JMReserved-Terminated::<address>` (kept, never pulled again). NATS has no
+such limit today, and `AckTerm` would drop the message. Idea: same rule on NATS, using JetStream's delivery count
+(`NumDelivered` in the message metadata) instead of `lease_count`. Past the limit, write the message to a NATS KV
+bucket (keyed by message id), log the same Critical summary (`ToLogSummary()`, never the payload), then `AckTerm`.
+
+## NATS: `WorkQueue` retention instead of `Limits` + `MaxAge`
+
+Raised 2026-11-16. Since 0.0.12 the stream keeps messages 30 days (`MaxAge`), handled or not, so a handled message still
+uses disk for 30 days and a message waiting longer than that (all workers down) is deleted. `WorkQueue` retention
+removes a message exactly when it's acked or `AckTerm`'d (checked on NATS 2.10: 3 → 0) and never one that can still be
+delivered. Open: retention can't be changed on an existing stream (new stream + migration); one consumer per subject
+(JobMaster has one per bucket subject, check overlaps); `AckTerm` then deletes, so keeping poison messages needs the
+KV idea above.
 
 ## Generate the SQL schema script from the command line
 

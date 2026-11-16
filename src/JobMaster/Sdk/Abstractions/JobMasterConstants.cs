@@ -91,6 +91,12 @@ internal static class JobMasterConstants
     public static readonly TimeSpan NoBucketFallbackThreshold = TimeSpan.FromMinutes(2.5);
 
     /// <summary>
+    /// Leases after which a save-pending message stops being retried: a job is saved on master as Failed, anything
+    /// else is moved to the terminated bucket.
+    /// </summary>
+    public const int MaxSavePendingLeaseCount = 1000;
+
+    /// <summary>
     /// Default TTL for sentinel-backed cache entries. Sentinel invalidation handles freshness;
     /// this is just a safety-net expiry to prevent stale entries if a notification is ever missed.
     /// </summary>

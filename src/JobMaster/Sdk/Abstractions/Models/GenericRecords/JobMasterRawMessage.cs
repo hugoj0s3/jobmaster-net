@@ -40,8 +40,9 @@ internal class JobMasterRawMessage
             ReferenceTime = record.ReferenceTime,
             CorrelationId = record.CorrelationId,
             EnqueuedAt = record.EnqueuedAt,
+            LeaseCount = record.LeaseCount,
         };
-        
+
         return msg;
     }
     
@@ -64,7 +65,10 @@ internal class JobMasterRawMessage
     public string CorrelationId { get; private set; } = null!;
     public DateTime EnqueuedAt { get; private set; }
     public string ClusterId { get; set; } = null!;
-    
+
+    /// <summary>Times this message was leased, this lease included (0 when pulled, not leased).</summary>
+    public int LeaseCount { get; private set; }
+
     private const int IsoUtcLength = 28; 
     
     public static int CalcEstimateByteSize(
@@ -99,7 +103,9 @@ internal class JobMasterRawMessagePersistenceRecord
     public DateTime ReferenceTime { get; set; }
     public string CorrelationId { get; set; } = null!;
     public DateTime EnqueuedAt { get; set; }
-    
+
     public string ClusterId { get; set; } = null!;
+
+    public int LeaseCount { get; set; }
 }
 

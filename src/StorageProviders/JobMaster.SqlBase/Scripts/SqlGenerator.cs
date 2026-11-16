@@ -31,7 +31,9 @@ internal interface ISqlGenerator
     public string GetTablePrefix(JobMasterConfigDictionary additionalConnConfig);
     
     public string TableExistsSql(string tablePrefix, string table);
-    
+
+    public string ColumnExistsSql(string tablePrefix, string table, string column);
+
     public string InClauseFor(string columnName, string parameterName);
 
     public string LikeClauseFor(string columnName, string patternExpression);
@@ -146,6 +148,7 @@ internal abstract class SqlGenerator : ISqlGenerator
     }
     
     public abstract string TableExistsSql(string tablePrefix, string table);
+    public abstract string ColumnExistsSql(string tablePrefix, string table, string column);
     public abstract string InClauseFor(string columnName, string parameterName);
     public virtual string LikeClauseFor(string columnName, string patternExpression) => $"{columnName} LIKE {patternExpression}";
     public abstract string IdentityColumn();

@@ -4,8 +4,8 @@ using Raven.Client.Documents.Operations.Indexes;
 
 namespace JobMaster.RavenDB.Agents;
 
-// One static index covering both PullMessagesAsync (BucketAddressId + ReferenceTime) and
-// DestroyBucketAsync (BucketAddressId alone), instead of RavenDB maintaining a separate dynamic
+// One static index covering PullMessagesAsync (BucketAddressId + ReferenceTime), LeaseMessagesAsync (+ LeasedUntil)
+// and DestroyBucketAsync (BucketAddressId alone), instead of RavenDB maintaining a separate dynamic
 // auto-index per query shape. Not a compile-time AbstractIndexCreationTask<T>: that infers its collection
 // from .NET type conventions, but collection names here are prefix-configurable per connection, so the
 // name is only known at deployment time.
@@ -20,7 +20,7 @@ internal static class RavenDbMessageIndexes
             Name = ByBucketAndReferenceTimeName,
             Maps =
             {
-                $"from e in docs.{collectionName} select new {{ e.BucketAddressId, e.ReferenceTime }}",
+                $"from e in docs.{collectionName} select new {{ e.BucketAddressId, e.ReferenceTime, e.LeasedUntil }}",
             },
         };
 

@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories;
@@ -89,13 +90,19 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
         });
     }
 
-    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    public async Task<IDictionary<BulkInsertStatus, IList<Guid>>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
     {
-        if (schedules.Count == 0) return new List<Guid>();
+        if (schedules.Count == 0)
+        {
+            return new Dictionary<BulkInsertStatus, IList<Guid>>
+            {
+                [BulkInsertStatus.Inserted] = new List<Guid>(),
+                [BulkInsertStatus.AlreadyInserted] = new List<Guid>(),
+                [BulkInsertStatus.Unknow] = new List<Guid>(),
+            };
+        }
 
-        // The same id twice in one bulk insert is a duplicate key.
-        var distinctSchedules = schedules.DistinctBy(s => s.Id).ToList();
-        return await operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(distinctSchedules));
+        return await operationThrottler.ExecAsync(() => DoBulkInsertIfNotExistsAsync(schedules));
     }
 
     public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds)
@@ -232,5 +239,29 @@ internal class MasterRecurringSchedulesService : JobMasterClusterAwareComponent,
     public Task<RecurringScheduleRawModel?> GetAsync(Guid recurringScheduleId)
     {
         return operationThrottler.ExecAsync(() => masterRecurringSchedulesRepository.GetAsync(recurringScheduleId));
+    }
+
+    private async Task<IDictionary<BulkInsertStatus, IList<Guid>>> DoBulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        var distinctSchedules = schedules.DistinctBy(s => s.Id).ToList();
+        var insertedIds = await masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(distinctSchedules);
+
+        var notInsertedIds = distinctSchedules.Where(x => !insertedIds.Contains(x.Id)).Select(x => x.Id).ToList();
+        var existingIds = notInsertedIds.Count > 0
+            ? await masterRecurringSchedulesRepository.QueryExistingIdsAsync(notInsertedIds)
+            : new List<Guid>();
+
+        var unknownIds = notInsertedIds.Where(id => !existingIds.Contains(id)).ToList();
+        if (unknownIds.Count > 0)
+        {
+            logger.Warn($"{unknownIds.Count} recurring schedule(s) not confirmed on master after bulk insert: {string.Join(", ", unknownIds.Select(id => id.ToBase64()))}", JobMasterLogCategory.RecurringSchedule);
+        }
+
+        return new Dictionary<BulkInsertStatus, IList<Guid>>
+        {
+            [BulkInsertStatus.Inserted] = insertedIds.ToList(),
+            [BulkInsertStatus.AlreadyInserted] = notInsertedIds.Where(id => existingIds.Contains(id)).ToList(),
+            [BulkInsertStatus.Unknow] = unknownIds,
+        };
     }
 }

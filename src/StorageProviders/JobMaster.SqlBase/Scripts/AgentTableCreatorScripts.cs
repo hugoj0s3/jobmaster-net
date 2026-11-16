@@ -4,6 +4,9 @@ namespace JobMaster.SqlBase.Scripts;
 
 internal class AgentTableCreatorScripts
 {
+    public const string LeasedUntilColumn = "leased_until";
+    public const string LeaseCountColumn = "lease_count";
+
     public static string CreateBucketDispatcherTableScript(ISqlGenerator sqlGenerator, string tablePrefix)
     {
         var prefix = tablePrefix == string.Empty ? string.Empty : tablePrefix;
@@ -34,6 +37,10 @@ internal class AgentTableCreatorScripts
         var corrIdCol = sqlGenerator.ColumnNameFor<JobMasterRawMessage>(x => x.CorrelationId);
         var enqAtCol = sqlGenerator.ColumnNameFor<JobMasterRawMessage>(x => x.EnqueuedAt);
         var bucketCol = "bucket_address_id";
+        // Set while leased (UTC, database clock); null or past = available.
+        var leasedUntilCol = LeasedUntilColumn;
+        // Times the message was leased (incremented by each lease).
+        var leaseCountCol = LeaseCountColumn;
 
         // Types (provider decides exact SQL types)
         // MessageId is now an application-generated GUID string
@@ -43,6 +50,8 @@ internal class AgentTableCreatorScripts
         var corrIdType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
         var enqAtType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: false);
         var bucketType = sqlGenerator.ColumnTypeFor(typeof(string), length: 250, nullable: false);
+        var leasedUntilType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        var leaseCountType = LeaseCountType(sqlGenerator);
 
         var cols = new List<string>
         {
@@ -51,7 +60,9 @@ internal class AgentTableCreatorScripts
             $"{payloadCol} {payloadType}",
             $"{refTimeCol} {refTimeType}",
             $"{corrIdCol} {corrIdType}",
-            $"{enqAtCol} {enqAtType}"
+            $"{enqAtCol} {enqAtType}",
+            $"{leasedUntilCol} {leasedUntilType}",
+            $"{leaseCountCol} {leaseCountType}"
         };
 
         var pkName = sqlGenerator.NormalizeIdentifierForDb($"pk_{tableName}message_dispatcher");
@@ -71,6 +82,23 @@ internal class AgentTableCreatorScripts
 
         return $"{create}\n{idxBucket}\n{idxBucketRef}\n{idxBucketRefMsg}\n{idxBucketEnqAt}";
     }
+
+    public static string AddLeasedUntilColumnScript(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var tableName = $"{tablePrefix}message_dispatcher";
+        var leasedUntilType = sqlGenerator.ColumnTypeFor(typeof(DateTime), nullable: true);
+        return $"ALTER TABLE {tableName} ADD {LeasedUntilColumn} {leasedUntilType};";
+    }
+
+    public static string AddLeaseCountColumnScript(ISqlGenerator sqlGenerator, string tablePrefix)
+    {
+        var tableName = $"{tablePrefix}message_dispatcher";
+        return $"ALTER TABLE {tableName} ADD {LeaseCountColumn} {LeaseCountType(sqlGenerator)};";
+    }
+
+    // NOT NULL DEFAULT 0: existing rows (and pushes, which don't set it) start at 0.
+    private static string LeaseCountType(ISqlGenerator sqlGenerator)
+        => $"{sqlGenerator.ColumnTypeFor(typeof(int), nullable: false)} DEFAULT 0";
 
     public static string CreateAgentConnectionFingerprint(ISqlGenerator sqlGenerator, string tablePrefix)
     {
