@@ -51,7 +51,7 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
         }
     }
     
-    public string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw)
+    public string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(recurringScheduleRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);
@@ -60,7 +60,7 @@ internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareCom
         return savePendingRepository.PushMessage(fullBucketAddressId, json, recurringScheduleRaw.CreatedAt, correlationId);
     }
 
-    public async Task<string> PushForSavingAsync(RecurringScheduleRawModel recurringScheduleRaw)
+    public async Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(recurringScheduleRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);

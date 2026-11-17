@@ -15,18 +15,18 @@ namespace JobMaster.Sdk.Abstractions.Services.Agent;
 /// </summary>
 internal interface IAgentJobsDispatcherService : IJobMasterClusterAwareService
 {
-    string AddSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null);
+    string PushSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null);
 
-    Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null);
+    Task<string> PushSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null);
 
-    Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null);
-    Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null);
+    Task<IList<string>> BulkPushSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null);
+    Task<IList<string>> BulkPushForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null);
 
-    string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null);
+    string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null);
 
-    Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null);
+    Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null);
 
-    Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null);
+    Task<string> PushForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null);
 
     Task<IList<JobRawModel>> PullForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null);
 

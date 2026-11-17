@@ -26,7 +26,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
-    private readonly IJobMasterRuntime jobMasterRuntime;
     private readonly IJobMasterLogger logger;
     private JobMasterLockKeys lockKeys;
     public RecurringSchedulePlanner(
@@ -36,7 +35,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         IMasterRecurringSchedulesService masterRecurringSchedulesService,
         IMasterJobsService masterJobsService,
         IMasterDistributedLockerService masterDistributedLockerService,
-        IJobMasterRuntime jobMasterRuntime,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.masterClusterConfigurationService = masterClusterConfigurationService;
@@ -44,7 +42,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         this.masterRecurringSchedulesService = masterRecurringSchedulesService;
         this.masterJobsService = masterJobsService;
         this.masterDistributedLockerService = masterDistributedLockerService;
-        this.jobMasterRuntime = jobMasterRuntime;
         this.logger = logger;
         
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
@@ -58,7 +55,7 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             return;
         }
         
-        if (scheduleRawModel.IsStaticIdle(jobMasterRuntime.StartingAt))
+        if (scheduleRawModel.IsStaticIdle(JobMasterRuntimeSingleton.Instance.StartingAt))
         {
             logger.Debug("Skipping: Schedule is in static idle period", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;

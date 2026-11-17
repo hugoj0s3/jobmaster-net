@@ -1,4 +1,5 @@
 ﻿using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -61,6 +62,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
 
             var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
             var workersAlive = workers.Where(x => x.IsAlive()).ToList();
+            var bucketsWithoutWorker = new List<BucketModel>();
 
             foreach (var bucket in lostBuckets)
             {
@@ -102,7 +104,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
 
                     if (!workerToSelect.Any())
                     {
-                        logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
+                        bucketsWithoutWorker.Add(bucket);
                         continue;
                     }
 
@@ -122,6 +124,24 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
                 finally
                 {
                     masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+                }
+            }
+
+            // One line per agent connection; the bucket Lost the longest decides the level. A restart or deploy (or a
+            // test stopping every worker) stays within the grace period, so only Warns.
+            foreach (var connectionBuckets in bucketsWithoutWorker.GroupBy(b => b.AgentConnectionId.IdValue))
+            {
+                var lostSince = connectionBuckets.Min(b => b.LastStatusChangeAt);
+                var message = $"No Full or Drain worker alive for agent connection {connectionBuckets.Key}: " +
+                              $"{connectionBuckets.Count()} Lost bucket(s) waiting, the oldest since {lostSince:O}.";
+
+                if (DateTime.UtcNow - lostSince < JobMasterConstants.LostBucketNoWorkerGracePeriod)
+                {
+                    logger.Warn(message, JobMasterLogCategory.Bucket);
+                }
+                else
+                {
+                    logger.Critical(message, JobMasterLogCategory.Bucket);
                 }
             }
         }

@@ -76,7 +76,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        await agentJobsDispatcherService.PushSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
         return bucket;
     }
 
@@ -122,7 +122,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
                 var partitionJobs = partition.ToList();
                 logger.Debug($"Bulk scheduling jobs. partition size: {partitionJobs.Count} for bucket {bucketId}",
                     JobMasterLogCategory.Job, partitionJobs.First().Id);
-                await agentJobsDispatcherService.BulkAddSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs,
+                await agentJobsDispatcherService.BulkPushSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs,
                     SchedulingThrottlerFor(agentConnectionId));
             }
         }
@@ -148,7 +148,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        agentJobsDispatcherService.PushSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
         return bucket;
     }
 
@@ -172,7 +172,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         job.AssignSavePendingJobToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        agentJobsDispatcherService.PushSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
         return bucket;
     }
 
@@ -195,7 +195,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        await agentJobsDispatcherService.PushSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
         return bucket;
     }
 

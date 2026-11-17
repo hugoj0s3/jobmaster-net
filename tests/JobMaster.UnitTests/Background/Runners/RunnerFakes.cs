@@ -706,30 +706,30 @@ internal static class RunnerFakes
             return Task.CompletedTask;
         }
 
-        public string AddSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null) { PendingQueue.Add(jobRaw); return "ok"; }
+        public string PushSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null) { PendingQueue.Add(jobRaw); return "ok"; }
 
-        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
+        public Task<string> PushSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
         {
             RequeuedJobs.Add(jobRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
+        public Task<IList<string>> BulkPushSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
+        public string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
+        public Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
         {
             RequeuedRecurSchedules.Add(recurringScheduleRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
+        public Task<string> PushForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
+        public Task<IList<string>> BulkPushForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
         {
             PublishedForProcessing.AddRange(jobRawModels);
             return Task.FromResult<IList<string>>(jobRawModels.Select(j => j.Id.ToString("N")).ToList());

@@ -7,8 +7,8 @@ namespace JobMaster.Sdk.Abstractions.Repositories.Agent;
 
 internal interface IAgentJobsDispatcherRepository : IJobMasterClusterAwareComponent
 {
-    string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw);
-    Task<string> PushForSavingAsync(RecurringScheduleRawModel recurringScheduleRaw);
+    string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw);
+    Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw);
     
     string PushSavePendingJob(JobRawModel jobRaw);
     Task<string> PushSavePendingJobAsync(JobRawModel jobRaw);

@@ -77,6 +77,8 @@ public sealed class SqlServerDistPhase3Emulator(ScenarioGlobalEnvironment global
         (await api.GetJobCountAsync(ClusterId, status: SucceededStatus)).Should().Be(DrainModeTestPlan.TotalJobs);
         (await api.GetJobCountAsync(ClusterId)).Should().Be(DrainModeTestPlan.TotalJobs);
 
+        await DrainModeFailureReport.WriteAsync(api, ClusterId);
+
         // The bucket lifecycle, lightly: exactly the buckets Phase1's dead executors owned must each
         // reach ReadyToDelete or already be gone -- checked by specific captured ID, so this is
         // unaffected by the new executors' own buckets now live on the same connections. A bucket

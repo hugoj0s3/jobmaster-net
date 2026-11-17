@@ -17,8 +17,4 @@ internal interface IJobMasterRuntime
     bool IsOnWarmUpTime();
 
     Task StartAsync(IServiceProvider serviceProvider);
-
-    int CountWorkersForCluster(string clusterId);
-    
-    void Stop();
 }

@@ -78,6 +78,9 @@ public interface IScenarioApiClient
     /// and, optionally, one category (raw int -- JobMasterLogCategory.JobExecution = 2). Pass
     /// countLimit: int.MaxValue to bypass the API's default 25-item page size.
     /// </summary>
+    /// <summary>Logs whose message contains <paramref name="keyword"/>, across every reference.</summary>
+    Task<List<ApiLogItem>> SearchLogsAsync(string clusterId, string keyword, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default);
+
     Task<List<ApiLogItem>> GetLogsAsync(string clusterId, Guid referenceId, int? category = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default);
 }
 
@@ -97,7 +100,7 @@ public sealed record ApiJob(
     DateTime? CreatedAt = null,
     string? SourceId = null);
 
-public sealed record ApiJobExecution(string Id, string JobId, DateTime StartedAt, JsonElement Outcome);
+public sealed record ApiJobExecution(string Id, string JobId, DateTime StartedAt, JsonElement Outcome, string? OutcomeMessage = null);
 
 public sealed record ApiAgentConnection(string Id, string Name, bool IsAlive);
 

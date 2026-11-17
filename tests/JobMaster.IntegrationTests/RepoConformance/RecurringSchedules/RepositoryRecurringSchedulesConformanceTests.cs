@@ -824,6 +824,17 @@ public abstract class RepositoryRecurringSchedulesConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkInsertIfNotExists_InsertedModel_CanBeUpdatedRightAway()
+    {
+        // The model's next update is version-checked against what the insert stored.
+        var schedule = NewSchedule("defBulkInsertThenUpdate-" + JobMasterRandomUtil.NewGuid4());
+
+        await Fixture.MasterRecurringSchedules.BulkInsertIfNotExistsAsync(new[] { schedule });
+
+        await Fixture.MasterRecurringSchedules.UpdateAsync(schedule);
+    }
+
+    [Fact]
     public async Task BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce()
     {
         // Same as the jobs test: concurrent writers of the same rows must fall back on the race, not throw.

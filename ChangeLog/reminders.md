@@ -77,7 +77,8 @@ Fix direction (not implemented): require `ApiUrl` explicitly; drop the Host-base
 
 ## No stop entry point: workers are never stopped on host shutdown
 
-There is no public `StopJobMasterRuntimeAsync()`, no `IHostedService`, and `JobMasterRuntime.Stop()` has no caller, so
+There is no public `StopJobMasterRuntimeAsync()` and no `IHostedService` (the unused `JobMasterRuntime.Stop()` was
+removed 2026-11-17), so
 workers are never stopped when the host shuts down; the process just ends. Only the logger flushes on exit
 (`AppDomain.ProcessExit`, 2026-11-14). The graceful stop sequence itself is also unreliable, and the hard-stop path
 still behaves awkwardly. Design item: a real stop path (graceful worker stop, then flush).
@@ -253,11 +254,30 @@ something provisioned only on "the one database"; plan item 24 was this kind of 
 
 # Design follow-ups
 
+## Review the cancellation tokens across JobMaster
+
+Noted 2026-11-17 (Hugo), after the handler-scoped timeout. Go over every `CancellationToken` / `CancellationTokenSource`:
+who creates and cancels it, what it's linked to (a runner or save-batch token not linked to the worker's stop token,
+e.g. the earlier `batchTimeoutCts`), whether every created/linked source is disposed, and whether long calls actually
+receive the token. Starting points: `TaskQueueItem` (stop only) → `ExecuteJobAsync`'s `handlerTimeout`, the runners'
+tokens and `StopImmediatelyAsync`, the save-pending batches, the retry interceptor's 10 s token.
+
+## SQL agent message base: review the generic dequeue
+
+Raised 2026-11-16. In `SqlRawMessagesDispatcherRepositoryBase`, `LeaseMessagesAsync` / `CreateBucketIfNotExistsAsync`
+are now `abstract` (every SQL provider overrides them). Still to review: `DequeueMessagesAsyncCore` (and
+`GetDequeueSelectSql`, used only by it) is a generic `SELECT` then `DELETE` with no row locking. Postgres, MySQL and
+SQL Server all override it, so it never runs and no test covers it; a provider that didn't override it wouldn't fail,
+but two workers pulling one bucket could both get the same rows. Rule (Hugo): if it's implemented, it needs to be
+tested; an implementation no provider uses is made `abstract` instead. So likely make it `abstract` and delete
+`GetDequeueSelectSql`. Also check the other base members with a body that every provider overrides.
+
 ## Graceful worker stop is not reachable
 
 Found 2026-11-15 (worker stop cleanup). `WorkerStopCoordinatorRunner` reacts to two lock keys
 (`WorkerGracefulStopLock` → `RequestStop()`, `WorkerImmediateStopLock` → `StopImmediatelyAsync()`), but nothing sets
-them as a signal, and `JobMasterRuntime.Stop()` (calls `RequestStop()`) has no caller. The record-side fields
+them as a signal, and nothing calls `RequestStop()` (the unused `JobMasterRuntime.Stop()`, its only caller, was removed
+2026-11-17). The record-side fields
 (`StopRequestedAt`, `StopGracePeriod`, `AgentWorkerStatus.Stopping`) were removed as never written; the in-memory
 deadline on the worker stays (Hugo: may be good to keep). If graceful stop is finished: a public way to request it,
 and exclude a stopping worker from `AssignedLostBucketsRunner`'s candidates (today a just-stopped worker's heartbeat is

@@ -753,6 +753,8 @@ FROM jobs_page j
             var job = jobs[offset + i];
             var rec = SqlJobPersistenceConvertUtil.ToPersistence(job);
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+            // Like the single insert: the caller dispatches this model, and the next update is checked against it.
+            job.SetVersion(rec.Version);
 
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @JobDefinitionId_{i}, @TriggerSourceType_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @Priority_{i}, @ScheduledAt_{i}, @NextPlanExecutionAt_{i}, @MsgData_{i}, @MetadataJson_{i}, @Status_{i}, @NumberOfFailures_{i}, @TimeoutTicks_{i}, @MaxNumberOfRetries_{i}, @CreatedAt_{i}, @SourceId_{i}, @PartitionLockId_{i}, @PartitionLockExpiresAt_{i}, @ProcessDeadline_{i}, @ProcessStartedAt_{i}, @FinalizedAt_{i}, @WorkerLane_{i}, @Version_{i}, @HostId_{i}, @HostDisplayName_{i}
 WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");

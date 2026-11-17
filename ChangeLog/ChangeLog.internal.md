@@ -5,7 +5,7 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 995/995 unit tests pass on `net8.0` and `net10.0` (954/954 on the `netstandard2.0` build).
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 998/998 unit tests pass on `net8.0` and `net10.0` (957/957 on the `netstandard2.0` build).
 
 #### NATS stream MaxAge + replicas (Hugo, 2026-11-16)
 - Found on a real NATS 2.10 server: the stream was created with only `Subjects` + `DuplicateWindow` (`Limits`
@@ -33,9 +33,96 @@
 - The row is kept forever; `HasJobsAsync` / destroy only look at the real addresses, so the bucket can still be deleted.
 - Raw repository: new `UpdateBucketAsync(fullBucketAddressId, messageIds, newFullBucketAddressId)` (unleases too) and
   `CreateBucketIfNotExistsAsync` (the terminated bucket row, needed by the foreign key). All polling providers; NATS
-  throws `NotImplementedException` (see "Lease / ack on every polling provider").
+  (not polling) throws `NotSupportedException`, like its `PullMessagesAsync` (see "Lease / ack on every polling provider").
 - Tests: `AgentJobsDispatcherRepositoryLeaseTests` (message at the limit moved, the rest returned), Postgres
   conformance `UpdateBucket_ShouldMoveOnlyTheGivenMessages_Unleased` (8/8).
+
+#### A job attempt counts as failed only when the handler failed (Hugo, 2026-11-17)
+- `ExecuteJobAsync`: `handlerStarted` / `handlerSucceeded` around `HandleAsync`. Catch order: version conflict (moved
+  first, so a conflict on the success write keeps its handling) → `when (handlerSucceeded)`: Error log, no
+  `RetryOrFailAsync` (it used to count a failure and re-run a job that had succeeded) → `when (!handlerStarted && e is
+  OperationCanceledException or ObjectDisposedException)`: Warn + HeldOnMaster (stop, or the app's container gone, before
+  the handler) → timeout → generic (handler threw; resolution failures for a real reason still count, so a missing
+  handler ends `Failed` instead of bouncing forever).
+- A stopping worker (`StopImmediatelyRequested`) doesn't start a job: HeldOnMaster before `ProcessingStarted()`.
+- Found by `DrainModeTest.PostgresDist` at 25k jobs (`JM_DRAIN_JOBS_MULTIPLIER=5`): 62 jobs started after the host
+  disposed the app's container (caught by the slot-lambda scope catch, so 0 counted); 5k showed 0.
+- Tests: 3 engine tests (success write fails → no failure, no retry; worker stopping → not run, back on master; handler
+  resolution throws `ObjectDisposedException` → back on master, no failure), all fail with their fix disabled.
+- The timeout clock starts at the handler. It used to start with the slot (`TaskQueueItem.Start` → `CancelAfter(Timeout
+  + 2.5 s)`), so pre-handler work (recurring lock + validation, the Processing write, handler resolution) ate into the
+  handler's time, and a slow write meant a timeout counted against the job. Now `TaskQueueItem` has no timer (its token
+  is the stop token, cancelled only by `Abort`); `ExecuteJobAsync` links a `handlerTimeout` to it with
+  `CancelAfter(Timeout)` right before `HandleAsync`, disposed in `finally`. A `handlerStopwatch` gives the reported
+  elapsed time. Catches: stop token cancelled → Warn "Interrupted: the worker is stopping" + HeldOnMaster (no failure);
+  `handlerTimeout` cancelled → timeout + RetryOrFail. `TaskQueueItem.IsTimedOut()` (the queue's slot accounting) is
+  unchanged.
+- Tests: `Simulate_WhenTheWorkBeforeTheHandlerIsSlow_TheHandlerStillGetsItsFullTimeout` (Processing write 3.2 s,
+  Timeout 400 ms, handler 250 ms → Succeeded, 0 failures; fails with the clock started before the write),
+  `Simulate_WhenTheWorkerStopsDuringTheHandler_TheJobIsInterruptedNotFailed`; `TaskQueueControlTests` timeout test
+  rewritten as `Simulate_TaskPastItsTimeout_ReportsTimedOut_ButOnlyAbortCancelsIt`.
+
+#### The app's container stops the workers when disposed (Hugo, 2026-11-17)
+- Why: nothing in JobMaster stopped the workers on shutdown (no `IHostedService`, the unused `JobMasterRuntime.Stop()`),
+  so the process ended with runners mid-tick: no `OnStopAsync`, no execution flush, no bucket hand-over. At the
+  container's disposal, not at `ProcessExit`: in a hosted app the host disposes the app's container (handlers' DI)
+  before `ProcessExit`, so jobs still starting would hit a disposed container. No hosted service (Hugo).
+- `JobMasterRuntime` is `IAsyncDisposable` + `IDisposable`: both run `StopWorkersAsync(ShutdownStopTimeout)` (6 s;
+  every worker's `StopImmediatelyAsync` in parallel, Warn per worker not done in time).
+  Registered in the main container once, by factory (`TryAddSingleton<IJobMasterRuntime>(_ => JobMasterRuntimeSingleton.Instance)`):
+  the container disposes only what it created. `StartJobMasterRuntimeAsync` resolves it from the container
+  (`GetService`; null → "No cluster configured"), so it's created, and later disposed, by the container.
+  `IAsyncDisposable` on netstandard2.0 comes from `Microsoft.Bcl.AsyncInterfaces` (via the DI package).
+- The container's disposal is the only stop. An app that never disposes its container gets no stop; nothing is lost
+  (lease, heartbeat, deadline runner recover it), it's only slower. `JobMasterLogger` keeps its own `ProcessExit`
+  final flush, which now runs after the workers stopped (at the disposal), so their shutdown logs are included.
+- `ExecuteJobAsync` gets the job's DI scope from the slot (created in the `TaskQueueItem` lambda). If creating it
+  throws `ObjectDisposedException` (container gone), the job never started: Warn on the job, back on master
+  (HeldOnMaster), no failure counted.
+- `DrainModeTest` (all 5 variants) writes a failure report (`DrainModeFailureReport`). PostgresDist: 0 failed attempts,
+  0 not started, both with this setup and with the old one (stop at `ProcessExit`, runtime outside DI), against 52
+  `ObjectDisposedException` on 2026-11-15, before the runner cleanup made the stop fast (no 30 s wait, parallel
+  runners). SqlServerDist: 0 too. The other variants share fixed test identifiers in one Redis, so they only pass run
+  one at a time (to fix).
+- Tests: `RuntimeRegistrationTests` (one factory registration for two clusters; fails with an instance registration),
+  `StartJobMasterRuntimeTests` (no cluster → the clear error; fails with `GetRequiredService`).
+
+#### Lost bucket with no worker: Warn, then Critical, once per connection (Hugo, 2026-11-17)
+- `AssignedLostBucketsRunner` collected buckets with no alive Full / Drain worker on their connection and logged
+  Critical per bucket per tick, also during any restart or a test stopping every worker (DrainModeTest). It now logs
+  one line per agent connection: Warning while the oldest such bucket has been Lost (`LastStatusChangeAt`, set by
+  `MarkAsLost`, persisted with the bucket) for less than `JobMasterConstants.LostBucketNoWorkerGracePeriod`
+  (10 min), Critical after. No bucket reference id on the grouped line.
+- Tests: Warn at 2 min / Critical at 15 min, once for 2 buckets on one connection (mutation-checked).
+
+#### Agent dispatcher names: Push / Lease / Ack on both layers (Hugo, 2026-11-16)
+- `IAgentJobsDispatcherService` `Add*` → the repository's `Push*` verbs: `PushSavePendingJob(Async)`,
+  `BulkPushSavePendingJobAsync`, `PushForProcessingAsync`, `BulkPushForProcessingAsync`, `PushSavePendingRecur(Async)`.
+- `IAgentJobsDispatcherRepository` `PushForSaving(Async)` (recurring) → `PushSavePendingRecur(Async)`, like its
+  `LeaseSavePendingRecurAsync` / `AckSavePendingRecurAsync`. Plain rename (all internal), no old names kept.
+- `IJobMasterBackgroundAgentWorker.ServiceProvider` → `MainServiceProvider` (2026-11-17): it's the app's container
+  (handlers, retry interceptors), disposed by the host before `ProcessExit`; JobMaster's own per-cluster containers
+  (`GetClusterAwareService<T>()`) are separate and never disposed. Same "main" name as `mainServices` /
+  `mainServiceProvider` elsewhere. Also removed the unused `IJobMasterRuntime.CountWorkersForCluster` / `Stop()`.
+- `BootstrapBlueprintDefinitions.JobMasterScheduler` / `JobMasterJsonSerializer` / `JobMasterRuntime` removed: copies
+  of `JobMasterScheduler.Instance` / `JobMasterMessageJson`'s own serializer / `JobMasterRuntimeSingleton.Instance`.
+  Registrations use the singletons; `AddJobMasterCluster` sets the default serializer with
+  `JobMasterMessageJson.SetMessageSerializerIfNotSet(...)` (a `DefineJobMasterMessageJsonSerializer` call before it
+  still wins). Tests no longer set a separate `new JobMasterRuntime()`.
+- Cluster containers no longer register `IJobMasterRuntime` / `IJobMasterScheduler` / `IJobMasterSchedulerAdvanced`
+  (the scheduler pair was registered twice, and nothing there used it). `RecurringSchedulePlanner`, the only cluster
+  component taking the runtime, reads `JobMasterRuntimeSingleton.Instance.StartingAt` like `JobsExecutionEngine`.
+
+#### SQL bulk insert didn't set the model's version: saved jobs never ran (Hugo, 2026-11-16)
+- `SqlMasterJobsRepository.BuildBulkInsertIfNotExistsSql` (and the recurring one) stored a new `Version` but never
+  called `SetVersion` on the model, unlike the single insert. The bulk save-pending path dispatches the models it just
+  inserted, so the engine's version-checked `BulkUpdateAsync` (→ `Onboarded`) matched 0 rows and dropped every job
+  silently: they stayed `InBucket` until the deadline runner. Found by `ScheduleTest.PostgresNats` (0 of 225
+  executions), reproduced as a local process against Postgres + NATS containers (5/5 stuck `InBucket`, 5/5
+  `Succeeded` after the fix). Never released (bulk save-pending is new in this branch). RavenDB already set it.
+- Tests: `BulkInsertIfNotExists_InsertedModels_CanBeBulkUpdatedRightAway` (jobs) and
+  `BulkInsertIfNotExists_InsertedModel_CanBeUpdatedRightAway` (recurring), 8/8 on the 4 providers, both fail without
+  the fix on Postgres.
 
 #### Lease / ack on every polling provider (Hugo, 2026-11-16)
 - `AckAsync` / `UpdateBucketAsync` moved to `SqlRawMessagesDispatcherRepositoryBase` (one `DELETE` / `UPDATE` with
@@ -155,18 +242,6 @@
   throws, unused here).
   - Test: `TaskQueueItemTests` (running job aborted + disposed: no throw, the job sees the cancellation). Verified it
     fails with `Task.Dispose()` back.
-- Process exit stops the workers. Nothing in JobMaster reacted to process shutdown (no `IHostedService`,
-  `JobMasterRuntime.Stop()` has no caller), so the process ended with runners mid-tick: no `OnStopAsync`, no execution
-  flush, no bucket hand-over. Now (no new dependency, works without a .NET host):
-  - `ProcessShutdown` (new, internal): the single `ProcessExit` hook. Runs the shutdown steps (in parallel), then the
-    final flushes, once; a failing step or flush doesn't skip the rest. Needed because separate `ProcessExit`
-    handlers run in subscription order and the loggers subscribe before the runtime starts, so they flushed before
-    the stop's logs existed. `JobMasterLogger` registers its `Dispose` there instead of `ProcessExit`.
-  - `JobMasterRuntime.StartAsync` registers `StopWorkersAsync(6 s)` once, before the workers start: every worker's
-    `StopImmediatelyAsync` in parallel, Warn per worker not done in time. 6 s + the loggers' flush is meant to fit
-    Docker's default 10 s stop grace (time the host spends stopping before `ProcessExit` counts too).
-  - Tests: `ProcessShutdownTests` (steps end before any flush, once; a throwing step / flush skips nothing; a removed
-    flush doesn't run).
 
 #### `JobMasterLimits` for fixed values (Hugo, 2026-11-14)
 - `JobMasterDefaults` read as "can be changed", but `MinDataRetentionTtl` (released), `MinRetryDelay` and

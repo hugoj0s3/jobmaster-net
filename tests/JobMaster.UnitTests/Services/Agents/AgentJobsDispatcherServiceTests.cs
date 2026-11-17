@@ -40,7 +40,7 @@ public class AgentJobsDispatcherServiceTests
             BucketId = null,
         };
 
-        var act = () => sut.AddSavePendingJob(job);
+        var act = () => sut.PushSavePendingJob(job);
         act.Should().Throw<InvalidOperationException>();
 
         factory.VerifyNoOtherCalls();
@@ -86,7 +86,7 @@ public class AgentJobsDispatcherServiceTests
             HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId(clusterId, "testhost"),
         };
 
-        sut.AddSavePendingJob(job);
+        sut.PushSavePendingJob(job);
 
         repo.Verify(x => x.PushSavePendingJob(It.Is<JobRawModel>(j => j.Id == job.Id)), Times.Once);
         factory.Verify(x => x.GetRepository(It.Is<AgentConnectionId>(a => a.IdValue == agentConnId.IdValue)), Times.Once);
@@ -131,7 +131,7 @@ public class AgentJobsDispatcherServiceTests
 
         job.AssignToBucket(new BucketModel(clusterId) { Id = bucketId, AgentConnectionId = agentConnId, AgentWorkerId = workerId, HostId = new JobMaster.Sdk.Abstractions.Models.Hosts.HostId(clusterId, "testhost") });
 
-        await sut.AddForProcessingAsync(job);
+        await sut.PushForProcessingAsync(job);
 
         job.Status.Should().Be(JobMasterJobStatus.InBucket);
         job.BucketId.Should().Be(bucketId);
@@ -167,7 +167,7 @@ public class AgentJobsDispatcherServiceTests
 
         var sut = new AgentJobsDispatcherService(clusterConfig, factory.Object, new Mock<IJobMasterLogger>().Object);
 
-        // 51 is just "bigger than any typical batch size" -- proves BulkAddSavePendingJobAsync
+        // 51 is just "bigger than any typical batch size" -- proves BulkPushSavePendingJobAsync
         // never partitions internally, regardless of what MaxBatchSize a repository type is
         // configured with (partitioning is the caller's responsibility, e.g. JobMasterSchedulerClusterAware).
         var jobs = Enumerable.Range(0, 51)
@@ -188,7 +188,7 @@ public class AgentJobsDispatcherServiceTests
             })
             .ToList();
 
-        await sut.BulkAddSavePendingJobAsync(agentConnId, bucketId, jobs);
+        await sut.BulkPushSavePendingJobAsync(agentConnId, bucketId, jobs);
 
         // Partitioning now happens in the caller -- the service pushes whatever it's given in one call.
         repo.Verify(x => x.BulkPushSavePendingJobAsync(bucketId, It.Is<IList<JobRawModel>>(l => l.Count == jobs.Count)), Times.Once);

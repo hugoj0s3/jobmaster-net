@@ -128,7 +128,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         this.masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         this.masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         this.logger = backgroundAgentWorker.GetClusterAwareService<IJobMasterLogger>();
-        this.retryDecider = new JobRetryDecider(backgroundAgentWorker.ClusterConnConfig, backgroundAgentWorker.ServiceProvider, logger);
+        this.retryDecider = new JobRetryDecider(backgroundAgentWorker.ClusterConnConfig, backgroundAgentWorker.MainServiceProvider, logger);
 
         this.lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         this.bucketId = bucketId;
@@ -563,7 +563,26 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 {
                     try
                     {
-                        await this.ExecuteJobAsync(job, token);
+                        // One DI scope per job run, from the app's container (the handler and its dependencies).
+                        AsyncServiceScope scope;
+                        try
+                        {
+                            scope = backgroundAgentWorker.MainServiceProvider.CreateAsyncScope();
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // The app is stopping (its container is already disposed): the job never started, so no failure.
+                            logger.Warn("Job not started: the app's DI container is disposed (app stopping). Back on master.",
+                                JobMasterLogCategory.Job, job.Id);
+                            job.MarkAsHeldOnMaster();
+                            await this.UpdateSingleJobAsync(job);
+                            return;
+                        }
+
+                        await using (scope)
+                        {
+                            await this.ExecuteJobAsync(job, scope, token);
+                        }
                     }
                     finally
                     {
@@ -574,8 +593,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                             engineLock.Release();
                         }
                     }
-                },
-                cancellationTimeout: job.Timeout.Add(TimeSpan.FromSeconds(2.5)));
+                });
 
             var added = TaskQueueControl.Enqueue(taskQueueItem);
             if (!added)
@@ -796,7 +814,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// invocation → success/timeout/conflict/error paths. The priority-based inter-job
     /// delay is applied in the <c>finally</c> block regardless of outcome.
     /// </summary>
-    private async Task ExecuteJobAsync(JobRawModel jobRawModel, CancellationToken timeoutCancellationToken)
+    // stopToken: the slot's token, cancelled only when the worker stops. The job's timeout is the handler's own
+    // (handlerTimeout below), so the work around the handler doesn't eat into it.
+    private async Task ExecuteJobAsync(JobRawModel jobRawModel, IServiceScope scope, CancellationToken stopToken)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -808,6 +828,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         {
             if (string.IsNullOrEmpty(this.bucketId))
             {
+                return;
+            }
+
+            // The worker is stopping: don't start it (it may not finish, and the app's services may already be gone).
+            if (backgroundAgentWorker.StopImmediatelyRequested)
+            {
+                jobRawModel.MarkAsHeldOnMaster();
+                await this.UpdateSingleJobAsync(jobRawModel);
                 return;
             }
 
@@ -828,6 +856,11 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             }
             
             JobExecution? execution = null;
+            // Where it failed decides whose failure it is: before the handler ran, or after it succeeded, it isn't the job's.
+            var handlerStarted = false;
+            var handlerSucceeded = false;
+            CancellationTokenSource? handlerTimeout = null;
+            var handlerStopwatch = new Stopwatch();
             try
             {
                 RecurringScheduleContext? recurringScheduleContext = null;
@@ -884,23 +917,29 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     recurringScheduleContext = RecurringScheduleConvertUtil.ToContext(recurringSchedule!);
                 }
 
-                timeoutCancellationToken.ThrowIfCancellationRequested();
-                
+                stopToken.ThrowIfCancellationRequested();
+
                 execution = jobRawModel.ProcessingStarted();
                 await this.UpdateSingleJobAsync(jobRawModel);
-                
-                await using var scope = backgroundAgentWorker.ServiceProvider.CreateAsyncScope();
+
                 var job = jobRawModel.ToJob();
                 var jobContext = JobConvertUtil.ToJobContext(job);
                 jobContext.RecurringSchedule = recurringScheduleContext;
-                // The handler only stops at its timeout if it observes this token.
-                jobContext.CancellationToken = timeoutCancellationToken;
 
                 var jobHandler = scope.ServiceProvider.GetJobHandler(job.JobDefinitionId);
+                stopToken.ThrowIfCancellationRequested();
 
-                timeoutCancellationToken.ThrowIfCancellationRequested();
+                // The job's Timeout covers exactly the handler: the clock starts here. The handler only stops at it if it
+                // observes this token.
+                handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(stopToken);
+                handlerTimeout.CancelAfter(jobRawModel.Timeout);
+                jobContext.CancellationToken = handlerTimeout.Token;
 
+                handlerStarted = true;
+                handlerStopwatch.Start();
                 await jobHandler.HandleAsync(jobContext);
+                handlerStopwatch.Stop();
+                handlerSucceeded = true;
 
                 jobRawModel.MarkAsSucceeded();
                 execution.Succeed();
@@ -908,20 +947,6 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                 stopwatch.Stop();
                 logger.Debug($"ExecuteJobAsync completed successfully in {stopwatch.ElapsedMilliseconds}ms", JobMasterLogCategory.Job, jobRawModel.Id);
-            }
-            catch (OperationCanceledException) when (timeoutCancellationToken.IsCancellationRequested)
-            {
-                stopwatch.Stop();
-                var timeoutException = new TimeoutException(
-                    $"Timed out after {stopwatch.ElapsedMilliseconds} ms (timeout {jobRawModel.Timeout:c}).");
-                var nextStep = await RetryOrFailAsync(jobRawModel, timeoutException);
-                var message = JobExecutionMessages.TimedOut(stopwatch.ElapsedMilliseconds, jobRawModel.Timeout, nextStep);
-
-                execution?.Fail(message);
-
-                logger.Error(ForLog(jobRawModel, message), JobMasterLogCategory.JobExecution, jobRawModel.Id);
-
-                await this.UpdateSingleJobAsync(jobRawModel, execution);
             }
             catch (JobMasterVersionConflictException ce)
             {
@@ -948,13 +973,55 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                         .ExecWithRetryAsync(o => o.AddJobExecutionAsync(execution), millisecondsToDelay: 50);
                 }
             }
+            catch (Exception e) when (handlerSucceeded)
+            {
+                // The handler did its work; only saving that failed. Not the job's failure: no retry counted. If the
+                // save never reached master the job stays Processing, and the deadline runner runs it again.
+                stopwatch.Stop();
+                logger.Error(ForLog(jobRawModel, "Succeeded, but saving the result failed; it may run again."),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: e);
+            }
+            catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+            {
+                // The worker is stopping, before or during the handler: interrupted, not the job's failure.
+                logger.Warn(ForLog(jobRawModel, "Interrupted: the worker is stopping. Back on master."),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                jobRawModel.MarkAsHeldOnMaster();
+                await this.UpdateSingleJobAsync(jobRawModel);
+            }
+            catch (ObjectDisposedException) when (!handlerStarted)
+            {
+                // The app's container is gone before the handler ran (the app is stopping): not the job's failure.
+                logger.Warn(ForLog(jobRawModel, "Not started: the app is stopping. Back on master."),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                jobRawModel.MarkAsHeldOnMaster();
+                await this.UpdateSingleJobAsync(jobRawModel);
+            }
+            catch (OperationCanceledException) when (handlerTimeout?.IsCancellationRequested == true)
+            {
+                // A real timeout: the handler had exactly its Timeout.
+                handlerStopwatch.Stop();
+                var timeoutException = new TimeoutException(
+                    $"Timed out after {handlerStopwatch.ElapsedMilliseconds} ms (timeout {jobRawModel.Timeout:c}).");
+                var nextStep = await RetryOrFailAsync(jobRawModel, timeoutException);
+                var message = JobExecutionMessages.TimedOut(handlerStopwatch.ElapsedMilliseconds, jobRawModel.Timeout, nextStep);
+
+                execution?.Fail(message);
+
+                logger.Error(ForLog(jobRawModel, message), JobMasterLogCategory.JobExecution, jobRawModel.Id);
+
+                await this.UpdateSingleJobAsync(jobRawModel, execution);
+            }
             catch (Exception e)
             {
+                // The handler's own run time when it ran; otherwise the time until the failure (e.g. resolving it).
                 stopwatch.Stop();
-                await HandleErrorAsync(jobRawModel, execution, stopwatch, e);
+                handlerStopwatch.Stop();
+                await HandleErrorAsync(jobRawModel, execution, handlerStarted ? handlerStopwatch : stopwatch, e);
             }
             finally
             {
+                handlerTimeout?.Dispose();
                 var delay = GetPriorityDelay(priority);
                 await RunnerDelayUtil.DelayAsync(delay, backgroundAgentWorker.CancellationTokenSource.Token);
             }

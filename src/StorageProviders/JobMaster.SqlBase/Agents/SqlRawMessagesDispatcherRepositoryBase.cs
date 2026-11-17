@@ -242,10 +242,8 @@ WHERE {colBucket} = @Bucket";
         throw new InvalidOperationException("Dequeue retry logic failed unexpectedly");
     }
     
-    public virtual Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease)
-    {
-        throw new NotImplementedException();
-    }
+    // Skipping rows another lease is taking, and the database's UTC clock, have no portable SQL form.
+    public abstract Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease);
 
     public virtual async Task AckAsync(string fullBucketAddressId, IList<string> messageIds)
     {
@@ -278,10 +276,7 @@ WHERE {colBucket} = @Bucket";
         }
     }
 
-    public virtual Task CreateBucketIfNotExistsAsync(string fullBucketAddressId)
-    {
-        throw new NotImplementedException();
-    }
+    public abstract Task CreateBucketIfNotExistsAsync(string fullBucketAddressId);
 
     protected virtual async Task<IList<JobMasterRawMessage>> AttemptDequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
     {

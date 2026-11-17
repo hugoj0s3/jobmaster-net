@@ -85,22 +85,22 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
 
     public Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     public Task AckAsync(string fullBucketAddressId, IList<string> messageIds)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     public Task UpdateBucketAsync(string fullBucketAddressId, IList<string> messageIds, string newFullBucketAddressId)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
 
     public Task CreateBucketIfNotExistsAsync(string fullBucketAddressId)
     {
-        throw new NotImplementedException();
+        throw new NotSupportedException();
     }
     
     public async Task<bool> HasJobsAsync(string fullBucketAddressId)

@@ -180,6 +180,20 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
         return result ?? [];
     }
 
+    public async Task<List<ApiLogItem>> SearchLogsAsync(string clusterId, string keyword, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
+    {
+        var query = HttpUtility.ParseQueryString(string.Empty);
+        query["Keyword"] = keyword;
+        query["CountLimit"] = countLimit.ToString();
+        var requestUri = $"{basePath}/{clusterId}/logs?{query}";
+        using var request = CreateRequest(HttpMethod.Get, requestUri, bearerToken);
+        var response = await httpClient.SendAsync(request, ct);
+        await EnsureSuccessAsync(response, requestUri, ct);
+
+        var result = await response.Content.ReadFromJsonAsync<List<ApiLogItem>>(ScenarioJsonOptions.Default, ct);
+        return result ?? [];
+    }
+
     public async Task<string> GetJwtTokenAsync(string subject, CancellationToken ct = default)
     {
         var response = await httpClient.PostAsJsonAsync("/auth/token", new { subject }, ct);

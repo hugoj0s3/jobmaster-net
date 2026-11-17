@@ -48,17 +48,12 @@ public class HybridAgentConnectionTests
         _ = typeof(SqlServerConnectionOptionsBinder);
         _ = typeof(RavenDbConnectionOptionsBinder);
         _ = typeof(NatsJetStreamConnectionOptionsBinder);
-
-        BootstrapBlueprintDefinitions.JobMasterScheduler = JobMasterScheduler.Instance;
-        BootstrapBlueprintDefinitions.JobMasterRuntime = new JobMasterRuntime();
     }
 
     private static string UniqueClusterId() => $"Hyb-{Guid.NewGuid():N}"[..16];
 
     private static ClusterConfigBuilder CreateBuilder(string clusterId, IServiceCollection? services = null)
     {
-        BootstrapBlueprintDefinitions.JobMasterScheduler ??= JobMasterScheduler.Instance;
-        BootstrapBlueprintDefinitions.JobMasterRuntime ??= new JobMasterRuntime();
         return new ClusterConfigBuilder(clusterId, services ?? new ServiceCollection());
     }
 
@@ -858,8 +853,8 @@ public class HybridAgentConnectionTests
             BucketId = bucketId,
         };
 
-        dispatcher.PushForSaving(recur);
-        await dispatcher.PushForSavingAsync(recur);
+        dispatcher.PushSavePendingRecur(recur);
+        await dispatcher.PushSavePendingRecurAsync(recur);
         dispatcher.PushSavePendingJob(job);
         await dispatcher.PushSavePendingJobAsync(job);
         await dispatcher.BulkPushSavePendingJobAsync(bucketId, new List<JobRawModel> { job });

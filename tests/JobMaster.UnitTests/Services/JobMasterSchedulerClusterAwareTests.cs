@@ -53,7 +53,7 @@ public class JobMasterSchedulerClusterAwareTests
             .Returns(bucket);
 
         dispatcher
-            .Setup(x => x.AddSavePendingJob(It.Is<JobRawModel>(m =>
+            .Setup(x => x.PushSavePendingJob(It.Is<JobRawModel>(m =>
                 m.ClusterId == clusterId &&
                 m.BucketId == bucket.Id &&
                 m.AgentWorkerId == bucket.AgentWorkerId &&
@@ -125,7 +125,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         result.Should().BeNull();
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
+        dispatcher.Verify(x => x.PushSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         result.Should().BeNull();
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
+        dispatcher.Verify(x => x.PushSavePendingJobAsync(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -383,7 +383,7 @@ public class JobMasterSchedulerClusterAwareTests
 
         result.Should().BeNull();
         jobs.Verify();
-        dispatcher.Verify(x => x.AddSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
+        dispatcher.Verify(x => x.PushSavePendingJob(It.IsAny<JobRawModel>(), It.IsAny<OperationThrottler>()), Times.Never);
     }
 
     [Fact]
@@ -396,7 +396,7 @@ public class JobMasterSchedulerClusterAwareTests
             .Setup(x => x.SelectBucketAsync(It.IsAny<TimeSpan?>(), JobMasterPriority.Medium, null))
             .ReturnsAsync(bucket);
         mocks.Dispatcher
-            .Setup(x => x.AddSavePendingRecurAsync(It.IsAny<RecurringScheduleRawModel>(), It.IsAny<OperationThrottler>()))
+            .Setup(x => x.PushSavePendingRecurAsync(It.IsAny<RecurringScheduleRawModel>(), It.IsAny<OperationThrottler>()))
             .ReturnsAsync("recur-id");
 
         var result = await mocks.CreateSut().ScheduleAsync(NewRecurring(clusterId));

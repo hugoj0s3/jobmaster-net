@@ -11,17 +11,15 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
     private readonly CancellationTokenSource cancellationTokenSource;
     private readonly Func<CancellationToken, Task> runAsync;
     private readonly Action? afterAction;
-    private readonly TimeSpan cancellationTimeout;
     private bool started;
 
-    public TaskQueueItem(string id, T value, TimeSpan timeout, Func<CancellationToken, Task> action, Action? afterAction = null, TimeSpan? cancellationTimeout = null)
+    public TaskQueueItem(string id, T value, TimeSpan timeout, Func<CancellationToken, Task> action, Action? afterAction = null)
     {
         Id = id;
         Value = value;
         runAsync = action;
         Task = Task.CompletedTask; // initialized so status checks work pre-start
         Timeout = timeout;
-        this.cancellationTimeout = cancellationTimeout ?? timeout;
         EnqueuedAt = DateTime.UtcNow;
         cancellationTokenSource = new CancellationTokenSource();
         this.afterAction = afterAction;
@@ -45,7 +43,7 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
     public DateTime? StartedAt { get; set; }
     
     /// <summary>
-    /// Cancellation token source for aborting the task
+    /// Cancelled only by <see cref="Abort"/> (the worker stopping). It has no timer: a job's timeout is the handler's own.
     /// </summary>
     public CancellationTokenSource CancellationTokenSource => cancellationTokenSource;
     
@@ -75,10 +73,6 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
         if (started) return;
         started = true;
         StartedAt = DateTime.UtcNow;
-        if (cancellationTimeout > TimeSpan.Zero)
-        {
-            try { cancellationTokenSource.CancelAfter(cancellationTimeout); } catch { /* ignore */ }
-        }
         Task = runAsync(cancellationTokenSource.Token);
 
         if (afterAction != null)

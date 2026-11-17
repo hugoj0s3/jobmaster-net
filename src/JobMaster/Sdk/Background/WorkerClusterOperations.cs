@@ -51,7 +51,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     }
 
     // Same-worker short-circuit still happens per job (cheap, in-memory), but everything that needs
-    // an actual agent-DB write is collected and sent through BulkAddForProcessingAsync in one call
+    // an actual agent-DB write is collected and sent through BulkPushForProcessingAsync in one call
     // instead of one dispatch call per job. Caller passes one bucket's jobs at a time -- grouping by
     // bucket and partitioning happen in AssignJobsToBucketsRunner, so a failure here only holds back
     // this one partition instead of the whole tick's batch.
@@ -127,7 +127,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         try
         {
-            await agentJobsDispatcherService.BulkAddForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
+            await agentJobsDispatcherService.BulkPushForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
         }
         catch (Exception ex)
         {

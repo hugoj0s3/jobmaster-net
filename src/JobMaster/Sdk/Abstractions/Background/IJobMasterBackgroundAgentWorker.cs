@@ -35,7 +35,7 @@ internal interface IJobMasterBackgroundAgentWorker
     
     IBucketRunnersFactory BucketRunnersFactory { get; }
     
-    IServiceProvider ServiceProvider { get; }
+    IServiceProvider MainServiceProvider { get; }
     
     SemaphoreSlim BucketAwareSemaphoreSlim { get; } 
     SemaphoreSlim MainSemaphoreSlim { get; }

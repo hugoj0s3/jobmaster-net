@@ -57,7 +57,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public IBucketRunnersFactory BucketRunnersFactory { get; private set; } = null!;
 
-    public IServiceProvider ServiceProvider { get; private set; } = null!;
+    public IServiceProvider MainServiceProvider { get; private set; } = null!;
 
     public RunnerRegistry Runners { get; } = new RunnerRegistry();
     public bool IsOnWarmUpTime()
@@ -460,7 +460,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var background = new JobMasterBackgroundAgentWorker()
         {
             ClusterConnConfig = clusterConfig,
-            ServiceProvider = serviceProvider,
+            MainServiceProvider = serviceProvider,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
             TransferBatchSize = workerDefinition.TransferBatchSize,
             BucketBufferSize = workerDefinition.BucketBufferSize,

@@ -641,6 +641,8 @@ FROM schedules_page s
             var schedule = schedules[offset + i];
             var rec = SqlRecurringSchedulePersistenceConvertUtil.ToPersistence(schedule);
             rec.Version = JobMasterRandomUtil.NewGuid4().ToString("N").ToLowerInvariant();
+            // Like the single insert: the model's next update is checked against this version.
+            schedule.SetVersion(rec.Version);
 
             selects.Add($@"SELECT @ClusterId_{i}, @Id_{i}, @Expression_{i}, @ExpressionTypeId_{i}, @JobDefinitionId_{i}, @StaticDefinitionId_{i}, @ProfileId_{i}, @Status_{i}, @RecurringScheduleType_{i}, @StaticDefinitionLastEnsured_{i}, @TerminatedAt_{i}, @MsgData_{i}, @MetadataJson_{i}, @Priority_{i}, @MaxNumberOfRetries_{i}, @TimeoutTicks_{i}, @BucketId_{i}, @AgentConnectionId_{i}, @AgentWorkerId_{i}, @PartitionLockId_{i}, @HostId_{i}, @HostDisplayName_{i}, @PartitionLockExpiresAt_{i}, @CreatedAt_{i}, @StartAfter_{i}, @EndBefore_{i}, @LastPlanCoverageUntil_{i}, @LastExecutedPlan_{i}, @HasFailedOnLastPlanExecution_{i}, @IsJobCancellationPending_{i}, @WorkerLane_{i}, @Version_{i}
 WHERE NOT EXISTS (SELECT 1 FROM {t} WHERE {cClusterId} = @ExistsClusterId_{i} AND {cId} = @ExistsId_{i})");

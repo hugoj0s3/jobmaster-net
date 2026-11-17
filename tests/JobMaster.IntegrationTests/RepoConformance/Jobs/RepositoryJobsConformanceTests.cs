@@ -1801,6 +1801,21 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkInsertIfNotExists_InsertedModels_CanBeBulkUpdatedRightAway()
+    {
+        // The save path dispatches the models it just inserted; the engine's version-checked update must match them.
+        var def = "defBulkInsertThenUpdate-" + JobMasterRandomUtil.NewGuid4();
+        var job1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        var job2 = NewJob(def, JobMasterJobStatus.OnMaster);
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { job1, job2 }, Array.Empty<JobExecution>());
+
+        var updated = await Fixture.MasterJobs.BulkUpdateAsync(new List<JobRawModel> { job1, job2 });
+
+        Assert.Equal(new[] { job1.Id, job2.Id }.OrderBy(x => x), updated.Select(x => x.Id).OrderBy(x => x));
+    }
+
+    [Fact]
     public async Task BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce()
     {
         // Several writers insert the same rows at once, each in its own order, so some of them hit another's commit
