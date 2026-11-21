@@ -26,7 +26,9 @@ internal sealed record EngineFixture(
     string ClusterId,
     int BufferSize,
     IList<JobRawModel> BulkUpdateWatcher,
-    IList<JobRawModel> SingleUpdateWatcher);
+    IList<JobRawModel> SingleUpdateWatcher,
+    Mock<IJobMasterBackgroundAgentWorker> Worker,
+    Mock<IServiceProvider> ScopeServices);
 
 internal static class JobsExecutionEngineFixture
 {
@@ -64,7 +66,7 @@ internal static class JobsExecutionEngineFixture
         worker.SetupGet(x => x.ParallelismFactor).Returns(1.0);
         worker.SetupGet(x => x.WorkerClusterOperations).Returns(ops.Object);
         worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
-        worker.SetupGet(x => x.ServiceProvider).Returns(serviceProvider.Object);
+        worker.SetupGet(x => x.MainServiceProvider).Returns(serviceProvider.Object);
         worker.Setup(x => x.GetClusterAwareService<IMasterJobsService>()).Returns(jobs.Object);
         worker.Setup(x => x.GetClusterAwareService<IMasterRecurringSchedulesService>()).Returns(schedules.Object);
         worker.Setup(x => x.GetClusterAwareService<IMasterBucketsService>()).Returns(buckets.Object);
@@ -133,7 +135,9 @@ internal static class JobsExecutionEngineFixture
             clusterId,
             bufferSize,
             bulkUpdateWatcher,
-            singleUpdateWatcher);
+            singleUpdateWatcher,
+            worker,
+            innerSp);
     }
 
     /// <summary>

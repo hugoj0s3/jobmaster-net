@@ -52,11 +52,13 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
 
         MirrorLog = clusterConnConfig.MirrorLog;
 
-        // Nothing disposes this logger on host shutdown (the per-cluster containers are registered as instances,
-        // which DI never disposes), so flush what's buffered when the process exits normally, after the workers
-        // have stopped so their shutdown logs are included. A hard kill or a crash can't be helped.
-        ProcessShutdown.Default.OnFinalFlush(Dispose);
+        // Nothing disposes this logger (the per-cluster containers are never disposed), so flush what's buffered when
+        // the process exits normally. The workers stop earlier, when the app's container is disposed, so their
+        // shutdown logs are included. A hard kill or a crash can't be helped.
+        AppDomain.CurrentDomain.ProcessExit += OnProcessExit;
     }
+
+    private void OnProcessExit(object? sender, EventArgs e) => Dispose();
 
     public void Log(
         JobMasterLogLevel level,
@@ -136,7 +138,7 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         // Can be reached twice: an explicit Dispose and process exit.
         if (Interlocked.Exchange(ref disposeStarted, 1) == 1) return;
 
-        ProcessShutdown.Default.RemoveFinalFlush(Dispose);
+        AppDomain.CurrentDomain.ProcessExit -= OnProcessExit;
 
         // 1. Stop the timer first to prevent new flush triggers
         try { timer.Dispose(); } catch { }

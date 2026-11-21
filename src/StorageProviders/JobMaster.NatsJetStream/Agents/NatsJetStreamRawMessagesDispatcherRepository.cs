@@ -82,6 +82,26 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     {
         throw new NotSupportedException();
     }
+
+    public Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease)
+    {
+        throw new NotSupportedException();
+    }
+
+    public Task AckAsync(string fullBucketAddressId, IList<string> messageIds)
+    {
+        throw new NotSupportedException();
+    }
+
+    public Task UpdateBucketAsync(string fullBucketAddressId, IList<string> messageIds, string newFullBucketAddressId)
+    {
+        throw new NotSupportedException();
+    }
+
+    public Task CreateBucketIfNotExistsAsync(string fullBucketAddressId)
+    {
+        throw new NotSupportedException();
+    }
     
     public async Task<bool> HasJobsAsync(string fullBucketAddressId)
     {
@@ -145,7 +165,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
     
     protected async Task EnsureStreamAsync()
     {
-        await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId, config);
+        await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId, config, logger);
     }
     
     private async Task<string> DoPublishAsync(string subject, string payload, DateTime referenceTime, string correlationId)

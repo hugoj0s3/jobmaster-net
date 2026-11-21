@@ -164,6 +164,107 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
             return won;
         }, nameof(PullMessagesAsync));
 
+    // Unlike SQL, the lease uses this process's clock (RavenDB queries have no server "now"). Optimistic concurrency:
+    // if another worker changed one of these messages first, this call leases nothing and the next poll tries again.
+    public Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease) =>
+        ExecuteWithRetryAsync(async () =>
+        {
+            if (numberOfJobs <= 0) return (IList<JobMasterRawMessage>)new List<JobMasterRawMessage>();
+
+            using var session = store.OpenAsyncSession();
+            session.Advanced.UseOptimisticConcurrency = true;
+            var now = DateTime.UtcNow;
+
+            var rql = $"from index '{RavenDbMessageIndexes.ByBucketAndReferenceTimeName}' as e " +
+                      "where e.BucketAddressId = $bucket and (e.LeasedUntil = null or e.LeasedUntil <= $now) " +
+                      "order by e.ReferenceTime asc select id() as Id limit 0, $limit";
+            var ids = (await session.Advanced.AsyncRawQuery<IdProjection>(rql)
+                    .AddParameter("bucket", fullBucketAddressId)
+                    .AddParameter("now", now)
+                    .AddParameter("limit", numberOfJobs)
+                    .ToListAsync())
+                .Select(p => p.Id)
+                .ToList();
+            if (ids.Count == 0) return (IList<JobMasterRawMessage>)new List<JobMasterRawMessage>();
+
+            var docs = await session.LoadAsync<RavenDbMessageDocument>(ids);
+
+            var leased = new List<JobMasterRawMessage>(ids.Count);
+            foreach (var id in ids)
+            {
+                var doc = docs[id];
+                // Gone, or leased since the (possibly stale) index saw it.
+                if (doc == null || doc.LeasedUntil > now) continue;
+
+                doc.LeasedUntil = now.Add(lease);
+                doc.LeaseCount++;
+                leased.Add(ToDomain(doc));
+            }
+
+            try
+            {
+                await session.SaveChangesAsync();
+            }
+            catch (ConcurrencyException)
+            {
+                return (IList<JobMasterRawMessage>)new List<JobMasterRawMessage>();
+            }
+
+            return leased;
+        }, nameof(LeaseMessagesAsync));
+
+    public Task AckAsync(string fullBucketAddressId, IList<string> messageIds) =>
+        ExecuteWithRetryAsync(async () =>
+        {
+            if (messageIds.Count == 0) return true;
+
+            using var session = store.OpenAsyncSession();
+            foreach (var messageId in messageIds)
+            {
+                session.Delete(DocumentId(fullBucketAddressId, messageId));
+            }
+
+            await session.SaveChangesAsync();
+            return true;
+        }, nameof(AckAsync));
+
+    // The bucket is part of the document id (HasJobsAsync streams by it), so a move is a copy under the new id plus a
+    // delete, in one SaveChanges.
+    public Task UpdateBucketAsync(string fullBucketAddressId, IList<string> messageIds, string newFullBucketAddressId) =>
+        ExecuteWithRetryAsync(async () =>
+        {
+            if (messageIds.Count == 0) return true;
+
+            using var session = store.OpenAsyncSession();
+            var docs = await session.LoadAsync<RavenDbMessageDocument>(messageIds.Select(id => DocumentId(fullBucketAddressId, id)));
+            foreach (var doc in docs.Values.Where(d => d != null))
+            {
+                var moved = new RavenDbMessageDocument
+                {
+                    MessageId = doc.MessageId,
+                    BucketAddressId = newFullBucketAddressId,
+                    Payload = doc.Payload,
+                    ReferenceTime = doc.ReferenceTime,
+                    CorrelationId = doc.CorrelationId,
+                    EnqueuedAt = doc.EnqueuedAt,
+                    LeasedUntil = null,
+                    LeaseCount = doc.LeaseCount,
+                };
+                await session.StoreAsync(moved, DocumentId(newFullBucketAddressId, doc.MessageId));
+                ApplyCollectionMetadata(session.Advanced.GetMetadataFor(moved));
+                session.Delete(doc);
+            }
+
+            await session.SaveChangesAsync();
+            return true;
+        }, nameof(UpdateBucketAsync));
+
+    public async Task CreateBucketIfNotExistsAsync(string fullBucketAddressId)
+    {
+        // No-op, like CreateBucketAsync: RavenDB needs no bucket record.
+        await Task.CompletedTask;
+    }
+
     private sealed class IdProjection
     {
         public string Id { get; set; } = string.Empty;
@@ -294,5 +395,6 @@ internal sealed class RavenDbRawMessagesDispatcherRepository : JobMasterClusterA
             ReferenceTime = doc.ReferenceTime,
             CorrelationId = doc.CorrelationId,
             EnqueuedAt = doc.EnqueuedAt,
+            LeaseCount = doc.LeaseCount,
         });
 }

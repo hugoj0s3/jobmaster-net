@@ -43,6 +43,12 @@ internal class PostgresSqlGenerator : SqlGenerator
         var fullTableName = $"{tablePrefix}{table}".ToLowerInvariant();
         return $"SELECT 1 FROM information_schema.tables WHERE lower(table_name) = '{fullTableName}' AND table_schema = current_schema() LIMIT 1;";
     }
+
+    public override string ColumnExistsSql(string tablePrefix, string table, string column)
+    {
+        var fullTableName = $"{tablePrefix}{table}".ToLowerInvariant();
+        return $"SELECT 1 FROM information_schema.columns WHERE lower(table_name) = '{fullTableName}' AND lower(column_name) = '{column.ToLowerInvariant()}' AND table_schema = current_schema() LIMIT 1;";
+    }
     
     public override string InClauseFor(string columnName, string parameterName)
     {

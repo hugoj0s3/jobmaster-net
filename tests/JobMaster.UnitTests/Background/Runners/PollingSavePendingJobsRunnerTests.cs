@@ -102,21 +102,21 @@ public class PollingSavePendingJobsRunnerTests
     // ── OnTickAsync — processing paths ────────────────────────────────────────
 
     [Fact]
-    public async Task OnTickAsync_WhenPendingJobsExist_ShouldProcessThemAndReturnSuccess()
+    public async Task OnTickAsync_WhenJobIsPastTheTransientThreshold_HoldsItOnMasterAndAcks()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-
-        // Transient job: NextPlanExecutionAt > cutOffDate (now + 5 min) — takes the
-        // held-on-master branch inside JobSavePendingOperation without needing a bucket selection.
-        f.JobsDispatcher.PendingQueue.Add(TransientJob(TestBucketId));
+        var job = TransientJob(TestBucketId);
+        f.JobsDispatcher.PendingQueue.Add(job);
 
         var runner = CreateRunner(f);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
-        f.JobsDispatcher.PendingQueue.Should().BeEmpty(); // pulled from queue
-        f.JobsDispatcher.RequeuedJobs.Should().BeEmpty(); // no failure re-queue
+        f.JobsService.Jobs.Should().ContainSingle(j => j.Id == job.Id && j.Status == JobMasterJobStatus.OnMaster);
+        f.JobsDispatcher.AckedKeys.Should().HaveCount(1);
+        f.JobsDispatcher.LeasedJobs.Should().BeEmpty();
+        f.JobsDispatcher.PublishedForProcessing.Should().BeEmpty();
     }
 
     [Fact]
@@ -130,56 +130,113 @@ public class PollingSavePendingJobsRunnerTests
         var result = await runner.OnTickAsync(CancellationToken.None);
 
         result.Status.Should().Be(TicketResultStatus.Success);
+        f.JobsDispatcher.AckedKeys.Should().HaveCount(1);
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenJobProcessingFails_ShouldRequeueJobAndReturnSkippedWithDelay()
+    public async Task OnTickAsync_WhenJobIsDueSoon_AssignsItToABucket_DispatchesAndAcks()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-        f.JobsDispatcher.PendingQueue.Add(TransientJob(TestBucketId));
+        var job = DueSoonJob(TestBucketId);
+        f.JobsDispatcher.PendingQueue.Add(job);
 
-        // Make the IWorkerClusterOperations ExecWithRetryAsync throw so that
-        // JobSavePendingOperation.AddSavePendingJobAsync propagates the exception to the runner.
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Func<IWorkerClusterOperations, Task>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .ThrowsAsync(new InvalidOperationException("simulated processing failure"));
+        var runner = CreateRunner(f);
+        await runner.OnTickAsync(CancellationToken.None);
+
+        f.JobsService.Jobs.Should().ContainSingle(j => j.Id == job.Id && j.Status == JobMasterJobStatus.InBucket);
+        f.WorkerClusterOps.Verify(x => x.BulkDispatchJobsToBucketAsync(
+            It.IsAny<IJobMasterBackgroundAgentWorker>(),
+            It.Is<BucketModel>(b => b.Id == TestBucketId),
+            It.Is<IList<JobRawModel>>(jobs => jobs.Count == 1 && jobs[0].Id == job.Id)), Times.Once);
+        f.JobsDispatcher.AckedKeys.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenJobIsAlreadyOnMaster_AcksWithoutPublishingAgain()
+    {
+        // A message leased again after its lease ran out: the job was saved (and dispatched) the first time.
+        var f = RunnerFixture.Create();
+        f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
+        var job = DueSoonJob(TestBucketId);
+        f.JobsService.Jobs.Add(new JobRawModel { Id = job.Id, Status = JobMasterJobStatus.InBucket });
+        f.JobsDispatcher.PendingQueue.Add(job);
+
+        var runner = CreateRunner(f);
+        await runner.OnTickAsync(CancellationToken.None);
+
+        f.JobsDispatcher.AckedKeys.Should().HaveCount(1);
+        f.WorkerClusterOps.Verify(x => x.BulkDispatchJobsToBucketAsync(
+            It.IsAny<IJobMasterBackgroundAgentWorker>(), It.IsAny<BucketModel>(), It.IsAny<IList<JobRawModel>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenJobIsNotConfirmedOnMaster_ReturnsFailed_AndLeavesItsMessageLeased()
+    {
+        var f = RunnerFixture.Create();
+        f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
+        var job = DueSoonJob(TestBucketId);
+        f.JobsService.UnknownOnInsert.Add(job.Id);
+        f.JobsDispatcher.PendingQueue.Add(job);
 
         var runner = CreateRunner(f);
         var result = await runner.OnTickAsync(CancellationToken.None);
 
-        // On failure the runner re-queues and returns a Skipped result with backoff.
-        result.Status.Should().Be(TicketResultStatus.Skipped);
-        result.Delay.Should().BeGreaterThan(TimeSpan.Zero);
-        f.JobsDispatcher.RequeuedJobs.Should().HaveCount(1);
+        result.Status.Should().Be(TicketResultStatus.Failed);
+        f.JobsDispatcher.AckedKeys.Should().BeEmpty();
+        f.JobsDispatcher.LeasedJobs.Values.Should().ContainSingle(j => j.Id == job.Id);
+        f.JobsDispatcher.PublishedForProcessing.Should().BeEmpty();
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenConsecutiveFailures_ShouldIncreaseDelay()
+    public async Task OnTickAsync_WhenAPartitionFailsToSave_ReturnsFailed_AndLeavesItsMessagesLeased()
+    {
+        // Failed, not Success: consecutive failed ticks stop the runner and mark the bucket Lost, so another worker takes it.
+        var f = RunnerFixture.Create();
+        f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
+        var job = DueSoonJob(TestBucketId);
+        f.JobsService.ThrowOnInsert = new TimeoutException("master down");
+        f.JobsDispatcher.PendingQueue.Add(job);
+
+        var runner = CreateRunner(f);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Failed);
+        f.JobsDispatcher.AckedKeys.Should().BeEmpty();
+        f.JobsDispatcher.LeasedJobs.Values.Should().ContainSingle(j => j.Id == job.Id);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenTheSameJobComesInTwoMessages_SavesItOnceAndAcksBoth()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
-        f.WorkerClusterOps
-            .Setup(x => x.ExecWithRetryAsync(
-                It.IsAny<Func<IWorkerClusterOperations, Task>>(),
-                It.IsAny<int>(),
-                It.IsAny<int>()))
-            .ThrowsAsync(new InvalidOperationException("simulated failure"));
+        var job = TransientJob(TestBucketId);
+        f.JobsDispatcher.PendingQueue.Add(job);
+        f.JobsDispatcher.PendingQueue.Add(new JobRawModel
+        {
+            Id = job.Id,
+            Status = JobMasterJobStatus.PendingSave,
+            BucketId = TestBucketId,
+            NextPlanExecutionAt = job.NextPlanExecutionAt,
+        });
 
         var runner = CreateRunner(f);
+        var result = await runner.OnTickAsync(CancellationToken.None);
 
-        // First failure.
-        f.JobsDispatcher.PendingQueue.Add(TransientJob(TestBucketId));
-        var result1 = await runner.OnTickAsync(CancellationToken.None);
-
-        // Second failure.
-        f.JobsDispatcher.PendingQueue.Add(TransientJob(TestBucketId));
-        var result2 = await runner.OnTickAsync(CancellationToken.None);
-
-        // Delay should grow with each consecutive failure.
-        result2.Delay.Should().BeGreaterThanOrEqualTo(result1.Delay);
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.JobsService.Jobs.Should().ContainSingle(j => j.Id == job.Id);
+        f.JobsDispatcher.AckedKeys.Should().HaveCount(2);
+        f.JobsDispatcher.LeasedJobs.Should().BeEmpty();
     }
+
+    /// <summary>A pending-save job due now: within the transient threshold, so it goes to a bucket.</summary>
+    private static JobRawModel DueSoonJob(string bucketId)
+        => new()
+        {
+            Id = JobMasterRandomUtil.NewGuid4(),
+            Status = JobMasterJobStatus.PendingSave,
+            BucketId = bucketId,
+            NextPlanExecutionAt = DateTime.UtcNow,
+        };
 }

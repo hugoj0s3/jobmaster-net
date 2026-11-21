@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background.Runners.CleanUpData;
@@ -156,14 +157,5 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
         return confirmedIds.Count;
     }
 
-    public override TimeSpan SucceedInterval
-    {
-        get
-        {
-            var ttl = clusterConfigService.Get()?.DataRetentionTtl ?? TimeSpan.Zero;
-            if (ttl <= TimeSpan.Zero) return TimeSpan.FromHours(1);
-            var ticks = Math.Max(TimeSpan.FromMinutes(5).Ticks, Math.Min(ttl.Ticks / 2, TimeSpan.FromHours(1).Ticks));
-            return TimeSpan.FromTicks(ticks);
-        }
-    }
+    public override TimeSpan SucceedInterval => RunnerDelayUtil.CalcCleanUpDelay(clusterConfigService.Get()?.DataRetentionTtl);
 }

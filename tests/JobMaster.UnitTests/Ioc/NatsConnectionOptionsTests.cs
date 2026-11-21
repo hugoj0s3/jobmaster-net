@@ -196,6 +196,33 @@ public class NatsConnectionOptionsTests
         sel.Captured.Should().NotContain(c => c.Key == NatsJetStreamConfigKey.NatsTlsOptsKey);
     }
 
+    // ── stream options ───────────────────────────────────────────────────────
+
+    [Fact]
+    public void SetOptions_StreamMaxAgeAndNumReplicas_AreStored()
+    {
+        var sel = Selector();
+        Binder().SetOptions(sel, new Dictionary<string, object>
+        {
+            ["streamMaxAge"]      = "7.00:00:00",
+            ["streamNumReplicas"] = "3"
+        });
+
+        sel.Captured.Should().Contain(c => c.Key == NatsJetStreamConfigKey.StreamMaxAgeKey && (TimeSpan)c.Value == TimeSpan.FromDays(7));
+        sel.Captured.Should().Contain(c => c.Key == NatsJetStreamConfigKey.StreamNumReplicasKey && (int)c.Value == 3);
+    }
+
+    [Theory]
+    [InlineData("streamMaxAge", "thirty days")]
+    [InlineData("streamNumReplicas", "three")]
+    public void SetOptions_InvalidStreamOption_ThrowsArgumentException(string key, string value)
+    {
+        var sel = Selector();
+        var act = () => Binder().SetOptions(sel, new Dictionary<string, object> { [key] = value });
+
+        act.Should().Throw<ArgumentException>().WithMessage($"*{key}*");
+    }
+
     // ── key validation ───────────────────────────────────────────────────────
 
     [Fact]
@@ -221,6 +248,20 @@ public class NatsConnectionOptionsTests
             new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase) { [key] = value });
 
         act.Should().NotThrow();
+    }
+
+    [Fact]
+    public void SetOptions_CaseSensitiveDictionary_StillMatchesKeysIgnoringCase()
+    {
+        var sel = Selector();
+        Binder().SetOptions(sel, new Dictionary<string, object>
+        {
+            ["USERNAME"]          = "alice",
+            ["StreamNumReplicas"] = "3"
+        });
+
+        CapturedAuth(sel).Username.Should().Be("alice");
+        sel.Captured.Should().Contain(c => c.Key == NatsJetStreamConfigKey.StreamNumReplicasKey && (int)c.Value == 3);
     }
 
     // ── cluster selector ─────────────────────────────────────────────────────

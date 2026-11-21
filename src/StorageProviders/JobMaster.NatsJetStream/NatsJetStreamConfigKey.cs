@@ -11,6 +11,12 @@ internal static class NatsJetStreamConfigKey
     internal static readonly string NatsAuthOptsKey = 
         "NatsAuthOpts";
     
-    internal static readonly string NatsTlsOptsKey = 
+    internal static readonly string NatsTlsOptsKey =
         "NatsTlsOpts";
+
+    internal static readonly string StreamMaxAgeKey =
+        "StreamMaxAge";
+
+    internal static readonly string StreamNumReplicasKey =
+        "StreamNumReplicas";
 }

@@ -10,4 +10,8 @@ internal sealed class RavenDbMessageDocument
     public DateTime ReferenceTime { get; set; }
     public string CorrelationId { get; set; } = string.Empty;
     public DateTime EnqueuedAt { get; set; }
+
+    // Null = not leased (also on documents written before leases existed).
+    public DateTime? LeasedUntil { get; set; }
+    public int LeaseCount { get; set; }
 }

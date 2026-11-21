@@ -10,17 +10,13 @@ using JobMaster.Sdk.Background.Runners.SavePendingJobs;
 namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
 /// <summary>
-/// Saves <c>PendingSave</c> jobs for a draining bucket using the drain-safe path
-/// (<c>AddPendingSaveJobForDrainWithSafeGuardAsync</c>). Skips if no bucket ID is set
-/// or the bucket is not in <c>Draining</c> status. Applies a consecutive-failure backoff
-/// (60–180 s) when individual jobs fail to save.
+/// Saves the <c>PendingSave</c> jobs of a draining bucket on master, all held on master, and acks their messages
+/// (<see cref="JobSavePendingOperation.SaveAndAckAsync"/>). Skips if no bucket ID is set or the bucket is not in
+/// <c>Draining</c> status; a message not acked is leased again once its lease ends.
 /// Runs every <see cref="SucceedInterval"/>.
 /// </summary>
 internal class PollingDrainSavePendingJobsRunner : DrainJobsRunnerBase, IDrainSavePendingJobsRunner
 {
-
-    private int failedSavedCountConsecutive = 0;
-
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
 
@@ -49,32 +45,24 @@ internal class PollingDrainSavePendingJobsRunner : DrainJobsRunnerBase, IDrainSa
             return OnTickResult.Skipped(this);
         }
 
-        var savingPendingJobs = await agentJobsDispatcherService
-            .PullSavePendingJobsAsync(bucket.AgentConnectionId, BucketId!, BackgroundAgentWorker.BucketBufferSize);
+        var leasedJobs = await agentJobsDispatcherService.LeaseSavePendingJobsAsync(
+            bucket.AgentConnectionId,
+            BucketId!,
+            BackgroundAgentWorker.BucketBufferSize,
+            JobSavePendingOperation.LeaseFor(BackgroundAgentWorker.BucketBufferSize));
 
-        if (!savingPendingJobs.Any())
+        if (leasedJobs.Count <= 0)
         {
             return OnTickResult.Skipped(TimeSpan.FromMinutes(1));
         }
 
-        bool hasFailed = false;
-        foreach (var job in savingPendingJobs)
+        // A draining bucket takes no new work: every job is held on master (no bucket assignments).
+        foreach (var job in leasedJobs.Select(x => x.Job))
         {
-            var result = await savePendingOperation.AddPendingSaveJobForDrainWithSafeGuardAsync(job); 
-            if (result != SaveDrainResultCode.Success && result != SaveDrainResultCode.Skipped)
-            {
-               hasFailed = true;
-            }
+            job.MarkAsHeldOnMaster();
         }
 
-        if (hasFailed)
-        {
-            failedSavedCountConsecutive++;
-            var secondsToWait = Math.Min(180, 60 + failedSavedCountConsecutive * 5);
-            return OnTickResult.Skipped(TimeSpan.FromSeconds(secondsToWait));
-        }
-
-        failedSavedCountConsecutive = 0;
-        return OnTickResult.Success(this);
+        var saved = await savePendingOperation.SaveAndAckAsync(bucket, leasedJobs, new Dictionary<Guid, BucketModel>());
+        return saved ? OnTickResult.Success(this) : OnTickResult.Failed(this);
     }
 }

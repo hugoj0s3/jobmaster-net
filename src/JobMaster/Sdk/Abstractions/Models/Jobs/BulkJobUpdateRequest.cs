@@ -52,10 +52,18 @@ internal sealed class BulkJobUpdateRequest
             BulkJobUpdateProperty.For(j => j.PartitionLockId, null),
             BulkJobUpdateProperty.For(j => j.PartitionLockExpiresAt, null));
 
+    /// <summary>
+    /// Moves the jobs back to master. Skips jobs already on master and jobs in a final status (a stale message or a
+    /// late compensation must never revive a finished job); <c>Processing</c> is not skipped (deadline recovery).
+    /// </summary>
     public static BulkJobUpdateRequest HeldOnMaster(IList<Guid> jobIds)
-        => For(
+    {
+        var excludeStatuses = JobMasterJobStatusUtil.GetFinalStatuses().ToList();
+        excludeStatuses.Add(JobMasterJobStatus.OnMaster);
+
+        return For(
             jobIds,
-            excludeStatuses: [JobMasterJobStatus.OnMaster],
+            excludeStatuses: excludeStatuses,
             BulkJobUpdateProperty.For(j => j.Status, JobMasterJobStatus.OnMaster),
             BulkJobUpdateProperty.For(j => j.AgentConnectionId, null),
             BulkJobUpdateProperty.For(j => j.AgentWorkerId, null),
@@ -63,6 +71,7 @@ internal sealed class BulkJobUpdateRequest
             BulkJobUpdateProperty.For(j => j.ProcessDeadline, null),
             BulkJobUpdateProperty.For(j => j.PartitionLockId, null),
             BulkJobUpdateProperty.For(j => j.PartitionLockExpiresAt, null));
+    }
 }
 
 /// <summary>

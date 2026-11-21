@@ -44,7 +44,7 @@ internal class NatsJetStreamJobMasterRuntimeSetup : IJobMasterRuntimeSetup
                     $"Cluster {agentConfig.ClusterId}: TransientThreshold ({clusterTransientThreshold}) must be less than or equal to {NatsJetStreamConstants.MaxThreshold} when using NatsJetStream. See {docUrl}");
             }
         }
-        
+
         return Task.FromResult<IList<string>>(errors);
     }
 

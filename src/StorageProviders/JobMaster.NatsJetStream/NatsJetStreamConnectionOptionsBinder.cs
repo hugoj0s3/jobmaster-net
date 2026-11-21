@@ -1,3 +1,4 @@
+using System.Globalization;
 using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Sdk.Abstractions.Ioc;
 using NATS.Client.Core;
@@ -10,13 +11,16 @@ internal sealed class NatsJetStreamConnectionOptionsBinder : IConnectionOptionsB
     {
         "username", "password", "token", "credentialsFile", "nkey", "jwt",
         "tlsCertBundleFile", "tlsCertBundleFilePassword",
-        "tlsCaFile", "tlsInsecureSkipVerify", "tlsMode"
+        "tlsCaFile", "tlsInsecureSkipVerify", "tlsMode",
+        "streamMaxAge", "streamNumReplicas"
     };
 
     public string RepoType => NatsJetStreamConstants.RepositoryTypeId;
 
     public void SetOptions(IAgentConnectionProviderSelector selector, IDictionary<string, object> options)
     {
+        // Keys ignore case whatever comparer the caller's dictionary uses.
+        options = new Dictionary<string, object>(options, StringComparer.OrdinalIgnoreCase);
         ValidateKeys(options);
 
         var authOpts = BuildAuthOpts(options);
@@ -32,6 +36,28 @@ internal sealed class NatsJetStreamConnectionOptionsBinder : IConnectionOptionsB
                 NatsJetStreamConfigKey.NamespaceUniqueKey,
                 NatsJetStreamConfigKey.NatsTlsOptsKey,
                 tlsOpts);
+
+        var maxAgeStr = GetString(options, "streamMaxAge");
+        if (maxAgeStr is not null)
+        {
+            if (!TimeSpan.TryParse(maxAgeStr, CultureInfo.InvariantCulture, out var maxAge))
+                throw new ArgumentException($"Invalid streamMaxAge '{maxAgeStr}'. Expected a TimeSpan, e.g. \"30.00:00:00\" for 30 days.");
+            selector.AppendAdditionalConnConfigValue(
+                NatsJetStreamConfigKey.NamespaceUniqueKey,
+                NatsJetStreamConfigKey.StreamMaxAgeKey,
+                maxAge);
+        }
+
+        var numReplicasStr = GetString(options, "streamNumReplicas");
+        if (numReplicasStr is not null)
+        {
+            if (!int.TryParse(numReplicasStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out var numReplicas))
+                throw new ArgumentException($"Invalid streamNumReplicas '{numReplicasStr}'. Expected a whole number.");
+            selector.AppendAdditionalConnConfigValue(
+                NatsJetStreamConfigKey.NamespaceUniqueKey,
+                NatsJetStreamConfigKey.StreamNumReplicasKey,
+                numReplicas);
+        }
     }
 
     public void SetOptions(IClusterConfigSelector selector, IDictionary<string, object> options)

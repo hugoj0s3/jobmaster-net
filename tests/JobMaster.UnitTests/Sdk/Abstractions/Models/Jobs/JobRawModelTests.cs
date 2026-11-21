@@ -77,7 +77,7 @@ public class JobRawModelTests
         job.AssignSavePendingJobToBucket(bucket);
 
         job.Status.Should().Be(JobMasterJobStatus.PendingSave,
-            "JobSavePendingOperation.AddSavePendingJobAsync's short-circuit fast path checks " +
+            "JobSavePendingOperation.PushSavePendingJobAsync's short-circuit fast path checks " +
             "Status == PendingSave to decide whether it can inject the job directly into the " +
             "execution engine on the same worker; flipping Status here (as it previously did, to " +
             "InBucket) makes that check permanently false for every scheduled job, silently " +

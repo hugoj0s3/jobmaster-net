@@ -4,7 +4,9 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
+using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -96,6 +98,39 @@ public class AssignedLostBucketsRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.Buckets.UpdatedBuckets.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(2, false)]  // a restart or deploy: still within the grace period → Warning
+    [InlineData(15, true)]  // no worker came back → Critical
+    public async Task OnTickAsync_WhenNoWorkerForConnection_LogsOncePerConnection_WarnThenCritical(int lostMinutesAgo, bool expectCritical)
+    {
+        var expected = expectCritical ? JobMasterLogLevel.Critical : JobMasterLogLevel.Warning;
+        var f = RunnerFixture.Create();
+        var connectionId = new AgentConnectionId(f.ClusterId, "fake-agent");
+
+        foreach (var id in new[] { "lost-1", "lost-2" })
+        {
+            f.Buckets.Buckets.Add(new BucketModel(f.ClusterId)
+            {
+                Id = id,
+                Status = BucketStatus.Lost,
+                AgentConnectionId = connectionId,
+                LastStatusChangeAt = DateTime.UtcNow.AddMinutes(-lostMinutesAgo),
+            });
+        }
+
+        var runner = new AssignedLostBucketsRunner(f.Worker.Object);
+        await runner.OnTickAsync(CancellationToken.None);
+
+        f.Logger.Verify(x => x.Log(
+            expected, It.Is<string>(m => m.Contains("fake-agent") && m.Contains("2 Lost bucket(s)")),
+            It.IsAny<JobMasterLogCategory?>(), It.IsAny<string?>(), It.IsAny<Exception?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>()), Times.Once);
+        f.Logger.Verify(x => x.Log(
+            It.Is<JobMasterLogLevel>(l => l != expected && l >= JobMasterLogLevel.Warning), It.IsAny<string>(),
+            It.IsAny<JobMasterLogCategory?>(), It.IsAny<string?>(), It.IsAny<Exception?>(),
+            It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>()), Times.Never);
     }
 
     [Fact]

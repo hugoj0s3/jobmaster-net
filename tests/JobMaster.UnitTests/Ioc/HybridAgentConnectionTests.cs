@@ -48,17 +48,12 @@ public class HybridAgentConnectionTests
         _ = typeof(SqlServerConnectionOptionsBinder);
         _ = typeof(RavenDbConnectionOptionsBinder);
         _ = typeof(NatsJetStreamConnectionOptionsBinder);
-
-        BootstrapBlueprintDefinitions.JobMasterScheduler = JobMasterScheduler.Instance;
-        BootstrapBlueprintDefinitions.JobMasterRuntime = new JobMasterRuntime();
     }
 
     private static string UniqueClusterId() => $"Hyb-{Guid.NewGuid():N}"[..16];
 
     private static ClusterConfigBuilder CreateBuilder(string clusterId, IServiceCollection? services = null)
     {
-        BootstrapBlueprintDefinitions.JobMasterScheduler ??= JobMasterScheduler.Instance;
-        BootstrapBlueprintDefinitions.JobMasterRuntime ??= new JobMasterRuntime();
         return new ClusterConfigBuilder(clusterId, services ?? new ServiceCollection());
     }
 
@@ -858,13 +853,15 @@ public class HybridAgentConnectionTests
             BucketId = bucketId,
         };
 
-        dispatcher.PushForSaving(recur);
-        await dispatcher.PushForSavingAsync(recur);
+        dispatcher.PushSavePendingRecur(recur);
+        await dispatcher.PushSavePendingRecurAsync(recur);
         dispatcher.PushSavePendingJob(job);
         await dispatcher.PushSavePendingJobAsync(job);
         await dispatcher.BulkPushSavePendingJobAsync(bucketId, new List<JobRawModel> { job });
-        await dispatcher.PullSavePendingRecurAsync(bucketId, 10);
-        await dispatcher.PullSavePendingJobsAsync(bucketId, 10);
+        await dispatcher.LeaseSavePendingRecurAsync(bucketId, 10, TimeSpan.FromMinutes(1));
+        await dispatcher.AckSavePendingRecurAsync(bucketId, new List<string> { "k" });
+        await dispatcher.LeaseSavePendingJobsAsync(bucketId, 10, TimeSpan.FromMinutes(1));
+        await dispatcher.AckSavePendingJobsAsync(bucketId, new List<string> { "k" });
         dispatcher.PushForProcessing(job);
         await dispatcher.PushForProcessingAsync(job);
         await dispatcher.BulkPushForProcessingAsync(bucketId, new List<JobRawModel> { job });
@@ -884,8 +881,10 @@ public class HybridAgentConnectionTests
             ("PushMessage", savePending),
             ("PushMessageAsync", savePending),
             ("BulkPushMessageAsync", savePending),
-            ("PullMessagesAsync", recurSavePending),
-            ("PullMessagesAsync", savePending),
+            ("LeaseMessagesAsync", recurSavePending),
+            ("AckAsync", recurSavePending),
+            ("LeaseMessagesAsync", savePending),
+            ("AckAsync", savePending),
             ("HasJobsAsync", savePending),
             ("HasJobsAsync", recurSavePending),
             ("CreateBucketAsync", savePending),
@@ -920,6 +919,9 @@ public class HybridAgentConnectionTests
             .ReturnsAsync(new List<string> { "id" });
         mock.Setup(r => r.PullMessagesAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<DateTime?>()))
             .ReturnsAsync(new List<JobMasterRawMessage>());
+        mock.Setup(r => r.LeaseMessagesAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<TimeSpan>()))
+            .ReturnsAsync(new List<JobMasterRawMessage>());
+        mock.Setup(r => r.AckAsync(It.IsAny<string>(), It.IsAny<IList<string>>())).Returns(Task.CompletedTask);
         mock.Setup(r => r.HasJobsAsync(It.IsAny<string>())).ReturnsAsync(false);
         mock.Setup(r => r.CreateBucketAsync(It.IsAny<string>())).Returns(Task.CompletedTask);
         mock.Setup(r => r.DestroyBucketAsync(It.IsAny<string>())).Returns(Task.CompletedTask);

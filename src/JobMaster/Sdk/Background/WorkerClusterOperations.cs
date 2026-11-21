@@ -51,7 +51,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     }
 
     // Same-worker short-circuit still happens per job (cheap, in-memory), but everything that needs
-    // an actual agent-DB write is collected and sent through BulkAddForProcessingAsync in one call
+    // an actual agent-DB write is collected and sent through BulkPushForProcessingAsync in one call
     // instead of one dispatch call per job. Caller passes one bucket's jobs at a time -- grouping by
     // bucket and partitioning happen in AssignJobsToBucketsRunner, so a failure here only holds back
     // this one partition instead of the whole tick's batch.
@@ -59,6 +59,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         BucketModel bucket, IList<JobRawModel> jobs)
     {
         var toBulkDispatch = new List<JobRawModel>();
+
+        // The bucket's engine can be on another worker of this process (bucket ids are unique runtime-wide, they
+        // include the cluster id): short-circuit into it too, saving the publish round-trip.
+        var engine = backgroundAgentWorker.GetEngine(bucket.Id)
+            ?? backgroundAgentWorker.Runtime?.GetAllWorkers()
+                .Select(w => w.GetEngine(bucket.Id))
+                .FirstOrDefault(e => e is not null);
 
         foreach (var jobRaw in jobs)
         {
@@ -74,7 +81,6 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
             try
             {
-                var engine = backgroundAgentWorker.GetEngine(bucket.Id);
                 if (engine != null &&
                     jobRaw.IsWithinOnboardingWindow() &&
                     engine.HasOnBoardingAvailability())
@@ -121,7 +127,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         try
         {
-            await agentJobsDispatcherService.BulkAddForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
+            await agentJobsDispatcherService.BulkPushForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
         }
         catch (Exception ex)
         {

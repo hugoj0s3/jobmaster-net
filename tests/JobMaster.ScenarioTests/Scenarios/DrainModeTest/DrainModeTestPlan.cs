@@ -11,18 +11,25 @@ namespace JobMaster.ScenarioTests.Scenarios.DrainModeTest;
 ///
 /// 5000 jobs total, deliberately above <c>JobMasterDefaults.Worker.TransferBatchSize</c> (1000 --
 /// the number of jobs pulled from master per DB round-trip), so onboarding the whole batch requires
-/// multiple transfer cycles, not just one.
+/// multiple transfer cycles, not just one. <c>JM_DRAIN_JOBS_MULTIPLIER</c> (default 1) scales every batch, for a
+/// heavier run (e.g. 5 → 25k jobs, more of them in flight when the executors are stopped).
 /// </summary>
 public static class DrainModeTestPlan
 {
-    public const int TotalJobs = 5000;
+    public static readonly int JobsMultiplier =
+        int.TryParse(Environment.GetEnvironmentVariable("JM_DRAIN_JOBS_MULTIPLIER"), out var m) && m > 0 ? m : 1;
+
+    // Jobs per schedule request: the app schedules a request's jobs concurrently, and the HttpClient times out at 100 s.
+    public const int MaxJobsPerRequest = 3500;
 
     public static readonly IReadOnlyList<DrainModeTestBatch> Batches = new List<DrainModeTestBatch>
     {
-        new("fast", 3500, Priority: 3, TestIdentifier: "drainload-fast"),     // Medium
-        new("normal", 1250, Priority: 4, TestIdentifier: "drainload-normal"), // High
-        new("slow", 250, Priority: 2, TestIdentifier: "drainload-slow"),      // Low
+        new("fast", 3500 * JobsMultiplier, Priority: 3, TestIdentifier: "drainload-fast"),     // Medium
+        new("normal", 1250 * JobsMultiplier, Priority: 4, TestIdentifier: "drainload-normal"), // High
+        new("slow", 250 * JobsMultiplier, Priority: 2, TestIdentifier: "drainload-slow"),      // Low
     };
+
+    public static readonly int TotalJobs = Batches.Sum(b => b.QtyJobs);
 
     public static readonly IReadOnlyDictionary<string, string> HandlerTypeToJobDefinitionId = new Dictionary<string, string>
     {

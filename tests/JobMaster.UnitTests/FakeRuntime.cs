@@ -21,11 +21,4 @@ internal sealed class FakeRuntime : IJobMasterRuntime
     public bool IsOnWarmUpTime() => Started;
 
     public Task StartAsync(IServiceProvider serviceProvider) => throw new NotSupportedException();
-    public Task StopImmediatelyAsync() => Task.CompletedTask;
-
-    public int CountWorkersForCluster(string clusterId) => 1;
-
-    
-
-    public void Stop() { }
 }

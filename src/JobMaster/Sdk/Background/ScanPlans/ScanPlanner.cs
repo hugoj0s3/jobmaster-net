@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Background.ScanPlans;
 
@@ -106,7 +107,7 @@ internal static class ScanPlanner
         }
 
         // Map lockers into lane: [lane*1024+1 .. +count-1]
-        int count = Math.Max(2, (int)Math.Min(LaneWidth, Math.Ceiling(lockerCount)));
+        int count = JobMasterMathUtil.Clamp((int)Math.Ceiling(lockerCount), 2, LaneWidth);
         int start = lockerLane * LaneWidth + 1;
         int end   = start + count - 1;
 

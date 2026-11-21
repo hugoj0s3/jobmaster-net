@@ -25,8 +25,12 @@ public sealed class PostgresDistPhase1Emulator(ScenarioGlobalEnvironment global,
     {
         foreach (var batch in DrainModeTestPlan.Batches)
         {
-            await Runner.ScheduleFor("pg-executor-1")
-                .ScheduleAsync(batch.HandlerType, batch.TestIdentifier, qtyJobs: batch.QtyJobs, clusterId: ClusterId, priority: batch.Priority);
+            for (var sent = 0; sent < batch.QtyJobs; sent += DrainModeTestPlan.MaxJobsPerRequest)
+            {
+                await Runner.ScheduleFor("pg-executor-1")
+                    .ScheduleAsync(batch.HandlerType, batch.TestIdentifier,
+                        qtyJobs: Math.Min(DrainModeTestPlan.MaxJobsPerRequest, batch.QtyJobs - sent), clusterId: ClusterId, priority: batch.Priority);
+            }
         }
 
         // The simulated crash: none of the 3 executor containers are re-listed in Phase2, but

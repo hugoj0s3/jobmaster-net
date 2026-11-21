@@ -10,6 +10,7 @@ using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JobMaster.Sdk;
 
@@ -27,9 +28,6 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         this.mainServices = mainServices;
         
         ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true));
-        ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        ClusterServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
-        ClusterServices.AddSingleton<IJobMasterRuntime>(BootstrapBlueprintDefinitions.JobMasterRuntime!);
     }
     
     public IJobMasterClusterAwareComponentFactory BuildFactory()
@@ -41,8 +39,11 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         var clusterComponentFactory = new JobMasterClusterAwareComponentFactory(ClusterId, serviceProvider);
         
         mainServices.AddKeyedSingleton<IJobMasterClusterAwareComponentFactory>(ClusterServiceKeys.GetClusterServiceProviderKey(ClusterId), clusterComponentFactory);
-        mainServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        mainServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
+        mainServices.AddSingleton<IJobMasterScheduler>(JobMasterScheduler.Instance);
+        mainServices.AddSingleton<IJobMasterSchedulerAdvanced>(JobMasterScheduler.Instance.Advanced);
+        // By factory, not instance: the container disposes only what it created, and disposing the runtime stops the
+        // workers. Once, whatever the number of clusters.
+        mainServices.TryAddSingleton<IJobMasterRuntime>(_ => JobMasterRuntimeSingleton.Instance);
         return clusterComponentFactory;
     }
     

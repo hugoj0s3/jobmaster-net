@@ -33,7 +33,6 @@ public static class AddJobMasterClusterExtensions
     /// <param name="serializer">The custom serializer to register.</param>
     public static void DefineJobMasterMessageJsonSerializer(this IServiceCollection services, IJobMasterMessageJsonSerializer serializer)
     {
-        BootstrapBlueprintDefinitions.JobMasterJsonSerializer = serializer;
         JobMasterMessageJson.SetMessageSerializer(serializer);
     }
 
@@ -57,21 +56,8 @@ public static class AddJobMasterClusterExtensions
         var builder = ClusterConfigSelectorAdvancedFactory.Create(clusterId, services);
         configure(builder);
 
-        if (BootstrapBlueprintDefinitions.JobMasterJsonSerializer == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new SystemTextJsonMessageSerializer();
-        }
-        JobMasterMessageJson.SetMessageSerializerIfNotSet(BootstrapBlueprintDefinitions.JobMasterJsonSerializer);
-
-        if (BootstrapBlueprintDefinitions.JobMasterScheduler == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterScheduler = JobMasterScheduler.Instance;
-        }
-
-        if (BootstrapBlueprintDefinitions.JobMasterRuntime == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterRuntime = JobMasterRuntimeSingleton.Instance;
-        }
+        // The default, unless DefineJobMasterMessageJsonSerializer set one first.
+        JobMasterMessageJson.SetMessageSerializerIfNotSet(new SystemTextJsonMessageSerializer());
 
         builder.Finish();
 
@@ -93,21 +79,8 @@ public static class AddJobMasterClusterExtensions
         var builder = ClusterConfigSelectorAdvancedFactory.Create(null, services);
         configure(builder);
 
-        if (BootstrapBlueprintDefinitions.JobMasterJsonSerializer == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterJsonSerializer = new SystemTextJsonMessageSerializer();
-        }
-        JobMasterMessageJson.SetMessageSerializerIfNotSet(BootstrapBlueprintDefinitions.JobMasterJsonSerializer);
-
-        if (BootstrapBlueprintDefinitions.JobMasterRuntime == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterRuntime = JobMasterRuntimeSingleton.Instance;
-        }
-
-        if (BootstrapBlueprintDefinitions.JobMasterScheduler == null)
-        {
-            BootstrapBlueprintDefinitions.JobMasterScheduler = JobMasterScheduler.Instance;
-        }
+        // The default, unless DefineJobMasterMessageJsonSerializer set one first.
+        JobMasterMessageJson.SetMessageSerializerIfNotSet(new SystemTextJsonMessageSerializer());
 
         builder.Finish();
 

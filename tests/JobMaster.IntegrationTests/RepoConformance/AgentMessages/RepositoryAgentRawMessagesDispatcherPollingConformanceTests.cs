@@ -160,6 +160,137 @@ public abstract class RepositoryAgentRawMessagesDispatcherPollingConformanceTest
         }
     }
 
+    [Fact]
+    public async Task Lease_ShouldReturnMessagesInOrder_AndHideThemWhileLeased()
+    {
+        var bucket = "polling-lease-" + JobMasterRandomUtil.NewGuid4();
+        await Fixture.AgentMessages.CreateBucketAsync(bucket);
+
+        try
+        {
+            var baseTime = DateTime.UtcNow.AddMinutes(-5);
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":2}", baseTime.AddSeconds(2), "c2");
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", baseTime.AddSeconds(1), "c1");
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":3}", baseTime.AddSeconds(3), "c3");
+            await SettleAsync();
+
+            var leased = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 2, TimeSpan.FromMinutes(1));
+            Assert.Equal(new[] { "c1", "c2" }, leased.Select(x => x.CorrelationId).ToArray());
+
+            var next = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromMinutes(1));
+            Assert.Equal(new[] { "c3" }, next.Select(x => x.CorrelationId).ToArray());
+
+            Assert.Empty(await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromMinutes(1)));
+
+            // Leased messages are still stored: the bucket isn't empty until they're acked.
+            Assert.True(await Fixture.AgentMessages.HasJobsAsync(bucket));
+        }
+        finally
+        {
+            await Fixture.AgentMessages.DestroyBucketAsync(bucket);
+        }
+    }
+
+    [Fact]
+    public async Task Lease_AfterTheLeaseEnds_ShouldReturnTheMessagesAgain_CountingEachLease()
+    {
+        var bucket = "polling-lease-expiry-" + JobMasterRandomUtil.NewGuid4();
+        await Fixture.AgentMessages.CreateBucketAsync(bucket);
+
+        try
+        {
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", DateTime.UtcNow.AddSeconds(-1), "c1");
+            await SettleAsync();
+
+            var first = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromSeconds(1));
+            Assert.Single(first);
+            Assert.Equal(1, first[0].LeaseCount);
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            await SettleAsync();
+
+            var again = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromMinutes(1));
+            Assert.Single(again);
+            Assert.Equal(first[0].MessageId, again[0].MessageId);
+            Assert.Equal(2, again[0].LeaseCount);
+        }
+        finally
+        {
+            await Fixture.AgentMessages.DestroyBucketAsync(bucket);
+        }
+    }
+
+    [Fact]
+    public async Task Ack_ShouldRemoveOnlyTheAckedMessages_AndIgnoreUnknownIds()
+    {
+        var bucket = "polling-ack-" + JobMasterRandomUtil.NewGuid4();
+        await Fixture.AgentMessages.CreateBucketAsync(bucket);
+
+        try
+        {
+            var baseTime = DateTime.UtcNow.AddMinutes(-5);
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", baseTime.AddSeconds(1), "c1");
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":2}", baseTime.AddSeconds(2), "c2");
+            await SettleAsync();
+
+            var leased = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromSeconds(1));
+            Assert.Equal(2, leased.Count);
+
+            await Fixture.AgentMessages.AckAsync(bucket, new List<string> { leased[0].MessageId, "no-such-message" });
+
+            // After the lease ends only the un-acked one comes back.
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            await SettleAsync();
+            var again = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromMinutes(1));
+            Assert.Equal(new[] { "c2" }, again.Select(x => x.CorrelationId).ToArray());
+
+            await Fixture.AgentMessages.AckAsync(bucket, again.Select(x => x.MessageId).ToList());
+            Assert.False(await Fixture.AgentMessages.HasJobsAsync(bucket));
+        }
+        finally
+        {
+            await Fixture.AgentMessages.DestroyBucketAsync(bucket);
+        }
+    }
+
+    [Fact]
+    public async Task UpdateBucket_ShouldMoveOnlyTheGivenMessages_Unleased()
+    {
+        var bucket = "polling-move-" + JobMasterRandomUtil.NewGuid4();
+        var target = "JMReserved-Terminated::" + bucket;
+        await Fixture.AgentMessages.CreateBucketAsync(bucket);
+
+        try
+        {
+            var baseTime = DateTime.UtcNow.AddMinutes(-5);
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":1}", baseTime.AddSeconds(1), "c1");
+            await Fixture.AgentMessages.PushMessageAsync(bucket, "{\"i\":2}", baseTime.AddSeconds(2), "c2");
+            await SettleAsync();
+            var leased = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromSeconds(1));
+
+            // Twice: the second create is a no-op.
+            await Fixture.AgentMessages.CreateBucketIfNotExistsAsync(target);
+            await Fixture.AgentMessages.CreateBucketIfNotExistsAsync(target);
+            await Fixture.AgentMessages.UpdateBucketAsync(bucket, new List<string> { leased[0].MessageId, "no-such-message" }, target);
+            await SettleAsync();
+
+            // Moved unleased (no wait for the lease), keeping its lease count.
+            var moved = await Fixture.AgentMessages.LeaseMessagesAsync(target, 10, TimeSpan.FromMinutes(1));
+            Assert.Equal(new[] { "c1" }, moved.Select(x => x.CorrelationId).ToArray());
+            Assert.Equal(2, moved[0].LeaseCount);
+
+            await Task.Delay(TimeSpan.FromSeconds(2));
+            await SettleAsync();
+            var left = await Fixture.AgentMessages.LeaseMessagesAsync(bucket, 10, TimeSpan.FromMinutes(1));
+            Assert.Equal(new[] { "c2" }, left.Select(x => x.CorrelationId).ToArray());
+        }
+        finally
+        {
+            await Fixture.AgentMessages.DestroyBucketAsync(bucket);
+            await Fixture.AgentMessages.DestroyBucketAsync(target);
+        }
+    }
+
     private static void AssertDateTimeUtcEquivalent(DateTime expectedUtc, DateTime actualUtc)
     {
         var expected = DateTime.SpecifyKind(expectedUtc, DateTimeKind.Utc);

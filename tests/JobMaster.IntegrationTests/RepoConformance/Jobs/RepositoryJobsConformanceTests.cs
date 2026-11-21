@@ -1140,7 +1140,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task BulkUpdate_Request_HeldOnMaster_ShouldSkip_AlreadyOnMasterJobs()
+    public async Task BulkUpdate_Request_HeldOnMaster_ShouldSkip_OnMasterAndFinalJobs()
     {
         var def = "defBulkHeld-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
@@ -1158,11 +1158,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var j2 = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2));
         j2.ProcessDeadline = now.AddMinutes(20);
 
+        // j3 Succeeded (final) — should NOT be revived
+        var j3 = NewJob(def, JobMasterJobStatus.Succeeded, now.AddMinutes(3));
+
         await Fixture.MasterJobs.AddAsync(j1);
         await Fixture.MasterJobs.AddAsync(j2);
+        await Fixture.MasterJobs.AddAsync(j3);
         var j2VersionBefore = (await Fixture.MasterJobs.GetAsync(j2.Id))!.Version;
 
-        var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id });
+        var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id, j3.Id });
         await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
@@ -1180,6 +1184,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         // j2 was OnMaster — excluded, version and ProcessDeadline must be unchanged
         Assert.Equal(j2VersionBefore, fromDb2!.Version);
         Assert.NotNull(fromDb2.ProcessDeadline);
+
+        Assert.Equal(JobMasterJobStatus.Succeeded, (await Fixture.MasterJobs.GetAsync(j3.Id))!.Status);
     }
 
     // -----------------------------------------------------------------------
@@ -1792,6 +1798,21 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.Equal(new[] { new1.Id, new2.Id }.OrderBy(x => x), inserted.OrderBy(x => x));
         Assert.Equal(JobMasterJobStatus.OnMaster, (await Fixture.MasterJobs.GetAsync(new1.Id))!.Status);
         Assert.Equal(JobMasterJobStatus.OnMaster, (await Fixture.MasterJobs.GetAsync(new2.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_InsertedModels_CanBeBulkUpdatedRightAway()
+    {
+        // The save path dispatches the models it just inserted; the engine's version-checked update must match them.
+        var def = "defBulkInsertThenUpdate-" + JobMasterRandomUtil.NewGuid4();
+        var job1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        var job2 = NewJob(def, JobMasterJobStatus.OnMaster);
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { job1, job2 }, Array.Empty<JobExecution>());
+
+        var updated = await Fixture.MasterJobs.BulkUpdateAsync(new List<JobRawModel> { job1, job2 });
+
+        Assert.Equal(new[] { job1.Id, job2.Id }.OrderBy(x => x), updated.Select(x => x.Id).OrderBy(x => x));
     }
 
     [Fact]

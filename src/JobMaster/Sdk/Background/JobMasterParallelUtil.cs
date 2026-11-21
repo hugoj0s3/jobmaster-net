@@ -34,36 +34,54 @@ internal static class JobMasterParallelUtil
         var tasks = new List<Task>();
         var cancellationToken = parallelOptions.CancellationToken;
 
-        foreach (var item in source)
+        // Same contract as Parallel.ForEachAsync: on cancellation, start no new item, wait for the running ones, then
+        // throw -- callers act on what didn't run, so they mustn't see a cancellation while items still run (and the
+        // semaphore mustn't be disposed under them).
+        try
         {
-            // Stop the loop if the token is cancelled
-            if (cancellationToken.IsCancellationRequested)
+            foreach (var item in source)
             {
-                break;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                // Wait for a semaphore slot before starting the next task
+                await semaphore.WaitAsync(cancellationToken);
+
+                var task = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // Execute the body. AsTask() is necessary because the delegate returns ValueTask
+                        await body(item, cancellationToken).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // Release the slot for the next item
+                        semaphore.Release();
+                    }
+                }, cancellationToken);
+
+                tasks.Add(task);
             }
-
-            // Wait for a semaphore slot before starting the next task
-            await semaphore.WaitAsync(cancellationToken);
-
-            var task = Task.Run(async () =>
-            {
-                try
-                {
-                    // Execute the body. AsTask() is necessary because the delegate returns ValueTask
-                    await body(item, cancellationToken).ConfigureAwait(false);
-                }
-                finally
-                {
-                    // Release the slot for the next item
-                    semaphore.Release();
-                }
-            }, cancellationToken);
-
-            tasks.Add(task);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Cancelled while waiting for a slot: still wait for the running items below.
         }
 
-        // Wait for all tasks to complete and propagate exceptions if any
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        // Wait for the running items and propagate their exceptions; an item cancelled before it started just
+        // completes as cancelled.
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
     }
 #endif
 }

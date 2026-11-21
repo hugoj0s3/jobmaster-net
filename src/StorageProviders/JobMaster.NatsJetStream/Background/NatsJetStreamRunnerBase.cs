@@ -88,7 +88,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         if (!hasInitialized)
         {
             NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId.IdValue, agentConnectionConfig);
-            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId.IdValue, agentConnectionConfig);
+            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId.IdValue, agentConnectionConfig, logger);
             var clusterThreshold = masterClusterConfigurationService.Get()?.TransientThreshold ?? NatsJetStreamConstants.MaxThreshold;
             var transientThreshold = clusterThreshold > NatsJetStreamConstants.MaxThreshold
                 ? NatsJetStreamConstants.MaxThreshold

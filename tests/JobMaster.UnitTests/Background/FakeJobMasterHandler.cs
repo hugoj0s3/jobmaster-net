@@ -34,10 +34,16 @@ internal sealed class FakeJobMasterHandler : IJobMasterHandler
     /// <summary>When set, the handler runs until <see cref="JobContext.CancellationToken"/> is cancelled (a long job that honours its timeout).</summary>
     public bool RunUntilCancelled { get; set; }
 
+    /// <summary>When set, the handler runs this long, honouring <see cref="JobContext.CancellationToken"/>.</summary>
+    public TimeSpan? RunFor { get; set; }
+
     public async Task HandleAsync(JobContext job)
     {
         if (RunUntilCancelled)
             await Task.Delay(System.Threading.Timeout.Infinite, job.CancellationToken);
+
+        if (RunFor.HasValue)
+            await Task.Delay(RunFor.Value, job.CancellationToken);
 
         if (BlockUntil != null)
             await BlockUntil.Task;

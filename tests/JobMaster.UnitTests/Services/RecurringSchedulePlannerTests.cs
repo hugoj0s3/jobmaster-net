@@ -25,7 +25,6 @@ public class RecurringSchedulePlannerTests
     private readonly Mock<IMasterDistributedLockerService> mockMasterDistributedLockerService;
     private readonly Mock<IMasterClusterConfigurationService> mockMasterClusterConfigurationService;
     private readonly Mock<IJobMasterLogger> mockLogger;
-    private readonly Mock<IJobMasterRuntime> mockRuntime;
     private readonly RecurringSchedulePlanner planner;
     
     private static readonly JobMasterClusterConnectionConfig clusterConfig 
@@ -41,9 +40,6 @@ public class RecurringSchedulePlannerTests
         mockMasterDistributedLockerService = new Mock<IMasterDistributedLockerService>();
         mockMasterClusterConfigurationService = new Mock<IMasterClusterConfigurationService>();
         mockLogger = new Mock<IJobMasterLogger>();
-        mockRuntime = new Mock<IJobMasterRuntime>();
-        
-        mockRuntime.Setup(r => r.StartingAt).Returns(DateTime.UtcNow.AddMinutes(-1));
 
         planner = new RecurringSchedulePlanner(
             clusterConfig,
@@ -52,7 +48,6 @@ public class RecurringSchedulePlannerTests
             mockMasterRecurringSchedulesService.Object,
             mockMasterJobsService.Object,
             mockMasterDistributedLockerService.Object,
-            mockRuntime.Object,
             mockLogger.Object);
     }
 

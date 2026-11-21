@@ -45,8 +45,9 @@ internal class NatsJetStreamDrainSavePendingJobsRunner : NatsJetStreamRunnerBase
             savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, BucketId!);
         }
         
-        var resultCode = await savePendingOperation.AddPendingSaveJobForDrainAsync(payload);
-        if (resultCode == SaveDrainResultCode.Failed)
+        // A draining bucket takes no new work: held on master, nothing to dispatch. Not on master: nak.
+        payload.MarkAsHeldOnMaster();
+        if (!await savePendingOperation.SaveAndDispatchAsync(payload, targetBucket: null))
         {
             await ackGuard.TryNakFailAsync();
         }

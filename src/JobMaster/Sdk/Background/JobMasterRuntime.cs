@@ -26,7 +26,9 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Background;
 
-internal class JobMasterRuntime : IJobMasterRuntime
+// Disposed by the app's container (registered by factory, so the container owns it), which stops the workers: in a
+// hosted app that's when the host stops.
+internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposable
 {
     private readonly List<JobMasterBackgroundAgentWorker> Workers = new List<JobMasterBackgroundAgentWorker>();
 
@@ -40,7 +42,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
     // Leaves room in Docker's default 10 s stop grace for the loggers' final flush after it.
     internal static readonly TimeSpan ShutdownStopTimeout = TimeSpan.FromSeconds(6);
-    private int shutdownHooked;
 
     public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() =>
         new List<IJobMasterBackgroundAgentWorker>(Workers);
@@ -280,11 +281,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
         foreach (var def in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
             def.MarkAsReady();
-        }
-
-        if (Interlocked.Exchange(ref shutdownHooked, 1) == 0)
-        {
-            ProcessShutdown.Default.OnShutdown(() => StopWorkersAsync(ShutdownStopTimeout));
         }
 
         foreach (var worker in Workers)
@@ -828,20 +824,21 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
     }
 
-    public int CountWorkersForCluster(string clusterId)
-    {
-        if (string.IsNullOrEmpty(clusterId))
-        {
-            return 0;
-        }
-
-        return Workers.Count(w => w.ClusterConnConfig.ClusterId == clusterId);
-    }
-
     /// <summary>
     /// Process exit: stops every worker the way any immediate stop does (its runners' cleanup, then its buckets handed
     /// over), all in parallel, each within <paramref name="timeout"/>.
     /// </summary>
+    public async ValueTask DisposeAsync()
+    {
+        await StopWorkersAsync(ShutdownStopTimeout);
+    }
+
+    // For a container disposed synchronously; the host disposes asynchronously (DisposeAsync).
+    public void Dispose()
+    {
+        StopWorkersAsync(ShutdownStopTimeout).GetAwaiter().GetResult();
+    }
+
     internal async Task StopWorkersAsync(TimeSpan timeout)
     {
         var workers = new List<JobMasterBackgroundAgentWorker>(Workers);
@@ -856,26 +853,6 @@ internal class JobMasterRuntime : IJobMasterRuntime
             worker.GetClusterAwareService<IJobMasterLogger>().Warn(
                 $"Process exit: worker didn't finish stopping within {timeout}; the process ends with it still stopping.",
                 JobMasterLogCategory.AgentWorker, worker.AgentWorkerId);
-        }
-    }
-
-    public void Stop()
-    {
-        List<JobMasterBackgroundAgentWorker> toStop;
-        toStop = new List<JobMasterBackgroundAgentWorker>(Workers);
-        Workers.Clear();
-
-        foreach (var w in toStop)
-        {
-            try
-            {
-                w.RequestStop();
-                w.Dispose();
-            }
-            catch
-            {
-                // Swallow to attempt stopping others; consider logging hook later
-            }
         }
     }
 
