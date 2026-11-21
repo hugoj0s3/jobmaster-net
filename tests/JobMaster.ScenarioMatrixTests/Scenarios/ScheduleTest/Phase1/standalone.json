@@ -1,0 +1,18 @@
+{
+  "containerName": "mx-{{flavor}}-standalone",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-standalone",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ScheduleStandalone}}",
+      "TransientThreshold": "00:02:00",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "containerName": "mx-{{flavor}}-fallback",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-fallback",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-fallback",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:FallbackBucket}}",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

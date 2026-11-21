@@ -1,0 +1,34 @@
+{
+  "containerName": "mx-{{flavor}}-stray",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-stray",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-stray-old",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:StrayOld}}",
+      "Mode": "Archived",
+      "TargetActiveClusterId": "mx-{{flavor}}-stray-new",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "mx-{{flavor}}-stray-new",
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:StrayNew}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        { "Name": "agent-1", "Connection": "{{agent:1}}" }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "agent-1", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

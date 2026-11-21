@@ -1,0 +1,34 @@
+{
+  "containerName": "mx-{{flavor}}-migration",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-migration",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-mig-source",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:MigratingSource}}",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "mx-{{flavor}}-mig-target",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    },
+    {
+      "ClusterId": "mx-{{flavor}}-mig-target",
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:MigratingTarget}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        { "Name": "agent-1", "Connection": "{{agent:1}}" }
+      ],
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" },
+        { "WorkerName": "w1", "AgentConnectionName": "agent-1", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

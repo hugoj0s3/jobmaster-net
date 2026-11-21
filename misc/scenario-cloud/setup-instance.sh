@@ -26,3 +26,5 @@ mkdir -p "$HOME/jobmaster-net" "$HOME/results"
 tar -xzf "$HOME/repo.tgz" -C "$HOME/jobmaster-net"
 cd "$HOME/jobmaster-net"
 dotnet build tests/JobMaster.ScenarioTests -v q -nologo
+# The flavor matrix (builds on the scenario suite's runner and fixtures).
+dotnet build tests/JobMaster.ScenarioMatrixTests -v q -nologo

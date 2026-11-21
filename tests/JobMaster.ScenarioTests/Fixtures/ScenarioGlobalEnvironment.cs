@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
@@ -44,7 +45,6 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     private readonly SemaphoreSlim redisLock = new(1, 1);
     private readonly SemaphoreSlim natsLock = new(1, 1);
     private readonly SemaphoreSlim ravenDbLock = new(1, 1);
-    private readonly SemaphoreSlim imageBuildLock = new(1, 1);
 
     private PostgreSqlContainer? postgres;
     private MySqlContainer? mySql;
@@ -54,10 +54,9 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     private RavenDbContainer? ravenDb;
 
     // Keyed by (normalized) DockerfilePath, so any number of distinct scenario app images can be
-    // built and cached independently within one run -- not just the original schedule-app/api-app
-    // pair. See ScenarioRunner.StartContainerAsync, which now drives image selection entirely off
-    // ContainerDefinition.DockerfilePath instead of a hardcoded schedule-app-vs-api-app branch.
-    private readonly Dictionary<string, IFutureDockerImage> images = new(StringComparer.OrdinalIgnoreCase);
+    // built and cached independently within one run. Per process: an image only depends on its Dockerfile
+    // and the repo, not on any environment instance.
+    private static readonly ConcurrentDictionary<string, Lazy<Task<string>>> Images = new(StringComparer.OrdinalIgnoreCase);
 
     public INetwork Network { get; private set; } = null!;
 
@@ -262,36 +261,46 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
     /// existing scenario's <c>dockerfilePath</c> JSON continues to resolve to the same image tag with
     /// zero changes required.
     /// </summary>
-    public async Task<string> GetOrBuildAppImageAsync(string dockerfilePath, CancellationToken ct = default)
+    public Task<string> GetOrBuildAppImageAsync(string dockerfilePath, CancellationToken ct = default)
+    {
+        return BuildAppImageOnceAsync(dockerfilePath);
+    }
+
+    /// <summary>
+    /// <see cref="GetOrBuildAppImageAsync"/> without an environment, so a fixture can build the images before any
+    /// test starts (their build then isn't counted in a test's time). One build per Dockerfile per process, shared
+    /// by every caller; different Dockerfiles build in parallel. A failed build isn't kept, so the next caller retries.
+    /// </summary>
+    public static async Task<string> BuildAppImageOnceAsync(string dockerfilePath)
     {
         var key = dockerfilePath.Replace('\\', '/');
-
-        if (images.TryGetValue(key, out var cached)) return cached.FullName!;
-
-        await imageBuildLock.WaitAsync(ct);
+        var build = Images.GetOrAdd(key, k => new Lazy<Task<string>>(() => BuildAppImageAsync(k)));
         try
         {
-            if (images.TryGetValue(key, out cached)) return cached.FullName!;
-
-            var appFolder = Path.GetFileName(Path.GetDirectoryName(key)!.TrimEnd('/'));
-            var imageName = $"{appFolder.ToKebabCase()}:scenario-tests";
-
-            var repoRoot = RepoRootLocator.Find();
-            var image = new ImageFromDockerfileBuilder()
-                .WithDockerfileDirectory(new CommonDirectoryPath(repoRoot), "")
-                .WithDockerfile(key)
-                .WithName(imageName)
-                .WithCleanUp(true)
-                .Build();
-
-            await image.CreateAsync(ct);
-            images[key] = image;
-            return image.FullName!;
+            return await build.Value;
         }
-        finally
+        catch
         {
-            imageBuildLock.Release();
+            Images.TryRemove(new KeyValuePair<string, Lazy<Task<string>>>(key, build));
+            throw;
         }
+    }
+
+    // No caller's token: the build is shared, one caller giving up mustn't cancel it for the others.
+    private static async Task<string> BuildAppImageAsync(string key)
+    {
+        var appFolder = Path.GetFileName(Path.GetDirectoryName(key)!.TrimEnd('/'));
+        var imageName = $"{appFolder.ToKebabCase()}:scenario-tests";
+
+        var image = new ImageFromDockerfileBuilder()
+            .WithDockerfileDirectory(new CommonDirectoryPath(RepoRootLocator.Find()), "")
+            .WithDockerfile(key)
+            .WithName(imageName)
+            .WithCleanUp(true)
+            .Build();
+
+        await image.CreateAsync();
+        return image.FullName!;
     }
 
     public async Task DisposeAsync()

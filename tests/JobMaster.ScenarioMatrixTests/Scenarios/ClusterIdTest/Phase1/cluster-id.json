@@ -1,0 +1,25 @@
+{
+  "containerName": "mx-{{flavor}}-cluster-id",
+  "dockerfilePath": "tests/TargetTestClusterIdApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-cluster-id",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-cid-default",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ClusterIdDefault}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    },
+    {
+      "ClusterId": "cluster-id-target",
+      "Standalone": true,
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ClusterIdTarget}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

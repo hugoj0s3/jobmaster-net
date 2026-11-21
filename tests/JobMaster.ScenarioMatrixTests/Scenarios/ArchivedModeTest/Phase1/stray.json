@@ -1,0 +1,23 @@
+{
+  "containerName": "mx-{{flavor}}-stray",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-stray",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-stray-old",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:StrayOld}}",
+      "Mode": "Migrating",
+      "TargetActiveClusterId": "mx-{{flavor}}-stray-new"
+    },
+    {
+      "ClusterId": "mx-{{flavor}}-stray-new",
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:StrayNew}}"
+    }
+  ]
+}

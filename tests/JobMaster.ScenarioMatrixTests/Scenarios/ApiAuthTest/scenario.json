@@ -1,0 +1,7 @@
+{
+  "scenarioName": "api-auth-test",
+  "phases": [
+    { "name": "phase-1", "containers": ["cluster-one", "cluster-two"] }
+  ],
+  "api": { "container": "api" }
+}

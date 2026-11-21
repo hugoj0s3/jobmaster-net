@@ -1,0 +1,7 @@
+{
+  "scenarioName": "confirm-on-master-test",
+  "phases": [
+    { "name": "phase-1", "containers": ["confirm"] }
+  ],
+  "api": { "container": "api" }
+}

@@ -1,0 +1,19 @@
+{
+  "containerName": "mx-{{flavor}}-{{stop}}-s2d-coordinator",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-{{stop}}-s2d-coordinator",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{stop}}-s2d",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:S2d{{stop}}}}",
+      "TransientThreshold": "00:02:00",
+      "Workers": [
+        { "WorkerName": "coordinator", "WorkerMode": "Coordinator" }
+      ]
+    }
+  ]
+}

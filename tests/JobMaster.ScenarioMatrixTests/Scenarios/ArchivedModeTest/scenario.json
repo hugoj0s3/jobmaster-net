@@ -1,0 +1,8 @@
+{
+  "scenarioName": "archived-mode-test",
+  "phases": [
+    { "name": "phase-1", "containers": ["stray"] },
+    { "name": "phase-2", "containers": ["stray"] }
+  ],
+  "api": { "container": "api" }
+}

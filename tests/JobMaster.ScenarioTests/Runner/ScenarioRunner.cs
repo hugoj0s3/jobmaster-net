@@ -64,10 +64,13 @@ public sealed class ScenarioRunner : IAsyncDisposable
         return new RecurringScheduleClient(new HttpClient { BaseAddress = new Uri(baseUrl) });
     }
 
-    private ScenarioRunner(ScenarioGlobalEnvironment global, string scenarioFolder)
+    private readonly Func<string, string>? configInterceptor;
+
+    private ScenarioRunner(ScenarioGlobalEnvironment global, string scenarioFolder, Func<string, string>? configInterceptor = null)
     {
         this.global = global;
         this.scenarioFolder = scenarioFolder;
+        this.configInterceptor = configInterceptor;
     }
 
     public static async Task<ScenarioRunner> StartAsync(
@@ -77,6 +80,19 @@ public sealed class ScenarioRunner : IAsyncDisposable
         // Exact casing: Linux paths are case-sensitive.
         var scenarioFolder = Path.Combine(RepoRootLocator.Find(), "tests", "JobMaster.ScenarioTests", "Scenarios", scenarioName.ToPascalCase());
         var runner = new ScenarioRunner(global, scenarioFolder);
+        await runner.InitializeAsync(ct);
+        return runner;
+    }
+
+    /// <summary>
+    /// For templated scenarios outside this project (the flavor matrix): <paramref name="configInterceptor"/>
+    /// rewrites every container / api JSON before the infrastructure tokens are rendered, and any
+    /// <c>{{...}}</c> left after rendering fails the start instead of reaching the app.
+    /// </summary>
+    public static async Task<ScenarioRunner> StartFromFolderAsync(
+        ScenarioGlobalEnvironment global, string scenarioFolder, Func<string, string> configInterceptor, CancellationToken ct = default)
+    {
+        var runner = new ScenarioRunner(global, scenarioFolder, configInterceptor);
         await runner.InitializeAsync(ct);
         return runner;
     }
@@ -129,13 +145,19 @@ public sealed class ScenarioRunner : IAsyncDisposable
 
     public async Task StopAsync(string containerName, CancellationToken ct = default)
     {
+        await StopAsync(containerName, ScenarioStopType.SigTerm, ct);
+    }
+
+    /// <summary>Stops <paramref name="containerName"/> with <paramref name="stopType"/> (see <see cref="ScenarioStopType"/>).</summary>
+    public async Task StopAsync(string containerName, ScenarioStopType stopType, CancellationToken ct = default)
+    {
         if (!runningContainers.TryGetValue(containerName, out var container))
         {
             return;
         }
 
         proxy.RemoveBackend(containerName);
-        await container.StopAsync(ct);
+        await ContainerStopper.StopAsync(container, stopType, ct);
         await container.DisposeAsync();
         runningContainers.Remove(containerName);
         containerBaseUrls.Remove(containerName);
@@ -145,7 +167,19 @@ public sealed class ScenarioRunner : IAsyncDisposable
     {
         var tokens = BuildTokens();
         var rawJson = await File.ReadAllTextAsync(containerJsonPath, ct);
+        if (configInterceptor != null)
+        {
+            rawJson = configInterceptor(rawJson);
+        }
+
         var renderedJson = ConfigTemplateRenderer.Render(rawJson, tokens);
+        if (configInterceptor != null && renderedJson.Contains("{{", StringComparison.Ordinal))
+        {
+            var start = renderedJson.IndexOf("{{", StringComparison.Ordinal);
+            var end = renderedJson.IndexOf("}}", start, StringComparison.Ordinal);
+            var token = end > start ? renderedJson.Substring(start, end - start + 2) : renderedJson.Substring(start);
+            throw new InvalidOperationException($"Unresolved placeholder {token} in {containerJsonPath}.");
+        }
 
         var containerDef = JsonSerializer.Deserialize<ContainerDefinition>(renderedJson, ScenarioJsonOptions.Default)
             ?? throw new InvalidOperationException($"Could not parse {containerJsonPath}");

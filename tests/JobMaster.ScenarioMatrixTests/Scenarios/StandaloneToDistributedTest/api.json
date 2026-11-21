@@ -1,0 +1,18 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{stop}}-s2d",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:S2d{{stop}}}}"
+    }
+  ]
+}

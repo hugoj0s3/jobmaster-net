@@ -1080,19 +1080,22 @@ item 18.
 
 - Direction for run time (future, not this item): run the scenarios on cloud machines provisioned with Terraform,
   all variants in parallel. Locally they keep running sequentially.
-- Stop mode as a third matrix dimension (Hugo, 2026-11-17): scenarios × flavors × stop mode, opted in per scenario the
-  same way as flavors (some scenarios all modes, some not, each exclusion with a reason).
-  - `Graceful` = `docker stop` (SIGTERM, then SIGKILL after the grace period): the worker's own stop runs (buckets
-    handed over as Lost, execution flush). `Kill` = `docker kill` (SIGKILL): nothing runs, recovery only by lease
+- Stop type as a third matrix dimension (Hugo, 2026-11-17; names 2026-11-20): scenarios × flavors × stop type, opted
+  in per scenario the same way as flavors (some scenarios all types, some not, each exclusion with a reason).
+  - `SigTerm` = `docker stop` (SIGTERM, then SIGKILL after the grace period): the app's own shutdown runs (buckets
+    handed over as Lost, execution flush). `Crash` = SIGKILL sent by Docker: nothing runs, recovery only by lease
     expiry, heartbeat → Lost and the deadline runner.
   - Why: the disaster phases (`DrainModeTest` phase 1, `StandaloneToDistributedTest` phase 1) were meant as hard
-    stops, but `docker stop` is a SIGTERM, so since the process-exit stop exists they only test the graceful path. A
-    real kill isn't exercised anywhere today.
-  - Shape: `ScenarioStopModes.All` / `AllExcept((mode, reason))` next to `ScenarioFlavors`, a `Cross(flavors, modes)`
-    for `TheoryData<string, string>`; scenario runner `KillAsync` (Docker kill with SIGKILL through `Docker.DotNet`;
-    `kill -9 1` inside the container doesn't work, SIGKILL to PID 1 from inside is ignored) next to `StopAsync`.
-  - Expectations per mode in each scenario's emulator: both assert nothing lost; kill recovers in minutes (lease
-    90 s–10 min), graceful in seconds; graceful can't assert "no failures counted" until the shutdown-interrupted
+    stops, but `docker stop` is a SIGTERM, so since the shutdown stop exists they only test the SIGTERM path. A
+    real crash isn't exercised anywhere today.
+  - Built (2026-11-20): `ScenarioStopType { SigTerm, Crash }` (ScenarioTests runner), `ContainerStopper.StopAsync`
+    (Crash = Docker kill SIGKILL through `Docker.DotNet`, from Testcontainers' endpoint config; `kill -9 1` inside
+    the container doesn't work, PID 1 ignores it) behind `ScenarioRunner.StopAsync(name, stopType)`;
+    `ScenarioStopTypes.All` / `AllExcept((type, reason))` / `Cross(flavors, types)` → `TheoryData<string,
+    ScenarioStopType>` in the matrix. Tests: `ScenarioStopTypesTests` (no Docker), `ContainerStopperTests` (real
+    Docker: SIGTERM handler → exit 0, Crash → 137; mutation-checked).
+  - Expectations per type in each scenario's emulator: both assert nothing lost; Crash recovers in minutes (lease
+    90 s–10 min), SigTerm in seconds; SigTerm can't assert "no failures counted" until the shutdown-interrupted
     detection lands (next version).
 
 **Open decisions.**
@@ -1111,8 +1114,10 @@ item 18.
 - [ ] The safety-net phases → shared bases + the 4 remaining variants (incl. the raw `ClusterMode` switch per
       provider).
 - [ ] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
-- [ ] Stop-mode dimension: `ScenarioStopModes` + `Cross`, runner `KillAsync`, emulators' stop step by mode; disaster
-      scenarios run both modes, the rest declare their exclusion.
+- [x] Stop-type dimension: `ScenarioStopType` (SigTerm / Crash), `ScenarioStopTypes` + `Cross`, runner
+      `StopAsync(name, stopType)`.
+- [ ] Each ported scenario's stop step by stop type; disaster scenarios run both types, the rest that stop an app
+      declare their exclusion.
 - [ ] All variants green.
 
 **Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and

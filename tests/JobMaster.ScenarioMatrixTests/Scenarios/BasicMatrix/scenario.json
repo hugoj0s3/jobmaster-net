@@ -1,0 +1,7 @@
+{
+  "scenarioName": "basic-matrix",
+  "phases": [
+    { "name": "phase-1", "containers": ["dist"] }
+  ],
+  "api": { "container": "api" }
+}

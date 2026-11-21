@@ -4,6 +4,7 @@ using System.Threading;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
@@ -279,72 +280,89 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         return result[BulkInsertStatus.Inserted].Contains(schedule.Id);
     }
 
+    // Cancel and reschedule are a read, a rule check, then a versioned write. Another writer in between (the planner
+    // planning a new schedule, a runner moving a job, another process cancelling it) makes the write a version
+    // conflict: the whole read-check-write runs again, so the rule decides on the item's current state.
+    private readonly RetryVersionConflictPolicy retryVersionConflictPolicy = new(TimeSpan.FromMilliseconds(100), maxRetryCount: 3);
+
     public async Task<bool> CancelJobAsync(Guid jobId)
     {
-        var jobEntity = await masterJobsService.GetAsync(jobId);
-        if (jobEntity == null)
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
         {
-            return false;
-        }
+            var jobEntity = await masterJobsService.GetAsync(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
 
-        if (!jobEntity.TryToCancel())
-        {
-            return false;
-        }
+            if (!jobEntity.TryToCancel())
+            {
+                return false;
+            }
 
-        await masterJobsService.UpdateAsync(jobEntity);
-        return true;
+            await masterJobsService.UpdateAsync(jobEntity);
+            return true;
+        });
     }
 
     public bool CancelJob(Guid jobId)
     {
-        var jobEntity = masterJobsService.Get(jobId);
-        if (jobEntity == null)
+        return retryVersionConflictPolicy.Exec(() =>
         {
-            return false;
-        }
+            var jobEntity = masterJobsService.Get(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
 
-        if (!jobEntity.TryToCancel())
-        {
-            return false;
-        }
+            if (!jobEntity.TryToCancel())
+            {
+                return false;
+            }
 
-        masterJobsService.Update(jobEntity);
-        return true;
+            masterJobsService.Update(jobEntity);
+            return true;
+        });
     }
 
     public async Task<bool> CancelRecurringAsync(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(recurringScheduleId);
-        if (recurringScheduleEntity == null)
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
         {
-            return false;
-        }
+            var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(recurringScheduleId);
+            if (recurringScheduleEntity == null)
+            {
+                return false;
+            }
 
-        if (!recurringScheduleEntity.TryToCancel())
-        {
-            return false;
-        }
-        
-        await masterRecurringSchedulesService.UpdateAsync(recurringScheduleEntity);
-        return true;
+            if (!recurringScheduleEntity.TryToCancel())
+            {
+                return false;
+            }
+
+            await masterRecurringSchedulesService.UpdateAsync(recurringScheduleEntity);
+            return true;
+        });
     }
 
     public bool CancelRecurring(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = masterRecurringSchedulesService.Get(recurringScheduleId);
-        if (recurringScheduleEntity == null)
+        return retryVersionConflictPolicy.Exec(() =>
         {
-            return false;
-        }
+            var recurringScheduleEntity = masterRecurringSchedulesService.Get(recurringScheduleId);
+            if (recurringScheduleEntity == null)
+            {
+                return false;
+            }
 
-        if (!recurringScheduleEntity.TryToCancel())
-        {
-            return false;
-        }
-        
-        masterRecurringSchedulesService.Update(recurringScheduleEntity);
-        return true;
+            if (!recurringScheduleEntity.TryToCancel())
+            {
+                return false;
+            }
+
+            masterRecurringSchedulesService.Update(recurringScheduleEntity);
+            return true;
+        });
     }
 
     public async Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt)
@@ -354,22 +372,24 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
-        var jobEntity = await masterJobsService.GetAsync(jobId);
-        if (jobEntity == null)
-        {
-            return false;
-        }
-        
-        if (!jobEntity.CanReschedule())
-        {
-            return false;
-        }
 
-        jobEntity.Reschedule(scheduledAt);
-        await masterJobsService.UpdateAsync(jobEntity);
-        
-        return true;
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
+        {
+            var jobEntity = await masterJobsService.GetAsync(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
+
+            if (!jobEntity.CanReschedule())
+            {
+                return false;
+            }
+
+            jobEntity.Reschedule(scheduledAt);
+            await masterJobsService.UpdateAsync(jobEntity);
+            return true;
+        });
     }
 
     public bool Reschedule(Guid jobId, DateTime scheduledAt)
@@ -379,22 +399,24 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
-        var jobEntity =  masterJobsService.Get(jobId);
-        if (jobEntity == null)
-        {
-            return false;
-        }
-        
-        if (!jobEntity.CanReschedule())
-        {
-            return false;
-        }
 
-        jobEntity.Reschedule(scheduledAt);
-        masterJobsService.Update(jobEntity);
-        
-        return true;
+        return retryVersionConflictPolicy.Exec(() =>
+        {
+            var jobEntity = masterJobsService.Get(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
+
+            if (!jobEntity.CanReschedule())
+            {
+                return false;
+            }
+
+            jobEntity.Reschedule(scheduledAt);
+            masterJobsService.Update(jobEntity);
+            return true;
+        });
     }
 
     private OperationThrottler SchedulingThrottlerFor(AgentConnectionId agentConnectionId) =>

@@ -43,6 +43,10 @@
     </ItemGroup>
 
     <ItemGroup>
+        <InternalsVisibleTo Include="JobMaster.ScenarioMatrixTests" />
+    </ItemGroup>
+
+    <ItemGroup>
         <None Include="Scenarios\**\*.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>

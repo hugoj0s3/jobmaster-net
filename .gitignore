@@ -165,6 +165,3 @@ riderModule.iml
 # Scenario tests on EC2: account values and run outputs
 misc/scenario-cloud/scenario-cloud.settings.sh
 artifacts/scenario-runs/
-# TEMPORARY (2026-11-15): scenario flavor matrix hidden during the runner review; tracked-file changes saved in
-# its restore-tracked/ folder. Remove this line to bring it back.
-tests/JobMaster.ScenarioMatrixTests/
