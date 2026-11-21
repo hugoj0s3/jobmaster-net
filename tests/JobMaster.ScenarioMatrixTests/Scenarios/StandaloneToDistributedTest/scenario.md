@@ -1,7 +1,7 @@
 # StandaloneToDistributedTest
 
 Moving a cluster off standalone loses nothing: a standalone worker stops right after scheduling, and a distributed
-topology takes over the same cluster and master database and runs every job exactly once. Replaces
+topology takes over the same cluster and master database and runs every job. Replaces
 the earlier per-provider suite's `StandaloneToDistributedTest` (5 per-provider copies there).
 
 ## Variants
@@ -22,8 +22,10 @@ cluster and master database, `mx-<flavor>-<sig|crash>-s2d`.
   - **Backstop:** a job still in a bucket the drain missed is reclaimed by `HeldOnMasterDeadlineTimeoutJobsRunner`
     once its `ProcessDeadline` (10 min from assignment) passes while its bucket isn't Active/Completing.
 
-  Either way, back on master, `AssignJobsToBucketsRunner` assigns it to the new bucket on `agent-1`. All 300 run
-  exactly once and are `Succeeded` with their ids (20 min max), and `agent-1` is alive.
+  Either way, back on master, `AssignJobsToBucketsRunner` assigns it to the new bucket on `agent-1`. All 300 are
+  `Succeeded` on master with their ids (20 min max), every one ran, and `agent-1` is alive. A repeated job runs at most
+  twice, on at most 5% of the jobs (Crash: 3 times, 10%): one stopped after its handler but before its result was saved stays
+  `Processing` until the deadline runner reassigns it (at least once, not exactly once; see DrainModeTest).
 
 ## Things to know
 - **Crash runs:** a crashed standalone worker hands nothing over, so recovery waits for dead-worker detection and,
