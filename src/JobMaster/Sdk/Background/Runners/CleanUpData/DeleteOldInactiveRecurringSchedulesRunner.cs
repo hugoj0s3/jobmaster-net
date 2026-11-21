@@ -119,13 +119,5 @@ internal sealed class DeleteOldInactiveRecurringSchedulesRunner : JobMasterRunne
         return confirmedIds.Count > 0 ? await schedulesRepo.DeleteByIdsAsync(confirmedIds) : 0;
     }
 
-    public override TimeSpan SucceedInterval
-    {
-        get
-        {
-            var ttl = clusterConfigService.Get()?.DataRetentionTtl ?? TimeSpan.Zero;
-            if (ttl <= TimeSpan.Zero) return TimeSpan.FromHours(1);
-            return JobMasterMathUtil.Clamp(TimeSpan.FromTicks(ttl.Ticks / 2), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1));
-        }
-    }
+    public override TimeSpan SucceedInterval => RunnerDelayUtil.CalcCleanUpDelay(clusterConfigService.Get()?.DataRetentionTtl);
 }

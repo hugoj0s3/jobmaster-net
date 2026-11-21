@@ -256,11 +256,10 @@ something provisioned only on "the one database"; plan item 24 was this kind of 
 
 ## Review the cancellation tokens across JobMaster
 
-Noted 2026-11-17 (Hugo), after the handler-scoped timeout. Go over every `CancellationToken` / `CancellationTokenSource`:
-who creates and cancels it, what it's linked to (a runner or save-batch token not linked to the worker's stop token,
-e.g. the earlier `batchTimeoutCts`), whether every created/linked source is disposed, and whether long calls actually
-receive the token. Starting points: `TaskQueueItem` (stop only) → `ExecuteJobAsync`'s `handlerTimeout`, the runners'
-tokens and `StopImmediatelyAsync`, the save-pending batches, the retry interceptor's 10 s token.
+Noted 2026-11-17 (Hugo). Check that cancellation is consistent everywhere: stopping a worker reaches every piece of work
+it started, each timeout cancels only what it's meant to, nothing that's created is left undisposed, and long-running
+calls actually receive the token. Areas: job execution, the background runners, saving pending jobs and schedules on
+master, and the retry interceptor.
 
 ## SQL agent message base: review the generic dequeue
 

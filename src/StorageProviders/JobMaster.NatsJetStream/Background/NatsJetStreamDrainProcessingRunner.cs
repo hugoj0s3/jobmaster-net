@@ -45,11 +45,8 @@ internal class NatsJetStreamDrainProcessingRunner : NatsJetStreamRunnerBase<JobR
             savePendingOperation = new JobSavePendingOperation(this.BackgroundAgentWorker, this.BucketId!);
         }
         
-        // Not held on master: nak, so the message comes back.
-        if (!await savePendingOperation.HoldDrainedJobOnMasterAsync(job))
-        {
-            await ackGuard.TryNakFailAsync();
-        }
+        // Acked even when not held: the job is on master, and the deadline check brings it back.
+        await savePendingOperation.HoldDrainedJobsOnMasterAsync(new List<JobRawModel> { job });
     }
 
     protected override async Task<bool> ShouldAckAfterLockAsync(JobRawModel payload, CancellationToken ct)

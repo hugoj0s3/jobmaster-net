@@ -1,5 +1,4 @@
 ﻿using JobMaster.Abstractions.Models;
-using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -65,27 +64,42 @@ internal class JobSavePendingOperation
     
     
     /// <summary>
-    /// Holds a job of a draining bucket's processing queue on master (upsert of the message's copy). Returns whether it
-    /// is handled: true when held, or on a version conflict (another runner already claimed or updated the job, so
-    /// master's copy wins); false on any other failure, so the caller keeps its message.
+    /// Holds the jobs of a draining bucket's processing queue on master. A processing job is always on master already,
+    /// so this only updates it, and only where master's version still matches the message's copy: a job that changed
+    /// since (taken back by its deadline and given to another bucket, finished, deleted) is left as is. Partitioned by
+    /// the master batch size; a failed partition is logged and the others still run. Returns false when a partition
+    /// failed; the job is still on master either way, and the deadline check brings back one left in this bucket.
     /// </summary>
-    public async Task<bool> HoldDrainedJobOnMasterAsync(JobRawModel job)
+    public async Task<bool> HoldDrainedJobsOnMasterAsync(IList<JobRawModel> jobs)
     {
-        try
+        var allSucceed = true;
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(backgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
         {
-            job.MarkAsHeldOnMaster();
-            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-            return true;
+            try
+            {
+                var partitionJobs = partition.ToList();
+                foreach (var job in partitionJobs)
+                {
+                    job.MarkAsHeldOnMaster();
+                }
+
+                var updated = await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.BulkUpdateAsync(partitionJobs));
+                var updatedIds = new HashSet<Guid>(updated.Select(x => x.Id));
+                foreach (var job in partitionJobs.Where(x => !updatedIds.Contains(x.Id)))
+                {
+                    logger.Warn($"Drain: job not held on master, it changed on master since it was sent to bucket {bucketId}.", JobMasterLogCategory.Job, job.Id);
+                }
+            }
+            catch (Exception e)
+            {
+                logger.Error($"Drain: failed to hold a partition of {partition.Count} job(s) on master for bucket {bucketId}. Continuing with the remaining partitions.",
+                    JobMasterLogCategory.Bucket, bucketId, exception: e);
+                allSucceed = false;
+            }
         }
-        catch (JobMasterVersionConflictException)
-        {
-            return true;
-        }
-        catch (Exception e)
-        {
-            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id, exception: e);
-            return false;
-        }
+
+        return allSucceed;
     }
 
     /// <summary>
@@ -162,7 +176,8 @@ internal class JobSavePendingOperation
     /// Saves leased pending-save jobs on master, acks the messages of every job now on master, then dispatches the
     /// ones this call inserted to the bucket they were assigned to (<paramref name="bucketAssignments"/>; a job not in
     /// it is held on master). A message not acked (job not confirmed on master) is leased again later.
-    /// Returns false when a partition failed (the others are still saved), so the runner counts the tick as failed.
+    /// Returns false when a partition failed or a job wasn't confirmed on master (the others are still saved), so the
+    /// runner counts the tick as failed.
     /// </summary>
     public async Task<bool> SaveAndAckAsync(
         BucketModel currentRunnerBucket,
@@ -179,7 +194,10 @@ internal class JobSavePendingOperation
         {
             try
             {
-                await SaveAndAckPartitionAsync(currentRunnerBucket, partition.ToList(), bucketAssignments, ackKeysByJobId);
+                if (!await SaveAndAckPartitionAsync(currentRunnerBucket, partition.ToList(), bucketAssignments, ackKeysByJobId))
+                {
+                    allSaved = false;
+                }
             }
             catch (Exception e)
             {
@@ -193,7 +211,8 @@ internal class JobSavePendingOperation
         return allSaved;
     }
 
-    private async Task SaveAndAckPartitionAsync(
+    // Returns whether every job of the partition is on master (none Unknow).
+    private async Task<bool> SaveAndAckPartitionAsync(
         BucketModel currentRunnerBucket,
         IList<JobRawModel> jobs,
         IDictionary<Guid, BucketModel> bucketAssignments,
@@ -235,5 +254,7 @@ internal class JobSavePendingOperation
                 }
             }
         }
+
+        return bulkResult[BulkInsertStatus.Unknow].Count == 0;
     }
 }

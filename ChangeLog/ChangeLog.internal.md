@@ -5,7 +5,34 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 998/998 unit tests pass on `net8.0` and `net10.0` (957/957 on the `netstandard2.0` build).
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 999/999 unit tests pass on `net8.0` and `net10.0` (958/958 on the `netstandard2.0` build).
+
+#### Draining a bucket's processing queue: version-checked, never inserts (Hugo, 2026-11-20)
+- A processing message's job is always on master already (save-pending dispatches only what it inserted, with the
+  version the insert set; `AssignJobsToBucketsRunner` dispatches the models its `BulkUpdateAsync` returned, new
+  versions set). But the message can be stale: the job's deadline takes it back and another bucket gets it.
+- Before: the polling drain used `BulkUpdateAsync(HeldOnMaster(ids))`, by id with no version or bucket check
+  (`Processing` not excluded), so a stale message moved back a job another bucket owned or was running: it could run
+  twice, or that bucket's write hit a version conflict. The NATS drain used `Upsert` of the message's copy: the
+  version check covered that case, but its `Add` branch re-inserted a job deleted since (e.g. cancelled, then purged)
+  as HeldOnMaster.
+- Now both use `JobSavePendingOperation.HoldDrainedJobsOnMasterAsync(jobs)` (replaces `HoldDrainedJobOnMasterAsync`):
+  `MarkAsHeldOnMaster()` on the message copies, then the version-checked `BulkUpdateAsync(IList<JobRawModel>)`. A job
+  that changed on master since isn't touched (logged Warn, per job); nothing is inserted. Partitioned inside by
+  `GetMasterMaxBatchSize`, like `SaveAndAckAsync`: a failed partition is logged and the rest still run; returns false
+  if one failed. Polling: one call, false → failed tick. NATS: always acked, no nak (the job is on master; the
+  deadline check brings back one left in the bucket).
+- Test: `JobSavePendingOperationTests.HoldDrainedJobsOnMasterAsync_OnlyMovesBackJobsUnchangedOnMaster` (fails with
+  the by-id update back). Per-provider version check already covered by
+  `BulkUpdate_Models_ShouldOnlyUpdate_RowsWithMatchingVersion`.
+
+#### A save-pending tick with unconfirmed saves counts as failed (Hugo, 2026-11-20)
+- `JobSavePendingOperation.SaveAndAckAsync` / `RecurringScheduleSavePendingOperation.SaveAndAckAsync` returned true
+  when a partition had `Unknow` ids (not confirmed on master, so not acked and leased again). Now false, like a failed
+  partition and like the single-item NATS saves, so the runner's tick is `Failed`. Already logged (Warn, ids) by the
+  master services. One unknown can't stop the runner: its message stays leased ≥ 90 s and the ticks between succeed.
+- Tests: the 4 runner "not confirmed on master" tests (jobs / recurring, normal / drain) now also assert `Failed`
+  (the jobs ones fail with the partition returning true).
 
 #### NATS stream MaxAge + replicas (Hugo, 2026-11-16)
 - Found on a real NATS 2.10 server: the stream was created with only `Subjects` + `DuplicateWindow` (`Limits`

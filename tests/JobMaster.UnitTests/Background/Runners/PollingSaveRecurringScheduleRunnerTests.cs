@@ -141,7 +141,7 @@ public class PollingSaveRecurringScheduleRunnerTests
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenScheduleIsNotConfirmedOnMaster_LeavesItsMessageLeased()
+    public async Task OnTickAsync_WhenScheduleIsNotConfirmedOnMaster_ReturnsFailed_AndLeavesItsMessageLeased()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.ActiveBucket(f.ClusterId, TestBucketId));
@@ -150,8 +150,9 @@ public class PollingSaveRecurringScheduleRunnerTests
         f.JobsDispatcher.PendingRecurQueue.Add(schedule);
 
         var runner = CreateRunner(f);
-        await runner.OnTickAsync(CancellationToken.None);
+        var result = await runner.OnTickAsync(CancellationToken.None);
 
+        result.Status.Should().Be(TicketResultStatus.Failed);
         f.JobsDispatcher.AckedRecurKeys.Should().BeEmpty();
         f.JobsDispatcher.LeasedRecurSchedules.Values.Should().ContainSingle(s => s.Id == schedule.Id);
     }

@@ -157,13 +157,5 @@ internal sealed class DeleteOldFinalJobsRunner : JobMasterRunner
         return confirmedIds.Count;
     }
 
-    public override TimeSpan SucceedInterval
-    {
-        get
-        {
-            var ttl = clusterConfigService.Get()?.DataRetentionTtl ?? TimeSpan.Zero;
-            if (ttl <= TimeSpan.Zero) return TimeSpan.FromHours(1);
-            return JobMasterMathUtil.Clamp(TimeSpan.FromTicks(ttl.Ticks / 2), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1));
-        }
-    }
+    public override TimeSpan SucceedInterval => RunnerDelayUtil.CalcCleanUpDelay(clusterConfigService.Get()?.DataRetentionTtl);
 }

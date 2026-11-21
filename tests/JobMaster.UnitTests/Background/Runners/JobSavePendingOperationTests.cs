@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Utils;
 using Moq;
 
@@ -106,6 +107,39 @@ public class JobSavePendingOperationTests
         f.JobsService.UnknownOnInsert.Add(job.Id);
 
         (await Sut(f).SaveAndDispatchAsync(job, targetBucket: null)).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HoldDrainedJobsOnMasterAsync_OnlyMovesBackJobsUnchangedOnMaster()
+    {
+        // A drained message can be stale: its job may have been taken back by its deadline and given to another bucket.
+        // So the hold must be the version-checked update (never the by-id one), and a job it didn't update is left.
+        var f = RunnerFixture.Create();
+        var unchanged = InBucketJob(f.ClusterId);
+        var changedOnMaster = InBucketJob(f.ClusterId);
+        f.WorkerClusterOps
+            .Setup(x => x.ExecWithRetryAsync(It.IsAny<Func<IWorkerClusterOperations, Task<IList<JobRawModel>>>>(), It.IsAny<int>(), It.IsAny<int>()))
+            .Returns<Func<IWorkerClusterOperations, Task<IList<JobRawModel>>>, int, int>((func, _, _) => func(f.WorkerClusterOps.Object));
+        f.WorkerClusterOps
+            .Setup(x => x.BulkUpdateAsync(It.IsAny<IList<JobRawModel>>()))
+            .ReturnsAsync(new List<JobRawModel> { unchanged });
+
+        (await Sut(f).HoldDrainedJobsOnMasterAsync(new List<JobRawModel> { unchanged, changedOnMaster })).Should().BeTrue();
+
+        f.WorkerClusterOps.Verify(x => x.BulkUpdateAsync(It.Is<IList<JobRawModel>>(l =>
+            l.Count == 2 && l.All(j => j.Status == JobMasterJobStatus.OnMaster && j.BucketId == null))), Times.Once);
+        f.WorkerClusterOps.Verify(x => x.BulkUpdateAsync(It.IsAny<BulkJobUpdateRequest>()), Times.Never);
+        f.Logger.Verify(x => x.Log(JobMasterLogLevel.Warning, It.IsAny<string>(), It.IsAny<JobMasterLogCategory?>(),
+            changedOnMaster.Id.ToString("N"), It.IsAny<Exception?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>()), Times.Once);
+        f.Logger.Verify(x => x.Log(JobMasterLogLevel.Warning, It.IsAny<string>(), It.IsAny<JobMasterLogCategory?>(),
+            unchanged.Id.ToString("N"), It.IsAny<Exception?>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<int?>()), Times.Never);
+    }
+
+    private static JobRawModel InBucketJob(string clusterId)
+    {
+        var job = PendingSaveJob(clusterId, DateTime.UtcNow);
+        job.AssignToBucket(RunnerFixture.ActiveBucket(clusterId, BucketId));
+        return job;
     }
 
     private static JobSavePendingOperation Sut(RunnerFixture f) => new(f.Worker.Object, BucketId);

@@ -50,7 +50,8 @@ internal class RecurringScheduleSavePendingOperation
     /// Saves leased pending-save recurring schedules on master (active, insert-if-not-exists: a schedule already on
     /// master keeps master's copy) and acks the messages of every schedule now on master. A message not acked
     /// (schedule not confirmed on master) is leased again later. Same for a normal and a draining bucket.
-    /// Returns false when a partition failed (the others are still saved), so the runner counts the tick as failed.
+    /// Returns false when a partition failed or a schedule wasn't confirmed on master (the others are still saved), so
+    /// the runner counts the tick as failed.
     /// </summary>
     public async Task<bool> SaveAndAckAsync(BucketModel currentRunnerBucket, IList<(RecurringScheduleRawModel Schedule, string AckKey)> leasedSchedules)
     {
@@ -78,6 +79,11 @@ internal class RecurringScheduleSavePendingOperation
                 foreach (var id in savedIds)
                 {
                     recentlyInsertedQueue.Enqueue(id);
+                }
+
+                if (bulkResult[BulkInsertStatus.Unknow].Count > 0)
+                {
+                    allSaved = false;
                 }
             }
             catch (Exception e)

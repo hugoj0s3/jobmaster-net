@@ -62,7 +62,7 @@ public class PollingDrainSavePendingJobsRunnerTests
     }
 
     [Fact]
-    public async Task OnTickAsync_WhenJobIsNotConfirmedOnMaster_LeavesItsMessageLeased()
+    public async Task OnTickAsync_WhenJobIsNotConfirmedOnMaster_ReturnsFailed_AndLeavesItsMessageLeased()
     {
         var f = RunnerFixture.Create();
         f.Buckets.Buckets.Add(RunnerFixture.DrainingBucket(f.ClusterId, TestBucketId));
@@ -70,8 +70,9 @@ public class PollingDrainSavePendingJobsRunnerTests
         f.JobsService.UnknownOnInsert.Add(job.Id);
         f.JobsDispatcher.PendingQueue.Add(job);
 
-        await CreateRunner(f).OnTickAsync(CancellationToken.None);
+        var result = await CreateRunner(f).OnTickAsync(CancellationToken.None);
 
+        result.Status.Should().Be(TicketResultStatus.Failed);
         f.JobsDispatcher.AckedKeys.Should().BeEmpty();
         f.JobsDispatcher.LeasedJobs.Values.Should().ContainSingle(j => j.Id == job.Id);
     }

@@ -13,12 +13,14 @@ internal interface IAgentRawMessagesDispatcherRepository : IJobMasterClusterAwar
 
     /// <summary>
     /// Like <see cref="PullMessagesAsync"/>, but the messages stay stored, hidden from other pulls for
-    /// <paramref name="lease"/>; one not removed by then can be pulled again.
+    /// <paramref name="lease"/>; one not acked (<see cref="AckAsync"/>) by then can be pulled again. Lease + ack is
+    /// the at-least-once read behind <see cref="IAgentJobsDispatcherRepository.LeaseSavePendingJobsAsync"/>.
     /// </summary>
     Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease);
 
     /// <summary>
-    /// Removes leased messages once handled. Ids already gone (removed before, or never stored) are ignored.
+    /// Confirms leased messages are handled, removing them: the second half of <see cref="LeaseMessagesAsync"/>.
+    /// Ids already gone (removed before, or never stored) are ignored.
     /// </summary>
     Task AckAsync(string fullBucketAddressId, IList<string> messageIds);
 
