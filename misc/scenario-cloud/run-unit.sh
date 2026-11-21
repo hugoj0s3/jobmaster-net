@@ -15,19 +15,12 @@ cd "$HOME/jobmaster-net"
 ( while true; do echo "$(date +%T) $(cut -d' ' -f1 /proc/loadavg) $(free -m | awk '/^Mem:/{print $3}')" >>"$OUT/load.log"; sleep 15; done ) &
 SAMPLER=$!
 
-# A matrix unit is one theory row, "Matrix.<Scenario>.<Flavor>[.<Second>]" (second: stop type or auth mode);
-# anything else is a regular-suite "<Family>.<Variant>" folder.
-if [[ "$UNIT" == Matrix.* ]]; then
-    IFS='.' read -r _ SCENARIO FLAVOR SECOND <<<"$UNIT"
-    PROJECT=tests/JobMaster.ScenarioMatrixTests
-    FILTER="FullyQualifiedName~JobMaster.ScenarioMatrixTests.Scenarios.${SCENARIO}.&DisplayName~${FLAVOR}"
-    [ -n "${SECOND:-}" ] && FILTER="${FILTER}&DisplayName~${SECOND}"
-else
-    PROJECT=tests/JobMaster.ScenarioTests
-    FILTER="FullyQualifiedName~JobMaster.ScenarioTests.Scenarios.${UNIT}."
-fi
+# A unit is one theory row of the matrix, "<Scenario>.<Flavor>[.<Second>]" (second: stop type or auth mode).
+IFS='.' read -r SCENARIO FLAVOR SECOND <<<"$UNIT"
+FILTER="FullyQualifiedName~JobMaster.ScenarioMatrixTests.Scenarios.${SCENARIO}.&DisplayName~${FLAVOR}"
+[ -n "${SECOND:-}" ] && FILTER="${FILTER}&DisplayName~${SECOND}"
 
-timeout "${TIMEOUT_MINUTES}m" dotnet test "$PROJECT" --no-build \
+timeout "${TIMEOUT_MINUTES}m" dotnet test tests/JobMaster.ScenarioMatrixTests --no-build \
     --filter "$FILTER" \
     --logger "trx;LogFileName=${UNIT}.trx" --logger "console;verbosity=normal" \
     --results-directory "$OUT" >"$OUT/console.log" 2>&1

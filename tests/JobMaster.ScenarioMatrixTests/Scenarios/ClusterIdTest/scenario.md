@@ -1,8 +1,8 @@
 # ClusterIdTest
 
 Checks that a job or static schedule lands on the right cluster when its cluster id comes from the handler,
-definition or profile instead of being passed to the call. Matrix port of
-`JobMaster.ScenarioTests/Scenarios/ClusterIdTest` (Postgres only there).
+definition or profile instead of being passed to the call. Replaces
+the earlier per-provider suite's `ClusterIdTest` (Postgres only there).
 
 ## Setup
 One `mx-<flavor>-cluster-id` container runs `TargetTestClusterIdApp` with two standalone clusters:

@@ -2,8 +2,8 @@
 
 The archived-mode safety net: work written to a cluster right before it became Archived (the scheduler's mode
 check isn't atomic with the write) isn't stranded: once the cluster runs Archived with a `TargetActiveClusterId`, its
-coordinator moves the late jobs and schedules there, same ids, none lost. Matrix port of phases 2–3 of
-`JobMaster.ScenarioTests/Scenarios/ArchivedModeTest` (PostgresPure only there); its phase 1 (data-retention
+coordinator moves the late jobs and schedules there, same ids, none lost. Replaces phases 2–3 of
+the earlier per-provider suite's `ArchivedModeTest` (PostgresPure only there); its phase 1 (data-retention
 archiving) is the matrix `DataRetentionArchiveTest`.
 
 ## Topology

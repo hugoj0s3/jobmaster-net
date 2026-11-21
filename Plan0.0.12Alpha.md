@@ -1091,9 +1091,9 @@ item 18.
   - Built (2026-11-20): `ScenarioStopType { SigTerm, Crash }` (ScenarioTests runner), `ContainerStopper.StopAsync`
     (Crash = Docker kill SIGKILL through `Docker.DotNet`, from Testcontainers' endpoint config; `kill -9 1` inside
     the container doesn't work, PID 1 ignores it) behind `ScenarioRunner.StopAsync(name, stopType)`;
-    `ScenarioStopTypes.All` / `AllExcept((type, reason))` / `Cross(flavors, types)` → `TheoryData<string,
-    ScenarioStopType>` in the matrix. Tests: `ScenarioStopTypesTests` (no Docker), `ContainerStopperTests` (real
-    Docker: SIGTERM handler → exit 0, Crash → 137; mutation-checked).
+    `ScenarioStopTypes.All` / `AllExcept((type, reason))`, crossed with the flavors by plain LINQ in each test's
+    `Variants()`. Test: `ContainerStopperTests` (real Docker: SIGTERM handler → exit 0, Crash → 137;
+    mutation-checked).
   - Expectations per type in each scenario's emulator: both assert nothing lost; Crash recovers in minutes (lease
     90 s–10 min), SigTerm in seconds; SigTerm can't assert "no failures counted" until the shutdown-interrupted
     detection lands (next version).
@@ -1105,20 +1105,32 @@ item 18.
   item.
 - ApiAuths: multiply by provider, or is the auth mode the real axis there?
 
+**Status (2026-11-21).** Done as the flavor matrix (`tests/JobMaster.ScenarioMatrixTests`): one provider-free
+template per scenario, rendered per flavor (PostgresPure, MySqlPure, SqlServerPure, RavenDbPure, PostgresNats,
+HybridNatsRavenDb), one `scenario.md` each. The old per-provider `JobMaster.ScenarioTests/Scenarios` suite is
+removed (git history); `JobMaster.ScenarioTests` keeps only the shared runner, fixtures and clients. The cloud runner
+(`misc/scenario-cloud`) runs the matrix only: 82 units, about 1 h 40 min on 10 machines.
+- Port map: every old scenario has a matrix scenario of the same name, except `ApiAuths` → `ApiAuthTest` and
+  `ArchivedModeTest` phase 1 → `DataRetentionArchiveTest` (phases 2–3 stay `ArchivedModeTest`, now on every flavor).
+- Coverage given up: recurring schedules on a standalone cluster (the matrix template is distributed), and the
+  Postgres-only raw DB dump in ArchivedModeTest's timeout diagnostics.
+- ApiAuthTest stays PostgresPure-only (auth is in the API layer); multiplying it by provider is still open.
+
 **Tasks.**
-- [ ] Audit every scenario for phase/coverage differences between variants, and list the single-provider ones.
-- [ ] Add the missing provider variants (ClusterIdTest, ConfirmOnMasterTest, BasicExecution, ...).
-- [ ] Keep each variant runnable on its own (by test filter), so a future parallel cloud runner can split them.
-- [ ] Split ArchivedModeTest: phase 1 → its own scenario (e.g. `DataRetentionArchiveTest`, or folded into the
-      existing data-retention scenario), phases 2–3 → `ArchivedModeTest` (phases 1–2), each with its own `scenario.md`.
-- [ ] The safety-net phases → shared bases + the 4 remaining variants (incl. the raw `ClusterMode` switch per
-      provider).
-- [ ] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
-- [x] Stop-type dimension: `ScenarioStopType` (SigTerm / Crash), `ScenarioStopTypes` + `Cross`, runner
+- [x] Audit every scenario for phase/coverage differences between variants, and list the single-provider ones.
+- [x] Add the missing provider variants (ClusterIdTest, ConfirmOnMasterTest, BasicExecution, ...).
+- [x] Keep each variant runnable on its own (by test filter), so a future parallel cloud runner can split them.
+- [x] Split ArchivedModeTest: phase 1 → `DataRetentionArchiveTest`, phases 2–3 → `ArchivedModeTest`, each with its
+      own `scenario.md`.
+- [x] The safety-net phases on every flavor (raw `ClusterMode` switch per provider: `MasterStoreRaw`).
+- [x] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
+- [x] Stop-type dimension: `ScenarioStopType` (SigTerm / Crash), `ScenarioStopTypes`, runner
       `StopAsync(name, stopType)`.
-- [ ] Each ported scenario's stop step by stop type; disaster scenarios run both types, the rest that stop an app
-      declare their exclusion.
-- [ ] All variants green.
+- [x] Each ported scenario's stop step by stop type; disaster scenarios (DrainModeTest, StandaloneToDistributedTest)
+      run both types.
+- [x] Remove the old per-provider suite once every port passes.
+- [ ] All variants green: every unit passed at least once on AWS; DrainModeTest's round-robin scheduling (12 units)
+      not run yet.
 
 **Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and
 each variant can run on its own.

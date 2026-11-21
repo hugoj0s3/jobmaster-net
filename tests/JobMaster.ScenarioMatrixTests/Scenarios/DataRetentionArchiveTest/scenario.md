@@ -3,7 +3,7 @@
 The real, unmodified archive-then-delete flow: once `DataRetentionTtl` passes, `DeleteOldFinalJobsRunner` and
 `DeleteOldInactiveRecurringSchedulesRunner` copy finished jobs and terminated recurring schedules to the
 `TargetArchivedClusterId` cluster (same ids, same final status, executions and failure logs too), then delete them
-from the source. Matrix port of phase 1 of `JobMaster.ScenarioTests/Scenarios/ArchivedModeTest` (5 per-provider
+from the source. Replaces phase 1 of the earlier per-provider suite's `ArchivedModeTest` (5 per-provider
 copies there); its phases 2–3 (the archived-mode safety net) are the matrix `ArchivedModeTest`. Single phase.
 
 ## Topology

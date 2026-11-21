@@ -1,7 +1,7 @@
 # RecurringScheduleTest
 
 Recurring schedules fire on time and exactly once per occurrence, across 8 registration / compiler combinations, on
-a real `TargetTestRecurringApp` container. Matrix port of `JobMaster.ScenarioTests/Scenarios/RecurringScheduleTest`
+a real `TargetTestRecurringApp` container. Replaces the earlier per-provider suite's `RecurringScheduleTest`
 (6 per-provider copies there), with stronger per-execution checks.
 
 ## Topology
@@ -10,7 +10,7 @@ One container `mx-<flavor>-recurring`, one **distributed** cluster of the same n
 `TransientThreshold` 5 min (NATS caps it there). The planner dispatches a schedule's next occurrence on its first
 planning attempt even when it's beyond the horizon, so a 6 min interval doesn't stall at 5 min.
 
-The regular suite's Pure variants use a standalone cluster instead (10 min threshold); one template can't be both,
+The earlier suite's Pure variants used a standalone cluster instead (10 min threshold); one template can't be both,
 so the matrix covers recurring schedules on a distributed cluster only.
 
 ## Combinations (all every 6 min)

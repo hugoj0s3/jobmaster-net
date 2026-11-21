@@ -2,8 +2,8 @@
 
 No job is lost or run twice when every executor stops right after a large schedule, with jobs caught at every stage
 of the pipeline. Each worker mode (`Coordinator`, `Execution`, `Drain`) runs alone in its own container, one mode
-change per phase, under real load. Matrix port of `JobMaster.ScenarioTests/Scenarios/DrainModeTest` (5 per-provider
-copies there); the design reasoning and the bugs this scenario found are in those `scenario.md` files.
+change per phase, under real load. Replaces the earlier per-provider suite's `DrainModeTest` (5 per-provider
+copies there); the design reasoning and the bugs it found are in their `scenario.md` files (git history).
 
 ## Variants
 Every flavor × both stop types (`ScenarioStopType`), 12 runs:
@@ -34,7 +34,7 @@ executors explicitly, and the drainers keep running through phase 3. The coordin
 `DrainModeTestPlan`. Above `TransferBatchSize` (1000), so onboarding takes several transfer cycles. Each batch is
 split evenly over executor-1/2/3, round-robin, in requests of at most 3500 jobs (the app schedules a request's jobs
 concurrently; the HTTP call times out at 100 s). Each executor declares only its own agent connection, so this is
-what gives every connection pending saves to drain; the regular suite schedules everything through executor-1.
+what gives every connection pending saves to drain; the earlier suite scheduled everything through executor-1.
 
 ## Phases
 - **Phase 1:** schedule everything, then stop all 3 executors at once with the run's stop type. No waiting first:
@@ -56,7 +56,7 @@ what gives every connection pending saves to drain; the regular suite schedules 
   `ReadyToDelete → destroyed` each wait about 10–20 min (`BucketNoJobsBeforeReadyToDelete`); destruction is covered
   by `DestroyReadyToDeleteBucketsRunnerTests`.
 - **Crash runs recover more slowly:** a crashed executor hands nothing over, so its buckets wait for dead-worker
-  detection and its leased pending saves for the lease to end (90 s–10 min). The timeouts are the regular suite's,
+  detection and its leased pending saves for the lease to end (90 s–10 min). The timeouts are the earlier suite's,
   tuned for the SigTerm path; widen them only once a Crash run shows it's needed.
 
 Run one variant: `dotnet test tests/JobMaster.ScenarioMatrixTests --filter "FullyQualifiedName~DrainModeTest&DisplayName~PostgresPure&DisplayName~Crash"`.

@@ -1,7 +1,0 @@
-{
-  "scenarioName": "no-auth",
-  "phases": [
-    { "name": "phase-1", "containers": ["no-auth-cluster-one", "no-auth-cluster-two"] }
-  ],
-  "api": { "container": "api" }
-}

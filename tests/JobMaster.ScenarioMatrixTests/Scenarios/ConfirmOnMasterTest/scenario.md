@@ -2,7 +2,7 @@
 
 Checks `ConfirmOnMasterAsync` and receipt / by-id cancel end to end: a confirmed job or recurring schedule is on master
 as soon as the call returns, the race with the agent's own save never runs anything twice or loses anything, and a
-cancel that returned true never runs. Matrix port of `JobMaster.ScenarioTests/Scenarios/ConfirmOnMasterTest`
+cancel that returned true never runs. Replaces the earlier per-provider suite's `ConfirmOnMasterTest`
 (Postgres only there).
 
 ## Setup

@@ -2,8 +2,8 @@
 
 The real, unmodified `MigrateJobsRunner` and `MigrateRecurringSchedulesRunner` (30 s ticks) move everything from a
 Migrating cluster to its target, and the target's normal pipeline finishes it: no job lost, none duplicated, same ids
-end to end (migration only changes `ClusterId`, it never re-creates a job). Matrix port of
-`JobMaster.ScenarioTests/Scenarios/MigratingModeTest` (5 per-provider copies there). Single phase.
+end to end (migration only changes `ClusterId`, it never re-creates a job). Replaces
+the earlier per-provider suite's `MigratingModeTest` (5 per-provider copies there). Single phase.
 
 ## Topology
 One container `mx-<flavor>-migration` hosts both clusters (cross-cluster forwarding only resolves clusters

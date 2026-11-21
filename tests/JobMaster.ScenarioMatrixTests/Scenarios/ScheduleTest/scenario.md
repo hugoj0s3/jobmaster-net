@@ -1,8 +1,8 @@
 # ScheduleTest
 
 Scheduling end to end on three clusters, then the lifecycle around it: data retention purge, a real drain to zero
-buckets next to an unchanged control cluster, and retiring the drained connections. Matrix port of
-`JobMaster.ScenarioTests/Scenarios/ScheduleTest` (6 per-provider copies there). Around 1 h per flavor.
+buckets next to an unchanged control cluster, and retiring the drained connections. Replaces
+the earlier per-provider suite's `ScheduleTest` (6 per-provider copies there). Around 1 h per flavor.
 
 ## Topology
 One container per cluster, each the default cluster of its own container:
@@ -12,8 +12,8 @@ One container per cluster, each the default cluster of its own container:
   one worker per connection. `TransientThreshold` 2 min.
 
 The standalone cluster runs on every flavor (on PostgresNats and HybridNatsRavenDb it's the same as on their master's
-Pure flavor; it runs alongside the other two, so it costs no extra time). The regular suite's NATS and hybrid
-variants left it out.
+Pure flavor; it runs alongside the other two, so it costs no extra time). The earlier suite's NATS and hybrid variants
+left it out.
 
 ## Phases
 - **Phase 1:** about 1000 jobs, scheduled up front: per cluster 150 `fast`, 50 `normal`, 3 `slow`, 20

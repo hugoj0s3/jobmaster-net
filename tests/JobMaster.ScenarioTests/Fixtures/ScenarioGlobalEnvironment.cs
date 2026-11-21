@@ -317,9 +317,3 @@ public sealed class ScenarioGlobalEnvironment : IAsyncLifetime
         if (Network != null) await Network.DeleteAsync();
     }
 }
-
-[CollectionDefinition(Name)]
-public sealed class ScenarioCollection : ICollectionFixture<ScenarioGlobalEnvironment>
-{
-    public const string Name = "ScenarioGlobalEnvironment";
-}

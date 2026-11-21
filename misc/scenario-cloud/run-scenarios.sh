@@ -2,12 +2,11 @@
 # Runs the scenario tests on N fresh EC2 instances in parallel, from this PC's working tree (uncommitted
 # changes included), then terminates them. Usage (Git Bash, from the repo root):
 #
-#   misc/scenario-cloud/run-scenarios.sh [-n 10] [-t m5.2xlarge] [-u 'ScheduleTest|BasicExecution'] [--matrix] [--keep-failed] [--list]
+#   misc/scenario-cloud/run-scenarios.sh [-n 10] [-t m5.2xlarge] [-u 'ScheduleTest|BasicExecution'] [--keep-failed] [--list]
 #
 #   -n / -t        instance count / type (default 10 x m5.2xlarge = 80 vCPU, the account's on-demand quota)
-#   -u <regex>     only units matching it (a unit is "<Family>.<Variant>", e.g. ScheduleTest.PostgresPure)
-#   --matrix       the flavor matrix instead of the regular suite: one unit per theory row,
-#                  "Matrix.<Scenario>.<Flavor>[.<StopType|Auth>]" (needs a local build of tests/JobMaster.ScenarioMatrixTests)
+#   -u <regex>     only units matching it. A unit is one theory row of tests/JobMaster.ScenarioMatrixTests,
+#                  "<Scenario>.<Flavor>[.<StopType|Auth>]", e.g. ScheduleTest.PostgresPure or DrainModeTest.MySqlPure.Crash
 #   --keep-failed  don't terminate instances that ran a failed unit (they still self-terminate after MAX_MINUTES)
 #   --list         print the units, longest first, and exit (no AWS calls)
 #
@@ -21,7 +20,6 @@ TYPE="m5.2xlarge"
 UNIT_FILTER=""
 KEEP_FAILED=0
 LIST_ONLY=0
-MATRIX=0
 MAX_MINUTES=330          # hard cap per instance (self-terminate)
 UNIT_TIMEOUT_MINUTES=150 # one unit; ScheduleTest takes ~65-75 min locally
 
@@ -31,56 +29,33 @@ while [ $# -gt 0 ]; do
         -t) TYPE="$2"; shift 2 ;;
         -u) UNIT_FILTER="$2"; shift 2 ;;
         --keep-failed) KEEP_FAILED=1; shift ;;
-        --matrix) MATRIX=1; shift ;;
         --list) LIST_ONLY=1; shift ;;
         *) echo "Unknown argument: $1" >&2; exit 2 ;;
     esac
 done
 
-# Rough minutes per family, only to start the longest units first (the queue balances the rest).
+# Rough minutes per scenario (measured on m5.2xlarge), only to start the longest units first (the queue balances the rest).
 estimate() {
     case "$1" in
-        Matrix.ScheduleTest.*) echo 75 ;;
-        Matrix.RecurringScheduleTest.*|Matrix.DataRetentionArchiveTest.*) echo 22 ;;
-        Matrix.DrainModeTest.*) echo 15 ;;
-        Matrix.ArchivedModeTest.*|Matrix.StandaloneToDistributedTest.*) echo 12 ;;
-        Matrix.ConfirmOnMasterTest.*|Matrix.FallbackBucketTest.*|Matrix.MigratingModeTest.*) echo 6 ;;
-        Matrix.*) echo 2 ;;
-        ScheduleTest.*) echo 70 ;;
-        RecurringScheduleTest.*|DrainModeTest.*) echo 25 ;;
-        ArchivedModeTest.PostgresPure) echo 30 ;;
-        ArchivedModeTest.*|StandaloneToDistributedTest.*) echo 20 ;;
-        MigratingModeTest.*|FallbackBucketTest.*) echo 15 ;;
-        ClusterIdTest.*|ConfirmOnMasterTest.*) echo 10 ;;
-        *) echo 5 ;;
+        ScheduleTest.*) echo 75 ;;
+        RecurringScheduleTest.*|DataRetentionArchiveTest.*) echo 22 ;;
+        DrainModeTest.*) echo 15 ;;
+        ArchivedModeTest.*|StandaloneToDistributedTest.*) echo 12 ;;
+        ConfirmOnMasterTest.*|FallbackBucketTest.*|MigratingModeTest.*) echo 6 ;;
+        *) echo 2 ;;
     esac
 }
 
-# Units from the folders: Scenarios/<Family>/<Variant>/ (Phase folders excluded), or the family itself.
-list_units() {
-    local scenarios="$REPO/tests/JobMaster.ScenarioTests/Scenarios" family variant found
-    for familyDir in "$scenarios"/*/; do
-        family="$(basename "$familyDir")"
-        found=0
-        for variantDir in "$familyDir"*/; do
-            [ -d "$variantDir" ] || continue
-            variant="$(basename "$variantDir")"
-            [[ "$variant" =~ ^Phase[0-9]+$ ]] && continue
-            echo "$family.$variant"; found=1
-        done
-        [ $found -eq 0 ] && echo "$family"
-    done
-}
-
-# Matrix units: one per theory row of the built matrix project, e.g.
-#   ...Scenarios.DrainModeTest.DrainModeTests.Run(flavor: "PostgresPure", stopType: Crash) -> Matrix.DrainModeTest.PostgresPure.Crash
+# Units: one per theory row of the matrix project (built first, so the list matches the working tree), e.g.
+#   ...Scenarios.DrainModeTest.DrainModeTests.Run(flavor: "PostgresPure", stopType: Crash) -> DrainModeTest.PostgresPure.Crash
 # Only the scenarios' Run rows (the Flavors/* helper tests are left out).
-list_matrix_units() {
-    (cd "$REPO" && dotnet test tests/JobMaster.ScenarioMatrixTests --no-build --list-tests 2>/dev/null) | tr -d '\r' \
+list_units() {
+    (cd "$REPO" && dotnet build tests/JobMaster.ScenarioMatrixTests -v q -nologo >/dev/null \
+        && dotnet test tests/JobMaster.ScenarioMatrixTests --no-build --list-tests 2>/dev/null) | tr -d '\r' \
         | sed -nE 's/^ *JobMaster\.ScenarioMatrixTests\.Scenarios\.([A-Za-z]+)\.[A-Za-z]+\.Run\(([^)]*)\).*/\1|\2/p' \
         | while IFS='|' read -r scenario args; do
             values="$(echo "$args" | sed -E 's/[a-zA-Z]+: //g; s/"//g; s/, /./g')"
-            echo "Matrix.$scenario.$values"
+            echo "$scenario.$values"
         done | sort -u
 }
 
@@ -88,7 +63,7 @@ UNITS=()
 while read -r unit; do
     [ -z "$UNIT_FILTER" ] || [[ "$unit" =~ $UNIT_FILTER ]] || continue
     UNITS+=("$(estimate "$unit") $unit")
-done < <(if [ $MATRIX -eq 1 ]; then list_matrix_units; else list_units; fi)
+done < <(list_units)
 mapfile -t UNITS < <(printf '%s\n' "${UNITS[@]}" | sort -rn | cut -d' ' -f2)
 
 if [ ${#UNITS[@]} -eq 0 ]; then echo "No units match '$UNIT_FILTER'." >&2; exit 2; fi

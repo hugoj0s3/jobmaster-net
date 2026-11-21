@@ -1,8 +1,0 @@
-{
-  "scenarioName": "postgres-nats",
-  "phases": [
-    { "name": "phase-1", "containers": ["postgres-nats-standalone"] },
-    { "name": "phase-2", "containers": ["postgres-nats-coordinator", "postgres-nats-executor"] }
-  ],
-  "api": { "container": "api" }
-}

@@ -1,7 +1,7 @@
 # BasicExecution
 
 Walking-skeleton scenario: proves the whole container / scheduling / assertion pipeline works end to end on each
-master provider. Matrix port of `JobMaster.ScenarioTests/Scenarios/BasicExecution` (Postgres only there).
+master provider. Replaces the earlier per-provider suite's `BasicExecution` (Postgres only there).
 
 ## Topology
 - `mx-<flavor>-basic-exec`: one `TargetTestScheduleApp` container, a **standalone** cluster of the same name (no

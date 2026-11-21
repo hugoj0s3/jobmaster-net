@@ -1,7 +1,7 @@
 # FallbackBucketTest
 
 `AssignJobsToBucketsRunner`'s fallback bucket end to end: a cluster with a coordinator and no agent workers at all
-still runs its jobs instead of starving them. Matrix port of `JobMaster.ScenarioTests/Scenarios/FallbackBucketTest`
+still runs its jobs instead of starving them. Replaces the earlier per-provider suite's `FallbackBucketTest`
 (4 per-provider copies there). Single phase.
 
 ## Topology

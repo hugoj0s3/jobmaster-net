@@ -1,8 +1,8 @@
 # StandaloneToDistributedTest
 
 Moving a cluster off standalone loses nothing: a standalone worker stops right after scheduling, and a distributed
-topology takes over the same cluster and master database and runs every job exactly once. Matrix port of
-`JobMaster.ScenarioTests/Scenarios/StandaloneToDistributedTest` (5 per-provider copies there).
+topology takes over the same cluster and master database and runs every job exactly once. Replaces
+the earlier per-provider suite's `StandaloneToDistributedTest` (5 per-provider copies there).
 
 ## Variants
 Every flavor × both stop types (`ScenarioStopType`), 12 runs: **SigTerm** (the standalone worker's shutdown runs:

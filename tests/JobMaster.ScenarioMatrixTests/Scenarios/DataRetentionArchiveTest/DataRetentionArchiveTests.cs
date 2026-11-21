@@ -4,7 +4,6 @@ using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
 using JobMaster.ScenarioTests.Fixtures;
 using JobMaster.ScenarioTests.Runner;
-using JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.DataRetentionArchiveTest;
 

@@ -2,8 +2,6 @@ using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
 using JobMaster.ScenarioTests.Fixtures;
 using JobMaster.ScenarioTests.Runner;
-using JobMaster.ScenarioTests.Scenarios.DrainModeTest;
-using JobMaster.ScenarioTests.Scenarios.ScheduleTest;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.DrainModeTest;
 
@@ -50,7 +48,7 @@ public sealed class DrainModeTests(ScenarioGlobalEnvironment global)
         var clusterId = prefix;
         var api = runner.Api ?? throw new InvalidOperationException("This scenario has no api container configured.");
 
-        // Same sizes and priorities as the regular suite, with identifiers unique to this run: every run in this
+        // Same sizes and priorities as the earlier per-provider suite, with identifiers unique to this run: every run in this
         // process shares one Redis.
         var runId = Guid.NewGuid().ToString("N")[..8];
         var batches = DrainModeTestPlan.Batches

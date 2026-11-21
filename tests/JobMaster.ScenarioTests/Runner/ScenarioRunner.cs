@@ -64,30 +64,19 @@ public sealed class ScenarioRunner : IAsyncDisposable
         return new RecurringScheduleClient(new HttpClient { BaseAddress = new Uri(baseUrl) });
     }
 
-    private readonly Func<string, string>? configInterceptor;
+    private readonly Func<string, string> configInterceptor;
 
-    private ScenarioRunner(ScenarioGlobalEnvironment global, string scenarioFolder, Func<string, string>? configInterceptor = null)
+    private ScenarioRunner(ScenarioGlobalEnvironment global, string scenarioFolder, Func<string, string> configInterceptor)
     {
         this.global = global;
         this.scenarioFolder = scenarioFolder;
         this.configInterceptor = configInterceptor;
     }
 
-    public static async Task<ScenarioRunner> StartAsync(
-        ScenarioGlobalEnvironment global, string scenarioName, CancellationToken ct = default)
-    {
-        // scenarioName is the logical (kebab-case) identifier; the physical folder is its PascalCase form.
-        // Exact casing: Linux paths are case-sensitive.
-        var scenarioFolder = Path.Combine(RepoRootLocator.Find(), "tests", "JobMaster.ScenarioTests", "Scenarios", scenarioName.ToPascalCase());
-        var runner = new ScenarioRunner(global, scenarioFolder);
-        await runner.InitializeAsync(ct);
-        return runner;
-    }
-
     /// <summary>
-    /// For templated scenarios outside this project (the flavor matrix): <paramref name="configInterceptor"/>
-    /// rewrites every container / api JSON before the infrastructure tokens are rendered, and any
-    /// <c>{{...}}</c> left after rendering fails the start instead of reaching the app.
+    /// Starts the templated scenario in <paramref name="scenarioFolder"/> (the flavor matrix):
+    /// <paramref name="configInterceptor"/> rewrites every container / api JSON before the infrastructure tokens are
+    /// rendered, and any <c>{{...}}</c> left after rendering fails the start instead of reaching the app.
     /// </summary>
     public static async Task<ScenarioRunner> StartFromFolderAsync(
         ScenarioGlobalEnvironment global, string scenarioFolder, Func<string, string> configInterceptor, CancellationToken ct = default)
@@ -166,14 +155,10 @@ public sealed class ScenarioRunner : IAsyncDisposable
     private async Task StartContainerAsync(string containerJsonPath, bool isApiContainer, CancellationToken ct)
     {
         var tokens = BuildTokens();
-        var rawJson = await File.ReadAllTextAsync(containerJsonPath, ct);
-        if (configInterceptor != null)
-        {
-            rawJson = configInterceptor(rawJson);
-        }
+        var rawJson = configInterceptor(await File.ReadAllTextAsync(containerJsonPath, ct));
 
         var renderedJson = ConfigTemplateRenderer.Render(rawJson, tokens);
-        if (configInterceptor != null && renderedJson.Contains("{{", StringComparison.Ordinal))
+        if (renderedJson.Contains("{{", StringComparison.Ordinal))
         {
             var start = renderedJson.IndexOf("{{", StringComparison.Ordinal);
             var end = renderedJson.IndexOf("}}", start, StringComparison.Ordinal);
