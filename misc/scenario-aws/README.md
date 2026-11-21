@@ -1,19 +1,20 @@
 # Scenario tests on EC2
 
 Runs the scenario flavor matrix (`tests/JobMaster.ScenarioMatrixTests`) on fresh EC2 instances in parallel, from the
-local working tree (uncommitted changes included), and terminates them at the end.
+local working tree (uncommitted changes included), and terminates them at the end. For the pushed commit on
+GitHub-hosted runners, see `misc/scenario-github-actions`.
 
 ## Setup (once)
 - AWS CLI configured (`aws configure`), Git Bash, .NET SDK (the unit list comes from a local build).
-- Copy `scenario-cloud.settings.example.sh` to `scenario-cloud.settings.sh` (gitignored) and fill in the AMI
+- Copy `scenario-aws.settings.example.sh` to `scenario-aws.settings.sh` (gitignored) and fill in the AMI
   (Ubuntu x86_64), key pair, `.pem` path, security group (SSH from this PC) and a public subnet.
 
 ## Run (Git Bash, repo root)
 ```bash
-misc/scenario-cloud/run-scenarios.sh --list                                  # units, longest first; no AWS calls
-misc/scenario-cloud/run-scenarios.sh -n 2 -u 'BasicExecution|ApiAuthTest'    # small dry run
-misc/scenario-cloud/run-scenarios.sh -u 'DrainModeTest'                      # one scenario, every variant
-misc/scenario-cloud/run-scenarios.sh                                         # everything, 10 x m5.2xlarge
+misc/scenario-aws/run-scenarios.sh --list                                  # units, longest first; no AWS calls
+misc/scenario-aws/run-scenarios.sh -n 2 -u 'BasicExecution|ApiAuthTest'    # small dry run
+misc/scenario-aws/run-scenarios.sh -u 'DrainModeTest'                      # one scenario, every variant
+misc/scenario-aws/run-scenarios.sh                                         # everything, 10 x m5.2xlarge
 ```
 - A unit is one theory row of the matrix, `<Scenario>.<Flavor>[.<StopType|Auth>]` (e.g. `ScheduleTest.PostgresPure`,
   `DrainModeTest.MySqlPure.Crash`, `ApiAuthTest.PostgresPure.jwt`). Free instances take the next unit, longest first.

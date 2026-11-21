@@ -1,4 +1,4 @@
-# Copy to scenario-cloud.settings.sh (gitignored) and fill in your account's values.
+# Copy to scenario-aws.settings.sh (gitignored) and fill in your account's values.
 AMI_ID="ami-..."              # Ubuntu, x86_64
 KEY_NAME="..."                # EC2 key pair name
 PEM_PATH="C:/Users/<you>/Downloads/<key>.pem"

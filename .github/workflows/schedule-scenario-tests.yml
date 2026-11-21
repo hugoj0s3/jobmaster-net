@@ -1,278 +1,88 @@
-name: Schedule Scenario Tests
+name: Scenario Tests
 
+# The scenario flavor matrix (tests/JobMaster.ScenarioMatrixTests), one runner per unit, on the pushed commit.
+# Manual only: the whole matrix is 82 units. Scripts and notes: misc/scenario-github-actions/.
+# (File name kept from the old suite's workflow: a manual run needs the file on the default branch.)
 on:
   workflow_dispatch:
+    inputs:
+      units:
+        description: "Regex of units, <Scenario>.<Flavor>[.<StopType|Auth>], e.g. DrainModeTest or BasicExecution|ApiAuthTest. Empty runs all."
+        required: false
+        default: ""
 
 jobs:
-  smoke-tests:
-    name: Smoke Tests (ApiAuths + BasicExecution)
+  list-units:
+    name: List units
     runs-on: ubuntu-latest
-    # These are small (BasicExecution schedules a single job with a 90s wait; the four ApiAuths
-    # variants are comparably light) -- a fast fail-fast gate before committing to the expensive
-    # matrix below.
-    timeout-minutes: 20
-
+    timeout-minutes: 15
+    outputs:
+      units: ${{ steps.list.outputs.units }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
+          # SDK from global.json; the 8.0 SDK for the net8.0 test builds (with the ASP.NET Core 8.0 runtime).
           global-json-file: global.json
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
+      - name: List units
+        id: list
+        env:
+          UNIT_FILTER: ${{ inputs.units }}
+        run: |
+          units="$(bash misc/scenario-github-actions/list-units.sh "$UNIT_FILTER")"
+          echo "$units"
+          echo "units=$units" >> "$GITHUB_OUTPUT"
 
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run ApiAuths + BasicExecution
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~ApiAuths|FullyQualifiedName~BasicExecution" --logger "console;verbosity=normal"
-
-  scenario-test:
-    name: ${{ matrix.scenario }}
-    needs: smoke-tests
+  unit:
+    name: ${{ matrix.unit }}
+    needs: list-units
     runs-on: ubuntu-latest
-    # Each of these runs the real Testcontainers-based drain-then-retire lifecycle end to end
-    # (~60-70 min observed locally) -- generous headroom over that without eating the whole
-    # 6-hour default job timeout if one hangs.
-    timeout-minutes: 100
-
-    strategy:
-      # One matrix job per scenario -- GitHub Actions gives each its own runner/VM, so they run
-      # truly in parallel with no shared build output between them (running these concurrently on
-      # one machine via a shared bin/obj directory causes file-lock failures -- confirmed locally).
-      fail-fast: false
-      matrix:
-        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run ${{ matrix.scenario }}
-        # Scoped to the ScheduleTest namespace specifically -- RecurringScheduleTest has classes
-        # with the same simple names (e.g. "PostgresPure"), so an unscoped "~PostgresPure" filter
-        # would match both and run them together in this job.
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  recurring-scenario-test:
-    name: Recurring ${{ matrix.scenario }}
-    # Runs after the one-off ScheduleTest matrix, not in parallel with it -- keeps total concurrent
-    # Docker/Testcontainers load bounded and gives a clear "one-off scheduling works" signal before
-    # spending time on recurring-schedule correctness.
-    needs: scenario-test
-    runs-on: ubuntu-latest
-    # Recurring scenarios are shorter than the drain-lifecycle ScheduleTest ones (~15-25 min
-    # observed, up to ~30 min for the NATS variant's widened tolerances) -- generous headroom
-    # without eating the whole 6-hour default job timeout if one hangs.
-    timeout-minutes: 40
-
+    # ScheduleTest takes ~65-75 min; the unit itself is cut at 150 min, the rest is setup, build and image builds.
+    timeout-minutes: 175
     strategy:
       fail-fast: false
       matrix:
-        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
-
+        unit: ${{ fromJSON(needs.list-units.outputs.units) }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
           global-json-file: global.json
           dotnet-version: '8.0.x'
 
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
       - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
+        run: dotnet build tests/JobMaster.ScenarioMatrixTests -v q -nologo
 
-      - name: Run Recurring ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.RecurringScheduleTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
+      - name: Run ${{ matrix.unit }}
+        env:
+          UNIT: ${{ matrix.unit }}
+        run: bash misc/scenario-github-actions/run-unit.sh "$UNIT" 150 "$RUNNER_TEMP/results"
 
-  archived-mode-test:
-    name: Archived ${{ matrix.scenario }}
-    # Chained after recurring-scenario-test, not in parallel -- keeps total concurrent
-    # Docker/Testcontainers load bounded, same reasoning as recurring-scenario-test above.
-    needs: recurring-scenario-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
         with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
+          name: ${{ matrix.unit }}
+          path: ${{ runner.temp }}/results/${{ matrix.unit }}
+          retention-days: 14
+          if-no-files-found: ignore
 
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run Archived ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.ArchivedModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  migrating-mode-test:
-    name: Migrating ${{ matrix.scenario }}
-    needs: archived-mode-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run Migrating ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.MigratingModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  standalone-to-distributed-test:
-    name: Standalone-to-Distributed ${{ matrix.scenario }}
-    needs: migrating-mode-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    strategy:
-      fail-fast: false
-      matrix:
-        scenario: [PostgresPure, MySqlPure, SqlServerPure, PostgresNats]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run Standalone-to-Distributed ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.StandaloneToDistributedTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  fallback-bucket-test:
-    name: Fallback Bucket ${{ matrix.scenario }}
-    needs: standalone-to-distributed-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 40
-
-    strategy:
-      fail-fast: false
-      matrix:
-        # No PostgresNats variant exists for this scenario -- Postgres+Nats fallback-bucket
-        # behavior isn't covered yet.
-        scenario: [PostgresPure, MySqlPure, SqlServerPure]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run Fallback Bucket ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.FallbackBucketTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  drain-mode-test:
-    name: Drain Mode ${{ matrix.scenario }}
-    needs: fallback-bucket-test
-    runs-on: ubuntu-latest
-    # Observed ~24min locally.
-    timeout-minutes: 40
-
-    strategy:
-      fail-fast: false
-      matrix:
-        # Only a PostgresDist variant exists for this scenario today.
-        scenario: [PostgresDist]
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
-          global-json-file: global.json
-          dotnet-version: '8.0.x'
-
-      - name: Restore
-        run: dotnet restore tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj
-
-      - name: Build
-        run: dotnet build tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-restore --configuration Release
-
-      - name: Run Drain Mode ${{ matrix.scenario }}
-        run: dotnet test tests/JobMaster.ScenarioTests/JobMaster.ScenarioTests.csproj --no-build --configuration Release --filter "FullyQualifiedName~Scenarios.DrainModeTest.${{ matrix.scenario }}" --logger "console;verbosity=normal"
-
-  all-scenarios-passed:
+  all-passed:
     name: All Scenario Tests Passed
-    # Single aggregate check to require in branch protection, instead of every individual matrix
-    # job -- fails if any upstream job failed, was cancelled, or was skipped.
-    needs: [smoke-tests, scenario-test, recurring-scenario-test, archived-mode-test, migrating-mode-test, standalone-to-distributed-test, fallback-bucket-test, drain-mode-test]
+    # One check for branch protection instead of every unit: fails if listing or any unit failed or was cancelled.
+    needs: [list-units, unit]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Check all jobs succeeded
+      - name: Check
         run: |
-          if [[ "${{ contains(needs.*.result, 'failure') }}" == "true" || "${{ contains(needs.*.result, 'cancelled') }}" == "true" || "${{ contains(needs.*.result, 'skipped') }}" == "true" ]]; then
-            echo "One or more scenario test jobs did not succeed."
+          if [ "${{ needs.list-units.result }}" != "success" ] || [ "${{ needs.unit.result }}" != "success" ]; then
+            echo "One or more scenario units did not pass."
             exit 1
           fi

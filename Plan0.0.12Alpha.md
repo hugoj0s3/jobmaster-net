@@ -1099,17 +1099,14 @@ item 18.
     detection lands (next version).
 
 **Open decisions.**
-- Until the cloud runner exists: a cheaper local speed-up, if any (e.g. one test filter per provider, shared images),
-  or just accept the longer local run.
-- The cloud runner itself (provider, machine size, how results and the timeout dumps come back) is its own future
-  item.
 - ApiAuths: multiply by provider, or is the auth mode the real axis there?
 
 **Status (2026-11-21).** Done as the flavor matrix (`tests/JobMaster.ScenarioMatrixTests`): one provider-free
 template per scenario, rendered per flavor (PostgresPure, MySqlPure, SqlServerPure, RavenDbPure, PostgresNats,
 HybridNatsRavenDb), one `scenario.md` each. The old per-provider `JobMaster.ScenarioTests/Scenarios` suite is
-removed (git history); `JobMaster.ScenarioTests` keeps only the shared runner, fixtures and clients. The cloud runner
-(`misc/scenario-cloud`) runs the matrix only: 82 units, about 1 h 40 min on 10 machines.
+removed (git history); `JobMaster.ScenarioTests` keeps only the shared runner, fixtures and clients. Two ways to run
+the 82 units in parallel: `misc/scenario-aws` (EC2 from the PC, uncommitted tree included, about 1 h 40 min on 10
+machines) and the `Scenario Tests` workflow (`misc/scenario-github-actions`, the pushed commit, one runner per unit).
 - Port map: every old scenario has a matrix scenario of the same name, except `ApiAuths` → `ApiAuthTest` and
   `ArchivedModeTest` phase 1 → `DataRetentionArchiveTest` (phases 2–3 stay `ArchivedModeTest`, now on every flavor).
 - Coverage given up: recurring schedules on a standalone cluster (the matrix template is distributed), and the

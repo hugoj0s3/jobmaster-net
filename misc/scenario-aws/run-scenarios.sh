@@ -2,7 +2,7 @@
 # Runs the scenario tests on N fresh EC2 instances in parallel, from this PC's working tree (uncommitted
 # changes included), then terminates them. Usage (Git Bash, from the repo root):
 #
-#   misc/scenario-cloud/run-scenarios.sh [-n 10] [-t m5.2xlarge] [-u 'ScheduleTest|BasicExecution'] [--keep-failed] [--list]
+#   misc/scenario-aws/run-scenarios.sh [-n 10] [-t m5.2xlarge] [-u 'ScheduleTest|BasicExecution'] [--keep-failed] [--list]
 #
 #   -n / -t        instance count / type (default 10 x m5.2xlarge = 80 vCPU, the account's on-demand quota)
 #   -u <regex>     only units matching it. A unit is one theory row of tests/JobMaster.ScenarioMatrixTests,
@@ -70,9 +70,9 @@ if [ ${#UNITS[@]} -eq 0 ]; then echo "No units match '$UNIT_FILTER'." >&2; exit 
 if [ $LIST_ONLY -eq 1 ]; then printf '%s\n' "${UNITS[@]}"; echo "(${#UNITS[@]} units)"; exit 0; fi
 [ "$INSTANCES" -gt ${#UNITS[@]} ] && INSTANCES=${#UNITS[@]}
 
-[ -f "$HERE/scenario-cloud.settings.sh" ] || { echo "Missing $HERE/scenario-cloud.settings.sh (see the .example)." >&2; exit 2; }
+[ -f "$HERE/scenario-aws.settings.sh" ] || { echo "Missing $HERE/scenario-aws.settings.sh (see the .example)." >&2; exit 2; }
 # shellcheck source=/dev/null
-source "$HERE/scenario-cloud.settings.sh"
+source "$HERE/scenario-aws.settings.sh"
 
 RUN_ID="scn-$(date +%Y%m%d-%H%M%S)"
 OUT="$REPO/artifacts/scenario-runs/$RUN_ID"

@@ -53,7 +53,7 @@ Design discussed 2026-11-15 (Hugo):
 first `:x6` slot ran ~4–5 min late (startup under load, timing only), or two jobs were planned for the same slot (real
 duplicate-planning bug). The spacing check now prints each job's `ScheduledAt` / `ExecutedAt` on failure (same
 `ScheduledAt` twice = duplicate planning). To settle it: repeat the unit several times on `m5.xlarge` (needs a repeat
-option in `misc/scenario-cloud/run-scenarios.sh`).
+option in `misc/scenario-aws/run-scenarios.sh`).
 Hugo: a late first run would be a problem (a slot missed after start / deploy); extra runs right after a cancel are
 fine (already-planned burst). Test gap: Cronos / NCrontab skip the first-firing check (`ChecksFirstFiringTiming:
 false`, since `CreatedAt + Interval` is wrong for grid-aligned cron); re-enable it with the right expectation (first
