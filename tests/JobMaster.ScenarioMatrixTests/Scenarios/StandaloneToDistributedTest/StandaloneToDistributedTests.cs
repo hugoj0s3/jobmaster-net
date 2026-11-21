@@ -1,0 +1,99 @@
+using FluentAssertions;
+using JobMaster.ScenarioMatrixTests.Flavors;
+using JobMaster.ScenarioMatrixTests.Lib;
+
+namespace JobMaster.ScenarioMatrixTests.Scenarios.StandaloneToDistributedTest;
+
+/// <summary>
+/// Moving a cluster off standalone loses nothing: a standalone worker stops right after scheduling, with jobs caught
+/// at every stage, and a distributed topology (coordinator + executor on a new agent connection) takes over the same
+/// cluster and database and runs every job; one stopped before its result was saved may run again. Run with both
+/// stop types. See scenario.md.
+/// </summary>
+[Collection(MatrixCollection.Name)]
+public sealed class StandaloneToDistributedTests(ScenarioGlobalEnvironment global)
+{
+    private const int QtyJobs = 300;
+    private const int SucceededStatus = 5;
+    private const string AgentConnectionName = "agent-1";
+
+    // Past the ~10 min ProcessDeadline backstop plus onboarding and execution, though the auto-drain path should
+    // win in practice.
+    private static readonly TimeSpan FinalizeTimeout = TimeSpan.FromMinutes(20);
+
+    // After every job is Succeeded: long enough for the drainer's and the executor's next polls to pick up a stale copy.
+    private static readonly TimeSpan SettleWindow = TimeSpan.FromSeconds(60);
+
+    public static IEnumerable<object[]> Variants() =>
+        ScenarioFlavors.AllExcept()
+            .SelectMany(flavor => ScenarioStopTypes.All.Select(stopType => new object[] { flavor.Name, stopType }));
+
+    [Theory]
+    [MemberData(nameof(Variants))]
+    public async Task Run(string flavor, ScenarioStopType stopType)
+    {
+        var selected = ScenarioFlavors.Get(flavor);
+        var folder = Path.Combine(RepoRootLocator.Find(), "tests", "JobMaster.ScenarioMatrixTests", "Scenarios", "StandaloneToDistributedTest");
+
+        // Per stop type: its own cluster and master database, so the two runs on one flavor never count each other's jobs.
+        var stop = stopType == ScenarioStopType.Crash ? "crash" : "sig";
+        await using var runner = await ScenarioRunner.StartFromFolderAsync(
+            global, folder, json => FlavorTemplateRenderer.Render(json.Replace("{{stop}}", stop), selected));
+
+        var clusterId = $"mx-{selected.Code}-{stop}-s2d";
+        var standalone = $"{clusterId}-standalone";
+        var api = runner.Api ?? throw new InvalidOperationException("This scenario has no api container configured.");
+        var testIdentifier = Guid.NewGuid().ToString("N");
+
+        // Phase 1: schedule against the standalone worker, then stop it at once, without waiting for any job to
+        // settle, so phase 2 recovers jobs from every stage (pending save, on master, in a bucket, running).
+        await runner.StartPhaseAsync("phase-1");
+        var scheduled = await runner.ScheduleFor(standalone).ScheduleAsync("fast", testIdentifier, QtyJobs, clusterId: clusterId);
+        scheduled.JobIds.Should().HaveCount(QtyJobs);
+        await runner.StopAsync(standalone, stopType);
+
+        // Phase 2: a distributed topology takes over the same cluster and database. At startup JobMaster finds buckets
+        // still owned by the standalone worker and adds a drain worker on the reserved standalone connection; those
+        // buckets go Lost, then that drainer takes them. Jobs still in a bucket the drain missed come back when their
+        // ProcessDeadline passes. Either way they're assigned to the new bucket on agent-1.
+        await runner.StartPhaseAsync("phase-2");
+
+        // Waited for on master, not on the execution count: a job stopped after its handler but before its result was
+        // saved stays Processing until the deadline runner reassigns it, and runs again.
+        await PollingWaitUtil.WaitUntilAsync(FinalizeTimeout,
+            async () => await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier, status: SucceededStatus) == QtyJobs,
+            "every job to reach Succeeded",
+            pollInterval: TimeSpan.FromSeconds(10),
+            describeLastState: async () => $"{await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier, status: SucceededStatus)} of {QtyJobs} Succeeded");
+
+        // None lost, but a job can run again (at least once, not exactly once): stopped after its handler finished
+        // but before its result reached master, it stays Processing until the deadline runner reassigns it. SigTerm
+        // only leaves that window to jobs the shutdown can't finish saving; Crash (SIGKILL) leaves it to every job
+        // running at the kill, so Crash allows more: 3 runs per job and 10% of the jobs repeated (SigTerm 2 / 5%).
+        var maxRunsPerJob = stopType == ScenarioStopType.Crash ? 3 : 2;
+        var maxRepeatedPercent = stopType == ScenarioStopType.Crash ? 10 : 5;
+        var executions = await runner.Tracker.GetAllAsync(testIdentifier);
+        var repeated = executions.GroupBy(e => e.JobId).Where(g => g.Count() > 1).ToList();
+        var repeatedRuns = string.Join("; ", repeated.Select(g => $"{g.Key}: {string.Join(", ", g.Select(e => $"{e.HostId} {e.ExecutedAtUtc:HH:mm:ss.fff}"))}"));
+        repeated.Should().OnlyContain(g => g.Count() <= maxRunsPerJob, "a job runs at most {0} times: {1}", maxRunsPerJob, repeatedRuns);
+        repeated.Count.Should().BeLessThanOrEqualTo(QtyJobs * maxRepeatedPercent / 100,
+            "at most {0}% of the jobs run again: {1}", maxRepeatedPercent, repeatedRuns);
+        executions.Select(e => e.JobId).Distinct().Should().BeEquivalentTo(scheduled.JobIds, "every scheduled job ran");
+
+        var apiJobs = await api.GetJobsAsync(clusterId, testIdentifier: testIdentifier, status: SucceededStatus, countLimit: int.MaxValue);
+        apiJobs.Should().HaveCount(QtyJobs);
+        apiJobs.Select(j => GuidBase64.Parse(j.Id)).Should().BeEquivalentTo(scheduled.JobIds,
+            "recovery must preserve the exact same job IDs -- no job lost across the standalone-to-distributed transition");
+
+        (await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier, status: SucceededStatus)).Should().Be(QtyJobs);
+        (await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier)).Should().Be(QtyJobs);
+
+        // No job runs once it's Succeeded: a stale copy (a standalone bucket still draining, a redelivery) conflicts on
+        // its versioned Processing write and stops before the handler. Re-read after a settle window.
+        await Task.Delay(SettleWindow);
+        (await runner.Tracker.GetAllAsync(testIdentifier)).Should().HaveCount(executions.Count, "no job runs again once it's Succeeded");
+
+        var connections = (await api.GetAgentConnectionsAsync(clusterId)).ExcludingReserved().ToList();
+        connections.Should().ContainSingle(c => c.Name == AgentConnectionName && c.IsAlive);
+    }
+}

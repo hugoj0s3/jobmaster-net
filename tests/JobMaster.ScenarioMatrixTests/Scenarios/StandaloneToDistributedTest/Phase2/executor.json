@@ -1,0 +1,22 @@
+{
+  "containerName": "mx-{{flavor}}-{{stop}}-s2d-executor",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-{{stop}}-s2d-executor",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{stop}}-s2d",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:S2d{{stop}}}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        { "Name": "agent-1", "Connection": "{{agent:1}}" }
+      ],
+      "Workers": [
+        { "WorkerName": "executor", "AgentConnectionName": "agent-1", "WorkerMode": "Execution" }
+      ]
+    }
+  ]
+}

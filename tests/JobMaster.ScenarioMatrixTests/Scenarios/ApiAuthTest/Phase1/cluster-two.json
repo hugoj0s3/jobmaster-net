@@ -1,0 +1,17 @@
+{
+  "containerName": "mx-{{flavor}}-{{auth}}-two",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-{{auth}}-two",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{auth}}-two",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ApiAuth{{auth}}}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

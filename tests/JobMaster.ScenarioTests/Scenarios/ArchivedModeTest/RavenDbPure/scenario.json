@@ -1,7 +1,0 @@
-{
-  "scenarioName": "ravendb-pure",
-  "phases": [
-    { "name": "phase-1", "containers": ["raven-archive"] }
-  ],
-  "api": { "container": "api" }
-}

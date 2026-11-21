@@ -1080,40 +1080,55 @@ item 18.
 
 - Direction for run time (future, not this item): run the scenarios on cloud machines provisioned with Terraform,
   all variants in parallel. Locally they keep running sequentially.
-- Stop mode as a third matrix dimension (Hugo, 2026-11-17): scenarios × flavors × stop mode, opted in per scenario the
-  same way as flavors (some scenarios all modes, some not, each exclusion with a reason).
-  - `Graceful` = `docker stop` (SIGTERM, then SIGKILL after the grace period): the worker's own stop runs (buckets
-    handed over as Lost, execution flush). `Kill` = `docker kill` (SIGKILL): nothing runs, recovery only by lease
+- Stop type as a third matrix dimension (Hugo, 2026-11-17; names 2026-11-20): scenarios × flavors × stop type, opted
+  in per scenario the same way as flavors (some scenarios all types, some not, each exclusion with a reason).
+  - `SigTerm` = `docker stop` (SIGTERM, then SIGKILL after the grace period): the app's own shutdown runs (buckets
+    handed over as Lost, execution flush). `Crash` = SIGKILL sent by Docker: nothing runs, recovery only by lease
     expiry, heartbeat → Lost and the deadline runner.
   - Why: the disaster phases (`DrainModeTest` phase 1, `StandaloneToDistributedTest` phase 1) were meant as hard
-    stops, but `docker stop` is a SIGTERM, so since the process-exit stop exists they only test the graceful path. A
-    real kill isn't exercised anywhere today.
-  - Shape: `ScenarioStopModes.All` / `AllExcept((mode, reason))` next to `ScenarioFlavors`, a `Cross(flavors, modes)`
-    for `TheoryData<string, string>`; scenario runner `KillAsync` (Docker kill with SIGKILL through `Docker.DotNet`;
-    `kill -9 1` inside the container doesn't work, SIGKILL to PID 1 from inside is ignored) next to `StopAsync`.
-  - Expectations per mode in each scenario's emulator: both assert nothing lost; kill recovers in minutes (lease
-    90 s–10 min), graceful in seconds; graceful can't assert "no failures counted" until the shutdown-interrupted
+    stops, but `docker stop` is a SIGTERM, so since the shutdown stop exists they only test the SIGTERM path. A
+    real crash isn't exercised anywhere today.
+  - Built (2026-11-20): `ScenarioStopType { SigTerm, Crash }` (scenario runner), `ContainerStopper.StopAsync`
+    (Crash = Docker kill SIGKILL through `Docker.DotNet`, from Testcontainers' endpoint config; `kill -9 1` inside
+    the container doesn't work, PID 1 ignores it) behind `ScenarioRunner.StopAsync(name, stopType)`;
+    `ScenarioStopTypes.All` / `AllExcept((type, reason))`, crossed with the flavors by plain LINQ in each test's
+    `Variants()`. Test: `ContainerStopperTests` (real Docker: SIGTERM handler → exit 0, Crash → 137;
+    mutation-checked).
+  - Expectations per type in each scenario's emulator: both assert nothing lost; Crash recovers in minutes (lease
+    90 s–10 min), SigTerm in seconds; SigTerm can't assert "no failures counted" until the shutdown-interrupted
     detection lands (next version).
 
 **Open decisions.**
-- Until the cloud runner exists: a cheaper local speed-up, if any (e.g. one test filter per provider, shared images),
-  or just accept the longer local run.
-- The cloud runner itself (provider, machine size, how results and the timeout dumps come back) is its own future
-  item.
 - ApiAuths: multiply by provider, or is the auth mode the real axis there?
 
+**Status (2026-11-21).** Done as the flavor matrix (`tests/JobMaster.ScenarioMatrixTests`): one provider-free
+template per scenario, rendered per flavor (PostgresPure, MySqlPure, SqlServerPure, RavenDbPure, PostgresNats,
+HybridNatsRavenDb), one `scenario.md` each. The old per-provider `JobMaster.ScenarioTests/Scenarios` suite is
+removed (git history), and so is the `JobMaster.ScenarioTests` project: its runner, fixtures and clients are the matrix
+project's `Lib/` (namespace `JobMaster.ScenarioMatrixTests.Lib`). Two ways to run
+the 82 units in parallel: `misc/scenario-aws` (EC2 from the PC, uncommitted tree included, about 1 h 40 min on 10
+machines) and the `Scenario Tests` workflow (`misc/scenario-github-actions`, the pushed commit, one runner per unit).
+- Port map: every old scenario has a matrix scenario of the same name, except `ApiAuths` → `ApiAuthTest` and
+  `ArchivedModeTest` phase 1 → `DataRetentionArchiveTest` (phases 2–3 stay `ArchivedModeTest`, now on every flavor).
+- Coverage given up: recurring schedules on a standalone cluster (the matrix template is distributed), and the
+  Postgres-only raw DB dump in ArchivedModeTest's timeout diagnostics.
+- ApiAuthTest stays PostgresPure-only (auth is in the API layer); multiplying it by provider is still open.
+
 **Tasks.**
-- [ ] Audit every scenario for phase/coverage differences between variants, and list the single-provider ones.
-- [ ] Add the missing provider variants (ClusterIdTest, ConfirmOnMasterTest, BasicExecution, ...).
-- [ ] Keep each variant runnable on its own (by test filter), so a future parallel cloud runner can split them.
-- [ ] Split ArchivedModeTest: phase 1 → its own scenario (e.g. `DataRetentionArchiveTest`, or folded into the
-      existing data-retention scenario), phases 2–3 → `ArchivedModeTest` (phases 1–2), each with its own `scenario.md`.
-- [ ] The safety-net phases → shared bases + the 4 remaining variants (incl. the raw `ClusterMode` switch per
-      provider).
-- [ ] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
-- [ ] Stop-mode dimension: `ScenarioStopModes` + `Cross`, runner `KillAsync`, emulators' stop step by mode; disaster
-      scenarios run both modes, the rest declare their exclusion.
-- [ ] All variants green.
+- [x] Audit every scenario for phase/coverage differences between variants, and list the single-provider ones.
+- [x] Add the missing provider variants (ClusterIdTest, ConfirmOnMasterTest, BasicExecution, ...).
+- [x] Keep each variant runnable on its own (by test filter), so a future parallel cloud runner can split them.
+- [x] Split ArchivedModeTest: phase 1 → `DataRetentionArchiveTest`, phases 2–3 → `ArchivedModeTest`, each with its
+      own `scenario.md`.
+- [x] The safety-net phases on every flavor (raw `ClusterMode` switch per provider: `MasterStoreRaw`).
+- [x] Move `scenario.md` to the scenario level; merge the per-provider files, keep real differences.
+- [x] Stop-type dimension: `ScenarioStopType` (SigTerm / Crash), `ScenarioStopTypes`, runner
+      `StopAsync(name, stopType)`.
+- [x] Each ported scenario's stop step by stop type; disaster scenarios (DrainModeTest, StandaloneToDistributedTest)
+      run both types.
+- [x] Remove the old per-provider suite once every port passes.
+- [ ] All variants green: every unit passed at least once on AWS; DrainModeTest's round-robin scheduling (12 units)
+      not run yet.
 
 **Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and
 each variant can run on its own.

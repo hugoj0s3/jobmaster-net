@@ -1,7 +1,0 @@
-{
-  "scenarioName": "recurring-ravendb-pure",
-  "phases": [
-    { "name": "phase-1", "containers": ["ravendb-recurring"] }
-  ],
-  "api": { "container": "api" }
-}

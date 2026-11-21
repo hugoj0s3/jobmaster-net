@@ -1,0 +1,26 @@
+{
+  "containerName": "mx-{{flavor}}-dist-two",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-dist-two",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-dist-two",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ScheduleDistTwo}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        { "Name": "agent-1", "Connection": "{{agent:4}}" },
+        { "Name": "agent-2", "Connection": "{{agent:5}}" },
+        { "Name": "agent-3", "Connection": "{{agent:6}}" }
+      ],
+      "Workers": [
+        { "WorkerName": "w1", "AgentConnectionName": "agent-1" },
+        { "WorkerName": "w2", "AgentConnectionName": "agent-2" },
+        { "WorkerName": "w3", "AgentConnectionName": "agent-3" }
+      ]
+    }
+  ]
+}

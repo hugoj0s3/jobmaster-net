@@ -2,6 +2,7 @@ using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
@@ -661,6 +662,173 @@ public class JobMasterSchedulerClusterAwareTests
             .ReturnsAsync(Statuses(inserted: new[] { schedule.Id }));
 
         (await mocks.CreateSut().InsertCancelledRecurringScheduleAsync(schedule)).Should().BeTrue();
+    }
+
+    // Cancel and reschedule are a read, a rule check, then a versioned write; another writer in between (the planner
+    // planning a brand-new schedule) made the cancel throw JobMasterVersionConflictException out of the public API (seen
+    // in the matrix scenarios on NATS). The whole read-check-write now runs again through RetryVersionConflictPolicy.
+
+    [Fact]
+    public async Task CancelRecurringAsync_WhenTheWriteHitsAVersionConflict_ReadsAgainAndCancels()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Recurs.Setup(x => x.GetAsync(id)).ReturnsAsync(() => ActiveRecurring(clusterId, id));
+        mocks.Recurs.SetupSequence(x => x.UpdateAsync(It.IsAny<RecurringScheduleRawModel>()))
+            .ThrowsAsync(new JobMasterVersionConflictException(id, "RecurringSchedule", "v1"))
+            .Returns(Task.CompletedTask);
+
+        (await mocks.CreateSut().CancelRecurringAsync(id)).Should().BeTrue();
+
+        mocks.Recurs.Verify(x => x.GetAsync(id), Times.Exactly(2));
+        mocks.Recurs.Verify(x => x.UpdateAsync(It.Is<RecurringScheduleRawModel>(s => s.Status == RecurringScheduleStatus.Canceled)), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task CancelRecurringAsync_WhenItEndedBeforeTheRetry_ReturnsFalse()
+    {
+        // The retry decides on the current state: a schedule that became final meanwhile isn't cancelled.
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        var ended = ActiveRecurring(clusterId, id);
+        ended.Status = RecurringScheduleStatus.Canceled;
+        mocks.Recurs.SetupSequence(x => x.GetAsync(id))
+            .ReturnsAsync(ActiveRecurring(clusterId, id))
+            .ReturnsAsync(ended);
+        mocks.Recurs.Setup(x => x.UpdateAsync(It.IsAny<RecurringScheduleRawModel>()))
+            .ThrowsAsync(new JobMasterVersionConflictException(id, "RecurringSchedule", "v1"));
+
+        (await mocks.CreateSut().CancelRecurringAsync(id)).Should().BeFalse();
+
+        mocks.Recurs.Verify(x => x.UpdateAsync(It.IsAny<RecurringScheduleRawModel>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CancelRecurringAsync_WhenEveryAttemptConflicts_Throws()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Recurs.Setup(x => x.GetAsync(id)).ReturnsAsync(() => ActiveRecurring(clusterId, id));
+        mocks.Recurs.Setup(x => x.UpdateAsync(It.IsAny<RecurringScheduleRawModel>()))
+            .ThrowsAsync(new JobMasterVersionConflictException(id, "RecurringSchedule", "v1"));
+
+        var act = () => mocks.CreateSut().CancelRecurringAsync(id);
+
+        await act.Should().ThrowAsync<JobMasterVersionConflictException>();
+        mocks.Recurs.Verify(x => x.UpdateAsync(It.IsAny<RecurringScheduleRawModel>()), Times.Exactly(4), "the first attempt plus 3 retries");
+    }
+
+    [Fact]
+    public async Task RescheduleAsync_WhenTheWriteHitsAVersionConflict_ReadsAgainAndReschedules()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Jobs.Setup(x => x.GetAsync(id)).ReturnsAsync(() => SucceededJob(clusterId, id));
+        mocks.Jobs.SetupSequence(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()))
+            .ThrowsAsync(new JobMasterVersionConflictException(id, "Job", "v1"))
+            .Returns(Task.CompletedTask);
+
+        (await mocks.CreateSut().RescheduleAsync(id, DateTime.UtcNow.AddHours(2))).Should().BeTrue();
+
+        mocks.Jobs.Verify(x => x.GetAsync(id), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void Reschedule_WhenTheWriteHitsAVersionConflict_ReadsAgainAndReschedules()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Jobs.Setup(x => x.Get(id)).Returns(() => SucceededJob(clusterId, id));
+        mocks.Jobs.SetupSequence(x => x.Update(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()))
+            .Throws(new JobMasterVersionConflictException(id, "Job", "v1"))
+            .Pass();
+
+        mocks.CreateSut().Reschedule(id, DateTime.UtcNow.AddHours(2)).Should().BeTrue();
+
+        mocks.Jobs.Verify(x => x.Get(id), Times.Exactly(2));
+    }
+
+    [Fact]
+    public async Task CancelJobAsync_WhenTheWriteHitsAVersionConflict_ReadsAgainAndCancels()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Jobs.Setup(x => x.GetAsync(id)).ReturnsAsync(() => HeldJob(clusterId, id));
+        mocks.Jobs.SetupSequence(x => x.UpdateAsync(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()))
+            .ThrowsAsync(new JobMasterVersionConflictException(id, "Job", "v1"))
+            .Returns(Task.CompletedTask);
+
+        (await mocks.CreateSut().CancelJobAsync(id)).Should().BeTrue();
+
+        mocks.Jobs.Verify(x => x.GetAsync(id), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void CancelRecurring_WhenTheWriteHitsAVersionConflict_ReadsAgainAndCancels()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Recurs.Setup(x => x.Get(id)).Returns(() => ActiveRecurring(clusterId, id));
+        mocks.Recurs.SetupSequence(x => x.Update(It.IsAny<RecurringScheduleRawModel>()))
+            .Throws(new JobMasterVersionConflictException(id, "RecurringSchedule", "v1"))
+            .Pass();
+
+        mocks.CreateSut().CancelRecurring(id).Should().BeTrue();
+
+        mocks.Recurs.Verify(x => x.Get(id), Times.Exactly(2));
+    }
+
+    [Fact]
+    public void CancelJob_WhenTheWriteHitsAVersionConflict_ReadsAgainAndCancels()
+    {
+        var clusterId = NewClusterId();
+        var mocks = new Mocks(clusterId, ClusterMode.Active);
+        var id = JobMasterRandomUtil.NewGuid4();
+        mocks.Jobs.Setup(x => x.Get(id)).Returns(() => HeldJob(clusterId, id));
+        mocks.Jobs.SetupSequence(x => x.Update(It.IsAny<JobRawModel>(), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler?>()))
+            .Throws(new JobMasterVersionConflictException(id, "Job", "v1"))
+            .Pass();
+
+        mocks.CreateSut().CancelJob(id).Should().BeTrue();
+
+        mocks.Jobs.Verify(x => x.Get(id), Times.Exactly(2));
+    }
+
+    private static RecurringScheduleRawModel ActiveRecurring(string clusterId, Guid id)
+    {
+        var schedule = NewRecurring(clusterId);
+        schedule.Id = id;
+        schedule.Active();
+        return schedule;
+    }
+
+    // Reschedule runs a finished job again; like cancel, not inside the onboarding window.
+    private static JobRawModel SucceededJob(string clusterId, Guid id)
+    {
+        var job = NewJob(clusterId);
+        job.Id = id;
+        job.Status = JobMasterJobStatus.Succeeded;
+        job.ScheduledAt = DateTime.UtcNow.AddHours(1);
+        job.NextPlanExecutionAt = job.ScheduledAt;
+        return job;
+    }
+
+    private static JobRawModel HeldJob(string clusterId, Guid id)
+    {
+        // Due in an hour: a job inside the onboarding window can't be cancelled.
+        var job = NewJob(clusterId);
+        job.Id = id;
+        job.ScheduledAt = DateTime.UtcNow.AddHours(1);
+        job.NextPlanExecutionAt = job.ScheduledAt;
+        job.MarkAsHeldOnMaster();
+        return job;
     }
 
     private static IDictionary<BulkInsertStatus, IList<Guid>> Statuses(

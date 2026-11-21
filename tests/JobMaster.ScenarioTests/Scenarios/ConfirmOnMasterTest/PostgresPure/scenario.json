@@ -1,7 +1,0 @@
-{
-  "scenarioName": "confirm-on-master-postgres-pure",
-  "phases": [
-    { "name": "phase-1", "containers": ["pg-confirm"] }
-  ],
-  "api": { "container": "api" }
-}

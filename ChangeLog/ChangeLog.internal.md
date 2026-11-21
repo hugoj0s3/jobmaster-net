@@ -5,7 +5,30 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 999/999 unit tests pass on `net8.0` and `net10.0` (958/958 on the `netstandard2.0` build).
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1011/1011 unit tests pass on `net8.0` and `net10.0` (970/970 on the `netstandard2.0` build).
+
+#### Cancel and reschedule retry on a version conflict (Hugo, 2026-11-21)
+- Found by the matrix `DataRetentionArchiveTest` on PostgresNats / HybridNatsRavenDb (AWS run; reproduced locally on
+  Hybrid): `DELETE /recurring-schedule` right after the schedule reached master returned 500. App log:
+  `JobMasterVersionConflictException` from `JobMasterSchedulerClusterAware.CancelRecurringAsync` →
+  `MasterRecurringSchedulesService.UpdateAsync`. A cancel is read → `TryToCancel()` → versioned write; the other writer
+  is most likely the planner's first-occurrence update (`RecurringSchedulePlanner.UpdateAndReleasePlanLockAsync`), fed
+  by the save path's recently-inserted queue (also for AlreadyInserted). NATS saves on message arrival, so the window
+  lines up with a cancel issued as soon as the schedule is visible. The internal exception escaped the public API.
+- New `RetryVersionConflictPolicy` (`Sdk/Abstractions/Exceptions`, same shape as `RetryDeadlockPolicy`: retry
+  interval + max retry count, `Exec` / `ExecAsync`, constant interval + up to 50% jitter, `Thread.Sleep` on the sync
+  path). Re-runs the delegate on `JobMasterVersionConflictException` only; rethrows it after the retries, anything
+  else at once. The delegate is the whole read-check-write, so each retry reads again and re-applies the rule.
+- `JobMasterSchedulerClusterAware`: one policy (100 ms, 3 retries → up to 4 runs) around `CancelJobAsync`,
+  `CancelJob`, `CancelRecurringAsync`, `CancelRecurring` (`TryToCancel()`), `RescheduleAsync`, `Reschedule`
+  (`CanReschedule()`). Why retry rather than a status-guarded update by id (Hugo): a conflict can also mean another
+  process cancelled or terminated the item, so the rule must decide again on the fresh copy. The internal
+  `WorkerClusterOperations.CancelJob` / `MarkAsHeldOnMaster` have the same pattern; left as is (engine/runner paths,
+  several already behind `ExecWithRetryAsync`). The service still logs each conflict as Error before rethrowing.
+- Tests: `RetryVersionConflictPolicyTests` (retries the whole delegate, async and sync; rethrows after 3 retries;
+  no retry on other exceptions); `JobMasterSchedulerClusterAwareTests` (8): conflict then success for the six
+  methods, schedule final by the retry → `false`, every attempt conflicting → throws after 4 writes. With the policy
+  never retrying, 11 of these fail.
 
 #### Draining a bucket's processing queue: version-checked, never inserts (Hugo, 2026-11-20)
 - A processing message's job is always on master already (save-pending dispatches only what it inserted, with the

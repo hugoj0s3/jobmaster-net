@@ -220,7 +220,7 @@ public sealed class RepoConformanceBootstrap : IAsyncLifetime
     // README) -- RCSI gives READ COMMITTED readers a row-versioned snapshot instead of shared locks,
     // so readers never block writers and vice versa. READ_COMMITTED_SNAPSHOT can't be set on the
     // system "master" database, so this creates a dedicated one first -- same two-step
-    // CREATE-then-ALTER this repo's JobMaster.ScenarioTests already uses (SqlServerDatabaseProvisioner).
+    // CREATE-then-ALTER this repo's JobMaster.ScenarioMatrixTests already uses (SqlServerDatabaseProvisioner).
     private static async Task<string> CreateSqlServerDatabaseWithRcsiAsync(string connectionString, string databaseName)
     {
         await using (var conn = new SqlConnection(connectionString))

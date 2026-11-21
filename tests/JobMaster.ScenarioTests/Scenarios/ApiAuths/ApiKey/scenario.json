@@ -1,7 +1,0 @@
-{
-  "scenarioName": "api-key",
-  "phases": [
-    { "name": "phase-1", "containers": ["api-key-cluster-one", "api-key-cluster-two"] }
-  ],
-  "api": { "container": "api" }
-}

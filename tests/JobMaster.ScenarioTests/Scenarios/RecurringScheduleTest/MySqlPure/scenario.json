@@ -1,7 +1,0 @@
-{
-  "scenarioName": "recurring-mysql-pure",
-  "phases": [
-    { "name": "phase-1", "containers": ["mysql-recurring"] }
-  ],
-  "api": { "container": "api" }
-}

@@ -1,0 +1,19 @@
+{
+  "containerName": "mx-{{flavor}}-{{stop}}-s2d-standalone",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-{{stop}}-s2d-standalone",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{stop}}-s2d",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:S2d{{stop}}}}",
+      "Workers": [
+        { "WorkerName": "w1" }
+      ]
+    }
+  ]
+}

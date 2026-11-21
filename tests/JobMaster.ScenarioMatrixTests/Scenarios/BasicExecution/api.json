@@ -1,0 +1,20 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": true,
+    "apiKey": "{{ApiKey}}",
+    "enableJwt": true
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-basic-exec",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:Standalone}}"
+    }
+  ]
+}

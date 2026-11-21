@@ -1,0 +1,7 @@
+{
+  "scenarioName": "migrating-mode-test",
+  "phases": [
+    { "name": "phase-1", "containers": ["migration"] }
+  ],
+  "api": { "container": "api" }
+}

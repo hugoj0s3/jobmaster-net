@@ -1,0 +1,22 @@
+{
+  "containerName": "mx-{{flavor}}-{{stop}}-drain-drainer-2",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-{{stop}}-drain-drainer-2",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-{{stop}}-drain",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:Drain{{stop}}}}",
+      "TransientThreshold": "00:05:00",
+      "AgentConnections": [
+        { "Name": "agent-2", "Connection": "{{agent:2}}" }
+      ],
+      "Workers": [
+        { "WorkerName": "drainer-2", "AgentConnectionName": "agent-2", "WorkerMode": "Drain" }
+      ]
+    }
+  ]
+}

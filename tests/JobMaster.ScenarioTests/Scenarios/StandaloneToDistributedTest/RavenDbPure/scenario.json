@@ -1,8 +1,0 @@
-{
-  "scenarioName": "ravendb-pure",
-  "phases": [
-    { "name": "phase-1", "containers": ["ravendb-standalone"] },
-    { "name": "phase-2", "containers": ["ravendb-coordinator", "ravendb-executor"] }
-  ],
-  "api": { "container": "api" }
-}

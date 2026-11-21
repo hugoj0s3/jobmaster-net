@@ -1,0 +1,18 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-recurring",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:Recurring}}"
+    }
+  ]
+}
