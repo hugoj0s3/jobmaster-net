@@ -1,7 +1,6 @@
 using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
-using JobMaster.ScenarioTests.Fixtures;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.StandaloneToDistributedTest;
 
@@ -21,6 +20,9 @@ public sealed class StandaloneToDistributedTests(ScenarioGlobalEnvironment globa
     // Past the ~10 min ProcessDeadline backstop plus onboarding and execution, though the auto-drain path should
     // win in practice.
     private static readonly TimeSpan FinalizeTimeout = TimeSpan.FromMinutes(20);
+
+    // After every job is Succeeded: long enough for the drainer's and the executor's next polls to pick up a stale copy.
+    private static readonly TimeSpan SettleWindow = TimeSpan.FromSeconds(60);
 
     public static IEnumerable<object[]> Variants() =>
         ScenarioFlavors.AllExcept()
@@ -85,6 +87,11 @@ public sealed class StandaloneToDistributedTests(ScenarioGlobalEnvironment globa
 
         (await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier, status: SucceededStatus)).Should().Be(QtyJobs);
         (await api.GetJobCountAsync(clusterId, testIdentifier: testIdentifier)).Should().Be(QtyJobs);
+
+        // No job runs once it's Succeeded: a stale copy (a standalone bucket still draining, a redelivery) conflicts on
+        // its versioned Processing write and stops before the handler. Re-read after a settle window.
+        await Task.Delay(SettleWindow);
+        (await runner.Tracker.GetAllAsync(testIdentifier)).Should().HaveCount(executions.Count, "no job runs again once it's Succeeded");
 
         var connections = (await api.GetAgentConnectionsAsync(clusterId)).ExcludingReserved().ToList();
         connections.Should().ContainSingle(c => c.Name == AgentConnectionName && c.IsAlive);

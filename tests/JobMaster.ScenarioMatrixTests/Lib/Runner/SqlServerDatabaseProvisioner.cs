@@ -1,6 +1,6 @@
 using Microsoft.Data.SqlClient;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class SqlServerDatabaseProvisioner
 {

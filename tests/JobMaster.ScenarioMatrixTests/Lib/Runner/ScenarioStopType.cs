@@ -1,4 +1,4 @@
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 /// <summary>How a scenario stops an app container.</summary>
 public enum ScenarioStopType

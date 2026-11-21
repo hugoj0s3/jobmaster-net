@@ -1,6 +1,6 @@
 using DotNet.Testcontainers.Builders;
 using FluentAssertions;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Flavors;
 

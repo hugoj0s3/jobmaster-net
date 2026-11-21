@@ -1,7 +1,6 @@
 using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
-using JobMaster.ScenarioTests.Fixtures;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.DrainModeTest;
 
@@ -127,9 +126,11 @@ public sealed class DrainModeTests(ScenarioGlobalEnvironment global)
         // running at the kill, so Crash allows more: 3 runs per job and 10% of each batch repeated (SigTerm 2 / 5%).
         var maxRunsPerJob = stopType == ScenarioStopType.Crash ? 3 : 2;
         var maxRepeatedPercent = stopType == ScenarioStopType.Crash ? 10 : 5;
+        var executionCounts = new Dictionary<string, int>();
         foreach (var batch in batches)
         {
             var executions = await runner.Tracker.GetAllAsync(batch.TestIdentifier);
+            executionCounts[batch.TestIdentifier] = executions.Count;
             var repeated = executions.GroupBy(e => e.JobId).Where(g => g.Count() > 1).ToList();
             var repeatedRuns = string.Join("; ", repeated.Select(g => $"{g.Key}: {string.Join(", ", g.Select(e => $"{e.HostId} {e.ExecutedAtUtc:HH:mm:ss.fff}"))}"));
             repeated.Should().OnlyContain(g => g.Count() <= maxRunsPerJob, "a job runs at most {0} times: {1}", maxRunsPerJob, repeatedRuns);
@@ -160,5 +161,13 @@ public sealed class DrainModeTests(ScenarioGlobalEnvironment global)
             },
             "every one of phase 1's buckets to have reached ReadyToDelete (or already been destroyed)",
             pollInterval: TimeSpan.FromSeconds(30));
+
+        // No job runs once it's Succeeded: a stale copy (an old bucket still draining, a redelivery) conflicts on its
+        // versioned Processing write and stops before the handler. The bucket wait above is when those copies drain.
+        foreach (var batch in batches)
+        {
+            (await runner.Tracker.GetAllAsync(batch.TestIdentifier)).Should().HaveCount(executionCounts[batch.TestIdentifier],
+                "no job runs again once it's Succeeded");
+        }
     }
 }

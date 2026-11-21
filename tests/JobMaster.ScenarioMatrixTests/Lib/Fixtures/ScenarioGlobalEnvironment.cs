@@ -2,8 +2,6 @@ using System.Collections.Concurrent;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Images;
 using DotNet.Testcontainers.Networks;
-using JobMaster.ScenarioTests;
-using JobMaster.ScenarioTests.Runner;
 using Testcontainers.MsSql;
 using Testcontainers.MySql;
 using Testcontainers.Nats;
@@ -12,7 +10,7 @@ using Testcontainers.RavenDb;
 using Testcontainers.Redis;
 using Xunit;
 
-namespace JobMaster.ScenarioTests.Fixtures;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 /// <summary>
 /// Shared, run-scoped infrastructure: one Postgres/MySql/SqlServer/Nats and one Redis container

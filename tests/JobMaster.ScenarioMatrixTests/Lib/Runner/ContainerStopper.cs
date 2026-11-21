@@ -2,7 +2,7 @@ using Docker.DotNet.Models;
 using DotNet.Testcontainers.Configurations;
 using DotNet.Testcontainers.Containers;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class ContainerStopper
 {

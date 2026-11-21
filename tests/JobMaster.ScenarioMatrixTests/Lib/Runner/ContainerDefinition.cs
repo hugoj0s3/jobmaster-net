@@ -1,7 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 public sealed class ContainerDefinition
 {

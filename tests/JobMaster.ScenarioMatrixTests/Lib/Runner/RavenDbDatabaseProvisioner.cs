@@ -2,7 +2,7 @@ using Raven.Client.Documents;
 using Raven.Client.ServerWide;
 using Raven.Client.ServerWide.Operations;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class RavenDbDatabaseProvisioner
 {

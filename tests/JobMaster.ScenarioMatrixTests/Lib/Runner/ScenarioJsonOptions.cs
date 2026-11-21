@@ -1,6 +1,6 @@
 using System.Text.Json;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class ScenarioJsonOptions
 {

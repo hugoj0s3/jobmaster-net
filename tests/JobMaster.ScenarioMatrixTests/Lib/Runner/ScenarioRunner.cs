@@ -1,10 +1,9 @@
 using System.Text.Json;
 using DotNet.Testcontainers.Builders;
 using DotNet.Testcontainers.Containers;
-using JobMaster.ScenarioTests.Fixtures;
 using StackExchange.Redis;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 public sealed class ScenarioRunner : IAsyncDisposable
 {

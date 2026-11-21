@@ -1,4 +1,4 @@
-using JobMaster.ScenarioTests.Fixtures;
+using JobMaster.ScenarioMatrixTests.Lib;
 using Microsoft.Data.SqlClient;
 using MySqlConnector;
 using Npgsql;

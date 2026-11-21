@@ -47,7 +47,8 @@ what gives every connection pending saves to drain; the earlier suite scheduled 
   of the batch (Crash: 3 times, 10%) (see Things to know). A failure report is
   written (`%TEMP%/jm-scenario-diag/drainmode-failures-<cluster>.txt`, not asserted). Last, each of phase 1's
   buckets reaches `ReadyToDelete` or is already gone (20 min max, checked by captured id, so the new executors'
-  buckets don't count).
+  buckets don't count). Then each batch's executions are re-read and unchanged: no job runs once it's `Succeeded`
+  (a stale copy fails its versioned `Processing` write and never reaches the handler).
 
 ## Things to know
 - **A job can run twice.** An executor stopped after a handler finished but before its `Succeeded` reached master

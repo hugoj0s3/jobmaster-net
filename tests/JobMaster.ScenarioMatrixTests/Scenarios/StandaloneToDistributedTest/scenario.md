@@ -25,7 +25,8 @@ cluster and master database, `mx-<flavor>-<sig|crash>-s2d`.
   Either way, back on master, `AssignJobsToBucketsRunner` assigns it to the new bucket on `agent-1`. All 300 are
   `Succeeded` on master with their ids (20 min max), every one ran, and `agent-1` is alive. A repeated job runs at most
   twice, on at most 5% of the jobs (Crash: 3 times, 10%): one stopped after its handler but before its result was saved stays
-  `Processing` until the deadline runner reassigns it (at least once, not exactly once; see DrainModeTest).
+  `Processing` until the deadline runner reassigns it (at least once, not exactly once; see DrainModeTest). After a
+  60 s settle the executions are re-read and unchanged: no job runs once it's `Succeeded`.
 
 ## Things to know
 - **Crash runs:** a crashed standalone worker hands nothing over, so recovery waits for dead-worker detection and,

@@ -25,5 +25,5 @@ export DOTNET_ROOT="$HOME/dotnet" PATH="$HOME/dotnet:$PATH" DOTNET_CLI_TELEMETRY
 mkdir -p "$HOME/jobmaster-net" "$HOME/results"
 tar -xzf "$HOME/repo.tgz" -C "$HOME/jobmaster-net"
 cd "$HOME/jobmaster-net"
-# The flavor matrix (also builds JobMaster.ScenarioTests, its runner and fixtures).
+# The flavor matrix (its runner and fixtures are in Lib/).
 dotnet build tests/JobMaster.ScenarioMatrixTests -v q -nologo

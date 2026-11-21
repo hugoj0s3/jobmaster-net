@@ -2,8 +2,7 @@ using System.Text;
 using System.Text.Json;
 using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
-using JobMaster.ScenarioTests.Fixtures;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.DataRetentionArchiveTest;
 

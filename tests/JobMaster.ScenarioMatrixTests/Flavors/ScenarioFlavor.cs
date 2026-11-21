@@ -1,5 +1,5 @@
 using System.Text.Json.Nodes;
-using JobMaster.ScenarioTests.Fixtures;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Flavors;
 

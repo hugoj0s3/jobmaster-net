@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace JobMaster.ScenarioTests;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 public static class StringUtil
 {

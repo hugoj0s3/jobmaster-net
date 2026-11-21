@@ -1,4 +1,4 @@
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 public sealed class ScenarioDefinition
 {

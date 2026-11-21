@@ -1,4 +1,4 @@
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 /// <summary>
 /// Mirrors JobMaster's internal GuidBase64Util encoding (base64url, unpadded) so this

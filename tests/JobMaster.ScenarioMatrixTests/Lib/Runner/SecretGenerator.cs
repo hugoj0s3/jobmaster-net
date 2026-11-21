@@ -1,6 +1,6 @@
 using System.Security.Cryptography;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class SecretGenerator
 {

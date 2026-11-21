@@ -1088,7 +1088,7 @@ item 18.
   - Why: the disaster phases (`DrainModeTest` phase 1, `StandaloneToDistributedTest` phase 1) were meant as hard
     stops, but `docker stop` is a SIGTERM, so since the shutdown stop exists they only test the SIGTERM path. A
     real crash isn't exercised anywhere today.
-  - Built (2026-11-20): `ScenarioStopType { SigTerm, Crash }` (ScenarioTests runner), `ContainerStopper.StopAsync`
+  - Built (2026-11-20): `ScenarioStopType { SigTerm, Crash }` (scenario runner), `ContainerStopper.StopAsync`
     (Crash = Docker kill SIGKILL through `Docker.DotNet`, from Testcontainers' endpoint config; `kill -9 1` inside
     the container doesn't work, PID 1 ignores it) behind `ScenarioRunner.StopAsync(name, stopType)`;
     `ScenarioStopTypes.All` / `AllExcept((type, reason))`, crossed with the flavors by plain LINQ in each test's
@@ -1104,7 +1104,8 @@ item 18.
 **Status (2026-11-21).** Done as the flavor matrix (`tests/JobMaster.ScenarioMatrixTests`): one provider-free
 template per scenario, rendered per flavor (PostgresPure, MySqlPure, SqlServerPure, RavenDbPure, PostgresNats,
 HybridNatsRavenDb), one `scenario.md` each. The old per-provider `JobMaster.ScenarioTests/Scenarios` suite is
-removed (git history); `JobMaster.ScenarioTests` keeps only the shared runner, fixtures and clients. Two ways to run
+removed (git history), and so is the `JobMaster.ScenarioTests` project: its runner, fixtures and clients are the matrix
+project's `Lib/` (namespace `JobMaster.ScenarioMatrixTests.Lib`). Two ways to run
 the 82 units in parallel: `misc/scenario-aws` (EC2 from the PC, uncommitted tree included, about 1 h 40 min on 10
 machines) and the `Scenario Tests` workflow (`misc/scenario-github-actions`, the pushed commit, one runner per unit).
 - Port map: every old scenario has a matrix scenario of the same name, except `ApiAuths` → `ApiAuthTest` and

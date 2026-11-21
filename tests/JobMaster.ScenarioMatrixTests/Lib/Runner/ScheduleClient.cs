@@ -1,6 +1,6 @@
 using System.Net.Http.Json;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
 {

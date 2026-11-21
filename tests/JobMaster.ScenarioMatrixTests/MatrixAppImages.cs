@@ -1,6 +1,5 @@
 using System.Text.Json;
-using JobMaster.ScenarioTests.Fixtures;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests;
 

@@ -1,7 +1,6 @@
 using FluentAssertions;
 using JobMaster.ScenarioMatrixTests.Flavors;
-using JobMaster.ScenarioTests.Fixtures;
-using JobMaster.ScenarioTests.Runner;
+using JobMaster.ScenarioMatrixTests.Lib;
 
 namespace JobMaster.ScenarioMatrixTests.Scenarios.ScheduleTest;
 

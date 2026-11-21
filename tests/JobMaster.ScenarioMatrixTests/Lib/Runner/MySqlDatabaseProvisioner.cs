@@ -1,6 +1,6 @@
 using MySqlConnector;
 
-namespace JobMaster.ScenarioTests.Runner;
+namespace JobMaster.ScenarioMatrixTests.Lib;
 
 internal static class MySqlDatabaseProvisioner
 {
