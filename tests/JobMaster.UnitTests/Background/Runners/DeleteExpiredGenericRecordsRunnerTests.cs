@@ -16,7 +16,7 @@ public class DeleteExpiredGenericRecordsRunnerTests
     public async Task OnTickAsync_WhenStopRequested_ShouldReturnSkipped()
     {
         var f = RunnerFixture.Create();
-        f.Worker.SetupGet(x => x.StopRequested).Returns(true);
+        f.Worker.SetupGet(x => x.GracefulStopRequested).Returns(true);
 
         var runner = new DeleteExpiredGenericRecordsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);

@@ -22,5 +22,5 @@ internal interface IJobMasterRunner
     
     IJobMasterRuntime? Runtime { get; }
 
-    StopScope StopScope { get; }
+    StopControl StopControl { get; }
 }

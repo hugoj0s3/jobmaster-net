@@ -8,6 +8,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Jobs;
@@ -66,7 +67,7 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 /// components are empty (staging, onboarding, waiting, running), the bucket is transitioned
 /// to <see cref="BucketStatus.ReadyToDrain"/>.</para>
 ///
-/// <para><b>Graceful shutdown</b> — <see cref="FlushToMasterAsync"/> drains
+/// <para><b>Stop</b> — <see cref="FlushToMasterAsync"/> drains
 /// <see cref="OnBoardingControl"/>, the waiting queue of <see cref="TaskQueueControl"/>,
 /// and <c>jobsToFlush</c> back to master before the worker stops.</para>
 ///
@@ -113,22 +114,30 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
     private int MasterMaxBatchSize => OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(backgroundAgentWorker.ClusterConnConfig.ClusterId);
 
+    // The stop control of the execution runner that created this engine: the parent of its jobs' stop controls.
+    private StopControl RunnerStopControl { get; }
+
+    private JobMasterStopControlFactory StopControlFactory =>
+        (backgroundAgentWorker.Runtime ?? throw new InvalidOperationException($"Engine for bucket {BucketId} has no runtime to get its jobs' stop controls from.")).StopControlFactory;
+
     public IOnBoardingControl<JobRawModel> OnBoardingControl { get; }
     public ITaskQueueControl<JobRawModel> TaskQueueControl { get; }
 
     public JobsExecutionEngine(
         IJobMasterBackgroundAgentWorker backgroundAgentWorker,
+        StopControl runnerStopControl,
         string bucketId,
         JobMasterPriority priority)
     {
         this.backgroundAgentWorker = backgroundAgentWorker;
+        this.RunnerStopControl = runnerStopControl;
         this.distributedLockerService = backgroundAgentWorker.GetClusterAwareService<IMasterDistributedLockerService>();
         this.masterBucketsService = backgroundAgentWorker.GetClusterAwareService<IMasterBucketsService>();
         this.masterRecurringSchedulesService = backgroundAgentWorker.GetClusterAwareService<IMasterRecurringSchedulesService>();
         this.masterClusterConfigurationService = backgroundAgentWorker.GetClusterAwareService<IMasterClusterConfigurationService>();
         this.masterJobsService = backgroundAgentWorker.GetClusterAwareService<IMasterJobsService>();
         this.logger = backgroundAgentWorker.GetClusterAwareService<IJobMasterLogger>();
-        this.retryDecider = new JobRetryDecider(backgroundAgentWorker.ClusterConnConfig, backgroundAgentWorker.MainServiceProvider, logger);
+        this.retryDecider = new JobRetryDecider(backgroundAgentWorker.ClusterConnConfig, backgroundAgentWorker.MainServiceProvider, logger, StopControlFactory);
 
         this.lockKeys = new JobMasterLockKeys(backgroundAgentWorker.ClusterConnConfig.ClusterId);
         this.bucketId = bucketId;
@@ -334,7 +343,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
         
             if (bufferedJobs.Count == 0)
             {
-                this.logger.Info($"Graceful flush complete for {BucketId}. No buffered jobs.");
+                this.logger.Info($"Flush complete for {BucketId}. No buffered jobs.");
                 return;
             }
 
@@ -357,7 +366,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 }
             }
 
-            this.logger.Info($"Graceful flush complete for {BucketId}. Flushed {bufferedJobs.Count} jobs.");
+            this.logger.Info($"Flush complete for {BucketId}. Flushed {bufferedJobs.Count} jobs.");
         } 
         finally
         {
@@ -555,7 +564,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 continue;
             }
 
+            var stopControl = StopControlFactory.ForTaskItem(this.RunnerStopControl);
             var taskQueueItem = new TaskQueueItem<JobRawModel>(
+                stopControl,
                 job.Id.ToString(),
                 job,
                 job.Timeout,
@@ -581,7 +592,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
 
                         await using (scope)
                         {
-                            await this.ExecuteJobAsync(job, scope, token);
+                            await this.ExecuteJobAsync(job, scope, stopControl);
                         }
                     }
                     finally
@@ -598,6 +609,8 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             var added = TaskQueueControl.Enqueue(taskQueueItem);
             if (!added)
             {
+                // Linked to the runner's tokens: an item dropped here must release its registration.
+                stopControl.Dispose();
                 this.logger.Warn($"TaskQueue at limit for bucket {BucketId}. Re-balancing needed.", JobMasterLogCategory.Bucket, BucketId);
 
                 if (!await this.masterJobsService.CheckVersionAsync(job.Id, job.Version))
@@ -814,9 +827,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// invocation → success/timeout/conflict/error paths. The priority-based inter-job
     /// delay is applied in the <c>finally</c> block regardless of outcome.
     /// </summary>
-    // stopToken: the slot's token, cancelled only when the worker stops. The job's timeout is the handler's own
-    // (handlerTimeout below), so the work around the handler doesn't eat into it.
-    private async Task ExecuteJobAsync(JobRawModel jobRawModel, IServiceScope scope, CancellationToken stopToken)
+    // taskItemStopControl: the job's stop control (a child of the runner's); only its abort cancels the job. The job's
+    // timeout is the handler's own (handlerTimeout below), so the work around the handler doesn't eat into it.
+    private async Task ExecuteJobAsync(JobRawModel jobRawModel, IServiceScope scope, StopControl taskItemStopControl)
     {
         var stopwatch = Stopwatch.StartNew();
 
@@ -859,7 +872,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             // Where it failed decides whose failure it is: before the handler ran, or after it succeeded, it isn't the job's.
             var handlerStarted = false;
             var handlerSucceeded = false;
-            CancellationTokenSource? handlerTimeout = null;
+            HandlerStopControl? handlerTimeout = null;
             var handlerStopwatch = new Stopwatch();
             try
             {
@@ -917,7 +930,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     recurringScheduleContext = RecurringScheduleConvertUtil.ToContext(recurringSchedule!);
                 }
 
-                stopToken.ThrowIfCancellationRequested();
+                taskItemStopControl.AbortToken.ThrowIfCancellationRequested();
 
                 execution = jobRawModel.ProcessingStarted();
                 await this.UpdateSingleJobAsync(jobRawModel);
@@ -927,12 +940,11 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 jobContext.RecurringSchedule = recurringScheduleContext;
 
                 var jobHandler = scope.ServiceProvider.GetJobHandler(job.JobDefinitionId);
-                stopToken.ThrowIfCancellationRequested();
+                taskItemStopControl.AbortToken.ThrowIfCancellationRequested();
 
                 // The job's Timeout covers exactly the handler: the clock starts here. The handler only stops at it if it
                 // observes this token.
-                handlerTimeout = CancellationTokenSource.CreateLinkedTokenSource(stopToken);
-                handlerTimeout.CancelAfter(jobRawModel.Timeout);
+                handlerTimeout = StopControlFactory.ForHandler(taskItemStopControl, jobRawModel.Timeout);
                 jobContext.CancellationToken = handlerTimeout.Token;
 
                 handlerStarted = true;
@@ -981,7 +993,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 logger.Error(ForLog(jobRawModel, "Succeeded, but saving the result failed; it may run again."),
                     JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: e);
             }
-            catch (OperationCanceledException) when (stopToken.IsCancellationRequested)
+            catch (OperationCanceledException) when (taskItemStopControl.IsAborted() || handlerTimeout?.IsImmediateGracefulStopOver() == true)
             {
                 // The worker is stopping, before or during the handler: interrupted, not the job's failure.
                 logger.Warn(ForLog(jobRawModel, "Interrupted: the worker is stopping. Back on master."),
@@ -1003,7 +1015,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 handlerStopwatch.Stop();
                 var timeoutException = new TimeoutException(
                     $"Timed out after {handlerStopwatch.ElapsedMilliseconds} ms (timeout {jobRawModel.Timeout:c}).");
-                var nextStep = await RetryOrFailAsync(jobRawModel, timeoutException);
+                var nextStep = await RetryOrFailAsync(jobRawModel, timeoutException, taskItemStopControl);
                 var message = JobExecutionMessages.TimedOut(handlerStopwatch.ElapsedMilliseconds, jobRawModel.Timeout, nextStep);
 
                 execution?.Fail(message);
@@ -1017,13 +1029,13 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 // The handler's own run time when it ran; otherwise the time until the failure (e.g. resolving it).
                 stopwatch.Stop();
                 handlerStopwatch.Stop();
-                await HandleErrorAsync(jobRawModel, execution, handlerStarted ? handlerStopwatch : stopwatch, e);
+                await HandleErrorAsync(jobRawModel, execution, handlerStarted ? handlerStopwatch : stopwatch, e, taskItemStopControl);
             }
             finally
             {
                 handlerTimeout?.Dispose();
                 var delay = GetPriorityDelay(priority);
-                await RunnerDelayUtil.DelayAsync(delay, backgroundAgentWorker.CancellationTokenSource.Token);
+                await RunnerDelayUtil.DelayAsync(delay, backgroundAgentWorker.StopControl.StopToken);
             }
         }
         finally
@@ -1104,7 +1116,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// Returns what happened, appended to the failed execution's message: the delay and where it came from, or why
     /// it failed for good. Recorded per attempt, so it's what this worker actually applied.
     /// </summary>
-    private async Task<string> RetryOrFailAsync(JobRawModel job, Exception exception)
+    private async Task<string> RetryOrFailAsync(JobRawModel job, Exception exception, StopControl taskItemStopControl)
     {
         var settings = backgroundAgentWorker.ClusterConnConfig.RetrySettings;
         if (!job.HasRetriesLeft())
@@ -1113,7 +1125,7 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
             return settings.MaxRetriesReachedLog(job.MaxNumberOfRetries);
         }
 
-        var outcome = await retryDecider.DecideAsync(job, exception);
+        var outcome = await retryDecider.DecideAsync(job, exception, taskItemStopControl);
         if (outcome.IsStopEarly)
         {
             job.MarkAsFailed();
@@ -1129,9 +1141,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
     /// the retry counter (or marks the job as permanently failed if retries are exhausted),
     /// records the failed execution, and persists the updated state.
     /// </summary>
-    private async Task HandleErrorAsync(JobRawModel job, JobExecution? execution, Stopwatch stopwatch, Exception e)
+    private async Task HandleErrorAsync(JobRawModel job, JobExecution? execution, Stopwatch stopwatch, Exception e, StopControl taskItemStopControl)
     {
-        var nextStep = await RetryOrFailAsync(job, e);
+        var nextStep = await RetryOrFailAsync(job, e, taskItemStopControl);
         var message = JobExecutionMessages.HandlerFailed(stopwatch.ElapsedMilliseconds, e, nextStep);
 
         execution?.Fail(message);

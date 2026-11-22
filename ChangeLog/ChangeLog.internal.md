@@ -7,6 +7,48 @@
 ### JobMaster 0.0.12-alpha
 > Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1011/1011 unit tests pass on `net8.0` and `net10.0` (970/970 on the `netstandard2.0` build).
 
+#### One cancellation tree: `StopControl` (Hugo, 2026-11-22)
+- Why: mapped 2026-11-20. Five unrelated roots (worker source, a source per bucket runner, `TaskQueueItem`'s source,
+  the retry interceptor's, NATS fixed timeouts), the runtime had no token, and the stop waits didn't fit together
+  (runtime 6 s vs the queue aborting at 1 + 5 s). Next version's write API ("abort job 123", stop signals) needs one
+  place to stop or abort one job, runner or worker.
+- `Sdk/Background/Cancellation`: `StopControl` = a stop token (take no new work; running work continues) and an
+  abort token (cancel what runs), each linked to the parent's; abort also stops. `StopControl.None` (like
+  `CancellationToken.None`) is every owner's value until it takes its own; linking to None throws.
+  `JobMasterStopControlFactory` (owned by the runtime, no reference to it) is the one place that builds them:
+  `ForRoot`, `ForWorker`, `ForRunner`, `ForTaskItem`, `ForHandler`, `ForRetryInterceptor`, `Cleanup(limit)` (not
+  linked on purpose: work that must finish during a stop). Named `StopControl`, not "scope", to avoid IoC scopes.
+- Tree: runtime (constructor, `ForRoot`) → worker (top of `StartAsync`) → runner (top of `StartAsync`, infra and
+  bucket runners alike) → task item (`EnqueueJobsAsync`, child of the execution runner's control, passed to the
+  engine through `GetOrCreateEngine(runnerStopControl, …)`). Owners take their own control (no setters). The worker's
+  `CancellationTokenSource` and `TaskQueueItem`'s are gone; the item passes its abort token to the run delegate.
+  Infra runners no longer share the worker's source: an infra runner ending still stops its worker through
+  `StopImmediatelyAsync`, which now stops the worker's own control first, then each runner. The runtime stops its
+  root first at shutdown.
+- `HandlerStopControl` (`ForHandler`, right before the handler): cancelled on the job's abort, on its timeout, or
+  `ImmediateGracefulStopPeriod` (5 s) after the job's stop. A stop alone never cancels a handler, or graceful stops
+  would kill running jobs. The engine's interrupted path = job aborted or the 5 s ran out; the timeout path only
+  handles the job's own timeout. Registration removed first in `Dispose`.
+- Terms (glossary in the factory): graceful stop = `RequestGracefulStop(period?)` (signal; buckets Completing, no new
+  jobs, `DefaultGracefulStopPeriod` 15 min, at least `MinGracefulStopPeriod` 1 min; renamed from `RequestStop`,
+  `StopRequested(At)`, `StopGracePeriod`; lock key string unchanged), immediate stop = `StopImmediatelyAsync`,
+  abort. Comments that called the immediate stop's flush "graceful" now say stop / flush.
+- Budget, sized for Docker's 10 s before SIGKILL: `ImmediateGracefulStopPeriod` 5 s + `ImmediateStopCleanupPeriod`
+  2 s = `ImmediateStopTimeout` 7 s: the runtime's wait per worker (was 6 s) and `TaskQueueControl.ShutdownAsync`'s
+  wait before its last-resort abort (was 1 + 5 s). `ShutdownAsync` also disposes the waiting items it drops.
+- Retry interceptor: its source is `ForRetryInterceptor` (linked to the job's abort, 10 s cap); cut short by an
+  abort → Warn on the job, no cluster Error. NATS acks / progress / terminate and the 7 s consumer wait use
+  `Cleanup`. `ForOperation(parent, limit)` (linked to the caller's token + cap): the NATS stream setup (10 s, now
+  linked to the runner's / consumer setup's token; was unlinked), the consumer setup (10 s; had no cap at all when the
+  caller passed a token), the heartbeat publish (5 s, now linked to the runner's token), the dispatcher publish (15 s,
+  no caller token). Not converted: the NATS consumer and keep-alive linked sources. No token yet on the flush to
+  master, the bucket hand-over and the HeldOnMaster write: the data layer takes none.
+- Fixed in passing: `NatsJetStreamConnector.EnsureStreamInternalAsync` released the per-entry lock even when its
+  10 s wait had timed out (`gotEntry` unchecked), freeing another caller's hold so two stream setups could run at
+  once. The release is now guarded, as the consumer setup's already was.
+- Open: a cached engine keeps the first runner's control; `Worker.Dispose` / `JobMasterRunner.DisposeAsync` still
+  have no callers. No new unit tests (Hugo); scenario verification on GitHub.
+
 #### Cancel and reschedule retry on a version conflict (Hugo, 2026-11-21)
 - Found by the matrix `DataRetentionArchiveTest` on PostgresNats / HybridNatsRavenDb (AWS run; reproduced locally on
   Hybrid): `DELETE /recurring-schedule` right after the schedule reached master returned 500. App log:

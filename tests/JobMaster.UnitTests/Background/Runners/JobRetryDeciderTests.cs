@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,7 +23,7 @@ public class JobRetryDeciderTests
     {
         var sut = NewDecider(JobMasterRetrySettings.BuiltIn);
 
-        var outcome = await sut.DecideAsync(NewJob(failuresBefore), new Exception("boom"));
+        var outcome = await sut.DecideAsync(NewJob(failuresBefore), new Exception("boom"), StopControl.Create());
 
         outcome.IsStopEarly.Should().BeFalse();
         outcome.Delay.Should().Be(TimeSpan.FromSeconds(expectedSeconds));
@@ -34,9 +35,9 @@ public class JobRetryDeciderTests
     {
         var sut = NewDecider(new JobMasterRetrySettings(new[] { TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(7) }, null, null));
 
-        (await sut.DecideAsync(NewJob(0), new Exception())).Delay.Should().Be(TimeSpan.FromMinutes(1));
-        (await sut.DecideAsync(NewJob(1), new Exception())).Delay.Should().Be(TimeSpan.FromMinutes(7));
-        (await sut.DecideAsync(NewJob(5), new Exception())).Delay.Should().Be(TimeSpan.FromMinutes(7));
+        (await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create())).Delay.Should().Be(TimeSpan.FromMinutes(1));
+        (await sut.DecideAsync(NewJob(1), new Exception(), StopControl.Create())).Delay.Should().Be(TimeSpan.FromMinutes(7));
+        (await sut.DecideAsync(NewJob(5), new Exception(), StopControl.Create())).Delay.Should().Be(TimeSpan.FromMinutes(7));
     }
 
     [Fact]
@@ -44,7 +45,7 @@ public class JobRetryDeciderTests
     {
         var sut = NewDecider(new JobMasterRetrySettings(null, _ => JobRetryDecision.RetryAfter(TimeSpan.FromSeconds(1)), null));
 
-        var outcome = await sut.DecideAsync(NewJob(0), new Exception());
+        var outcome = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
 
         outcome.Delay.Should().Be(JobMasterLimits.MinRetryDelay);
         outcome.Resolution.Should().Be(JobRetryResolution.InterceptorBelowMinimum);
@@ -56,8 +57,8 @@ public class JobRetryDeciderTests
         var sut = NewDecider(new JobMasterRetrySettings(null,
             ctx => ctx.Exception is ArgumentException ? JobRetryDecision.StopEarly("invalid input") : JobRetryDecision.UseRetryDelays(), null));
 
-        var stopped = await sut.DecideAsync(NewJob(0), new ArgumentException());
-        var retried = await sut.DecideAsync(NewJob(0), new InvalidOperationException());
+        var stopped = await sut.DecideAsync(NewJob(0), new ArgumentException(), StopControl.Create());
+        var retried = await sut.DecideAsync(NewJob(0), new InvalidOperationException(), StopControl.Create());
 
         stopped.IsStopEarly.Should().BeTrue();
         stopped.Resolution.Should().Be(JobRetryResolution.InterceptorStoppedEarly);
@@ -72,7 +73,7 @@ public class JobRetryDeciderTests
         var sut = NewDecider(new JobMasterRetrySettings(
             new[] { TimeSpan.FromMinutes(3) }, _ => JobRetryDecision.UseRetryDelays(), null));
 
-        var outcome = await sut.DecideAsync(NewJob(0), new Exception());
+        var outcome = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
 
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(3));
         outcome.Resolution.Should().Be(JobRetryResolution.InterceptorUsedRetryDelays);
@@ -85,7 +86,7 @@ public class JobRetryDeciderTests
         var sut = NewDecider(new JobMasterRetrySettings(
             new[] { TimeSpan.FromMinutes(4) }, _ => throw new InvalidOperationException("broken interceptor"), null));
 
-        var outcome = await sut.DecideAsync(NewJob(0), new Exception());
+        var outcome = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
 
         outcome.IsStopEarly.Should().BeFalse();
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(4));
@@ -103,7 +104,7 @@ public class JobRetryDeciderTests
         }, null));
         var exception = new TimeoutException();
 
-        await sut.DecideAsync(NewJob(0), exception);
+        await sut.DecideAsync(NewJob(0), exception, StopControl.Create());
 
         seen!.NumberOfFailures.Should().Be(1);
         seen.Job.NumberOfFailures.Should().Be(1);
@@ -118,8 +119,8 @@ public class JobRetryDeciderTests
         services.AddScoped<DependencyInterceptor>();
         var sut = NewDecider(new JobMasterRetrySettings(null, null, typeof(DependencyInterceptor)), services.BuildServiceProvider());
 
-        var first = await sut.DecideAsync(NewJob(0), new Exception());
-        var second = await sut.DecideAsync(NewJob(0), new Exception());
+        var first = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
+        var second = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
 
         first.Delay.Should().Be(TimeSpan.FromMinutes(9));
         first.Resolution.Should().Be(JobRetryResolution.InterceptorCustomDelay);
@@ -138,7 +139,7 @@ public class JobRetryDeciderTests
             services.BuildServiceProvider(),
             interceptorTimeout: TimeSpan.FromMilliseconds(100));
 
-        var outcome = await sut.DecideAsync(NewJob(0), new Exception());
+        var outcome = await sut.DecideAsync(NewJob(0), new Exception(), StopControl.Create());
 
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(2));
         outcome.Resolution.Should().Be(JobRetryResolution.InterceptorFailed);
@@ -150,7 +151,7 @@ public class JobRetryDeciderTests
         var clusterConfig = JobMasterClusterConnectionConfig.Create($"retry-{JobMasterRandomUtil.NewGuid4():N}", "repo", "conn");
         clusterConfig.SetRetrySettings(settings);
         return new JobRetryDecider(clusterConfig, serviceProvider ?? new ServiceCollection().BuildServiceProvider(),
-            Mock.Of<IJobMasterLogger>(), interceptorTimeout);
+            Mock.Of<IJobMasterLogger>(), new JobMasterStopControlFactory(), interceptorTimeout);
     }
 
     private static JobRawModel NewJob(int numberOfFailures) => new("retry-cluster")

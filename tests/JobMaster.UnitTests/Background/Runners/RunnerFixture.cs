@@ -100,15 +100,14 @@ internal sealed record RunnerFixture(
         worker.SetupGet(x => x.HostId).Returns(hostId);
         worker.SetupGet(x => x.TransferBatchSize).Returns(50);
         worker.SetupGet(x => x.BucketBufferSize).Returns(10);
-        worker.SetupGet(x => x.StopRequested).Returns(false);
+        worker.SetupGet(x => x.GracefulStopRequested).Returns(false);
         worker.SetupGet(x => x.StopImmediatelyRequested).Returns(false);
-        worker.SetupGet(x => x.StopRequestedAt).Returns((DateTime?)null);
-        worker.SetupGet(x => x.StopGracePeriod).Returns((TimeSpan?)null);
-        worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
-        // A runner gets its stop scope from the runtime's factory, linked to its worker's, when it starts.
+        worker.SetupGet(x => x.GracefulStopRequestedAt).Returns((DateTime?)null);
+        worker.SetupGet(x => x.GracefulStopPeriod).Returns((TimeSpan?)null);
+        // A runner gets its stop control from the runtime's factory, linked to its worker's, when it starts.
         var runtime = new FakeRuntime();
         worker.SetupGet(x => x.Runtime).Returns(runtime);
-        worker.SetupGet(x => x.StopScope).Returns(StopScope.CreateLinked(runtime.StopScope));
+        worker.SetupGet(x => x.StopControl).Returns(StopControl.CreateLinked(runtime.StopControl));
         worker.SetupGet(x => x.BucketAwareSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.MainSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.Runners).Returns(new RunnerRegistry());

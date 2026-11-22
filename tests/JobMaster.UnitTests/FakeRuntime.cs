@@ -9,16 +9,16 @@ internal sealed class FakeRuntime : IJobMasterRuntime
     public bool Started { get; }
     public DateTime? StartedAt { get; } = DateTime.UtcNow;
     public DateTime? StartingAt { get; } = DateTime.UtcNow;
-    public StopScope StopScope { get; }
-    public JobMasterStopScopeFactory StopScopeFactory { get; }
+    public StopControl StopControl { get; }
+    public JobMasterStopControlFactory StopControlFactory { get; }
 
     public FakeRuntime() : this(started: true) { }
 
     public FakeRuntime(bool started)
     {
         Started = started;
-        StopScopeFactory = new JobMasterStopScopeFactory();
-        StopScope = StopScopeFactory.ForRoot();
+        StopControlFactory = new JobMasterStopControlFactory();
+        StopControl = StopControlFactory.ForRoot();
     }
 
     public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() => new List<IJobMasterBackgroundAgentWorker>();

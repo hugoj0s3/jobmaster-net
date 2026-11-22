@@ -181,7 +181,7 @@ internal class NatsJetStreamRawMessagesDispatcherRepository :
             attempt++;
             try
             {
-                using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var pubCts = JobMasterRuntimeSingleton.Instance.StopControlFactory.ForOperation(CancellationToken.None, TimeSpan.FromSeconds(15));
                 await jsContext!.PublishAsync(subject, data, headers: headers, cancellationToken: pubCts.Token);
                 return supposedId!; 
             }

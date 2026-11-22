@@ -11,7 +11,6 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 {
-    private CancellationTokenSource? cts;
     private Task? taskRunner;
     private const int MaxOfConsecutiveFails = 15;
     private const int StopTimeoutSeconds = 10;
@@ -44,25 +43,13 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     public Task StartAsync()
     {
-        var runtime = Runtime ?? throw new InvalidOperationException($"Runner {GetType().Name} has no runtime to get its stop scope from.");
-        StopScope = runtime.StopScopeFactory.ForRunner(BackgroundAgentWorker);
+        StopControl = StopControlFactory.ForRunner(BackgroundAgentWorker);
 
-        if (bucketAwareLifeCycle)
-        {
-            // Independent runners get their own token but still respect main worker shutdown
-            cts = new CancellationTokenSource();
-        }
-        else
-        {
-            // Critical infrastructure runners share the main worker token
-            cts = BackgroundAgentWorker.CancellationTokenSource;
-        }
-        
         // Listed before the task starts: the task removes it when it ends, which can be right away.
         this.BackgroundAgentWorker.Runners.Add(this);
 
         // No token on Task.Run: a task cancelled before it starts would skip RunAsync and its cleanup.
-        var token = cts.Token;
+        var token = StopControl.StopToken;
         taskRunner = Task.Run(() => RunAsync(token));
         return Task.CompletedTask;
     }
@@ -72,21 +59,14 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     /// </summary>
     public async Task StopAsync()
     {
-        if (cts is null)
+        if (StopControl.IsNone)
         {
             // Never started: no task to run the cleanup.
             await OnStopAsync();
             return;
         }
 
-        if (!cts.IsCancellationRequested)
-        {
-#if NETSTANDARD2_0
-            cts.Cancel();
-#else
-            await cts.CancelAsync();
-#endif
-        }
+        await StopControl.StopAsync();
 
         // Called from this runner's own task (its tick, or a worker stop it started): waiting would wait on itself.
         if (CurrentRunner.Value == this || taskRunner is null)
@@ -103,7 +83,10 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 
     public IJobMasterRuntime? Runtime => BackgroundAgentWorker.Runtime;
 
-    public StopScope StopScope { get; private set; } = StopScope.None;
+    protected JobMasterStopControlFactory StopControlFactory =>
+        (Runtime ?? throw new InvalidOperationException($"Runner {GetType().Name} has no runtime to get its stop controls from.")).StopControlFactory;
+
+    public StopControl StopControl { get; private set; } = StopControl.None;
 
     // The runner whose task is running the current code, so StopAsync can tell a stop from inside it.
     private static readonly AsyncLocal<JobMasterRunner?> CurrentRunner = new();
@@ -153,7 +136,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
-            if (BackgroundAgentWorker.CancellationTokenSource.IsCancellationRequested)
+            if (BackgroundAgentWorker.StopControl.IsStopping())
             {
                 break;
             }
@@ -282,8 +265,8 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 
     public async ValueTask DisposeAsync()
     {
-        await StopAsync(); 
-        cts?.Dispose(); 
+        await StopAsync();
+        StopControl.Dispose();
     }
     
     public abstract TimeSpan SucceedInterval { get; }

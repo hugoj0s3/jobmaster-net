@@ -9,9 +9,9 @@ internal interface IJobMasterRuntime
     DateTime? StartedAt { get; }
     DateTime? StartingAt { get; }
     
-    StopScope StopScope { get; }
+    StopControl StopControl { get; }
 
-    JobMasterStopScopeFactory StopScopeFactory { get; }
+    JobMasterStopControlFactory StopControlFactory { get; }
     
     IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers();
 

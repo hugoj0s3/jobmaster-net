@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
@@ -44,8 +46,10 @@ internal sealed class NatsJetStreamConnector
     public static (NatsConnection nats, NatsJSContext jsContext, string streamName) GetOrCreateConnection(string agentConnectionId, JobMasterAgentProviderConfig config)
         => Instance.GetOrCreateConnectionInternal(agentConnectionId, config);
 
-    public static Task EnsureStreamAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger logger)
-        => Instance.EnsureStreamInternalAsync(agentConnectionId, config, logger);
+    public static Task EnsureStreamAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger logger, CancellationToken ct = default)
+        => Instance.EnsureStreamInternalAsync(agentConnectionId, config, logger, ct);
+
+    private static JobMasterStopControlFactory StopControlFactory => JobMasterRuntimeSingleton.Instance.StopControlFactory;
     
     public static ValueTask<INatsJSConsumer> GetOrCreateConsumerAsync(string agentConnectionId, JobMasterAgentProviderConfig config, string fullBucketAddressId)
         => Instance.GetOrCreateConsumerInternalAsync(agentConnectionId, config, fullBucketAddressId);
@@ -118,7 +122,7 @@ internal sealed class NatsJetStreamConnector
 
     // Creates the stream, or brings an existing one to the configured MaxAge / replicas (last process to start wins).
     // logger is null only from the consumer path, which runs after its callers ensured the stream.
-    private async Task EnsureStreamInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger? logger)
+    private async Task EnsureStreamInternalAsync(string agentConnectionId, JobMasterAgentProviderConfig config, IJobMasterLogger? logger, CancellationToken ct)
     {
         GetOrCreateConnectionInternal(agentConnectionId, config);
         var e = entries[GetEntryKey(agentConnectionId, config)];
@@ -131,12 +135,14 @@ internal sealed class NatsJetStreamConnector
 
         // Serialize stream ensure globally and per-entry; try once each and proceed regardless
         var gotGlobal = await GlobalSetupLock.WaitAsync(TimeSpan.FromSeconds(15));
+        var gotEntry = false;
         try
         {
-            var gotEntry = await e.Lock.WaitAsync(TimeSpan.FromSeconds(10));
+            gotEntry = await e.Lock.WaitAsync(TimeSpan.FromSeconds(10));
 
             if (e.StreamEnsured) return;
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            // The whole setup (look up, create or update): with the caller, at most 10 s so a boot doesn't hang.
+            using var cts = StopControlFactory.ForOperation(ct, TimeSpan.FromSeconds(10));
             INatsJSStream? existing = null;
             try
             {
@@ -169,7 +175,8 @@ internal sealed class NatsJetStreamConnector
         }
         finally
         {
-            try { e.Lock.Release(); } catch { }
+            // Only a lock this call holds: releasing one it timed out on would free another caller's.
+            if (gotEntry) { try { e.Lock.Release(); } catch { } }
             if (gotGlobal) { try { GlobalSetupLock.Release(); } catch { } }
         }
     }
@@ -184,7 +191,7 @@ internal sealed class NatsJetStreamConnector
     {
         // Ensure connection and stream are available
         _ = GetOrCreateConnectionInternal(agentConnectionId, config);
-        await EnsureStreamInternalAsync(agentConnectionId, config, logger: null);
+        await EnsureStreamInternalAsync(agentConnectionId, config, logger: null, ct);
         var entry = entries[GetEntryKey(agentConnectionId, config)];
 
         // 1. Check if the consumer is already cached to avoid redundant network calls
@@ -209,10 +216,10 @@ internal sealed class NatsJetStreamConnector
                     return existing;
                 }
 
-                // 2. Handle the missing CancellationToken (for Repository/Dispatcher calls)
-                // We create a local 10s timeout to ensure the boot process doesn't hang if NATS is unreachable.
-                using var cts = ct == CancellationToken.None ? new CancellationTokenSource(TimeSpan.FromSeconds(10)) : null;
-                var token = cts?.Token ?? ct;
+                // 2. With the caller (none for repository/dispatcher calls), at most 10 s so a boot doesn't hang if NATS
+                // is unreachable.
+                using var cts = StopControlFactory.ForOperation(ct, TimeSpan.FromSeconds(10));
+                var token = cts.Token;
 
                 var consumerName = NatsJetStreamUtils.GetConsumerName(fullBucketAddressId);
                 var subject = NatsJetStreamUtils.GetSubjectName(agentConnectionId, fullBucketAddressId);

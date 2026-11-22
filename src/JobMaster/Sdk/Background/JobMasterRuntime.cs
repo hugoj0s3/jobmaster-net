@@ -41,12 +41,12 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
 
     public DateTime? StartingAt { get; private set; }
 
-    public StopScope StopScope { get; }
+    public StopControl StopControl { get; }
 
-    public JobMasterStopScopeFactory StopScopeFactory { get; }
+    public JobMasterStopControlFactory StopControlFactory { get; }
 
-    // Leaves room in Docker's default 10 s stop grace for the loggers' final flush after it.
-    internal static readonly TimeSpan ShutdownStopTimeout = TimeSpan.FromSeconds(6);
+    // Running jobs' 5 s plus the cleanup; leaves room in Docker's default 10 s for the loggers' final flush after it.
+    internal static readonly TimeSpan ShutdownStopTimeout = JobMasterConstants.ImmediateStopTimeout;
 
     public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() =>
         new List<IJobMasterBackgroundAgentWorker>(Workers);
@@ -60,8 +60,8 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
 
     public JobMasterRuntime()
     {
-        StopScopeFactory = new JobMasterStopScopeFactory();
-        StopScope = StopScopeFactory.ForRoot();
+        StopControlFactory = new JobMasterStopControlFactory();
+        StopControl = StopControlFactory.ForRoot();
     }
 
     public async Task StartAsync(IServiceProvider serviceProvider)
@@ -849,6 +849,10 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
 
     internal async Task StopWorkersAsync(TimeSpan timeout)
     {
+        // The root's stop reaches every worker, runner and job at once (linked), a worker still starting included; each
+        // worker's own stop then waits for its runners' cleanup.
+        await StopControl.StopAsync();
+
         var workers = new List<JobMasterBackgroundAgentWorker>(Workers);
         await Task.WhenAll(workers.Select(w => StopWorkerAsync(w, timeout)));
     }

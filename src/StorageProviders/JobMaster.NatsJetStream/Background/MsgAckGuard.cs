@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NATS.Client.JetStream;
 using JobMaster.NatsJetStream;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.NatsJetStream.Background;
 
@@ -18,10 +19,12 @@ internal sealed class MsgAckGuard : IDisposable
     public AckOutcome Outcome { get; private set; } = AckOutcome.None;
     public uint FailureCount { get; private set; }
     private readonly string messageId;
+    private readonly JobMasterStopControlFactory stopControlFactory;
 
-    public MsgAckGuard(INatsJSMsg<byte[]> msg, string messageId)
+    public MsgAckGuard(INatsJSMsg<byte[]> msg, string messageId, JobMasterStopControlFactory stopControlFactory)
     {
         this.Msg = msg;
+        this.stopControlFactory = stopControlFactory;
         this.messageId = messageId;
         this.FailureCount = FailureAttempts.TryGetValue(messageId, out var fc) ? fc : 0;
     }
@@ -33,7 +36,7 @@ internal sealed class MsgAckGuard : IDisposable
         {
             if (Outcome != AckOutcome.None) return false;
 
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.AckAsync(cancellationToken: cts.Token);
             Outcome = AckOutcome.Ack;
             FailureAttempts.TryRemove(messageId, out _);
@@ -52,7 +55,7 @@ internal sealed class MsgAckGuard : IDisposable
         {
             if (Outcome != AckOutcome.None) return false;
 
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.NakAsync(delay: delay, cancellationToken: cts.Token);
             Outcome = AckOutcome.Nak;
 
@@ -82,7 +85,7 @@ internal sealed class MsgAckGuard : IDisposable
             };
             var delay = TimeSpan.FromSeconds(delaySeconds);
 
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.NakAsync(delay: delay, cancellationToken: cts.Token);
             Outcome = AckOutcome.Nak;
 
@@ -98,7 +101,7 @@ internal sealed class MsgAckGuard : IDisposable
         {
             if (Outcome != AckOutcome.None) return;
 
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.AckProgressAsync(cancellationToken: cts.Token);
         }
         finally { semaphore.Release(); }
@@ -111,7 +114,7 @@ internal sealed class MsgAckGuard : IDisposable
         {
             if (Outcome != AckOutcome.None) return false;
 
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.AckTerminateAsync(cancellationToken: cts.Token);
             Outcome = AckOutcome.Term;
 
@@ -141,7 +144,7 @@ internal sealed class MsgAckGuard : IDisposable
             LastUpdatedAt[messageId] = DateTime.UtcNow;
 
             var delay = NatsJetStreamConstants.BusyRetryDelays[retryCount - 1];
-            using var cts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+            using var cts = stopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
             await Msg.NakAsync(delay: delay, cancellationToken: cts.Token);
             Outcome = AckOutcome.Nak;
 

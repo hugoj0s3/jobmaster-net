@@ -34,7 +34,7 @@ internal sealed class DeleteOldLogsRunner : JobMasterRunner
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
             return OnTickResult.Skipped(this);
 
         var cfg = clusterConfigService.Get();

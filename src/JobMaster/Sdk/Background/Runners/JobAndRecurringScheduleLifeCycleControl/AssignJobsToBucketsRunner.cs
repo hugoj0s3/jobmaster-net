@@ -80,7 +80,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Skipped(this);
         }

@@ -18,7 +18,7 @@ public enum AgentWorkerMode
     Execution = 2,
 
     /// <summary>
-    /// Graceful shutdown mode. Recovers orphaned buckets from crashed workers by redirecting
+    /// Drain mode. Recovers orphaned buckets from crashed workers by redirecting
     /// their jobs back to the Master for re-assignment. Safe to terminate once draining completes.
     /// </summary>
     Drain = 3,

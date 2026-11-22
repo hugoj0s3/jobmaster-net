@@ -41,7 +41,7 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
     // inside CreateDrainRunners, where a bucket is claimed and transitioned to Draining.
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Skipped(this);
         }
@@ -101,7 +101,7 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
         {
             ct.ThrowIfCancellationRequested();
 
-            if (BackgroundAgentWorker.StopRequested)
+            if (BackgroundAgentWorker.GracefulStopRequested)
             {
                 break;
             }
@@ -178,7 +178,7 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
         {
             ct.ThrowIfCancellationRequested();
 
-            if (BackgroundAgentWorker.StopRequested)
+            if (BackgroundAgentWorker.GracefulStopRequested)
             {
                 break;
             }
