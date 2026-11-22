@@ -34,6 +34,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
     protected JobMasterConfigDictionary additionalConnConfig = null!;
     protected GenericRecordSqlUtil genericUtil = null!;
     protected readonly IKnownExceptionIdentifier knownExceptionIdentifier;
+    private readonly RetryDeadlockPolicy perRowDeadlockRetry;
 
     protected SqlMasterJobsRepository(
         JobMasterClusterConnectionConfig clusterConnectionConfig,
@@ -42,6 +43,7 @@ internal abstract class SqlMasterJobsRepository : JobMasterClusterAwareRepositor
     {
         this.connManager = connManager;
         this.knownExceptionIdentifier = knownExceptionIdentifier;
+        perRowDeadlockRetry = new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(50), 3);
         sql = SqlGeneratorFactory.Get(this.MasterRepoTypeId);
         connString = clusterConnectionConfig.ConnectionString;
         additionalConnConfig = clusterConnectionConfig.AdditionalConnConfig;
@@ -658,7 +660,10 @@ FROM jobs_page j
         {
             try
             {
-                insertedIds.AddRange(await InsertIfNotExistsInOneTransactionAsync(new List<JobRawModel> { job }, executionsByJobId));
+                // A single row can still deadlock with another writer of it (MySQL's locks on the unique index and the
+                // metadata tables): run it again, it reads again and finds the row saved or inserts it.
+                insertedIds.AddRange(await perRowDeadlockRetry.ExecAsync(() =>
+                    InsertIfNotExistsInOneTransactionAsync(new List<JobRawModel> { job }, executionsByJobId)));
             }
             catch (Exception ex) when (IsDupeViolation(job.Id, ex))
             {

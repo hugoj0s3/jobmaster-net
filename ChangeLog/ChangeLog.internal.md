@@ -7,6 +7,18 @@
 ### JobMaster 0.0.12-alpha
 > Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1011/1011 unit tests pass on `net8.0` and `net10.0` (970/970 on the `netstandard2.0` build).
 
+#### SQL `BulkInsertIfNotExists`: the per-row fallback retries deadlocks (Hugo, 2026-11-22)
+- Found by the conformance matrix on GitHub (first run where the SQL providers ran to completion): MySQL
+  `BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce` (recurring schedules)
+  threw `Deadlock found when trying to get lock`. The batch transaction falls back to one row per transaction on a
+  conflict (duplicate key or deadlock), but the per-row step only caught a duplicate key: on MySQL a single row can
+  still deadlock with another writer of it (locks on the unique index and the metadata tables).
+- `SqlMasterJobsRepository` and `SqlMasterRecurringSchedulesRepository`: the per-row insert runs through a
+  `RetryDeadlockPolicy` (50 ms, 3 retries). Each retry reads again, so it either finds
+  the row saved by the other writer or inserts it; a duplicate key is still "not inserted by us".
+- Timing-dependent: passed in the run before, and not reproduced locally (the two MySQL concurrent-writer tests
+  pass 5 of 5 runs; MySQL / Postgres / SQL Server groups 163 of 166, 3 skipped).
+
 #### One cancellation tree: `StopControl` (Hugo, 2026-11-22)
 - Why: mapped 2026-11-20. Five unrelated roots (worker source, a source per bucket runner, `TaskQueueItem`'s source,
   the retry interceptor's, NATS fixed timeouts), the runtime had no token, and the stop waits didn't fit together
