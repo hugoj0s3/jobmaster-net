@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
@@ -7,15 +6,6 @@ using StackExchange.Redis;
 using TargetTestClusterIdApp;
 using TargetTestClusterIdApp.Handlers;
 using TargetTestClusterIdApp.Redis;
-
-// See TargetTestScheduleApp/Program.cs for why this is necessary: ConfigFromJson only sets
-// RepoType as a string, so the CLR never naturally loads the provider assembly, and the
-// [JobMasterIocRegistration] AppDomain-reflection scan can't see types in an unloaded assembly.
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDB.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 
