@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Utils;
 using Moq;
 
@@ -104,6 +105,10 @@ internal sealed record RunnerFixture(
         worker.SetupGet(x => x.StopRequestedAt).Returns((DateTime?)null);
         worker.SetupGet(x => x.StopGracePeriod).Returns((TimeSpan?)null);
         worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
+        // A runner gets its stop scope from the runtime's factory, linked to its worker's, when it starts.
+        var runtime = new FakeRuntime();
+        worker.SetupGet(x => x.Runtime).Returns(runtime);
+        worker.SetupGet(x => x.StopScope).Returns(StopScope.CreateLinked(runtime.StopScope));
         worker.SetupGet(x => x.BucketAwareSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.MainSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.Runners).Returns(new RunnerRegistry());

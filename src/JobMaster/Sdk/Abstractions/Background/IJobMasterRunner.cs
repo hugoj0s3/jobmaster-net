@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Background.Cancellation;
+
 namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IJobMasterRunner
@@ -19,4 +21,6 @@ internal interface IJobMasterRunner
     Task StopAsync();
     
     IJobMasterRuntime? Runtime { get; }
+
+    StopScope StopScope { get; }
 }

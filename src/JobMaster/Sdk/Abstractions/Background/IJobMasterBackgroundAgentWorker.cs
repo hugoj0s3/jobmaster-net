@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
@@ -15,7 +16,6 @@ internal interface IJobMasterBackgroundAgentWorker
     JobMasterClusterConnectionConfig ClusterConnConfig { get; }
     IJobMasterRuntime? Runtime { get; }
     int TransferBatchSize { get; }
-    
     int BucketBufferSize { get; }
     TimeSpan BucketBufferLeadTime { get; }
     AgentWorkerMode Mode { get; }
@@ -31,6 +31,8 @@ internal interface IJobMasterBackgroundAgentWorker
     
     TimeSpan? StopGracePeriod { get; }
     
+    StopScope StopScope { get; }
+
     CancellationTokenSource CancellationTokenSource { get; }
     
     IBucketRunnersFactory BucketRunnersFactory { get; }

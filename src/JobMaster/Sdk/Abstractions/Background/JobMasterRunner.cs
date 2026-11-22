@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners;
 
 namespace JobMaster.Sdk.Abstractions.Background;
@@ -43,6 +44,9 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     public Task StartAsync()
     {
+        var runtime = Runtime ?? throw new InvalidOperationException($"Runner {GetType().Name} has no runtime to get its stop scope from.");
+        StopScope = runtime.StopScopeFactory.ForRunner(BackgroundAgentWorker);
+
         if (bucketAwareLifeCycle)
         {
             // Independent runners get their own token but still respect main worker shutdown
@@ -98,6 +102,8 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     }
 
     public IJobMasterRuntime? Runtime => BackgroundAgentWorker.Runtime;
+
+    public StopScope StopScope { get; private set; } = StopScope.None;
 
     // The runner whose task is running the current code, so StopAsync can tell a stop from inside it.
     private static readonly AsyncLocal<JobMasterRunner?> CurrentRunner = new();

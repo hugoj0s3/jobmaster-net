@@ -14,6 +14,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
@@ -54,6 +55,8 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     public AgentWorkerMode Mode => agentWorkerSnapshot.Mode;
 
     public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
+
+    public StopScope StopScope { get; private set; } = StopScope.None;
 
     public IBucketRunnersFactory BucketRunnersFactory { get; private set; } = null!;
 
@@ -478,6 +481,10 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StartAsync()
     {
+        // Before any runner starts: each runner links its own scope to this one.
+        var runtime = Runtime ?? throw new InvalidOperationException($"Worker {AgentWorkerId} has no runtime to get its stop scope from.");
+        StopScope = runtime.StopScopeFactory.ForWorker(this);
+
         var clusterMode = ResolveClusterMode();
 
         if (clusterMode == ClusterMode.Migrating)

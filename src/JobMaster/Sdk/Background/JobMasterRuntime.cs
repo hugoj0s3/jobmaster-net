@@ -20,6 +20,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -40,6 +41,10 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
 
     public DateTime? StartingAt { get; private set; }
 
+    public StopScope StopScope { get; }
+
+    public JobMasterStopScopeFactory StopScopeFactory { get; }
+
     // Leaves room in Docker's default 10 s stop grace for the loggers' final flush after it.
     internal static readonly TimeSpan ShutdownStopTimeout = TimeSpan.FromSeconds(6);
 
@@ -55,6 +60,8 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
 
     public JobMasterRuntime()
     {
+        StopScopeFactory = new JobMasterStopScopeFactory();
+        StopScope = StopScopeFactory.ForRoot();
     }
 
     public async Task StartAsync(IServiceProvider serviceProvider)
@@ -69,6 +76,7 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
             State.Clear();
         }
     }
+
 
     private async Task DoStartAsync(IServiceProvider serviceProvider)
     {
