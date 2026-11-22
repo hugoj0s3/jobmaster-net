@@ -237,10 +237,10 @@ internal abstract class SqlMasterLogsRepository : JobMasterClusterAwareRepositor
             args["Category"] = criteria.Category.Value.ToString();
         }
 
-        if (!string.IsNullOrEmpty(criteria.ReferenceId))
+        if (criteria.ReferenceIds.Count > 0)
         {
-            where.Add("reference_id = @ReferenceId");
-            args["ReferenceId"] = criteria.ReferenceId;
+            where.Add(sql.InClauseFor("reference_id", "@ReferenceIds"));
+            args["ReferenceIds"] = criteria.ReferenceIds.ToArray();
         }
 
         if (criteria.FromTimestamp.HasValue)

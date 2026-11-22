@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
@@ -65,7 +66,10 @@ internal static class JobsExecutionEngineFixture
         worker.SetupGet(x => x.BucketBufferSize).Returns(bufferSize);
         worker.SetupGet(x => x.ParallelismFactor).Returns(1.0);
         worker.SetupGet(x => x.WorkerClusterOperations).Returns(ops.Object);
-        worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
+        // The engine creates its jobs' stop controls through the runtime's factory.
+        var runtime = new FakeRuntime();
+        worker.SetupGet(x => x.Runtime).Returns(runtime);
+        worker.SetupGet(x => x.StopControl).Returns(StopControl.CreateLinked(runtime.StopControl));
         worker.SetupGet(x => x.MainServiceProvider).Returns(serviceProvider.Object);
         worker.Setup(x => x.GetClusterAwareService<IMasterJobsService>()).Returns(jobs.Object);
         worker.Setup(x => x.GetClusterAwareService<IMasterRecurringSchedulesService>()).Returns(schedules.Object);
@@ -122,7 +126,7 @@ internal static class JobsExecutionEngineFixture
             .Returns<Func<IWorkerClusterOperations, Task<IList<JobRawModel>>>, int, int>(
                 (func, _, __) => func(ops.Object));
 
-        var engine = new JobsExecutionEngine(worker.Object, bucketId, priority);
+        var engine = new JobsExecutionEngine(worker.Object, StopControl.CreateLinked(worker.Object.StopControl), bucketId, priority);
         return new EngineFixture(
             engine,
             ops,

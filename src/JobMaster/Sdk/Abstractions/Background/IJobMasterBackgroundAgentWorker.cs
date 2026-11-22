@@ -3,6 +3,7 @@ using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
@@ -15,23 +16,28 @@ internal interface IJobMasterBackgroundAgentWorker
     JobMasterClusterConnectionConfig ClusterConnConfig { get; }
     IJobMasterRuntime? Runtime { get; }
     int TransferBatchSize { get; }
-    
     int BucketBufferSize { get; }
     TimeSpan BucketBufferLeadTime { get; }
     AgentWorkerMode Mode { get; }
     Task StartAsync();
     Task StopImmediatelyAsync();
-    void RequestStop();
+    /// <summary>
+    /// Graceful stop: takes no new jobs and runs the ones it has for <paramref name="period"/> (at least
+    /// <see cref="JobMasterConstants.MinGracefulStopPeriod"/>; default
+    /// <see cref="JobMasterConstants.DefaultGracefulStopPeriod"/>), then stops immediately.
+    /// </summary>
+    void RequestGracefulStop(TimeSpan? period = null);
     
-    bool StopRequested { get; }
+    bool GracefulStopRequested { get; }
     
     bool StopImmediatelyRequested { get; }
     
-    DateTime? StopRequestedAt { get; }
+    DateTime? GracefulStopRequestedAt { get; }
     
-    TimeSpan? StopGracePeriod { get; }
+    TimeSpan? GracefulStopPeriod { get; }
     
-    CancellationTokenSource CancellationTokenSource { get; }
+    StopControl StopControl { get; }
+
     
     IBucketRunnersFactory BucketRunnersFactory { get; }
     
@@ -52,7 +58,7 @@ internal interface IJobMasterBackgroundAgentWorker
     
     bool IsOnWarmUpTime();
     IJobsExecutionEngine? GetEngine(string bucketId);
-    IJobsExecutionEngine  GetOrCreateEngine(JobMasterPriority priority, string bucketId);
+    IJobsExecutionEngine  GetOrCreateEngine(StopControl runnerStopControl, JobMasterPriority priority, string bucketId);
 
     void RegisterRuntimeBucket(BucketModel bucket);
 

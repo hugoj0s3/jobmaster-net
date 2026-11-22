@@ -52,7 +52,7 @@ public class JobExecutionMessagesTests
     {
         var scheduleId = JobMasterRandomUtil.NewGuid7();
 
-        JobExecutionMessages.RecurringOverlap(scheduleId).Should().Contain(scheduleId.ToBase64()).And.NotContain(scheduleId.ToString());
+        JobExecutionMessages.RecurringOverlap(scheduleId, "TimeSpanInterval", "00:00:20").Should().Contain(scheduleId.ToBase64()).And.NotContain(scheduleId.ToString());
         JobExecutionMessages.RecurringScheduleNotFound(scheduleId).Should().Contain(scheduleId.ToBase64()).And.NotContain(scheduleId.ToString());
     }
 

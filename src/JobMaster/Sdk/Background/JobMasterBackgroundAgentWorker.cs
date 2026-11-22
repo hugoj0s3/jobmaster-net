@@ -14,6 +14,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
@@ -44,7 +45,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public IJobMasterRuntime? Runtime => JobMasterRuntimeSingleton.Instance;
 
-    public bool StopRequested { get; internal set; }
+    public bool GracefulStopRequested { get; internal set; }
 
     public int TransferBatchSize { get; private set; } = 0;
 
@@ -53,7 +54,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public AgentWorkerMode Mode => agentWorkerSnapshot.Mode;
 
-    public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
+    public StopControl StopControl { get; private set; } = StopControl.None;
 
     public IBucketRunnersFactory BucketRunnersFactory { get; private set; } = null!;
 
@@ -74,8 +75,8 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public bool IsInitialized { get; private set; } = false;
 
-    public DateTime? StopRequestedAt { get; private set; }
-    public TimeSpan? StopGracePeriod { get; private set; }
+    public DateTime? GracefulStopRequestedAt { get; private set; }
+    public TimeSpan? GracefulStopPeriod { get; private set; }
 
     public double ParallelismFactor => agentWorkerSnapshot.ParallelismFactor;
 
@@ -478,6 +479,10 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StartAsync()
     {
+        // Before any runner starts: each runner links its own stop control to this one.
+        var runtime = Runtime ?? throw new InvalidOperationException($"Worker {AgentWorkerId} has no runtime to get its stop control from.");
+        StopControl = runtime.StopControlFactory.ForWorker(this);
+
         var clusterMode = ResolveClusterMode();
 
         if (clusterMode == ClusterMode.Migrating)
@@ -504,6 +509,13 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
 
             this.StopImmediatelyRequested = true;
+        }
+
+        // The worker's own stop reaches every runner's loop at once (linked); each runner's stop then waits for its
+        // cleanup. None: the worker never started, so it has no runners.
+        if (!this.StopControl.IsNone)
+        {
+            await this.StopControl.StopAsync();
         }
 
         await Task.WhenAll(this.Runners.Snapshot().Select(StopRunnerAsync));
@@ -541,11 +553,16 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             .Where(b => b.Status is not (BucketStatus.Lost or BucketStatus.ReadyToDelete))
             .ToList();
 
-    public void RequestStop()
+    public void RequestGracefulStop(TimeSpan? period = null)
     {
+        if (period < JobMasterConstants.MinGracefulStopPeriod)
+        {
+            throw new ArgumentOutOfRangeException(nameof(period), period,
+                $"A graceful stop period must be at least {JobMasterConstants.MinGracefulStopPeriod}.");
+        }
 
-        this.StopRequestedAt = DateTime.UtcNow;
-        this.StopGracePeriod = JobMasterConstants.DefaultGracefulStopPeriod;
+        this.GracefulStopRequestedAt = DateTime.UtcNow;
+        this.GracefulStopPeriod = period ?? JobMasterConstants.DefaultGracefulStopPeriod;
 
         foreach (var bucket in this.BucketsCreatedOnRuntime)
         {
@@ -556,7 +573,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
         }
 
-        this.StopRequested = true;
+        this.GracefulStopRequested = true;
     }
 
     public IJobsExecutionEngine? GetEngine(string bucketId)
@@ -564,7 +581,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
        return jobsExecutionEngineFactory.Get(bucketId);
     }
 
-    public IJobsExecutionEngine GetOrCreateEngine(JobMasterPriority priority, string bucketId)
+    public IJobsExecutionEngine GetOrCreateEngine(StopControl runnerStopControl, JobMasterPriority priority, string bucketId)
     {
         var bucket = BucketsCreatedOnRuntime.FirstOrDefault(b => b.Id == bucketId);
         if (bucket is null)
@@ -572,7 +589,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             throw new ArgumentException("Bucket not found");
         }
 
-        return jobsExecutionEngineFactory.GetOrCreate(this, priority, bucketId);
+        return jobsExecutionEngineFactory.GetOrCreate(this, runnerStopControl, priority, bucketId);
     }
 
     public void RegisterRuntimeBucket(BucketModel bucket)
@@ -595,6 +612,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public void Dispose()
     {
-        this.CancellationTokenSource.Dispose();
+        this.StopControl.Dispose();
     }
 }

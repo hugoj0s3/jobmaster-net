@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
@@ -8,11 +9,15 @@ internal class JobsExecutionEngineFactory : IJobsExecutionEngineFactory
 {
     private readonly ConcurrentDictionary<string, IJobsExecutionEngine> engines = new();
     
-    public IJobsExecutionEngine GetOrCreate(IJobMasterBackgroundAgentWorker backgroundAgentWorker, JobMasterPriority priority, string bucketId)
+    public IJobsExecutionEngine GetOrCreate(
+        IJobMasterBackgroundAgentWorker backgroundAgentWorker,
+        StopControl runnerStopControl,
+        JobMasterPriority priority, 
+        string bucketId)
     {
         var key = GetKey(priority, bucketId);
         
-        return engines.GetOrAdd(key, _ => new JobsExecutionEngine(backgroundAgentWorker, bucketId, priority));
+        return engines.GetOrAdd(key, _ => new JobsExecutionEngine(backgroundAgentWorker, runnerStopControl, bucketId, priority));
     }
     
     public IJobsExecutionEngine? Get(string bucketId)

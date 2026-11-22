@@ -7,6 +7,16 @@ open decisions (settle before coding), tasks, and done criteria.
 
 **Delivery:** one PR per item, merged into the `0.0.12-alpha` branch. No rush — the version can take ~1 month.
 
+**Status at release (2026-11-22).** Every item is done, still open in this version, or moved to
+`ChangeLog/reminders.md`:
+- Done: 1–8, 12–16, 18, 20, 21, 23, 24 (12, 23 and 24 ticked at release; 23 = the flavor matrix, all units green on
+  GitHub Actions). Done outside the table: the cancellation restructure (`StopControl` tree, see ChangeLog.internal).
+- Item 9: the finished reminders removed, the two files are one; re-checking the older ones moved to reminders.
+- Still open in this version: 10 and 11 (docs, in jobmaster-doc; they don't block merging the code), with the docs
+  notes of 18 and 20.
+- Moved to reminders: 17 (dashboard log link), 19 (startup tests project), 21's recurrence message, 22 (lambda adapter,
+  already there) and 24's test.
+
 | #  | Item                                                  | Size  | Breaking | Depends on |
 |----|-------------------------------------------------------|-------|----------|------------|
 | 1  | Cluster id via attribute / `JobDefinitionConfig`      | S     | **Yes** (param order, attribute inheritance) | – |
@@ -346,10 +356,10 @@ hybrid?" first, split it, and call the lookup with the right role's repo type �
 There are two reminder files: [ChangeLog/reminders.md](ChangeLog/reminders.md) and
 [src/JobMaster/Reminders.md](src/JobMaster/Reminders.md).
 
-- [ ] Remove items finished by this release (3, 4, 5, hybrid sketch → replaced by item 8). Keep
+- [x] Remove items finished by this release (3, 4, 5, hybrid sketch → replaced by item 8). Keep
       "Cluster-aware bulk persistence": item 7 dropped the automatic flush, so that gap is still open.
-- [ ] Re-check older items against code (e.g. `AcquireAndFetchAsync` deadlock part, RavenDB timeout).
-- [ ] Decide whether to merge the two files into one.
+- [ ] → moved to reminders: "Re-check the older reminders": Re-check older items against code (e.g. `AcquireAndFetchAsync` deadlock part, RavenDB timeout).
+- [x] Decide whether to merge the two files into one.
 
 ---
 
@@ -455,10 +465,10 @@ the field path into the query-only projection (`e.MetadataValues.Category`), and
 - [x] Recurring metadata precedence: schedule wins (`Job.FromRecurringSchedule`), test flipped.
 - [x] `WritableMetadata.FromDictionary` documented as a copy (it used to wrap the caller's dictionary); new
       `WriteableMessageData.FromDictionary` for symmetry (Hugo). ChangeLog: *Added* + the copy behavior change.
-- [ ] Provider filter changes so all providers agree; RepoConformance test asserting case-insensitive matching on each.
-- [ ] Unit tests: derived `"category"` overrides base `"Category"`; metadata and message-data reads ignore case; call
+- [x] Provider filter changes so all providers agree; RepoConformance test asserting case-insensitive matching on each.
+- [x] Unit tests: derived `"category"` overrides base `"Category"`; metadata and message-data reads ignore case; call
       metadata overrides an attribute across casing; storage round-trips keep the original key spelling.
-- [ ] Worker lanes:
+- [x] Worker lanes:
   - [x] Fix `GET /workers` (`Ordinal` → `OrdinalIgnoreCase`) so it matches `/workers/count`, with an API test. The two
         endpoints' duplicated filter is now one `WorkersEndpoints.FilterWorkers`, so they can't drift again.
   - [x] Make the other in-memory lane comparisons and keys ignore case: `MasterBucketService` query filter,
@@ -466,8 +476,8 @@ the field path into the query-only projection (`e.MetadataValues.Category`), and
   - [x] Make provider lane filters ignore case for jobs and recurring schedules: already the case on every provider
         (collation / RavenDB value comparison), guarded by the new RepoConformance tests. No query change, so the lane
         indexes are untouched.
-  - [ ] Unit tests: a job with lane `"Billing"` is found and filtered under `"billing"` everywhere.
-- [ ] Docs (`job-configuration.md` Message Data + Metadata + Worker Lane sections) + ChangeLog breaking entry.
+  - [x] Unit tests: a job with lane `"Billing"` is found and filtered under `"billing"` everywhere.
+- [x] Docs (`job-configuration.md` Message Data + Metadata + Worker Lane sections) + ChangeLog breaking entry.
 
 **Done when.** The case-insensitive tests (keys and lanes) are green on every provider, plus the full unit suite.
 
@@ -783,7 +793,7 @@ see it.
       value); helper tests moved to `UnitTests/Sdk` (now also on netstandard2.0) + `"N"` parse. No log-endpoint
       harness, so the round trip is tested at the model level.
 - [x] ChangeLog: API `ReferenceId` format change (breaking) + log message id format (changed); internal ChangeLog.
-- [ ] Dashboard: if it starts showing `referenceId`, link it to the job/schedule page (ids now match).
+- [ ] → moved to reminders: "Dashboard: link a log's referenceId": Dashboard: if it starts showing `referenceId`, link it to the job/schedule page (ids now match).
 
 **Done when.** Ids in log messages and `ApiLogItem.ReferenceId` match the base64 ids the dashboard shows, existing
 logs are still found by `ReferenceGuid`, and tests are green.
@@ -926,7 +936,7 @@ error); two profiles sharing a `ProfileId` collided on schedule ids silently (no
       only saves.
 - [x] The two "not found" throws: unreachable (`ClusterConfigBuilder.Finish`); kept as asserts with a comment.
 - [x] `reminders.md` entry removed; internal + user ChangeLog.
-- [ ] Whole-`StartAsync` tests in a separate `JobMaster.StartupTests` project (helper-level tests dropped, Hugo).
+- [ ] → moved to reminders: "Startup tests": Whole-`StartAsync` tests in a separate `JobMaster.StartupTests` project (helper-level tests dropped, Hugo).
       Open: constructor seam for the static-schedule error cases; reset hook name.
 
 **Done when.** No configuration error can be thrown after a worker starts or after a database write, and the unit suite
@@ -1016,7 +1026,7 @@ the call.
       in-process (the test project already loads every provider), so verified with a two-run repro: `HEAD` leaves
       `JobMaster.Postgres` unloaded and registers nothing; the fix loads it and registers its services.
 - [x] ChangeLog (Fixed) + internal ChangeLog.
-- [ ] Recurrence providers' error message (open decision above).
+- [ ] → moved to reminders: "Recurrence providers": Recurrence providers' error message (open decision above).
 
 ---
 
@@ -1127,7 +1137,7 @@ machines) and the `Scenario Tests` workflow (`misc/scenario-github-actions`, the
 - [x] Each ported scenario's stop step by stop type; disaster scenarios (DrainModeTest, StandaloneToDistributedTest)
       run both types.
 - [x] Remove the old per-provider suite once every port passes.
-- [ ] All variants green: every unit passed at least once on AWS; DrainModeTest's round-robin scheduling (12 units)
+- [x] All variants green: every unit passed at least once on AWS; DrainModeTest's round-robin scheduling (12 units)
       not run yet.
 
 **Done when.** Every scenario runs the same phases on each provider, each scenario has exactly one `scenario.md`, and
@@ -1150,9 +1160,9 @@ Startup then fails later with missing-table errors, or the tables only exist bec
 `PostgresJobMasterRuntimeSetup` does the same check with `continue`, which is the intended behavior.
 
 **Tasks.**
-- [ ] `return` → `continue` in both loops.
-- [ ] Unit/RepoConformance test: two clusters on the same provider, first with auto-provision off, second on → the
+- [x] `return` → `continue` in both loops.
+- [ ] → moved to reminders: "SQL auto-provision: no test": Unit/RepoConformance test: two clusters on the same provider, first with auto-provision off, second on → the
       second's master and agent tables are created.
-- [ ] ChangeLog (Fixed).
+- [x] ChangeLog (Fixed).
 
 **Done when.** Turning off auto-provision on one cluster affects only that cluster.

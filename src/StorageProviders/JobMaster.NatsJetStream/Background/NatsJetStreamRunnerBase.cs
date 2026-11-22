@@ -88,7 +88,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
         if (!hasInitialized)
         {
             NatsJetStreamConnector.GetOrCreateConnection(agentConnectionId.IdValue, agentConnectionConfig);
-            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId.IdValue, agentConnectionConfig, logger);
+            await NatsJetStreamConnector.EnsureStreamAsync(agentConnectionId.IdValue, agentConnectionConfig, logger, ct);
             var clusterThreshold = masterClusterConfigurationService.Get()?.TransientThreshold ?? NatsJetStreamConstants.MaxThreshold;
             var transientThreshold = clusterThreshold > NatsJetStreamConstants.MaxThreshold
                 ? NatsJetStreamConstants.MaxThreshold
@@ -224,7 +224,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                             // Send AckProgress to reset AckWait timer now that we're actually processing this message
                             // This prevents NATS from redelivering due to AckWait timeout while message sits in buffer
                             // Use an independent CTS — must not be tied to the consumer lifecycle token
-                            using var progressCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                            using var progressCts = StopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
                             await msg.AckProgressAsync(cancellationToken: progressCts.Token).ConfigureAwait(false);
 
                             // Check if this is a heartbeat message and skip processing
@@ -236,13 +236,13 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
                                 {
                                     LogCriticalOrError($"{GetRunnerDescription()}: signature mismatch for heartbeat. Sig={signatureValue}");
 
-                                    using var termCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                                    using var termCts = StopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
                                     await msg.AckTerminateAsync(cancellationToken: termCts.Token).ConfigureAwait(false);
                                     continue;
                                 }
 
                                 logger.Debug($"{GetRunnerDescription()}: Heartbeat message received for bucket {BucketId}", JobMasterLogCategory.Bucket, BucketId);
-                                using var ackCts = new CancellationTokenSource(NatsJetStreamConstants.AckOperationTimeout);
+                                using var ackCts = StopControlFactory.Cleanup(NatsJetStreamConstants.AckOperationTimeout);
                                 await msg.AckAsync(cancellationToken: ackCts.Token).ConfigureAwait(false);
                                 continue;
                             }
@@ -300,7 +300,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
             var subjectName = NatsJetStreamUtils.GetSubjectName(agentConnectionId.IdValue, fullBucketAddressId);
             var data = Encoding.UTF8.GetBytes(string.Empty);
             
-            using var pubCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var pubCts = StopControlFactory.ForOperation(ct, TimeSpan.FromSeconds(5));
             var headers = new NatsHeaders
             {
                 [NatsJetStreamConstants.HeaderSignature] = NatsJetStreamConfigKey.NamespaceUniqueKey.ToString(),
@@ -321,7 +321,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
     private async Task ProcessMessageAsync(INatsJSMsg<byte[]> msg, CancellationToken ct)
     {
         var (signature, correlationId, referenceTimeUtc, messageId) = NatsJetStreamUtils.GetHeaderValues(msg.Headers);
-        using var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString());
+        using var ackGuard = new MsgAckGuard(msg, messageId ?? JobMasterRandomUtil.NewGuid4().ToString(), StopControlFactory);
         var attempts = ackGuard.FailureCount;
         var natsDeliveryCount = msg.Metadata?.NumDelivered ?? 0;
         
@@ -513,7 +513,7 @@ internal abstract class NatsJetStreamRunnerBase<TPayload> : BucketAwareRunner
 
         if (consumptionTask != null)
         {
-            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(7));
+            using var timeoutCts = StopControlFactory.Cleanup(TimeSpan.FromSeconds(7));
             try
             {
                 await consumptionTask.WaitAsync(timeoutCts.Token).ConfigureAwait(false);

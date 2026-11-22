@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
@@ -7,16 +6,6 @@ using JobMaster.Benchmarks.Common.Scheduling;
 using JobMaster.Benchmarks.JobMasterHost.Handlers;
 using JobMaster.Ioc.Extensions;
 using StackExchange.Redis;
-
-// ConfigFromJson only sets RepoType as a string -- it never calls a provider-specific method
-// directly, so the CLR would never actually load these assemblies into the AppDomain, and their
-// [JobMasterIocRegistration] providers would be invisible to the AppDomain-based reflection scan.
-// Same trick TargetTestScheduleApp uses.
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDB.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 

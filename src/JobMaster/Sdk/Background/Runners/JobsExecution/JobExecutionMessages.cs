@@ -4,15 +4,22 @@ using JobMaster.Sdk.Utils;
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
 /// <summary>
-/// Text of a failed attempt, the same for every failure path: what happened, then what happens next, then (only when
-/// the log has more, i.e. a stack trace) where to look. Used for the execution's <c>OutcomeMessage</c> (shown on the
-/// attempt in the dashboard) and its JobExecution log line. Ids are base64, like everything users read.
+/// Text of an attempt. A failed one has the same shape on every failure path: what happened, then what happens next,
+/// then (only when the log has more, i.e. a stack trace) where to look. Used for the execution's <c>OutcomeMessage</c>
+/// (shown on the attempt in the dashboard) and its JobExecution log line. Ids are base64, like everything users read.
+/// Never the job's message data or metadata.
 /// </summary>
 internal static class JobExecutionMessages
 {
     // Keeps the attempt summary short; the full exception is in the log.
     private const int MaxExceptionMessageLength = 500;
     private const string SeeLogs = "See the job's logs for the full error.";
+
+    /// <summary>e.g. <c>Succeeded after 120 ms.</c> (the handler's own time, like a failure's).</summary>
+    public static string Succeeded(long elapsedMs)
+    {
+        return $"Succeeded after {elapsedMs} ms.";
+    }
 
     /// <summary>e.g. <c>Failed after 120 ms: InvalidOperationException: Gateway down. Retrying in 00:02:00 (RetryDelays). See the job's logs for the full error.</c></summary>
     public static string HandlerFailed(long elapsedMs, Exception exception, string nextStep)
@@ -26,10 +33,15 @@ internal static class JobExecutionMessages
         return $"Timed out after {elapsedMs} ms (timeout {timeout:c}). {nextStep}";
     }
 
-    /// <summary>The previous run of the same recurring schedule still holds its overlap lock; failed, not retried.</summary>
-    public static string RecurringOverlap(Guid recurringScheduleId)
+    /// <summary>
+    /// The previous run of the same recurring schedule still holds its overlap lock; failed, not retried. e.g.
+    /// <c>Not run: overlap with a run still in progress of recurring schedule dASiATOR6XWKcUi-bsYYKA (TimeSpanInterval 00:00:20). Failed, not retried.</c>
+    /// The expression is left out when the schedule couldn't be read.
+    /// </summary>
+    public static string RecurringOverlap(Guid recurringScheduleId, string? expressionTypeId, string? expression)
     {
-        return $"Not run: recurring schedule {recurringScheduleId.ToBase64()} still has a run in progress. Failed, not retried.";
+        var expressionText = string.IsNullOrEmpty(expression) ? string.Empty : $" ({expressionTypeId} {expression})";
+        return $"Not run: overlap with a run still in progress of recurring schedule {recurringScheduleId.ToBase64()}{expressionText}. Failed, not retried.";
     }
 
     /// <summary>The job's recurring schedule no longer exists; failed, not retried.</summary>

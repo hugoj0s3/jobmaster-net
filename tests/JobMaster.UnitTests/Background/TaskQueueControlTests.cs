@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Utils;
 
@@ -499,6 +500,7 @@ public class TaskQueueControlTests
         var executed = false;
 
         var item = new TaskQueueItem<string>(
+            stopControl: StopControl.Create(),
             id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "my-job",
             timeout: TimeSpan.FromSeconds(5),
@@ -532,6 +534,7 @@ public class TaskQueueControlTests
         using var sut = CreateSingleSlot();
 
         var item = new TaskQueueItem<string>(
+            stopControl: StopControl.Create(),
             id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "slow-job",
             timeout: TimeSpan.FromMilliseconds(100),
@@ -613,7 +616,7 @@ internal sealed class FakeTaskQueueItem<T> : ITaskQueueItem<T>
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(1);
     public DateTime EnqueuedAt { get; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; private set; }
-    public CancellationTokenSource CancellationTokenSource { get; } = new();
+    public StopControl StopControl { get; } = StopControl.Create();
 
     public bool IsStarted { get; private set; }
     public int StartCallCount { get; private set; }

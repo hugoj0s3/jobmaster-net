@@ -1,4 +1,5 @@
 using FluentAssertions;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 
 namespace JobMaster.UnitTests.Background;
@@ -13,7 +14,7 @@ public class TaskQueueItemTests
     public async Task AbortThenDispose_WhileTheJobStillRuns_DoesNotThrow_AndTheJobSeesTheCancellation()
     {
         var jobObservedCancel = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        var item = new TaskQueueItem<string>("job-1", "value", TimeSpan.FromMinutes(5), async token =>
+        var item = new TaskQueueItem<string>(StopControl.Create(), "job-1", "value", TimeSpan.FromMinutes(5), async token =>
         {
             try
             {

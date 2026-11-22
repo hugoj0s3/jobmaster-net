@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -23,13 +24,16 @@ internal sealed class JobRetryDecider
     private readonly IServiceProvider serviceProvider;
     private readonly IJobMasterLogger logger;
     private readonly TimeSpan interceptorTimeout;
+    private readonly JobMasterStopControlFactory stopControlFactory;
 
     public JobRetryDecider(
         JobMasterClusterConnectionConfig clusterConnConfig,
         IServiceProvider serviceProvider,
         IJobMasterLogger logger,
+        JobMasterStopControlFactory stopControlFactory,
         TimeSpan? interceptorTimeout = null)
     {
+        this.stopControlFactory = stopControlFactory;
         this.clusterConnConfig = clusterConnConfig;
         this.serviceProvider = serviceProvider;
         this.logger = logger;
@@ -37,7 +41,7 @@ internal sealed class JobRetryDecider
     }
 
     /// <summary><paramref name="job"/> still has this failure uncounted (<c>NumberOfFailures</c> as before the attempt).</summary>
-    public async Task<JobRetryOutcome> DecideAsync(JobRawModel job, Exception exception)
+    public async Task<JobRetryOutcome> DecideAsync(JobRawModel job, Exception exception, StopControl taskItemStopControl)
     {
         var settings = clusterConnConfig.RetrySettings;
         var numberOfFailures = job.NumberOfFailures + 1;
@@ -47,7 +51,7 @@ internal sealed class JobRetryDecider
             return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryResolution.RetryDelays);
         }
 
-        var decision = await RunInterceptorAsync(settings, job, numberOfFailures, exception);
+        var decision = await RunInterceptorAsync(settings, job, numberOfFailures, exception, taskItemStopControl);
         if (decision == null)
         {
             return JobRetryOutcome.Retry(settings.DelayFor(numberOfFailures), JobRetryResolution.InterceptorFailed);
@@ -67,7 +71,7 @@ internal sealed class JobRetryDecider
     }
 
     // Null when the interceptor threw or timed out (logged here).
-    private async Task<JobRetryDecision?> RunInterceptorAsync(JobMasterRetrySettings settings, JobRawModel job, int numberOfFailures, Exception exception)
+    private async Task<JobRetryDecision?> RunInterceptorAsync(JobMasterRetrySettings settings, JobRawModel job, int numberOfFailures, Exception exception, StopControl taskItemStopControl)
     {
         try
         {
@@ -77,7 +81,15 @@ internal sealed class JobRetryDecider
                 return settings.Interceptor(context);
             }
 
-            return await RunInterceptorTypeAsync(settings.InterceptorType!, context);
+            return await RunInterceptorTypeAsync(settings.InterceptorType!, context, taskItemStopControl);
+        }
+        catch (Exception) when (taskItemStopControl.IsAborted())
+        {
+            // Cut short by the worker aborting, not the interceptor's fault: no cluster error.
+            logger.Warn(
+                $"Retry interceptor {settings.InterceptorDescription} was cut short: the worker is aborting. Retrying with RetryDelays.",
+                JobMasterLogCategory.JobExecution, job.Id);
+            return null;
         }
         catch (Exception e)
         {
@@ -93,10 +105,10 @@ internal sealed class JobRetryDecider
         }
     }
 
-    private async Task<JobRetryDecision> RunInterceptorTypeAsync(Type interceptorType, JobRetryContext context)
+    private async Task<JobRetryDecision> RunInterceptorTypeAsync(Type interceptorType, JobRetryContext context, StopControl taskItemStopControl)
     {
-        // The limit covers resolving the interceptor too (a constructor doing work counts).
-        using var cts = new CancellationTokenSource(interceptorTimeout);
+        // The limit covers resolving the interceptor too (a constructor doing work counts); an abort ends it sooner.
+        using var cts = stopControlFactory.ForRetryInterceptor(taskItemStopControl, interceptorTimeout);
         await using var scope = serviceProvider.CreateAsyncScope();
         var interceptor = (IJobMasterRetryInterceptor)scope.ServiceProvider.GetRequiredService(interceptorType);
 

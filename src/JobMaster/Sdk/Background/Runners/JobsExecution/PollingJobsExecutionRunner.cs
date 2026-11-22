@@ -68,7 +68,7 @@ internal class PollingJobsExecutionRunner : BucketAwareRunner, IJobsExecutionRun
 
         if (jobExecutionEngine is null)
         {
-            jobExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(Priority, BucketId!);
+            jobExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(StopControl, Priority, BucketId!);
         }
         
         await jobExecutionEngine.PulseAsync();

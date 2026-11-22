@@ -1,14 +1,15 @@
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.Sdk.Background.Runners;
 
 /// <summary>
-/// Monitors distributed lock signals to coordinate immediate and graceful worker shutdown.
-/// Detects an immediate-stop lock and calls <c>StopImmediatelyAsync</c>, or a graceful-stop
-/// lock and calls <c>RequestStop</c>. Once a graceful stop has been requested and the grace
-/// period has elapsed, forces an immediate stop. Runs every <see cref="SucceedInterval"/>.
+/// Monitors distributed lock signals to coordinate a worker's two stops (terms in
+/// <see cref="JobMasterStopControlFactory"/>). Detects an immediate-stop lock and calls <c>StopImmediatelyAsync</c>,
+/// or a graceful-stop lock and calls <c>RequestGracefulStop</c>. Once a graceful stop's period has elapsed, forces an
+/// immediate stop. Runs every <see cref="SucceedInterval"/>.
 /// </summary>
 internal class WorkerStopCoordinatorRunner : JobMasterRunner
 {
@@ -32,9 +33,9 @@ internal class WorkerStopCoordinatorRunner : JobMasterRunner
             return OnTickResult.Success(TimeSpan.Zero); // Stop immediately
         }
 
-        if (masterDistributedLockerService.IsLocked(lockKeys.WorkerGracefulStopLock(BackgroundAgentWorker.AgentWorkerId)) && !BackgroundAgentWorker.StopRequested)
+        if (masterDistributedLockerService.IsLocked(lockKeys.WorkerGracefulStopLock(BackgroundAgentWorker.AgentWorkerId)) && !BackgroundAgentWorker.GracefulStopRequested)
         {
-            BackgroundAgentWorker.RequestStop();
+            BackgroundAgentWorker.RequestGracefulStop();
             return OnTickResult.Success(TimeSpan.Zero);
         }
         
@@ -44,13 +45,13 @@ internal class WorkerStopCoordinatorRunner : JobMasterRunner
         }
         
         // Only run if stop has been requested
-        if (!BackgroundAgentWorker.StopRequested)
+        if (!BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Success(this);
         }
         
         // Check if enough time has passed since stop was requested
-        var stopDeadline = BackgroundAgentWorker.StopRequestedAt!.Value.Add(BackgroundAgentWorker.StopGracePeriod!.Value);
+        var stopDeadline = BackgroundAgentWorker.GracefulStopRequestedAt!.Value.Add(BackgroundAgentWorker.GracefulStopPeriod!.Value);
         if (DateTime.UtcNow < stopDeadline)
         {
             return OnTickResult.Success(TimeSpan.FromSeconds(30));

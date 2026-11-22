@@ -67,9 +67,10 @@ internal interface ITaskQueueControl<T>
     bool Enqueue(ITaskQueueItem<T> queueItem);
 
     /// <summary>
-    /// Initiates a graceful shutdown: drains the waiting queue (returning the values of
-    /// all drained items), then waits up to 5 seconds for any currently running tasks to
-    /// finish before returning. All subsequent operations return empty/false results.
+    /// Stops the queue: drains the waiting queue (returning the values of all drained items, and
+    /// disposing the items), then waits up to <see cref="JobMasterConstants.ImmediateStopTimeout"/> for any
+    /// currently running tasks to finish, aborting the ones still running after it. All subsequent
+    /// operations return empty/false results.
     /// </summary>
     /// <returns>
     /// The values of every item that was in the waiting queue at the time of shutdown.

@@ -19,7 +19,7 @@ public class ApiLogItem
     /// <summary>
     /// Optional reference identifier linking the entry to a specific resource. Job, recurring schedule and
     /// execution references are base64url-encoded GUIDs, the same ids the rest of the API returns; filter by
-    /// them with <see cref="ApiLogItemQueryCriteria.ReferenceGuid"/>. Other references (e.g. bucket or worker
+    /// them with <see cref="ApiLogItemQueryCriteria.ReferenceIds"/>. Other references (e.g. bucket or worker
     /// ids) are returned as-is.
     /// </summary>
     public string? ReferenceId { get; set; }

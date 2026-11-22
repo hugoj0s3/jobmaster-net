@@ -66,8 +66,34 @@ internal static class JobMasterConstants
 
     /// <summary>Max buckets dispatched to concurrently within a single agent connection.</summary>
     public const int MaxParallelBucketDispatchPerAgentConnection = 5;
+    /// <summary>
+    /// Graceful stop (requested, e.g. by a signal): the worker takes no new jobs and runs the ones it has for this
+    /// long, then stops immediately.
+    /// </summary>
     public static readonly TimeSpan DefaultGracefulStopPeriod = TimeSpan.FromMinutes(15);
-    
+
+    /// <summary>The shortest graceful stop period a request may ask for.</summary>
+    public static readonly TimeSpan MinGracefulStopPeriod = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Immediate stop (SIGTERM, process exit, end of a graceful stop): how long a running job gets before it is
+    /// aborted and goes back to master. Sized for Docker's default 10 s before SIGKILL, leaving room for the cleanup.
+    /// </summary>
+    public static readonly TimeSpan ImmediateGracefulStopPeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Immediate stop: the time after <see cref="ImmediateGracefulStopPeriod"/> for the cleanup (interrupted jobs
+    /// written back to master, the flush of buffered jobs).
+    /// </summary>
+    public static readonly TimeSpan ImmediateStopCleanupPeriod = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Immediate stop, the whole budget (<see cref="ImmediateGracefulStopPeriod"/> +
+    /// <see cref="ImmediateStopCleanupPeriod"/>): how long the runtime waits for each worker, and a task queue for its
+    /// running jobs. Leaves room in Docker's default 10 s before SIGKILL for the loggers' final flush.
+    /// </summary>
+    public static readonly TimeSpan ImmediateStopTimeout = ImmediateGracefulStopPeriod + ImmediateStopCleanupPeriod;
+
     /// <summary>
     /// The default process deadline duration for jobs.
     /// Jobs must be processed within this time from their scheduled time or current time (whichever is later).

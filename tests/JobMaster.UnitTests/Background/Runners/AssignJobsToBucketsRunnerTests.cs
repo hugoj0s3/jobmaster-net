@@ -1,3 +1,4 @@
+using JobMaster.Sdk.Background.Cancellation;
 using System.Reflection;
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
@@ -39,7 +40,7 @@ public class AssignJobsToBucketsRunnerTests
     public async Task OnTickAsync_WhenStopRequested_ShouldReturnSkipped()
     {
         var f = RunnerFixture.Create();
-        f.Worker.SetupGet(x => x.StopRequested).Returns(true);
+        f.Worker.SetupGet(x => x.GracefulStopRequested).Returns(true);
         f.ClusterConfig.Config = ActiveClusterConfig();
 
         var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
@@ -132,7 +133,7 @@ public class AssignJobsToBucketsRunnerTests
         var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
         engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
         engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
-        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<StopControl>(), It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
 
         var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
         var job = OnMasterJob();
@@ -188,7 +189,7 @@ public class AssignJobsToBucketsRunnerTests
         var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
         engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
         engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
-        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<StopControl>(), It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
 
         var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
         var job = OnMasterJob();
@@ -233,7 +234,7 @@ public class AssignJobsToBucketsRunnerTests
         var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
         engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
         engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
-        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<StopControl>(), It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
 
         var runner = new AssignJobsToBucketsRunner(f.Worker.Object);
         var job = OnMasterJob();
@@ -273,7 +274,7 @@ public class AssignJobsToBucketsRunnerTests
         var engine = new Mock<IJobsExecutionEngine>(MockBehavior.Loose);
         engine.Setup(x => x.PulseAsync()).Returns(Task.CompletedTask);
         engine.Setup(x => x.CountOnBoardingAvailability()).Returns(0);
-        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
+        f.Worker.Setup(x => x.GetOrCreateEngine(It.IsAny<StopControl>(), It.IsAny<JobMasterPriority>(), It.IsAny<string>())).Returns(engine.Object);
 
         var job = OnMasterJob();
         f.JobsService.Jobs.Add(job);

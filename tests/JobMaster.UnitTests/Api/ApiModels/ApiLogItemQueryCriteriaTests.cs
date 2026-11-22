@@ -1,78 +1,25 @@
 using FluentAssertions;
 using JobMaster.Api.ApiModels;
-using JobMaster.Sdk.Utils;
-using Microsoft.AspNetCore.Http;
 
 namespace JobMaster.UnitTests.Api.ApiModels;
 
 public class ApiLogItemQueryCriteriaTests
 {
     [Fact]
-    public void ToDomainCriteria_WithValidStandardGuid_SetsReferenceIdAsNFormat()
+    public void ToDomainCriteria_PassesReferenceIdsAsGiven_SkippingEmptyOnes()
     {
-        var guid = Guid.NewGuid();
-        var criteria = new ApiLogItemQueryCriteria { ReferenceGuid = guid.ToString("D") };
+        var criteria = new ApiLogItemQueryCriteria { ReferenceIds = new[] { "bucket-1:abc", "", "zWm0Uu1oV0K7c3dq8aVJpA" } };
 
         var domain = criteria.ToDomainCriteria();
 
-        domain.ReferenceId.Should().Be(guid.ToString("N"));
+        // Matching every stored form is the logger's job (JobMasterLogger.ToStoredReferenceIds).
+        domain.ReferenceIds.Should().Equal("bucket-1:abc", "zWm0Uu1oV0K7c3dq8aVJpA");
     }
 
     [Fact]
-    public void ToDomainCriteria_WithValidBase64UrlGuid_SetsReferenceIdAsNFormat()
+    public void ToDomainCriteria_WithoutReferenceIds_HasNone()
     {
-        var guid = Guid.NewGuid();
-        var criteria = new ApiLogItemQueryCriteria { ReferenceGuid = guid.ToBase64() };
-
-        var domain = criteria.ToDomainCriteria();
-
-        domain.ReferenceId.Should().Be(guid.ToString("N"));
-    }
-
-    [Fact]
-    public void ToDomainCriteria_WithInvalidReferenceGuid_ThrowsBadHttpRequestException()
-    {
-        var criteria = new ApiLogItemQueryCriteria { ReferenceGuid = "not-a-guid" };
-
-        var act = () => criteria.ToDomainCriteria();
-
-        act.Should().Throw<BadHttpRequestException>()
-            .WithMessage("*not-a-guid*");
-    }
-
-    [Fact]
-    public void ToDomainCriteria_WhenReferenceGuidAndReferenceIdBothSet_GuidTakesPrecedence()
-    {
-        var guid = Guid.NewGuid();
-        var criteria = new ApiLogItemQueryCriteria
-        {
-            ReferenceId = "original-ref",
-            ReferenceGuid = guid.ToString("D")
-        };
-
-        var domain = criteria.ToDomainCriteria();
-
-        domain.ReferenceId.Should().Be(guid.ToString("N"));
-    }
-
-    [Fact]
-    public void ToDomainCriteria_WithOnlyReferenceId_UsesItAsIs()
-    {
-        var criteria = new ApiLogItemQueryCriteria { ReferenceId = "my-ref-id" };
-
-        var domain = criteria.ToDomainCriteria();
-
-        domain.ReferenceId.Should().Be("my-ref-id");
-    }
-
-    [Fact]
-    public void ToDomainCriteria_WithNullReferenceGuid_DoesNotOverwriteReferenceId()
-    {
-        var criteria = new ApiLogItemQueryCriteria { ReferenceId = "my-ref-id", ReferenceGuid = null };
-
-        var domain = criteria.ToDomainCriteria();
-
-        domain.ReferenceId.Should().Be("my-ref-id");
+        new ApiLogItemQueryCriteria().ToDomainCriteria().ReferenceIds.Should().BeEmpty();
     }
 
     [Fact]

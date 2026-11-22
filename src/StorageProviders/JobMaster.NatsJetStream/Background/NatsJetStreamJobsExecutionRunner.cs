@@ -54,7 +54,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         var utcNow = DateTime.UtcNow;
         if (jobsExecutionEngine is null)
         {
-            jobsExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(this.Priority, this.BucketId!);
+            jobsExecutionEngine = this.BackgroundAgentWorker.GetOrCreateEngine(this.StopControl, this.Priority, this.BucketId!);
         }
         
         var onBoardingResult = await jobsExecutionEngine.TryOnBoardingJobAsync(payload);
@@ -149,7 +149,7 @@ internal class NatsJetStreamJobsExecutionRunner : NatsJetStreamRunnerBase<JobRaw
         // 1. Standard Backbone Shutdown (stops subscribers and waits for loops)
         await base.OnStopAsync();
 
-        this.logger.Info($"{GetRunnerDescription()}: Starting graceful flush of buffered jobs for {BucketId}.", JobMasterLogCategory.Bucket, BucketId);
+        this.logger.Info($"{GetRunnerDescription()}: Starting flush of buffered jobs for {BucketId}.", JobMasterLogCategory.Bucket, BucketId);
 
         if (jobsExecutionEngine is not null)
         {

@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Background.Cancellation;
+
 namespace JobMaster.Sdk.Abstractions.Background;
 
 /// <summary>
@@ -48,7 +50,7 @@ internal interface ITaskQueueItem<T> : IDisposable
     /// <summary>
     /// Token source used to request cooperative cancellation of the running job.
     /// </summary>
-    CancellationTokenSource CancellationTokenSource { get; }
+    StopControl StopControl { get; }
 
     /// <summary>
     /// Returns <see langword="true"/> if the item has been running longer than

@@ -121,7 +121,7 @@ public class JobMasterLoggerTests
             Level = JobMasterLogLevel.Error,
             Keyword = "hello",
             Category = JobMasterLogCategory.Job,
-            ReferenceId = "sid"
+            ReferenceIds = new List<string> { "sid" }
         });
 
         captured.Should().NotBeNull();
@@ -130,7 +130,7 @@ public class JobMasterLoggerTests
         captured.Level.Should().Be(JobMasterLogLevel.Error);
         captured.Keyword.Should().Be("hello");
         captured.Category.Should().Be(JobMasterLogCategory.Job);
-        captured.ReferenceId.Should().Be("sid");
+        captured.ReferenceIds.Should().Equal("sid");
 
         result.Should().HaveCount(1);
         result[0].ReferenceId.Should().Be("sid");
@@ -142,6 +142,28 @@ public class JobMasterLoggerTests
         result[0].SourceLine.Should().Be(93);
 
         repo.Verify(x => x.QueryAsync(It.IsAny<LogItemQueryCriteria>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("D")]
+    [InlineData("N")]
+    [InlineData("base64")]
+    public void ToStoredReferenceIds_GuidInAnyFormat_IncludesTheStoredForm(string format)
+    {
+        var guid = Guid.NewGuid();
+        var given = format == "base64" ? guid.ToBase64() : guid.ToString(format);
+
+        var stored = JobMasterLogger.ToStoredReferenceIds(new List<string> { given });
+
+        stored.Should().Contain(guid.ToString("N")).And.Contain(given).And.OnlyHaveUniqueItems();
+    }
+
+    [Theory]
+    [InlineData("bucket-a:01ab2cd")]                // not a Guid
+    [InlineData("billing-cluster-prod-1")]          // a cluster id that reads as base64: must still match as written
+    public void ToStoredReferenceIds_KeepsTheValueAsWritten(string given)
+    {
+        JobMasterLogger.ToStoredReferenceIds(new List<string> { given }).Should().Contain(given);
     }
 
     private static string NewClusterId() => $"c{JobMasterRandomUtil.NewGuid4():N}";

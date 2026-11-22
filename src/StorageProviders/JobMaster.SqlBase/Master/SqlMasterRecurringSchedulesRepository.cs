@@ -30,6 +30,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
     protected JobMasterConfigDictionary additionalConnConfig = null!;
     protected GenericRecordSqlUtil genericUtil = null!;
     protected readonly IKnownExceptionIdentifier knownExceptionIdentifier;
+    private readonly RetryDeadlockPolicy perRowDeadlockRetry;
 
     protected SqlMasterRecurringSchedulesRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
@@ -38,6 +39,7 @@ internal abstract class SqlMasterRecurringSchedulesRepository : JobMasterCluster
     {
         this.connManager = connManager;
         this.knownExceptionIdentifier = knownExceptionIdentifier;
+        perRowDeadlockRetry = new RetryDeadlockPolicy(knownExceptionIdentifier, TimeSpan.FromMilliseconds(50), 3);
         sql = SqlGeneratorFactory.Get(this.MasterRepoTypeId);
         connString = clusterConnConfig.ConnectionString;
         additionalConnConfig = clusterConnConfig.AdditionalConnConfig;
@@ -553,7 +555,10 @@ FROM schedules_page s
         {
             try
             {
-                insertedIds.AddRange(await InsertIfNotExistsInOneTransactionAsync(new List<RecurringScheduleRawModel> { schedule }));
+                // A single row can still deadlock with another writer of it (MySQL's locks on the unique index and the
+                // metadata tables): run it again, it reads again and finds the row saved or inserts it.
+                insertedIds.AddRange(await perRowDeadlockRetry.ExecAsync(() =>
+                    InsertIfNotExistsInOneTransactionAsync(new List<RecurringScheduleRawModel> { schedule })));
             }
             catch (Exception ex) when (knownExceptionIdentifier.Identify(MasterRepoTypeId, ex) == JobMasterKnownExceptionId.DuplicateKey)
             {

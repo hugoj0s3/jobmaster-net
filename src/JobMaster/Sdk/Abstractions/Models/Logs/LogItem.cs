@@ -26,7 +26,8 @@ internal class LogItemQueryCriteria
 {
     public JobMasterLogLevel? Level { get; set; }
     public JobMasterLogCategory? Category { get; set; }
-    public string? ReferenceId { get; set; }
+    /// <summary>Any of these references; empty matches every log.</summary>
+    public IList<string> ReferenceIds { get; set; } = new List<string>();
 
     public DateTime? FromTimestamp { get; set; }
     public DateTime? ToTimestamp { get; set; }
