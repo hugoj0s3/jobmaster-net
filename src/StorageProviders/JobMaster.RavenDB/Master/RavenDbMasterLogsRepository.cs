@@ -161,10 +161,10 @@ internal sealed class RavenDbMasterLogsRepository : JobMasterClusterAwareReposit
             parameters["category"] = criteria.Category.Value;
         }
 
-        if (!string.IsNullOrEmpty(criteria.ReferenceId))
+        if (criteria.ReferenceIds.Count > 0)
         {
-            where.Add("e.ReferenceId = $referenceId");
-            parameters["referenceId"] = criteria.ReferenceId;
+            where.Add("e.ReferenceId in ($referenceIds)");
+            parameters["referenceIds"] = criteria.ReferenceIds.ToArray();
         }
 
         if (criteria.FromTimestamp.HasValue)

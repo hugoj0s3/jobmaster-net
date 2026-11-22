@@ -679,8 +679,7 @@ export interface paths {
                 query?: {
                     Level?: components["schemas"]["ApiJobMasterLogLevel"];
                     Category?: components["schemas"]["ApiJobMasterLogCategory"];
-                    ReferenceId?: string;
-                    ReferenceGuid?: string;
+                    ReferenceIds?: string[];
                     FromTimestamp?: string;
                     ToTimestamp?: string;
                     Keyword?: string;
@@ -764,8 +763,7 @@ export interface paths {
                 query?: {
                     Level?: components["schemas"]["ApiJobMasterLogLevel"];
                     Category?: components["schemas"]["ApiJobMasterLogCategory"];
-                    ReferenceId?: string;
-                    ReferenceGuid?: string;
+                    ReferenceIds?: string[];
                     FromTimestamp?: string;
                     ToTimestamp?: string;
                     Keyword?: string;

@@ -222,7 +222,7 @@ async function openLogDetail(log: LogEntry) {
 				const logsResp = await jm.GET("/{clusterId}/logs", {
 					params: {
 						path: { clusterId: cid },
-						query: { ReferenceGuid: jid, Category: LogCategory.JobExecution, CountLimit: logsPageSize }
+						query: { ReferenceIds: [jid], Category: LogCategory.JobExecution, CountLimit: logsPageSize }
 					}
 				});
 				recentLogs = logsResp.error ? [] : (logsResp.data ?? []) as LogEntry[];

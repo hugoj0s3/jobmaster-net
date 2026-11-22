@@ -5,7 +5,32 @@
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
 ### JobMaster 0.0.12-alpha
-> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1011/1011 unit tests pass on `net8.0` and `net10.0` (970/970 on the `netstandard2.0` build).
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1012/1012 unit tests pass on `net8.0` and `net10.0` (975/975 on the `netstandard2.0` build).
+
+#### Logs: filter by `ReferenceIds`, a log per successful run, the overlap message (Hugo, 2026-11-22)
+- **`ReferenceIds` replaces `ReferenceId` + `ReferenceGuid`** (breaking for the API input). Callers had to know Guid
+  references are stored as `"N"` and pick `ReferenceGuid`; everything else exact via `ReferenceId`.
+  - `ApiLogItemQueryCriteria.ReferenceIds` (`string[]`) passes the ids as given (empty ones dropped).
+    `LogItemQueryCriteria.ReferenceIds` (`IList<string>`, empty = no filter).
+  - `JobMasterLogger.QueryAsync` / `CountAsync` expand them once (`ToStoredReferenceIds`): each id as written plus
+    every Guid form of it (`GuidBase64Util.ToGuidsForms`: `"D"`, `"N"`, base64), ordinal set. Matching both ways keeps
+    a cluster id that happens to read as a Guid (22 base64url chars, 32 hex) matching as written.
+    `GuidBase64Util.TryParseFlexible` returns `Guid?` without throwing (`Guid.TryParse`, then a 22-char base64url check
+    before `FromBase64`), so non-Guid references cost nothing.
+  - SQL: `sql.InClauseFor("reference_id", "@ReferenceIds")`; RavenDB: `e.ReferenceId in ($referenceIds)`.
+  - Dashboard job / recurring schedule pages send `ReferenceIds: [id]`; `schema.d.ts` updated by hand. Scenario client
+    sends `ReferenceIds`.
+  - Tests: logger expansion (Guid in any format includes `"N"`; non-Guid and Guid-looking cluster ids kept as
+    written), API pass-through, returned base64 id round trip; logs conformance: several ids match any of them (all 4
+    providers). Checked in the sample app: job page `?ReferenceIds=<base64>` → 200 with its logs; the API matches a
+    job reference given as base64, `"D"`, `"N"`, upper-case `"D"`.
+- **A log per successful run:** the Debug `ExecuteJobAsync completed successfully` (never stored: Debug isn't written to
+  master) is now Info, JobExecution category, reference = job id: `Job <definition id>: Succeeded after <n> ms.`
+  (`JobExecutionMessages.Succeeded`, the handler's own time like a failure's). Definition id and duration only, never
+  the job's message data or metadata. Shows on the job's dashboard page (which reads JobExecution logs).
+- **Overlap message:** `JobExecutionMessages.RecurringOverlap(id, expressionTypeId, expression)` →
+  `Not run: overlap with a run still in progress of recurring schedule <id> (<type> <expression>). Failed, not
+  retried.` The engine reads the schedule only on that path to get its expression (left out if it can't be read).
 
 #### SQL `BulkInsertIfNotExists`: the per-row fallback retries deadlocks (Hugo, 2026-11-22)
 - Found by the conformance matrix on GitHub (first run where the SQL providers ran to completion): MySQL

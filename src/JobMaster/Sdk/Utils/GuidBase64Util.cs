@@ -24,6 +24,56 @@ internal static class GuidBase64Util
         return FromBase64(value);
     }
 
+    /// <summary>
+    /// The GUID in <paramref name="value"/>, in either format <see cref="ParseFlexible"/> reads (the compact form as
+    /// <see cref="ToBase64"/> writes it, 22 characters), or null when it isn't one.
+    /// </summary>
+    public static Guid? TryParseFlexible(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (Guid.TryParse(value, out var guid))
+            return guid;
+
+        return IsBase64UrlGuid(value!) ? FromBase64(value!) : null;
+    }
+
+    public static IList<string> ToGuidsForms(string? value)
+    {
+        var result = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(value))
+            return result;
+
+        var guidId = TryParseFlexible(value);
+        if (guidId is null)
+        {
+            return result;
+        }
+        
+        result.Add(guidId.Value.ToString());
+        result.Add(guidId.Value.ToString("N"));
+        result.Add(guidId.Value.ToBase64());
+
+        return result;
+    }
+
+    // Exactly what ToBase64 writes: 22 base64url characters, which FromBase64 always decodes to 16 bytes.
+    private static bool IsBase64UrlGuid(string value)
+    {
+        if (value.Length != 22)
+            return false;
+
+        foreach (var c in value)
+        {
+            if (!(c is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' or '-' or '_'))
+                return false;
+        }
+
+        return true;
+    }
+
     private static Guid FromBase64(string base64)
     {
         if (string.IsNullOrWhiteSpace(base64))

@@ -8,44 +8,6 @@ docs / benchmarks / positioning.
 
 # Bugs / gaps
 
-## Agent pull deletes before save: a stop or kill loses the batch in flight (SQL, RavenDB)
-
-Found 2026-11-15 with `DrainModeTest` (PostgresDist / MySqlDist: master + agent = 4646 of 5000 right after phase 1's
-`docker stop`; 500 = 2 × `BucketBufferSize` pulled by one executor, 146 saved, 354 lost, no log). Existing since 0.0.11: confirmed 2026-11-15 on `v0.0.11-alpha.3`, 1 of 3 runs lost 105
-jobs (master 323 + agent 4572 = 4895 right after the stop, then stuck).
-`PullSavePendingJobsAsync` / `PullSavePendingRecurAsync` (and the processing pull) delete the rows they return, so a
-pulled batch lives only in the worker's memory until saved. Nothing reacts to process exit today (no runner stops, the
-save batch's `batchTimeoutCts` isn't linked to the runner token), so even a graceful stop loses it. A first fix
-(process-exit hook stopping the pull-and-save runners + put-back) worked 3/3 but was reverted 2026-11-15 to redo it as
-part of the runner cleanup (stop every worker via `StopImmediatelyAsync` / `OnStopAsync`). (The
-`ForEachAsyncLegacy` cancellation bug found then is fixed again, 2026-11-16, see ChangeLog.internal.)
-SIGKILL, OOM or a crash would still lose it even after that. Fix (Hugo: nice change, needs a bit of work): lease instead of delete -- mark
-rows leased until a time, return them, delete only after the save; expired leases are pulled again (at-least-once, as
-NATS ack/nak already gives). Needs: lease columns / RavenDB metadata, a delete-by-ids after save in the runners, and
-the duplicate save of a re-pulled row handled as already saved (the master insert paths already treat a duplicate id
-as "exists").
-
-Design discussed 2026-11-15 (Hugo):
-- Status on the message table: `status` (`Pending` default, so existing rows stay valid / `InProgress`),
-  `leased_until`, `leased_by` (worker id); index on bucket + status + lease. Provisioning adds them; existing installs
-  need a migration script (`misc/migrations`). Lease > longest batch (save batch times out at 2.5 min) → ~5 min.
-- Repository contract (structural seam, Hugo): `Pull(bucket, n)`, `Ack(bucket, ids)` = saved / done,
-  `Release(bucket, messages)` = not saved / available again; same on the dispatcher service for jobs and recurring.
-  Introduce it first with today's semantics (Ack = no-op, Release = re-insert, so `Release` takes id + payload and the
-  lease version ignores the payload), then switch the implementation: Pull = lock + `InProgress` + lease (same
-  SKIP LOCKED / OUTPUT / RETURNING shapes), Ack = `DELETE` by id, Release = status back to `Pending`. NATS: ack / nak.
-  Runners only use the contract, so the lease is a repository-only change and the re-insert code goes away
-  (`pendingTracker`, cancel-catch re-queue, `RequeueSavePendingAsync`, drain safe-guard re-enqueue).
-- Auto-release (Hugo): both (1) the pull also takes `InProgress` rows whose lease expired (correct even with no
-  coordinator; the drainer uses the same pull), and (2) dead-worker detection (`MarkBucketAsLostRunner`) releases the
-  leases of a dead `leased_by` right away (faster than the lease, keeps the status accurate for a dashboard count).
-- Execution pull deletes on pull too; a re-pulled job there means running it again, so it needs a guard (skip jobs
-  already final on master) before applying the lease to it.
-- RavenDB has no SKIP LOCKED: status as a document field + patch with optimistic concurrency; check its current pull
-  first.
-- Order (Hugo): first the runner refactor (stop on process exit via `StopAsync` / `OnStopAsync` for all runners in
-  parallel; Ack/Release contract with today's semantics; one shared base for the 4 pull-and-save runners), then this.
-
 ## `RecurringScheduleTest.HybridNatsRavenDb`: two `static-cronos` runs 73 s apart (once, under load)
 
 2026-11-15, first EC2 run (`m5.xlarge`, peak load 7.8 on 4 vCPU): `static-cronos` (`*/6 * * * *`) had 2 executions
@@ -75,14 +37,6 @@ Sandbox demo is unaffected (`UseApiUrl("/jm-api")` explicitly, never calls `From
 Fix direction (not implemented): require `ApiUrl` explicitly; drop the Host-based self-fetch branch in
 `SeedAsync`; `FromOpenApiJson(...)` keeps working only via an explicit absolute URL or file path.
 
-## No stop entry point: workers are never stopped on host shutdown
-
-There is no public `StopJobMasterRuntimeAsync()` and no `IHostedService` (the unused `JobMasterRuntime.Stop()` was
-removed 2026-11-17), so
-workers are never stopped when the host shuts down; the process just ends. Only the logger flushes on exit
-(`AppDomain.ProcessExit`, 2026-11-14). The graceful stop sequence itself is also unreliable, and the hard-stop path
-still behaves awkwardly. Design item: a real stop path (graceful worker stop, then flush).
-
 ## Missing handler fallout (`RecurringSchedulePlanner.ScheduleNextJobsAsync`)
 
 Current guard just logs (Critical) and skips when a handler is gone; add logic to automatically terminate the
@@ -94,7 +48,8 @@ Raised 2026-08-21 while running the complete test suite (Unit + Integration + Sc
 of the RavenDB provider's first release. Not a RavenDB issue -- 0 of the 390 failures were RavenDB tests
 (RavenDB's own conformance suite passed 142/142, reproduced on a clean re-run). Every failure was in the
 Postgres/MySql/SqlServer RepoConformance suite. Hit again 2026-11-14 running a filter that matched both SQL and
-RavenDB conformance classes; running them separately works.
+RavenDB conformance classes; running them separately works. Since 2026-11-22 the `Repo Conformance Tests` workflow runs
+one job (one process) per provider, so CI is green; the root cause below is still open.
 
 **Root cause found 2026-08-21, confirmed from an actual CI log, not just reproduced locally.** The
 triggering error is `Connection refused` trying to reach RavenDB's Testcontainers instance while resolving
@@ -254,13 +209,6 @@ something provisioned only on "the one database"; plan item 24 was this kind of 
 
 # Design follow-ups
 
-## Review the cancellation tokens across JobMaster
-
-Noted 2026-11-17 (Hugo). Check that cancellation is consistent everywhere: stopping a worker reaches every piece of work
-it started, each timeout cancels only what it's meant to, nothing that's created is left undisposed, and long-running
-calls actually receive the token. Areas: job execution, the background runners, saving pending jobs and schedules on
-master, and the retry interceptor.
-
 ## SQL agent message base: review the generic dequeue
 
 Raised 2026-11-16. In `SqlRawMessagesDispatcherRepositoryBase`, `LeaseMessagesAsync` / `CreateBucketIfNotExistsAsync`
@@ -274,9 +222,11 @@ tested; an implementation no provider uses is made `abstract` instead. So likely
 ## Graceful worker stop is not reachable
 
 Found 2026-11-15 (worker stop cleanup). `WorkerStopCoordinatorRunner` reacts to two lock keys
-(`WorkerGracefulStopLock` → `RequestStop()`, `WorkerImmediateStopLock` → `StopImmediatelyAsync()`), but nothing sets
-them as a signal, and nothing calls `RequestStop()` (the unused `JobMasterRuntime.Stop()`, its only caller, was removed
-2026-11-17). The record-side fields
+(`WorkerGracefulStopLock` → `RequestGracefulStop()`, `WorkerImmediateStopLock` → `StopImmediatelyAsync()`), but nothing
+sets them as a signal, and nothing else calls `RequestGracefulStop()` (renamed from `RequestStop()` in 0.0.12; it now
+takes an optional period, default 15 min, at least 1 min). Planned for the next version's signal service (Hugo: a
+friendly stop that drains for minutes, buckets Completing; must never be done as `StopControl.Stop()`, which would
+abort running jobs after 5 s). The record-side fields
 (`StopRequestedAt`, `StopGracePeriod`, `AgentWorkerStatus.Stopping`) were removed as never written; the in-memory
 deadline on the worker stays (Hugo: may be good to keep). If graceful stop is finished: a public way to request it,
 and exclude a stopping worker from `AssignedLostBucketsRunner`'s candidates (today a just-stopped worker's heartbeat is
@@ -453,6 +403,31 @@ to reword incidentally and breaks these tests for no functional reason. Worth a 
 under test.
 
 ---
+
+## Startup tests: a `JobMaster.StartupTests` project (was plan item 19)
+
+Whole-`StartAsync` tests (validation before anything starts, provisioning order, one aggregated error list) in their
+own project, since `StartAsync` touches process-wide statics; the helper-level tests were dropped (Hugo). Not needed for
+0.0.12.
+
+## Recurrence providers: name the package in "Unknown recurrence type" (was plan item 21)
+
+A stored schedule keeps only its expression type id; a process that runs it without calling `AddJobMasterCronos()` /
+`AddJobMasterNCrontab()` fails with `Unknown recurrence type: Cronos` (loud, unlike the repo-type gap item 21 fixed).
+Decided: keep the explicit call; only make the message say what to do, e.g. `Install JobMaster.Cronos and call
+AddJobMasterCronos()`. Left as is for 0.0.12 (Hugo).
+
+## Re-check the older reminders against the code (rest of plan item 9)
+
+Plan item 9 removed what 0.0.12 finished (agent pull losing its batch, no stop entry point, the cancellation review;
+the lambda adapter was already here). Still to do: re-check the older entries against the current code (e.g. the
+`AcquireAndFetchAsync` deadlock part, RavenDB timeouts) and drop or update the stale ones.
+
+## SQL auto-provision: no test for two clusters (was plan item 24's test)
+
+The fix is in 0.0.12 (`SqlJobMasterRuntimeSetup` filters the clusters to provision instead of `return`ing at the first
+opted-out one; ChangeLog "Fixed"), but nothing tests it: two clusters on the same SQL provider, the first with
+`DisableAutoProvisionSqlSchema()`, the second provisioned → the second's master and agent tables exist.
 
 # Ideas
 

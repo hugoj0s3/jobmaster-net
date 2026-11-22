@@ -888,7 +888,10 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                     {
                         logger.Warn($"Recurring schedule {jobRawModel.SourceId.Value.ToBase64()} has an overlapping job still executing.", JobMasterLogCategory.RecurringSchedule, jobRawModel.SourceId.Value);
 
-                        var overlapMessage = JobExecutionMessages.RecurringOverlap(jobRawModel.SourceId.Value);
+                        // Read only on this rare path, to show which schedule's expression overlapped.
+                        var overlappingSchedule = await masterRecurringSchedulesService.GetAsync(jobRawModel.SourceId.Value);
+                        var overlapMessage = JobExecutionMessages.RecurringOverlap(
+                            jobRawModel.SourceId.Value, overlappingSchedule?.ExpressionTypeId, overlappingSchedule?.Expression);
                         logger.Error(ForLog(jobRawModel, overlapMessage), JobMasterLogCategory.JobExecution, jobRawModel.Id);
 
                         execution = jobRawModel.ProcessingStarted();
@@ -958,7 +961,9 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 await this.UpdateSingleJobAsync(jobRawModel, execution);
 
                 stopwatch.Stop();
-                logger.Debug($"ExecuteJobAsync completed successfully in {stopwatch.ElapsedMilliseconds}ms", JobMasterLogCategory.Job, jobRawModel.Id);
+                // Definition id and duration only: never the job's message data or metadata.
+                logger.Info(ForLog(jobRawModel, JobExecutionMessages.Succeeded(handlerStopwatch.ElapsedMilliseconds)),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id);
             }
             catch (JobMasterVersionConflictException ce)
             {
@@ -985,22 +990,6 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                         .ExecWithRetryAsync(o => o.AddJobExecutionAsync(execution), millisecondsToDelay: 50);
                 }
             }
-            catch (Exception e) when (handlerSucceeded)
-            {
-                // The handler did its work; only saving that failed. Not the job's failure: no retry counted. If the
-                // save never reached master the job stays Processing, and the deadline runner runs it again.
-                stopwatch.Stop();
-                logger.Error(ForLog(jobRawModel, "Succeeded, but saving the result failed; it may run again."),
-                    JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: e);
-            }
-            catch (OperationCanceledException) when (taskItemStopControl.IsAborted() || handlerTimeout?.IsImmediateGracefulStopOver() == true)
-            {
-                // The worker is stopping, before or during the handler: interrupted, not the job's failure.
-                logger.Warn(ForLog(jobRawModel, "Interrupted: the worker is stopping. Back on master."),
-                    JobMasterLogCategory.JobExecution, jobRawModel.Id);
-                jobRawModel.MarkAsHeldOnMaster();
-                await this.UpdateSingleJobAsync(jobRawModel);
-            }
             catch (ObjectDisposedException) when (!handlerStarted)
             {
                 // The app's container is gone before the handler ran (the app is stopping): not the job's failure.
@@ -1009,7 +998,15 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 jobRawModel.MarkAsHeldOnMaster();
                 await this.UpdateSingleJobAsync(jobRawModel);
             }
-            catch (OperationCanceledException) when (handlerTimeout?.IsCancellationRequested == true)
+            catch (OperationCanceledException) when (!handlerSucceeded && (taskItemStopControl.IsAborted() || handlerTimeout?.IsImmediateGracefulStopOver() == true))
+            {
+                // The worker is stopping, before or during the handler: interrupted, not the job's failure.
+                logger.Warn(ForLog(jobRawModel, "Interrupted: the worker is stopping. Back on master."),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id);
+                jobRawModel.MarkAsHeldOnMaster();
+                await this.UpdateSingleJobAsync(jobRawModel);
+            }
+            catch (OperationCanceledException) when (!handlerSucceeded && handlerTimeout?.IsCancellationRequested == true)
             {
                 // A real timeout: the handler had exactly its Timeout.
                 handlerStopwatch.Stop();
@@ -1023,6 +1020,14 @@ internal sealed class JobsExecutionEngine : IJobsExecutionEngine
                 logger.Error(ForLog(jobRawModel, message), JobMasterLogCategory.JobExecution, jobRawModel.Id);
 
                 await this.UpdateSingleJobAsync(jobRawModel, execution);
+            }
+            catch (Exception e) when (handlerSucceeded)
+            {
+                // The handler did its work; only saving that failed. Not the job's failure: no retry counted. If the
+                // save never reached master the job stays Processing, and the deadline runner runs it again.
+                stopwatch.Stop();
+                logger.Error(ForLog(jobRawModel, "Succeeded, but saving the result failed; it may run again."),
+                    JobMasterLogCategory.JobExecution, jobRawModel.Id, exception: e);
             }
             catch (Exception e)
             {

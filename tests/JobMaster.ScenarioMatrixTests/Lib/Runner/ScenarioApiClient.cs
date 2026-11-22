@@ -162,9 +162,8 @@ public sealed class ScenarioApiClient(HttpClient httpClient, string basePath = "
     public async Task<List<ApiLogItem>> GetLogsAsync(string clusterId, Guid referenceId, int? category = null, int countLimit = int.MaxValue, string? bearerToken = null, CancellationToken ct = default)
     {
         var query = HttpUtility.ParseQueryString(string.Empty);
-        // ReferenceGuid (not ReferenceId) -- the API normalises it to the "N" (no-dashes) format logs
-        // are actually stored under (see JobMasterLoggerExtensions), so callers don't need to know that.
-        query["ReferenceGuid"] = referenceId.ToString();
+        // Any Guid format: the API matches it to the format logs are stored under.
+        query["ReferenceIds"] = referenceId.ToString();
         if (category.HasValue)
         {
             query["Category"] = category.Value.ToString();

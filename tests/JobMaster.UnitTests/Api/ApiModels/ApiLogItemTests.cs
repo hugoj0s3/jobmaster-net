@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JobMaster.Api.ApiModels;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Services.Master;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.UnitTests.Api.ApiModels;
@@ -37,13 +38,13 @@ public class ApiLogItemTests
     }
 
     [Fact]
-    public void FromDomain_ReturnedReferenceId_AsReferenceGuid_QueriesTheStoredValue()
+    public void FromDomain_ReturnedReferenceId_AsReferenceIds_QueriesTheStoredValue()
     {
         var stored = Guid.NewGuid().ToString("N");
         var item = ApiLogItem.FromDomain(new LogItem { ReferenceId = stored });
 
-        var domain = new ApiLogItemQueryCriteria { ReferenceGuid = item.ReferenceId }.ToDomainCriteria();
+        var domain = new ApiLogItemQueryCriteria { ReferenceIds = new[] { item.ReferenceId! } }.ToDomainCriteria();
 
-        domain.ReferenceId.Should().Be(stored);
+        JobMasterLogger.ToStoredReferenceIds(domain.ReferenceIds).Should().Contain(stored);
     }
 }

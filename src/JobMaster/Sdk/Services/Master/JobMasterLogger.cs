@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using JobMaster.Sdk.Abstractions.Config;
@@ -118,14 +119,29 @@ internal sealed class JobMasterLogger : JobMasterClusterAwareComponent, IJobMast
         }
     }
 
-    public Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria)
+    public async Task<List<LogItem>> QueryAsync(LogItemQueryCriteria criteria)
     {
-        return repo.QueryAsync(criteria);
+        criteria.ReferenceIds = ToStoredReferenceIds(criteria.ReferenceIds);
+        return await repo.QueryAsync(criteria);
     }
 
-    public Task<int> CountAsync(LogItemQueryCriteria criteria)
+    public async Task<int> CountAsync(LogItemQueryCriteria criteria)
     {
-        return repo.CountAsync(criteria);
+        criteria.ReferenceIds = ToStoredReferenceIds(criteria.ReferenceIds);
+        return await repo.CountAsync(criteria);
+    }
+
+    // GUID references are stored as 32 hex digits, others as written. A reference that reads as a GUID is matched both
+    // ways: a cluster id can happen to look like one (22 base64url characters, or 32 hex digits).
+    internal static IList<string> ToStoredReferenceIds(IList<string> referenceIds)
+    {
+        var result = new HashSet<string>(referenceIds.SelectMany(GuidBase64Util.ToGuidsForms), StringComparer.Ordinal);
+        foreach (var referenceId in referenceIds)
+        {
+            result.Add(referenceId);
+        }
+        
+        return result.ToList();
     }
 
     public Task<LogItem?> GetAsync(Guid id)
