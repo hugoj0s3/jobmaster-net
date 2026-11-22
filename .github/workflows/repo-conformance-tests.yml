@@ -59,7 +59,7 @@ jobs:
           set -o pipefail
           dotnet test tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-build --configuration Release \
             --filter "$FILTER" --logger "console;verbosity=normal" | tee test-output.log
-          grep -qE "Passed!|Failed!" test-output.log || { echo "No tests matched '$FILTER'."; exit 1; }
+          grep -q "Total tests:" test-output.log || { echo "No tests matched '$FILTER'."; exit 1; }
 
   all-passed:
     name: All Repo Conformance Tests Passed
