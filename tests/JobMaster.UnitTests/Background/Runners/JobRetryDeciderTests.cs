@@ -191,8 +191,18 @@ public class JobRetryDeciderTests
 
         public async Task<JobRetryDecision> DecideAsync(JobRetryContext context, CancellationToken cancellationToken)
         {
-            using var registration = cancellationToken.Register(() => TokenCancelled.TrySetResult(true));
-            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            // Signalled after the cancelled await, not from a token registration: cancellation runs callbacks newest
+            // first, so the Delay's own callback can resume this method and dispose a registration before it runs.
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                TokenCancelled.TrySetResult(true);
+                throw;
+            }
+
             return JobRetryDecision.RetryAfter(TimeSpan.FromMinutes(1));
         }
     }
