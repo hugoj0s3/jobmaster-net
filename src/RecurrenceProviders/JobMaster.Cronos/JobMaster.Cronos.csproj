@@ -9,7 +9,7 @@
 
         <!-- New package, versioned independently from the core JobMaster/other Provider packages:
              starts at its own 0.0.1-alpha rather than inheriting JobMaster's current release number. -->
-        <VersionPrefix>0.0.1</VersionPrefix>
+        <VersionPrefix>0.0.2</VersionPrefix>
         <VersionSuffix>alpha</VersionSuffix>
 
         <Authors>Hugo Silva</Authors>

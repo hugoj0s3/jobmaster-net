@@ -315,6 +315,20 @@
 
 ---
 
+## JobMaster.Dashboard 0.0.7-alpha
+### Breaking changes
+- **Requires `JobMaster.Api` 0.0.12-alpha or later.** The job and recurring schedule pages now load their logs with the API's new `ReferenceIds` filter, which replaced `ReferenceId` / `ReferenceGuid` in 0.0.12 (see JobMaster 0.0.12-alpha above). Against an older API, those pages show no logs.
+### Changed
+- **New JobMaster theme colors.** The built-in `JobMaster Light` and `JobMaster Dark` themes are now green (`oklch(0.77 0.20 142)`, `#5cd251`) instead of indigo, with the same primary, secondary, accent, info, success, warning and error colors in both; only the backgrounds and text differ. Success is a darker emerald, so "Succeeded" badges stay distinct from the brand color. Custom themes and the other built-in themes are unchanged.
+### Added
+- **.NET 10 build.** The package now targets `net10.0` and `net8.0`.
+
+## JobMaster.Cronos 0.0.2-alpha / JobMaster.NCrontab 0.0.2-alpha
+### Deprecated
+- **String methods renamed with a provider prefix**: `CronosRecurringAsync<T>(string)` / `CronosRecurring<T>(string)` / `CronosAdd<Th>(string)`, and the same with `NCrontab`. The old `RecurringAsync<T>(string)` / `Recurring<T>(string)` / `Add<Th>(string)` names are `[Obsolete]`: with both packages referenced they were ambiguous. See JobMaster 0.0.12-alpha above.
+### Added
+- **.NET 10 build.** The packages now target `net10.0`, `net8.0` and `netstandard2.0`, and depend on `JobMaster` 0.0.12-alpha.
+
 ## JobMaster 0.0.11-alpha.3
 
 ### Added
