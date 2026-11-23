@@ -143,7 +143,8 @@ public class JobRetryDeciderTests
 
         outcome.Delay.Should().Be(TimeSpan.FromMinutes(2));
         outcome.Resolution.Should().Be(JobRetryResolution.InterceptorFailed);
-        (await SlowInterceptor.TokenCancelled.Task.WaitAsync(TimeSpan.FromSeconds(5))).Should().BeTrue();
+        // The decider gives up only once that token is cancelled, so it's cancelled by the time DecideAsync returns.
+        SlowInterceptor.ReceivedToken.IsCancellationRequested.Should().BeTrue();
     }
 
     private static JobRetryDecider NewDecider(JobMasterRetrySettings settings, IServiceProvider? serviceProvider = null, TimeSpan? interceptorTimeout = null)
@@ -187,22 +188,12 @@ public class JobRetryDeciderTests
 
     private sealed class SlowInterceptor : IJobMasterRetryInterceptor
     {
-        public static readonly TaskCompletionSource<bool> TokenCancelled = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public static CancellationToken ReceivedToken;
 
         public async Task<JobRetryDecision> DecideAsync(JobRetryContext context, CancellationToken cancellationToken)
         {
-            // Signalled after the cancelled await, not from a token registration: cancellation runs callbacks newest
-            // first, so the Delay's own callback can resume this method and dispose a registration before it runs.
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                TokenCancelled.TrySetResult(true);
-                throw;
-            }
-
+            ReceivedToken = cancellationToken;
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
             return JobRetryDecision.RetryAfter(TimeSpan.FromMinutes(1));
         }
     }
