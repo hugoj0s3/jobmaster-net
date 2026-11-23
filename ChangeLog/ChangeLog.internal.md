@@ -9,7 +9,7 @@
 
 #### Standalone: RavenDB, worker lane + parallelism, `DisableAutoProvisionSqlSchema` (2026-11-22)
 Found while writing the Getting Started docs.
-- `JobMaster.RavenDB.ConfigExtensions.UseRavenDb(IClusterStandaloneConfigSelector, ...)`: the standalone overload was
+- `JobMaster.RavenDB.ConfigExtensions.UseRavenDB(IClusterStandaloneConfigSelector, ...)`: the standalone overload was
   missing; the runtime already worked (standalone reuses the cluster's connection and repo type as its agent
   connection), only `ConfigFromJson` with `"standalone": true` reached it. Same options as the master overload.
 - `IClusterStandaloneConfigSelector.AddWorker(workerName, workerLane, parallelismFactor, batchSize)` (breaking: the two
@@ -664,7 +664,7 @@ Found while rewriting the Archiving docs: the documented archive-cluster setup c
   `ProtectConnectionChanges` stay on the connection selectors only (Hugo). The agent-side provider methods took
   `IAgentConnectionConfigSelector` in 0.0.11 and are now generic over `IAgentConnectionProviderSelector`, returning the
   caller's selector type (`UsePostgresForAgent<T>`, `UseMySqlForAgent<T>`, `UseSqlServerForAgent<T>`,
-  `UseNatsJetStream<T>`, agent `UseRavenDb<T>`); `IConnectionOptionsBinder.SetOptions` takes
+  `UseNatsJetStream<T>`, agent `UseRavenDB<T>`); `IConnectionOptionsBinder.SetOptions` takes
   `IAgentConnectionProviderSelector` too. JSON: `AgentConnectionJsonConfig.Transport` / `Execution`
   (`AgentProviderJsonConfig`) with per-leg `ConnectionOptions`; mixing them with top-level
   `RepositoryType` / `ConnectionString` / `ConnectionOptions` throws.
@@ -683,7 +683,7 @@ Found while rewriting the Archiving docs: the documented archive-cluster setup c
   `RavenDbJobMasterRuntimeSetup`) and `MarkAsReady` locking. New internal `IHasAdditionalConnConfig`, implemented by
   `JobMasterClusterConnectionConfig` and `JobMasterAgentProviderConfig`, so RavenDB's option readers (`GetCertificate`,
   `GetCollectionPrefix`, timeouts) exist once instead of once per config type. The RavenDB cluster and agent
-  `UseRavenDb<T>` share one private `AppendConnectionOptions`.
+  `UseRavenDB<T>` share one private `AppendConnectionOptions`.
 - IoC: `ClusterConfigBuilder.Finish` registers the provider extensions for every leg
   (`AgentConnectionDefinition.GetProviderRepoTypes()`). `BucketRunnersFactory` uses `TransportConfig.RepositoryTypeId` for
   the save-pending / drain-save-pending runners and `ExecutionConfig.RepositoryTypeId` for the execution /
@@ -722,7 +722,7 @@ Found while rewriting the Archiving docs: the documented archive-cluster setup c
   nested, so a single connection's shared throttler is safe) (Hugo). Rare calls (bucket create/destroy, drain checks),
   so waiting is fine. Their unused `throttler` parameter was removed from `IAgentJobsDispatcherService`.
 - Tests: `HybridAgentConnectionTests` (36 tests, some theories: format / parse, repo type and fingerprint validation,
-  `AgentConnectionDefinition` validation and computed fields, fluent & JSON config incl. `UseRavenDb` on a single
+  `AgentConnectionDefinition` validation and computed fields, fluent & JSON config incl. `UseRavenDB` on a single
   connection and on a leg, NATS `TransientThreshold` on transport vs execution, Single / Hybrid dispatcher and resolver,
   double `Initialize`, `BucketRunnersFactory`, throttler batch sizes). 885/885 unit tests; RavenDB RepoConformance
   160 passed / 3 skipped.
@@ -994,6 +994,9 @@ Found while rewriting the Archiving docs: the documented archive-cluster setup c
 - RavenDB project / assembly / package / namespace renamed to `JobMaster.RavenDB` (matches the RavenDB client).
   Class names (`RavenDb*`) unchanged. `RavenDbConfigKeys.NamespaceUniqueKey` keeps `"JobMaster.RavenDb"` on purpose:
   it's the identity of the provider's config values in `JobMasterConfigDictionary`, not a display name.
+- The public `UseRavenDb` extension methods (cluster `UseRavenDb<T>`, standalone `UseRavenDb`, agent `UseRavenDb<T>`)
+  renamed to `UseRavenDB`, plain rename with no `[Obsolete]` forwarders (alpha). Internal `RavenDb*` class names and
+  test method names stay. Done 2026-11-23, before publishing 0.0.12-alpha.
 - Done with per-file `git mv` (156 renames): whole-folder renames were refused because the C# extension's language
   server held handles in `obj/`. Case-only renames need `git mv` on Windows (`core.ignorecase`), or Linux checkouts
   keep the old casing. The old `src/Providers/*/obj|bin` folders (gitignored) are left behind until nothing holds them.

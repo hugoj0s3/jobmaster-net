@@ -20,8 +20,6 @@ dotnet add package JobMaster
 dotnet add package JobMaster.MySql
 ```
 
-### Part 3: Getting Started (Configuration)
-
 ## 🚀 Getting Started
 
 To use MySQL as your storage backend, register it during the cluster configuration in your `Program.cs`.
@@ -40,14 +38,12 @@ builder.Services.AddJobMasterCluster(config =>
 ### Configure Agent (Transport)
 ```csharp
 config.AddAgentConnectionConfig("Sql-Transport")
-.UseMySqlForAgent("Your_Connection_String");
+      .UseMySqlForAgent("Your_Connection_String");
 
-    // Attach a worker to this transport
-    config.AddWorker()
-          .AgentConnName("Sql-Transport");
+// Attach a worker to this transport
+config.AddWorker()
+      .AgentConnName("Sql-Transport");
 ```
-
-### Part 4: Connection String Requirement
 
 ## ⚠️ Required: `UseAffectedRows=true`
 
@@ -59,10 +55,9 @@ You **must** include `UseAffectedRows=true` in your connection string:
 Server=localhost;Database=jobmaster;User=root;Password=secret;UseAffectedRows=true;
 ```
 
-### Part 5: Features
 ## 🛠 Features
-* **Atomic Locking:** Utilizes MySQL named locks to ensure job execution safety and prevent double-processing across multiple nodes.
-* **Auto-Schema Management:** Automatically handles the creation of necessary tables, indexes, and stored procedures on startup.
+* **Distributed Locking:** Coordinates the nodes of a cluster through a lock table in the database. Locks expire on their own, so a node that crashes can't hold one forever.
+* **Auto-Schema Management:** Automatically handles the creation of necessary tables and indexes on startup.
 * **High Throughput:** Optimized for low-latency job claiming and high-frequency status synchronization.
 
 ---

@@ -31,30 +31,29 @@ The Master database acts as the central coordination point for the cluster.
 builder.Services.AddJobMasterCluster(config =>
 {
     config.ClusterId("Production-Cluster")
-          .UseRavenDb("Urls=http://localhost:8080;Database=JobMaster");
+          .UseRavenDB("Urls=http://localhost:8080;Database=JobMaster");
 });
 ```
 
 ### Configure Agent (Transport)
 ```csharp
-config.AddAgentConnectionConfig("RavenDb-Transport")
-      .UseRavenDb("Urls=http://localhost:8080;Database=JobMaster");
+config.AddAgentConnectionConfig("RavenDB-Transport")
+      .UseRavenDB("Urls=http://localhost:8080;Database=JobMaster");
 
-    // Attach a worker to this transport
-    config.AddWorker()
-          .AgentConnName("RavenDb-Transport");
+// Attach a worker to this transport
+config.AddWorker()
+      .AgentConnName("RavenDB-Transport");
 ```
 
 ### Client Certificate Authentication
 For secured RavenDB clusters, pass an already-loaded client certificate:
 
 ```csharp
-config.UseRavenDb(
+config.UseRavenDB(
     "Urls=https://your-server:8080;Database=JobMaster",
     certificate: new X509Certificate2("client.pfx", "password"));
 ```
 
-### Part 4: Features
 ## 🛠 Features
 * **Compare-Exchange Locking:** Uses RavenDB's cluster-wide compare-exchange primitive for atomic distributed locking, with a periodic backstop that cleans up locks left behind by a crashed worker.
 * **Static Index Acceleration:** Deploys dedicated static indexes for the job-claiming hot path, avoiding the overhead of RavenDB's dynamic auto-indexing there.

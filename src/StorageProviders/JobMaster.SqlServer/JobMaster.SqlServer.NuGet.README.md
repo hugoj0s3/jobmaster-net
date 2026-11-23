@@ -20,8 +20,6 @@ dotnet add package JobMaster
 dotnet add package JobMaster.SqlServer
 ```
 
-### Part 3: Getting Started (Configuration)
-
 ## 🚀 Getting Started
 
 To use SQL Server as your storage backend, register it during the cluster configuration in your `Program.cs`.
@@ -40,14 +38,12 @@ builder.Services.AddJobMasterCluster(config =>
 ### Configure Agent (Transport)
 ```csharp
 config.AddAgentConnectionConfig("Sql-Transport")
-.UseSqlServerForAgent("Your_Connection_String");
+      .UseSqlServerForAgent("Your_Connection_String");
 
-    // Attach a worker to this transport
-    config.AddWorker()
-          .AgentConnName("Sql-Transport");
+// Attach a worker to this transport
+config.AddWorker()
+      .AgentConnName("Sql-Transport");
 ```
-
-### Part 4: Database Setup Recommendation
 
 ## ⚡ Enable READ_COMMITTED_SNAPSHOT (Recommended)
 
@@ -61,10 +57,9 @@ With RCSI enabled, `READ COMMITTED` queries use row-version snapshots instead of
 
 > **Note:** RCSI requires brief exclusive database access to apply. Run during a maintenance window on production databases.
 
-### Part 5: Features
 ## 🛠 Features
-* **Atomic Locking:** Utilizes SQL Server application locks to ensure job execution safety and prevent double-processing across multiple nodes.
-* **Auto-Schema Management:** Automatically handles the creation of necessary tables, indexes, and stored procedures on startup.
+* **Distributed Locking:** Coordinates the nodes of a cluster through a lock table in the database. Locks expire on their own, so a node that crashes can't hold one forever.
+* **Auto-Schema Management:** Automatically handles the creation of necessary tables and indexes on startup.
 * **High Throughput:** Optimized for low-latency job claiming and high-frequency status synchronization.
 
 ---

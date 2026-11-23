@@ -32,7 +32,7 @@ public static class ConfigExtensions
     /// next use.</param>
     /// <param name="pooledConnectionIdleTimeout">Closes a pooled connection that's been idle this long.
     /// Left unset, .NET's own <c>SocketsHttpHandler</c> default applies.</param>
-    public static T UseRavenDb<T>(
+    public static T UseRavenDB<T>(
         this T clusterConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
@@ -70,9 +70,9 @@ public static class ConfigExtensions
 
     /// <summary>
     /// Configures a standalone cluster to use RavenDB for both the master database and the agent,
-    /// using a single shared connection string. See the cluster-side <c>UseRavenDb</c> for parameter details.
+    /// using a single shared connection string. See the cluster-side <c>UseRavenDB</c> for parameter details.
     /// </summary>
-    public static IClusterStandaloneConfigSelector UseRavenDb(
+    public static IClusterStandaloneConfigSelector UseRavenDB(
         this IClusterStandaloneConfigSelector standaloneConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
@@ -109,10 +109,10 @@ public static class ConfigExtensions
 
     /// <summary>
     /// Configures an agent connection, or a hybrid transport/execution leg, to use RavenDB.
-    /// See the cluster-side <c>UseRavenDb</c> for parameter details -- there's no document-expiration
+    /// See the cluster-side <c>UseRavenDB</c> for parameter details -- there's no document-expiration
     /// option here since agent messages never use <c>@expires</c>.
     /// </summary>
-    public static T UseRavenDb<T>(
+    public static T UseRavenDB<T>(
         this T agentConfigSelector,
         string connectionString,
         X509Certificate2? certificate = null,
@@ -136,7 +136,7 @@ public static class ConfigExtensions
         return agentConfigSelector;
     }
 
-    // Options shared by the cluster and agent UseRavenDb; the two selectors have no common Append interface.
+    // Options shared by the cluster and agent UseRavenDB; the two selectors have no common Append interface.
     private static void AppendConnectionOptions(
         Action<string, object> append,
         X509Certificate2? certificate,

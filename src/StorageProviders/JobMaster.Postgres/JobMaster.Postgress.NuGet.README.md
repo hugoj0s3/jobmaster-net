@@ -20,8 +20,6 @@ dotnet add package JobMaster
 dotnet add package JobMaster.Postgres
 ```
 
-### Part 3: Getting Started (Configuration)
-
 ## 🚀 Getting Started
 
 To use PostgreSQL as your storage backend, register it during the cluster configuration in your `Program.cs`.
@@ -40,17 +38,16 @@ builder.Services.AddJobMasterCluster(config =>
 ### Configure Agent (Transport)
 ```csharp
 config.AddAgentConnectionConfig("Sql-Transport")
-.UsePostgresForAgent("Your_Connection_String");
+      .UsePostgresForAgent("Your_Connection_String");
 
-    // Attach a worker to this transport
-    config.AddWorker()
-          .AgentConnName("Sql-Transport");
+// Attach a worker to this transport
+config.AddWorker()
+      .AgentConnName("Sql-Transport");
 ```
 
-### Part 4: Features
 ## 🛠 Features
-* **Atomic Locking:** Utilizes PostgreSQL advisory locks to ensure job execution safety and prevent double-processing across multiple nodes.
-* **Auto-Schema Management:** Automatically handles the creation of necessary tables, indexes, and stored procedures on startup.
+* **Distributed Locking:** Coordinates the nodes of a cluster through a lock table in the database. Locks expire on their own, so a node that crashes can't hold one forever.
+* **Auto-Schema Management:** Automatically handles the creation of necessary tables and indexes on startup.
 * **High Throughput:** Optimized for low-latency job claiming and high-frequency status synchronization.
 
 ---

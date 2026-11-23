@@ -60,7 +60,7 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
     internal override IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; } = null!;
 
     // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
-    // only registers the master side of UseRavenDb, so RegisterForAgent never runs and there's no
+    // only registers the master side of UseRavenDB, so RegisterForAgent never runs and there's no
     // DI-resolved IAgentFingerprintResolver available. RavenDbAgentRawFingerprintResolverConformanceTests constructs the
     // resolver directly instead (same document store, no full agent-connection DI wiring needed).
     internal IRavenDbDocumentStoreManager DocumentStoreManager { get; private set; } = null!;
@@ -94,17 +94,17 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         var services = new ServiceCollection();
         services.AddJobMasterCluster(ClusterIdValue, cfg =>
         {
-            cfg.UseRavenDb(connectionString);
+            cfg.UseRavenDB(connectionString);
             cfg.AddAgentConnectionConfig(AgentConnectionName)
-                .UseRavenDb(agentConnectionString);
+                .UseRavenDB(agentConnectionString);
             cfg.Mode(ClusterMode.Active);
         });
         // Same master database, another cluster id: only used to prove queries are scoped to their own cluster.
         services.AddJobMasterCluster(OtherClusterIdValue, cfg =>
         {
-            cfg.UseRavenDb(connectionString);
+            cfg.UseRavenDB(connectionString);
             cfg.AddAgentConnectionConfig(AgentConnectionName)
-                .UseRavenDb(agentConnectionString);
+                .UseRavenDB(agentConnectionString);
             cfg.Mode(ClusterMode.Active);
         });
         serviceProvider = services.BuildServiceProvider();

@@ -130,7 +130,7 @@ public class RavenDbConnectionOptionsTests : IDisposable
         var clusterDefinition = new ClusterDefinition();
         var standalone = new ClusterStandaloneConfigBuilder(clusterDefinition);
 
-        standalone.UseRavenDb("Urls=http://localhost:8080;Database=Test", collectionPrefix: "Custom_");
+        standalone.UseRavenDB("Urls=http://localhost:8080;Database=Test", collectionPrefix: "Custom_");
 
         clusterDefinition.RepoType.Should().Be(RavenDbRepositoryConstants.RepositoryTypeId);
         clusterDefinition.ConnString.Should().Be("Urls=http://localhost:8080;Database=Test");

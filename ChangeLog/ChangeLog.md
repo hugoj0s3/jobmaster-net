@@ -15,6 +15,7 @@
 - **`JobMaster.RavenDb` is now `JobMaster.RavenDB`**, matching the RavenDB client's casing. The package, assembly and namespace are renamed:
   - Reference the `JobMaster.RavenDB` package (NuGet ids ignore case, so an existing `JobMaster.RavenDb` reference still resolves).
   - Change `using JobMaster.RavenDb;` to `using JobMaster.RavenDB;`.
+  - Change `UseRavenDb(...)` to `UseRavenDB(...)`, on the cluster, agent connections and standalone clusters.
   - If you load the provider by file name, the dll is now `JobMaster.RavenDB.dll` (file names are case-sensitive on Linux).
 
   The repository type stays `"RavenDB"`, and the provider's configuration keys are unchanged.
@@ -187,7 +188,7 @@
   cluster.Archive(targetActiveClusterId: "billing-v2");
   ```
 
-- **RavenDB on a standalone cluster: `UseStandaloneCluster().UseRavenDb(...)`**, like `UsePostgres` / `UseMySql` / `UseSqlServer`. One RavenDB database holds the cluster and its jobs, with the same options as the cluster's `UseRavenDb`. Before, a standalone RavenDB cluster could only be configured with `ConfigFromJson`.
+- **RavenDB on a standalone cluster: `UseStandaloneCluster().UseRavenDB(...)`**, like `UsePostgres` / `UseMySql` / `UseSqlServer`. One RavenDB database holds the cluster and its jobs, with the same options as the cluster's `UseRavenDB`. Before, a standalone RavenDB cluster could only be configured with `ConfigFromJson`.
 
 - **`DisableAutoProvisionSqlSchema()` on a standalone cluster** (Postgres, MySQL, SQL Server), for when you create the tables yourself, for example with migrations. Before, it was only available on a regular cluster.
 
@@ -197,7 +198,7 @@
   cluster.AddAgentConnectionConfig("hybrid-conn")
       .UseHybrid()
       .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
-      .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=ExecDb"))
+      .Execution(e => e.UseRavenDB("Urls=http://localhost:8080;Database=ExecDb"))
       .ProtectConnectionChanges(true);
   ```
 

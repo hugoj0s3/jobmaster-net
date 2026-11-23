@@ -21,6 +21,8 @@ dotnet add package JobMaster.Dashboard
 ```
 
 > The dashboard connects to the **JobMaster API** over HTTP. If both live in the same process, also install `JobMaster.Api`. If the API is deployed separately, no additional package is needed.
+>
+> This version requires **JobMaster.Api 0.0.12** or later.
 
 ## ⚙️ Setup
 
@@ -95,7 +97,7 @@ dashboard.AddTheme(DashboardBuiltInTheme.Dark, "QA")
 ## 📚 Full Documentation
 
 - [Dashboard Configuration](https://docs.jobmaster.hugoj0s3.dev/docs/monitoring/dashboard/configuration) — complete configuration reference
-- [Dashboard Screenshots](https://docs.jobmaster.hugoj0s3.dev/docs/monitoring/dashboard/screenshots) — annotated screenshots of every dashboard page
+- [Live demo](https://sandbox.jobmaster.hugoj0s3.dev) — try every dashboard page on a realistic multi-cluster deployment
 
 ---
 **Main Project:** [JobMaster .Net](https://github.com/hugoj0s3/jobmaster-net)  

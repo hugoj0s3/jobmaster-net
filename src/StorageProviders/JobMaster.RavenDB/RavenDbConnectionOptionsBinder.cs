@@ -4,7 +4,7 @@ using JobMaster.Sdk.Abstractions.Ioc;
 
 namespace JobMaster.RavenDB;
 
-// JSON-config counterpart to ConfigExtensions.UseRavenDb -- a live X509Certificate2 can't be embedded in
+// JSON-config counterpart to ConfigExtensions.UseRavenDB -- a live X509Certificate2 can't be embedded in
 // JSON, so this reads a file path + optional password instead and loads the certificate from disk. Mirrors
 // NatsJetStreamConnectionOptionsBinder's shape (auto-discovered by ConnectionOptionsBinderFactory the same
 // way).
@@ -17,7 +17,7 @@ internal sealed class RavenDbConnectionOptionsBinder : IConnectionOptionsBinder
         "documentExpirationFrequencySeconds",
     };
 
-    // No enableDocumentExpiration here -- agent messages never use @expires, matching UseRavenDb's
+    // No enableDocumentExpiration here -- agent messages never use @expires, matching UseRavenDB's
     // agent-side overload not exposing that parameter either.
     private static readonly HashSet<string> AgentKnownKeys = new(StringComparer.OrdinalIgnoreCase)
     {

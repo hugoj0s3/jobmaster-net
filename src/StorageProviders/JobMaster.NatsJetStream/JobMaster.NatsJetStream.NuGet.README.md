@@ -11,7 +11,7 @@
 
 This package provides the NATS JetStream implementation for the **JobMaster .Net** engine's **Agent (Transport) layer only**. 
 
-> **Note:** NATS JetStream can only be used as a transport layer. You must use a database provider (PostgreSQL, SQL Server, or MySQL) for the Master (Coordination) layer.
+> **Note:** NATS JetStream can only be used as a transport layer. You must use a database provider (PostgreSQL, SQL Server, MySQL or RavenDB) for the Master (Coordination) layer.
 
 ## 📦 Installation
 
@@ -31,7 +31,7 @@ To use NATS JetStream as your transport backend, you need to configure both a da
 ```csharp
 builder.Services.AddJobMasterCluster(config =>
 {
-    // Master MUST use a database provider (Postgres, SQL Server, or MySQL)
+    // Master MUST use a database provider (Postgres, SQL Server, MySQL or RavenDB)
     config.ClusterId("Production-Cluster")
           .UsePostgresForMaster("Your_Database_Connection_String");
 
@@ -45,7 +45,6 @@ builder.Services.AddJobMasterCluster(config =>
 });
 ```
 
-### Part 4: Features
 ## 🛠 Features
 * **High-Performance Messaging:** Leverages NATS JetStream's ultra-low latency message delivery for rapid job distribution.
 * **Stream Persistence:** Jobs are persisted in JetStream streams, providing durability and replay capabilities.

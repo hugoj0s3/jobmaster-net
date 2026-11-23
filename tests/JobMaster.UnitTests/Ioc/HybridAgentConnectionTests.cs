@@ -254,7 +254,7 @@ public class HybridAgentConnectionTests
             .UseHybrid()
             .AgentConnName("hybrid-conn")
             .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
-            .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=agent_exec", collectionPrefix: "Exec_"))
+            .Execution(e => e.UseRavenDB("Urls=http://localhost:8080;Database=agent_exec", collectionPrefix: "Exec_"))
             .ProtectConnectionChanges(false);
 
         builder.Finish();
@@ -281,11 +281,11 @@ public class HybridAgentConnectionTests
     {
         var clusterId = UniqueClusterId();
         var builder = CreateBuilder(clusterId);
-        builder.UseRavenDb("Urls=http://localhost:8080;Database=master");
+        builder.UseRavenDB("Urls=http://localhost:8080;Database=master");
 
         // Generic T keeps IAgentConnectionConfigSelector, so ProtectConnectionChanges stays chainable.
         builder.AddAgentConnectionConfig("raven-agent")
-            .UseRavenDb("Urls=http://localhost:8080;Database=agent", collectionPrefix: "Agent_")
+            .UseRavenDB("Urls=http://localhost:8080;Database=agent", collectionPrefix: "Agent_")
             .ProtectConnectionChanges(false);
 
         builder.Finish();
@@ -579,7 +579,7 @@ public class HybridAgentConnectionTests
         builder.AddAgentConnectionConfig("nats-transport-only")
             .UseHybrid()
             .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
-            .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=exec"));
+            .Execution(e => e.UseRavenDB("Urls=http://localhost:8080;Database=exec"));
 
         builder.Finish();
 
@@ -770,7 +770,7 @@ public class HybridAgentConnectionTests
         builder.AddAgentConnectionConfig("hyb-agent")
             .UseHybrid()
             .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
-            .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=exec"));
+            .Execution(e => e.UseRavenDB("Urls=http://localhost:8080;Database=exec"));
 
         builder.Finish();
 
