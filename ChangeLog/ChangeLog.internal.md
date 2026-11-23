@@ -7,6 +7,54 @@
 ### JobMaster 0.0.12-alpha
 > Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1012/1012 unit tests pass on `net8.0` and `net10.0` (975/975 on the `netstandard2.0` build).
 
+#### Standalone: RavenDB, worker lane + parallelism, `DisableAutoProvisionSqlSchema` (2026-11-22)
+Found while writing the Getting Started docs.
+- `JobMaster.RavenDB.ConfigExtensions.UseRavenDb(IClusterStandaloneConfigSelector, ...)`: the standalone overload was
+  missing; the runtime already worked (standalone reuses the cluster's connection and repo type as its agent
+  connection), only `ConfigFromJson` with `"standalone": true` reached it. Same options as the master overload.
+- `IClusterStandaloneConfigSelector.AddWorker(workerName, workerLane, parallelismFactor, batchSize)` (breaking: the two
+  new parameters come before `batchSize`). Before, a standalone worker had no lane, so a lane job matched no bucket
+  (`MasterBucketService.FilterApplicableBuckets` compares lanes exactly) and only ran through the no-bucket fallback:
+  measured 3 min 48 s on standalone Postgres, now about 5 s. The standalone `ConfigFromJson` branch passes
+  `WorkerLane` / `ParallelismFactor` through (they were ignored).
+- `JobMaster.SqlBase.ConfigExtensions.DisableAutoProvisionSqlSchema(IClusterStandaloneConfigSelector)`: the generic one
+  is constrained to the regular selector. Both provisioning steps read the flag from the cluster config, so it covers
+  master and agent tables; verified on an empty Postgres (no table created, startup fails on the first missing one).
+- `ConfigFromJson` standalone branch now runs `ConnectionOptionsBinderFactory.Create(repoType).SetOptions(this, …)`,
+  like the regular branch (it skipped them). The standalone builder shares `clusterDefinition`, and the standalone
+  agent connection copies the cluster's `AdditionalConnConfig` in `Finish`, so the options reach both sides. Verified
+  on Postgres with `"TablePrefix": "Custom_"`: master and agent tables all `custom_*`, the job ran.
+- Scenario `WorkerLaneTest` (new), with a topology axis (`ScenarioTopology { Standalone, Distributed }`, crossed with
+  the flavors in `Variants()`; Standalone excludes the NATS / Hybrid flavors like BasicExecution): two containers on one
+  cluster, a worker without a lane and a `billing` one; 10 jobs each without a lane, with `workerLane:` on the call, and
+  through `[JobMasterWorkerLane("billing")]` (`TestAppBillingLaneHandler`) run once each, within 120 s (under the
+  fallback), on the right container. `ScenarioRunner` sets each container's hostname to its container name, so the
+  tracker's `HostId` names the container. PostgresPure Standalone + Distributed passed locally; other flavors not run yet.
+- Tests: `RavenDbConnectionOptionsTests.UseRavenDb_Standalone_SetsRepoTypeConnStringAndPrefix`,
+  `SqlAutoProvisionSelectionTests.DisableAutoProvisionSqlSchema_Standalone_SetsFlag`, standalone
+  `ConfigFromJsonTests` asserts lane + parallelism. 1014/1014 unit tests on `net8.0` and `net10.0`.
+
+#### Archive cluster `AddWorker()` + runtime setups registered once (2026-11-23)
+Found while rewriting the Archiving docs: the documented archive-cluster setup couldn't start.
+- `DefaultRuntimeValidatorSetup`'s "workers without AgentConnectionName" check only exempted `Coordinator` mode, while
+  `JobMasterRuntime.ValidateClusterDefinitions` (and the worker itself) treat a `Full` worker on an `Archived` cluster as
+  a coordinator. Now one rule: `JobMasterRuntime.ActsAsCoordinator` (private → internal), used by the new testable
+  `ValidateWorkersHaveAgentConnection(clusters)`. Message lists `'name' on cluster 'id'`, `(unnamed)` for no name.
+- `ClusterConfigBuilder.Finish` registered every `IJobMasterRuntimeSetup` in the main container with `AddScoped` per
+  cluster, so with N clusters each setup ran N times (validation errors listed N times, provisioning repeated, both
+  idempotent). Now `TryAddEnumerable`: once per type. The per-cluster container registration is unchanged.
+- Tests: `DefaultRuntimeValidatorSetupTests.ValidateWorkersHaveAgentConnection_*` (archived Full ok, Coordinator ok,
+  active Full errors naming worker + cluster), `RuntimeRegistrationTests.RuntimeSetups_AreRegisteredOncePerType_NotOncePerCluster`.
+  Verified on Postgres: standalone source + archive cluster with plain `AddWorker()` fails before, starts after.
+- Standalone `Archive()` never started: `ClusterStandaloneConfigBuilder.AddWorker` binds every worker to
+  `StandaloneAgentConnName`, and `ValidateClusterDefinitions` rejects a connection on a worker that `ActsAsCoordinator`.
+  `ClusterConfigBuilder.Finish` now clears it on those workers and skips `AddStandaloneAgentConnectionString` when the
+  standalone definition is `Archived`; `JobMasterRuntime` skips registering the standalone connection on master then
+  (`TryGetAgentConnectionConfig(StandaloneAgentConnName)` creates it on demand, so the guard is needed there too; uses
+  `clusterDefinition.ClusterMode ?? stored`, since `modelToSave.ClusterMode` is only updated later in that method).
+  Only an archived mode set in code is handled (same as the worker checks). Test: `StandaloneArchiveTests`. Verified on
+  Postgres: active standalone with a held job, restarted as `Archive("new-cluster")`, job moved within one sweep.
+
 #### Logs: filter by `ReferenceIds`, a log per successful run, the overlap message (Hugo, 2026-11-22)
 - **`ReferenceIds` replaces `ReferenceId` + `ReferenceGuid`** (breaking for the API input). Callers had to know Guid
   references are stored as `"N"` and pick `ReferenceGuid`; everything else exact via `ReferenceId`.

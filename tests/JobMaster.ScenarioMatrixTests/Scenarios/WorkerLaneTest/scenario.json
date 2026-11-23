@@ -1,0 +1,7 @@
+{
+  "scenarioName": "worker-lane-test",
+  "phases": [
+    { "name": "standalone", "containers": ["lane-default", "lane-billing"] },
+    { "name": "distributed", "containers": ["lane-default", "lane-billing"] }
+  ]
+}

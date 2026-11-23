@@ -5,7 +5,7 @@ namespace TargetTestScheduleApp;
 /// as a plain int across the HTTP boundary since JobMaster.ScenarioMatrixTests takes no JobMaster
 /// reference and can't share the enum type.
 /// </summary>
-public sealed record ScheduleRequest(string? ClusterId, int QtyJobs, int? AfterSeconds, string TestIdentifier, int? Priority = null, bool? InjectFailure = null, int? MaxNumberOfRetries = null, bool? ConfirmOnMaster = null, bool? CancelFromReceipt = null, bool? CancelFromId = null);
+public sealed record ScheduleRequest(string? ClusterId, int QtyJobs, int? AfterSeconds, string TestIdentifier, int? Priority = null, bool? InjectFailure = null, int? MaxNumberOfRetries = null, bool? ConfirmOnMaster = null, bool? CancelFromReceipt = null, bool? CancelFromId = null, string? WorkerLane = null);
 
 /// <summary>
 /// AcceptedOnTransportCount: receipts that were handed to an agent connection (not stored on master).

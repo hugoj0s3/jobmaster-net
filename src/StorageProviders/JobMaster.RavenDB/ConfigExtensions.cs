@@ -69,6 +69,45 @@ public static class ConfigExtensions
     }
 
     /// <summary>
+    /// Configures a standalone cluster to use RavenDB for both the master database and the agent,
+    /// using a single shared connection string. See the cluster-side <c>UseRavenDb</c> for parameter details.
+    /// </summary>
+    public static IClusterStandaloneConfigSelector UseRavenDb(
+        this IClusterStandaloneConfigSelector standaloneConfigSelector,
+        string connectionString,
+        X509Certificate2? certificate = null,
+        string? collectionPrefix = null,
+        bool enableDocumentExpiration = false,
+        TimeSpan? documentExpirationFrequency = null,
+        TimeSpan? requestTimeout = null,
+        TimeSpan? pooledConnectionLifetime = null,
+        TimeSpan? pooledConnectionIdleTimeout = null)
+    {
+        standaloneConfigSelector.ClusterConnString(connectionString);
+        standaloneConfigSelector.ClusterRepoType(RavenDbRepositoryConstants.RepositoryTypeId);
+
+        AppendConnectionOptions(
+            (key, value) => standaloneConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, key, value),
+            certificate,
+            collectionPrefix,
+            requestTimeout,
+            pooledConnectionLifetime,
+            pooledConnectionIdleTimeout);
+
+        if (enableDocumentExpiration)
+        {
+            standaloneConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.EnableDocumentExpirationKey, true);
+        }
+
+        if (documentExpirationFrequency.HasValue)
+        {
+            standaloneConfigSelector.AppendAdditionalConnConfigValue(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.DocumentExpirationFrequencyKey, (long)documentExpirationFrequency.Value.TotalSeconds);
+        }
+
+        return standaloneConfigSelector;
+    }
+
+    /// <summary>
     /// Configures an agent connection, or a hybrid transport/execution leg, to use RavenDB.
     /// See the cluster-side <c>UseRavenDb</c> for parameter details -- there's no document-expiration
     /// option here since agent messages never use <c>@expires</c>.

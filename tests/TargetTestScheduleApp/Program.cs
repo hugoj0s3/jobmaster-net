@@ -57,7 +57,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
             metadata.SetBoolValue("InjectFailure", true);
         }
 
-        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority, req.MaxNumberOfRetries));
+        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority, req.MaxNumberOfRetries, req.WorkerLane));
     }
 
     var jobs = await Task.WhenAll(tasks);
@@ -151,26 +151,31 @@ static Task<JobScheduleReceipt> ScheduleHandler(
     string? clusterId,
     int? afterSeconds,
     JobMasterPriority? priority,
-    int? maxNumberOfRetries = null)
+    int? maxNumberOfRetries = null,
+    string? workerLane = null)
 {
     return handlerType.ToLowerInvariant() switch
     {
         "fast" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "normal" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "slow" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "verylong" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "advanced-fast" => afterSeconds.HasValue
-            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
-        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast.")
+            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
+        // Lane from the handler's [JobMasterWorkerLane("billing")]; a workerLane in the request overrides it.
+        "billing-lane" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppBillingLaneHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppBillingLaneHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
+        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast, billing-lane.")
     };
 }
 

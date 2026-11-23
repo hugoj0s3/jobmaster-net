@@ -410,6 +410,23 @@ Whole-`StartAsync` tests (validation before anything starts, provisioning order,
 own project, since `StartAsync` touches process-wide statics; the helper-level tests were dropped (Hugo). Not needed for
 0.0.12.
 
+## Docs: cancel and reschedule are undocumented (jobmaster-doc)
+
+Left out of the 0.0.12 docs restructure on purpose (Hugo, 2026-11-23), to keep One-off Scheduling simple. Still to
+document: cancel by id (`CancelJobAsync` / `CancelJob`, `CancelRecurringAsync` / `CancelRecurring`: only once on master,
+`false` when running / finished / due in about a minute, non-default cluster needs `clusterId`), cancel from a receipt
+(`receipt.CancelAsync()`, `CancelJobAsync(receipt)`: works before the job reaches master), and `RescheduleAsync` /
+`Reschedule` (runs a *finished* job again; the XML doc was corrected 2026-11-23). Natural home: next to the receipts
+page (`docs/distributed/receipts.md`), since receipt cancel needs the transport explained.
+
+## Worker name / lane format: not checked at startup validation (small)
+
+`MasterAgentWorkersService.CreateValidatedWorkerAsync` checks a worker's name and lane (letters, numbers, `-`, `_`,
+1–25 characters, `IsValidForSegment(…, 25)`), but only when the worker registers on master. By then the cluster config
+and agent connections are saved, and earlier workers in the same app may already run: the case plan item 19 meant to
+rule out. Fix: the same two checks in `JobMasterRuntime.ValidateClusterDefinitions`, next to the duplicate worker name /
+lane checks, so they join the one aggregated error list. Keep the registration check as an assert. Found 2026-11-22.
+
 ## Recurrence providers: name the package in "Unknown recurrence type" (was plan item 21)
 
 A stored schedule keeps only its expression type id; a process that runs it without calling `AddJobMasterCronos()` /

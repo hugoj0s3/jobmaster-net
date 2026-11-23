@@ -88,9 +88,17 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         
         BootstrapBlueprintDefinitions.Clusters.Add(clusterDefinition);
         
+        // An archived standalone cluster has no agent connection: like on any archived cluster, its workers act as its
+        // Coordinator, which must have none. The standalone AddWorker binds every worker to the standalone connection.
+        var isArchivedStandalone = clusterDefinition.IsStandalone == true && clusterDefinition.ClusterMode == JobMaster.Abstractions.Models.ClusterMode.Archived;
+
         foreach (var w in clusterDefinition.Workers)
         {
             w.ClusterId = finalClusterId!;
+            if (isArchivedStandalone && JobMasterRuntime.ActsAsCoordinator(w, clusterDefinition))
+            {
+                w.AgentConnectionName = string.Empty;
+            }
         }
 
         foreach (var a in clusterDefinition.AgentConnections)
@@ -175,7 +183,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             }
         }
         
-        if (clusterDefinition.IsStandalone == true)
+        if (clusterDefinition.IsStandalone == true && !isArchivedStandalone)
         {
             clusterCnnConfig.AddStandaloneAgentConnectionString();
         }
@@ -232,7 +240,9 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         foreach (var runtimeSetupType in runtimeSetupTypes)
         {
-            services.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
+            // Once per type in the main container, not once per cluster: each setup already covers every cluster, so a
+            // duplicate would run (and report its validation errors) twice.
+            services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType));
             clusterServiceRegistration.ClusterServices.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
         }
         
@@ -550,20 +560,24 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         if (config.Standalone)
         {
-            // IClusterStandaloneConfigSelector.AddWorker only accepts a name and a batch size — there is
-            // no standalone-side equivalent of WorkerLane, ParallelismFactor, SkipWarmUpTime, WorkerMode,
-            // BucketQtyConfig, BucketBufferSize, or the cluster-level ConnectionOptions dictionary, so those
-            // WorkerJsonConfig/ClusterJsonConfig fields are intentionally ignored here (not applicable to
+            // IClusterStandaloneConfigSelector.AddWorker only accepts a name, lane, parallelism factor and batch
+            // size — there is no standalone-side equivalent of SkipWarmUpTime, WorkerMode, BucketQtyConfig or
+            // BucketBufferSize, so those WorkerJsonConfig fields are intentionally ignored here (not applicable to
             // standalone mode), same as when configuring a standalone cluster through the fluent API.
             var standalone = UseStandaloneCluster();
             if (config.RepoType != null) standalone.ClusterRepoType(config.RepoType);
             if (config.ConnectionString != null) standalone.ClusterConnString(config.ConnectionString);
+
+            // Same cluster definition as the standalone builder, so the master options also reach the standalone
+            // agent connection (it copies the cluster's options when it's created in Finish).
+            if (config.ConnectionOptions != null && config.RepoType != null)
+                ConnectionOptionsBinderFactory.Create(config.RepoType).SetOptions(this, ToIgnoreCase(config.ConnectionOptions));
             foreach (var w in config.Workers ?? [])
             {
                 if (w.TransferBatchSize.HasValue)
-                    standalone.AddWorker(w.WorkerName, w.TransferBatchSize.Value);
+                    standalone.AddWorker(w.WorkerName, w.WorkerLane, w.ParallelismFactor, w.TransferBatchSize.Value);
                 else
-                    standalone.AddWorker(w.WorkerName);
+                    standalone.AddWorker(w.WorkerName, w.WorkerLane, w.ParallelismFactor);
             }
         }
         else
@@ -765,12 +779,16 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     }
 
     public IClusterStandaloneConfigSelector AddWorker(
-        string? workerName = null, 
+        string? workerName = null,
+        string? workerLane = null,
+        double? parallelismFactor = null,
         int batchSize = 250)
     {
         var def = new WorkerDefinition
         {
             WorkerName = workerName ?? string.Empty,
+            WorkerLane = workerLane,
+            ParallelismFactor = parallelismFactor,
             TransferBatchSize = batchSize,
             AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
         };

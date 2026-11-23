@@ -202,6 +202,37 @@ public class DefaultRuntimeValidatorSetupTests
     }
 
     // Each cluster disables Critical or nothing.
+    [Fact]
+    public void ValidateWorkersHaveAgentConnection_FullWorkerOnArchivedCluster_ReturnsNull()
+    {
+        // Plain AddWorker() on an archive cluster: a Full worker, which acts as its Coordinator there.
+        var archive = new ClusterDefinition { ClusterId = "archive", ClusterMode = ClusterMode.Archived };
+        archive.Workers.Add(new WorkerDefinition { Mode = AgentWorkerMode.Full });
+
+        DefaultRuntimeValidatorSetup.ValidateWorkersHaveAgentConnection(new[] { archive }).Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateWorkersHaveAgentConnection_CoordinatorWorker_ReturnsNull()
+    {
+        var cluster = new ClusterDefinition { ClusterId = "orders" };
+        cluster.Workers.Add(new WorkerDefinition { Mode = AgentWorkerMode.Coordinator });
+
+        DefaultRuntimeValidatorSetup.ValidateWorkersHaveAgentConnection(new[] { cluster }).Should().BeNull();
+    }
+
+    [Fact]
+    public void ValidateWorkersHaveAgentConnection_FullWorkerOnActiveCluster_ReturnsErrorNamingWorkerAndCluster()
+    {
+        var cluster = new ClusterDefinition { ClusterId = "orders" };
+        cluster.Workers.Add(new WorkerDefinition { Mode = AgentWorkerMode.Full, WorkerName = "w1" });
+        cluster.Workers.Add(new WorkerDefinition { Mode = AgentWorkerMode.Full });
+
+        var error = DefaultRuntimeValidatorSetup.ValidateWorkersHaveAgentConnection(new[] { cluster });
+
+        error.Should().Contain("'w1' on cluster 'orders'").And.Contain("'(unnamed)' on cluster 'orders'");
+    }
+
     private static IEnumerable<ClusterDefinition> Clusters(params (string ClusterId, bool DisablesCritical)[] clusters) =>
         clusters.Select(c =>
         {

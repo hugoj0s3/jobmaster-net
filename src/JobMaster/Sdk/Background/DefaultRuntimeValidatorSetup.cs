@@ -119,19 +119,29 @@ internal class DefaultRuntimeValidatorSetup : IJobMasterRuntimeSetup
             result.Add(unknownProfileClusterIdError);
         }
 
-        // Coordinator workers deliberately have no AgentConnectionName (see ChangeLog.md 0.0.10-alpha:
-        // "Coordinator workers no longer take an agent connection — and now must not have one") —
-        // enforced separately elsewhere, so they're exempt from this check.
-        var workersWithoutAgentConnectionName = BootstrapBlueprintDefinitions.Clusters
-            .SelectMany(x => x.Workers)
-            .Where(x => x.Mode != AgentWorkerMode.Coordinator && string.IsNullOrEmpty(x.AgentConnectionName))
-            .ToList();
-        if (workersWithoutAgentConnectionName.Any())
+        var workersWithoutAgentConnectionError = ValidateWorkersHaveAgentConnection(BootstrapBlueprintDefinitions.Clusters);
+        if (workersWithoutAgentConnectionError != null)
         {
-            result.Add($"Workers without AgentConnectionName: {string.Join(", ", workersWithoutAgentConnectionName.Select(x => x.WorkerName))}");
+            result.Add(workersWithoutAgentConnectionError);
         }
 
         return Task.FromResult<IList<string>>(result);
+    }
+
+    /// <summary>
+    /// Returns an error listing the workers that need an agent connection but have none; <c>null</c> when all are fine.
+    /// Workers acting as a Coordinator (Coordinator mode, or Full on an Archived cluster) have none on purpose: same
+    /// rule as the runtime's <see cref="JobMasterRuntime.ActsAsCoordinator"/>.
+    /// </summary>
+    internal static string? ValidateWorkersHaveAgentConnection(IEnumerable<ClusterDefinition> clusters)
+    {
+        var workers = clusters
+            .SelectMany(c => c.Workers.Select(w => (Cluster: c, Worker: w)))
+            .Where(x => !JobMasterRuntime.ActsAsCoordinator(x.Worker, x.Cluster) && string.IsNullOrEmpty(x.Worker.AgentConnectionName))
+            .Select(x => $"'{(string.IsNullOrEmpty(x.Worker.WorkerName) ? "(unnamed)" : x.Worker.WorkerName)}' on cluster '{x.Cluster.ClusterId}'")
+            .ToList();
+
+        return workers.Count == 0 ? null : $"Workers without AgentConnectionName: {string.Join(", ", workers)}";
     }
 
     /// <summary>

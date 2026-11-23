@@ -14,6 +14,7 @@ public interface IScheduleClient
         bool? confirmOnMaster = null,
         bool? cancelFromReceipt = null,
         bool? cancelFromId = null,
+        string? workerLane = null,
         CancellationToken ct = default);
 }
 

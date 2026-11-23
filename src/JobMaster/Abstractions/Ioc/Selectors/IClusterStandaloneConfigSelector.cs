@@ -136,8 +136,21 @@ public interface IClusterStandaloneConfigSelector
     /// Registers an in-process worker that picks up and executes jobs for this standalone cluster.
     /// </summary>
     /// <param name="workerName">Optional logical name for this worker instance.</param>
+    /// <param name="workerLane">
+    /// The lane this worker runs (e.g. "email", "reports"). It runs only jobs with that lane.
+    /// Default: null — the worker runs jobs that have no lane.
+    /// </param>
+    /// <param name="parallelismFactor">
+    /// Scales how many jobs this worker runs at once, for every priority (see
+    /// <see cref="IAgentWorkerSelector.ParallelismFactor"/>). Default: the machine's processor count, capped at
+    /// <see cref="JobMasterDefaults.Worker.MaxParallelismFactor"/>.
+    /// </param>
     /// <param name="batchSize">Number of jobs pulled per transfer cycle. Default: 250.</param>
-    public IClusterStandaloneConfigSelector AddWorker(string? workerName = null, int batchSize = 250);
+    public IClusterStandaloneConfigSelector AddWorker(
+        string? workerName = null,
+        string? workerLane = null,
+        double? parallelismFactor = null,
+        int batchSize = 250);
 
     /// <summary>
     /// Sets the operational mode of this cluster.

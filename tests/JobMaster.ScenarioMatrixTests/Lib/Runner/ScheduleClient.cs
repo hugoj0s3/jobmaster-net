@@ -16,6 +16,7 @@ public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
         bool? confirmOnMaster = null,
         bool? cancelFromReceipt = null,
         bool? cancelFromId = null,
+        string? workerLane = null,
         CancellationToken ct = default)
     {
         var body = new
@@ -29,7 +30,8 @@ public sealed class ScheduleClient(HttpClient httpClient) : IScheduleClient
             MaxNumberOfRetries = maxNumberOfRetries,
             ConfirmOnMaster = confirmOnMaster,
             CancelFromReceipt = cancelFromReceipt,
-            CancelFromId = cancelFromId
+            CancelFromId = cancelFromId,
+            WorkerLane = workerLane
         };
 
         var response = await httpClient.PostAsJsonAsync($"/schedule/{handlerType}", body, ct);

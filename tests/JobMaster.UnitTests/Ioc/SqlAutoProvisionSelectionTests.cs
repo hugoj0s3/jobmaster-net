@@ -1,5 +1,7 @@
 using FluentAssertions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Ioc.Setup;
 using JobMaster.SqlBase;
 
 namespace JobMaster.UnitTests.Ioc;
@@ -9,6 +11,19 @@ public class SqlAutoProvisionSelectionTests
     // Each test uses its own repo type, so clusters registered by other tests in the global config list are never selected.
     private readonly string repoType = $"sql-test-{Guid.NewGuid():N}";
     private const string OtherRepoType = "other-repo-type";
+
+    [Fact]
+    public void DisableAutoProvisionSqlSchema_Standalone_SetsFlag()
+    {
+        var clusterDefinition = new ClusterDefinition();
+        var standalone = new ClusterStandaloneConfigBuilder(clusterDefinition);
+
+        standalone.DisableAutoProvisionSqlSchema();
+
+        clusterDefinition.AdditionalConnConfig!
+            .TryGetValue<bool>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.DisableAutoProvisionSchemaKey)
+            .Should().BeTrue();
+    }
 
     [Fact]
     public void GetClustersToProvision_OptedOutCluster_SkipsOnlyThatCluster()

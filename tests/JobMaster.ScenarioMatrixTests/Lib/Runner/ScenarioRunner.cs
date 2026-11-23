@@ -186,6 +186,8 @@ public sealed class ScenarioRunner : IAsyncDisposable
             .WithImage(imageName)
             .WithNetwork(global.Network)
             .WithNetworkAliases(containerDef.NetworkAlias)
+            // The app's Environment.MachineName, recorded as the HostId of each execution: tells which container ran a job.
+            .WithHostname(containerDef.ContainerName)
             .WithPortBinding((ushort)containerDef.HttpPort, true)
             .WithEnvironment("JOBMASTER_CLUSTER_CONFIGS_JSON", clusterConfigsJson)
             .WithWaitStrategy(Wait.ForUnixContainer().UntilHttpRequestIsSucceeded(r => r

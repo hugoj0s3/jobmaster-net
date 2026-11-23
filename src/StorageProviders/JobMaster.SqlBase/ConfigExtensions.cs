@@ -22,6 +22,13 @@ public static class ConfigExtensions
         return clusterConfigSelector;
     }
 
+    /// <inheritdoc cref="DisableAutoProvisionSqlSchema{T}"/>
+    public static IClusterStandaloneConfigSelector DisableAutoProvisionSqlSchema(this IClusterStandaloneConfigSelector standaloneConfigSelector)
+    {
+        standaloneConfigSelector.AppendAdditionalConnConfigValue(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.DisableAutoProvisionSchemaKey, true);
+        return standaloneConfigSelector;
+    }
+
     internal static bool IsAutoProvisionSqlSchemaEnabled(this JobMasterClusterConnectionConfig clusterConnectionConfig)
     {
         return clusterConnectionConfig.AdditionalConnConfig.TryGetValue<bool>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.DisableAutoProvisionSchemaKey) != true;

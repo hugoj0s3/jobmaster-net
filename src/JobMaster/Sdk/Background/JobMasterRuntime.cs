@@ -162,7 +162,9 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
                     agentConfig.RepositoryTypeId, fingerprint.AgentFingerprint, agentDefinition.ProtectConnectionChanges);
             }
 
-            if (isStandalone)
+            // An archived standalone cluster has no agent connection (ClusterConfigBuilder.Finish); the lookup below
+            // would create it on demand.
+            if (isStandalone && (clusterDefinition.ClusterMode ?? modelToSave.ClusterMode) != ClusterMode.Archived)
             {
                 var standaloneConfig = clusterCnnCfg.TryGetAgentConnectionConfig(JobMasterConstants.StandaloneAgentConnName);
                 if (standaloneConfig != null)
@@ -790,7 +792,7 @@ internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposab
     // A Full worker on an Archived cluster behaves exactly like Coordinator (no connection at all --
     // see JobMasterBackgroundAgentWorker.StartAsync), so it shares the same exemptions used by
     // ValidateClusterDefinitions' AgentConnectionName checks.
-    private static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
+    internal static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
         w.Mode == AgentWorkerMode.Coordinator ||
         (clusterDefinition.ClusterMode == ClusterMode.Archived && w.Mode == AgentWorkerMode.Full);
 

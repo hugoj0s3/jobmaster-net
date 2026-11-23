@@ -260,9 +260,11 @@ public interface IJobMasterScheduler
     Task<bool> CancelRecurringAsync(RecurringScheduleReceipt receipt);
 
     /// <summary>
-    /// Changes the scheduled execution time of a one-time job.
-    /// The job must not have reached a final status (succeed, cancelled, aborted or failed).
-    /// Returns <c>true</c> if the job was found and successfully rescheduled.
+    /// Runs a finished one-time job again, at <paramref name="scheduledAt"/>.
+    /// The job must have reached a final status (succeeded, failed, cancelled or aborted); its number of failures
+    /// starts again from zero. A job that hasn't finished yet can't be rescheduled.
+    /// Returns <c>true</c> if the job was found and rescheduled; <c>false</c> if it isn't found on master or hasn't
+    /// finished.
     /// </summary>
     /// <param name="jobId">ID of the job to reschedule.</param>
     /// <param name="scheduledAt">New UTC execution time.</param>

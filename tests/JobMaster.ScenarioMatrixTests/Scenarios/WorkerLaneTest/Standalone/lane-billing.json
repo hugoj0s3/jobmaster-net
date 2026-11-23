@@ -1,0 +1,17 @@
+{
+  "containerName": "mx-{{flavor}}-std-lane-billing",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-std-lane-billing",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-std-lane",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:LaneStandalone}}",
+      "Workers": [ { "WorkerName": "w-billing", "WorkerLane": "billing" } ]
+    }
+  ]
+}
