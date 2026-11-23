@@ -165,3 +165,6 @@ riderModule.iml
 # Scenario tests on EC2: account values and run outputs
 misc/scenario-aws/scenario-aws.settings.sh
 artifacts/scenario-runs/
+
+# Local planning notes, never committed
+/Plan*.md
