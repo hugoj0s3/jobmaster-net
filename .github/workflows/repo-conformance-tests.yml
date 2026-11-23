@@ -1,23 +1,38 @@
 name: Repo Conformance Tests
 
-# Manual-only for now -- running the whole IntegrationTests assembly unfiltered hits a cross-collection
-# race between the RavenDb and SQL (Postgres/MySql/SqlServer) conformance collections (RavenDb's fixture
-# tears its container down while a concurrently-running SQL fixture's StartJobMasterRuntimeAsync() call
-# is still iterating JobMasterClusterConnectionConfig.GetAllConfigs() -- a process-wide static list, not
-# scoped to the SQL ServiceProvider -- and tries to reach RavenDb's already-disposed container). See
-# reminders.md for the real fix. Re-enable the push/pull_request triggers once that's fixed.
+# Manual only. One job per provider, each in its own process: running the whole IntegrationTests assembly in one
+# process hits a cross-collection race (RavenDb's fixture tears its container down while a SQL fixture's
+# StartJobMasterRuntimeAsync() is still iterating JobMasterClusterConnectionConfig.GetAllConfigs() -- a process-wide
+# static list, not scoped to the SQL ServiceProvider -- and tries to reach RavenDb's disposed container). A process per
+# provider has its own static list, so the race can't happen. See reminders.md for the real fix; once it's in, one job
+# and the push/pull_request triggers can come back.
 on:
   workflow_dispatch:
 
 jobs:
   conformance-tests:
-    name: Repo Conformance (Postgres + MySql + SqlServer)
+    name: Repo Conformance (${{ matrix.provider }})
     runs-on: ubuntu-latest
-    # Each provider's fixture spins up its own Testcontainers database and runs the full
-    # conformance suite against it (Jobs, RecurringSchedules, GenericRecords, DistributedLocker,
-    # AgentMessages) -- no external DB or secrets needed, same self-contained approach as
-    # schedule-scenario-tests.yml.
+    # Each provider's fixture spins up its own Testcontainers database and runs its conformance classes against it
+    # (Jobs, RecurringSchedules, GenericRecords, DistributedLocker, AgentMessages, Logs) -- no external DB or secrets.
     timeout-minutes: 30
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - provider: Postgres
+            filter: FullyQualifiedName~RepoConformance&FullyQualifiedName~.Postgres
+          - provider: MySql
+            filter: FullyQualifiedName~RepoConformance&FullyQualifiedName~.MySql
+          - provider: SqlServer
+            filter: FullyQualifiedName~RepoConformance&FullyQualifiedName~.SqlServer
+          - provider: RavenDb
+            filter: FullyQualifiedName~JobMaster.IntegrationTests.RepoConformance.RavenDb.
+          - provider: Hybrid
+            filter: FullyQualifiedName~JobMaster.IntegrationTests.RepoConformance.Hybrid.
+          - provider: Nats
+            filter: FullyQualifiedName~JobMaster.IntegrationTests.Nats.
 
     steps:
       - uses: actions/checkout@v4
@@ -25,6 +40,8 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
+          # SDK from global.json; the 8.0 runtime for the net8.0 test builds.
+          global-json-file: global.json
           dotnet-version: '8.0.x'
 
       - name: Restore
@@ -33,5 +50,27 @@ jobs:
       - name: Build
         run: dotnet build tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-restore --configuration Release
 
-      - name: Run conformance tests
-        run: dotnet test tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-build --configuration Release --logger "console;verbosity=normal"
+      - name: Run ${{ matrix.provider }} conformance tests
+        env:
+          FILTER: ${{ matrix.filter }}
+        # A filter that matches nothing exits 0 with "No test matches": fail instead, so a renamed class can't silently
+        # drop out of the run.
+        run: |
+          set -o pipefail
+          dotnet test tests/JobMaster.IntegrationTests/JobMaster.IntegrationTests.csproj --no-build --configuration Release \
+            --filter "$FILTER" --logger "console;verbosity=normal" | tee test-output.log
+          grep -q "Total tests:" test-output.log || { echo "No tests matched '$FILTER'."; exit 1; }
+
+  all-passed:
+    name: All Repo Conformance Tests Passed
+    # One check for branch protection instead of every provider: fails if any provider failed or was cancelled.
+    needs: [conformance-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check
+        run: |
+          if [ "${{ needs.conformance-tests.result }}" != "success" ]; then
+            echo "One or more providers' conformance tests did not pass."
+            exit 1
+          fi

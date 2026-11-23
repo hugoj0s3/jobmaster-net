@@ -21,11 +21,7 @@ internal interface IClusterIocRegistration
     void AddJobMasterComponent<TService>(Func<IServiceProvider, TService> factory) 
         where TService : class, IJobMasterClusterAwareComponent;
     
-    void AddRepositoryDispatcher<TRepositoryDispatcher, TSavePendingRepository, TProcessingRepository>(string repositoryTypeId) 
-        where TRepositoryDispatcher : class, IAgentJobsDispatcherRepository<TSavePendingRepository, TProcessingRepository>
+    void AddRepositoryDispatcher<TSavePendingRepository, TProcessingRepository>(string repositoryTypeId)
         where TSavePendingRepository : class, IAgentRawMessagesDispatcherRepository
         where TProcessingRepository : class, IAgentRawMessagesDispatcherRepository;
-    
-    void AddRepositoryDispatcher<TRepositoryDispatcher>(string repositoryTypeId) 
-        where TRepositoryDispatcher : class, IAgentJobsDispatcherRepository;
 }

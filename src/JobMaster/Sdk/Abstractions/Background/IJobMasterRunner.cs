@@ -1,9 +1,10 @@
+using JobMaster.Sdk.Background.Cancellation;
+
 namespace JobMaster.Sdk.Abstractions.Background;
 
 internal interface IJobMasterRunner
 {
     Task OnTickFailureAsync(Exception ex, CancellationToken ct);
-    Task OnTerminateFailureAsync(Exception lastException);
     Task OnStartAsync(CancellationToken ct);
     Task<OnTickResult> OnTickAsync(CancellationToken ct);
     Task OnStopAsync();
@@ -20,4 +21,6 @@ internal interface IJobMasterRunner
     Task StopAsync();
     
     IJobMasterRuntime? Runtime { get; }
+
+    StopControl StopControl { get; }
 }

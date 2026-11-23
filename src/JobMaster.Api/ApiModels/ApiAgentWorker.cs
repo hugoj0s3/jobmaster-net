@@ -18,10 +18,6 @@ public class ApiAgentWorker : ApiClusterBaseModel
     public DateTime CreatedAt { get; set; }
     /// <summary>Whether the worker is currently alive (sending heartbeats).</summary>
     public bool IsAlive { get; set; }
-    /// <summary>UTC timestamp when a stop was requested, if applicable.</summary>
-    public DateTime? StopRequestedAt { get; set; }
-    /// <summary>Grace period allowed for in-flight jobs to finish before the worker stops.</summary>
-    public TimeSpan? StopGracePeriod { get; set; }
     /// <summary>UTC timestamp of the last heartbeat from this worker.</summary>
     public DateTime LastHeartbeat { get; set; }
     /// <summary>Operational mode of the worker.</summary>
@@ -30,8 +26,6 @@ public class ApiAgentWorker : ApiClusterBaseModel
     public string? WorkerLane { get; set; }
     /// <summary>Parallelism multiplier applied to this worker's execution capacity.</summary>
     public double ParallelismFactor { get; set; }
-    /// <summary>Current operational status of the worker.</summary>
-    public AgentWorkerStatus Status { get; set; }
     /// <summary>Identifier of the host running this worker.</summary>
     public string HostId { get; set; } = string.Empty;
     /// <summary>Display name of the host running this worker.</summary>
@@ -48,13 +42,10 @@ public class ApiAgentWorker : ApiClusterBaseModel
             AgentConnectionName = model.AgentConnectionId?.Name,
             CreatedAt = model.CreatedAt,
             IsAlive = model.IsAlive(),
-            StopRequestedAt = model.StopRequestedAt,
-            StopGracePeriod = model.StopGracePeriod,
             LastHeartbeat = model.LastHeartbeat,
             Mode = model.Mode,
             WorkerLane = model.WorkerLane,
             ParallelismFactor = model.ParallelismFactor,
-            Status = model.Status(),
             HostId = model.HostId?.IdValue ?? string.Empty,
             HostDisplayName = model.HostId?.HostDisplayName ?? string.Empty,
         };

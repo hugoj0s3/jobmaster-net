@@ -1,9 +1,14 @@
 using FluentAssertions;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
 using JobMaster.Sdk.Utils;
+using Moq;
 
 namespace JobMaster.UnitTests.Background.Runners;
 
@@ -115,5 +120,37 @@ public class DeleteOldInactiveRecurringSchedulesRunnerTests
 
         result.Status.Should().Be(TicketResultStatus.Success);
         f.RecurringSchedules.Schedules.Should().HaveCount(1);
+    }
+
+    [Fact]
+    public async Task OnTickAsync_WhenArchiveDoesNotConfirmASchedule_ShouldKeepThatSchedule()
+    {
+        // Must never delete from the source what isn't confirmed on the archive.
+        var f = RunnerFixture.Create();
+        var archiveClusterId = $"archive-{JobMasterRandomUtil.NewGuid4():N}";
+        f.ClusterConfig.Config = ConfigWithTtl(TimeSpan.FromDays(7));
+        f.ClusterConfig.Config.TargetArchivedClusterId = archiveClusterId;
+
+        var confirmed = TerminatedSchedule(DateTime.UtcNow.AddDays(-30));
+        var unconfirmed = TerminatedSchedule(DateTime.UtcNow.AddDays(-30));
+        f.RecurringSchedules.Schedules.Add(confirmed);
+        f.RecurringSchedules.Schedules.Add(unconfirmed);
+
+        var intakeService = new Mock<IMasterRecurringScheduleIntakeService>(MockBehavior.Strict);
+        intakeService
+            .Setup(x => x.BulkInsertIfNotExistsAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .ReturnsAsync(new List<Guid> { confirmed.Id });
+
+        var archiveFactory = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        archiveFactory.SetupGet(x => x.ClusterId).Returns(archiveClusterId);
+        archiveFactory.Setup(x => x.GetComponent<IMasterRecurringScheduleIntakeService>()).Returns(intakeService.Object);
+        JobMasterClusterAwareComponentFactories.AddFactory(archiveClusterId, archiveFactory.Object);
+        JobMasterClusterConnectionConfig.Create(archiveClusterId, "repo", "conn"); // target's batch size lookup
+
+        var runner = new DeleteOldInactiveRecurringSchedulesRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.RecurringSchedules.Schedules.Should().ContainSingle().Which.Id.Should().Be(unconfirmed.Id);
     }
 }

@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions.Models;
+using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
@@ -13,6 +13,7 @@ using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
@@ -25,7 +26,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
     private readonly IMasterRecurringSchedulesService masterRecurringSchedulesService;
     private readonly IMasterJobsService masterJobsService;
     private readonly IMasterDistributedLockerService masterDistributedLockerService;
-    private readonly IJobMasterRuntime jobMasterRuntime;
     private readonly IJobMasterLogger logger;
     private JobMasterLockKeys lockKeys;
     public RecurringSchedulePlanner(
@@ -35,7 +35,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         IMasterRecurringSchedulesService masterRecurringSchedulesService,
         IMasterJobsService masterJobsService,
         IMasterDistributedLockerService masterDistributedLockerService,
-        IJobMasterRuntime jobMasterRuntime,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
         this.masterClusterConfigurationService = masterClusterConfigurationService;
@@ -43,7 +42,6 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         this.masterRecurringSchedulesService = masterRecurringSchedulesService;
         this.masterJobsService = masterJobsService;
         this.masterDistributedLockerService = masterDistributedLockerService;
-        this.jobMasterRuntime = jobMasterRuntime;
         this.logger = logger;
         
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
@@ -57,13 +55,14 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             return;
         }
         
-        if (scheduleRawModel.IsStaticIdle(jobMasterRuntime.StartingAt))
+        if (scheduleRawModel.IsStaticIdle(JobMasterRuntimeSingleton.Instance.StartingAt))
         {
             logger.Debug("Skipping: Schedule is in static idle period", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             return;
         }
         
-        if (scheduleRawModel.EndBefore.HasValue && scheduleRawModel.EndBefore.Value < DateTime.UtcNow)
+        // EndBefore is exclusive: the schedule has ended once EndBefore itself is reached.
+        if (scheduleRawModel.EndBefore.HasValue && scheduleRawModel.EndBefore.Value <= DateTime.UtcNow)
         {
             logger.Debug($"Skipping: EndBefore ({scheduleRawModel.EndBefore:O}) is in the past", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
             scheduleRawModel.TryEnded();
@@ -94,10 +93,10 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
         logger.Debug("Lock acquired, starting to plan next dates", JobMasterLogCategory.RecurringSchedule, scheduleRawModel.Id);
         
         var recurringSchedule = RecurringScheduleConvertUtil.ToRecurringSchedule(scheduleRawModel);
-        var handlerType = JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
+        var handlerType = JobDefinitionIdResolver.GetJobHandlerTypeFromId(recurringSchedule.JobDefinitionId);
         if (handlerType == null)
         {
-            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id}");
+            logger.Critical($"Job handler type not found for ID: {recurringSchedule.JobDefinitionId} for recurring schedule {scheduleRawModel.Id.ToBase64()}. {JobDefinitionIdResolver.AssemblyDiscoveryHint}");
             
             // Avoid keep get this schedule again and again. Delay the next attempt.
             scheduleRawModel.LastPlanCoverageUntil = DateTime.UtcNow.Add(JobMasterConstants.DurationToLockRecords);
@@ -267,7 +266,8 @@ internal class RecurringSchedulePlanner : JobMasterClusterAwareComponent, IRecur
             if (i > 0 && at <= cursor + MinInterval)
                 at = cursor + MinInterval;
 
-            if (at > stopAt)
+            // EndBefore is exclusive (an occurrence exactly at it doesn't fire); the plain horizon isn't.
+            if (at > stopAt || (stopAtIsExplicitEnd && at == stopAt))
             {
                 // Always return at least one occurrence rather than leaving results empty just because
                 // the recurrence's own cadence exceeds this pass's horizon (e.g. an "every year" schedule

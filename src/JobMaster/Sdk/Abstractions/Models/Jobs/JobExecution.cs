@@ -50,6 +50,6 @@ internal class JobExecution : JobMasterBaseModel
     public void EnsureFinalized()
     {
         if ((int)Outcome == 0)
-            throw new InvalidOperationException($"JobExecution {Id} has no outcome set. Call Succeed() or Fail() before persisting.");
+            throw new InvalidOperationException($"JobExecution {Id.ToBase64()} has no outcome set. Call Succeed() or Fail() before persisting.");
     }
 }

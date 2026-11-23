@@ -25,7 +25,7 @@ internal class MasterJobIntakeService : JobMasterClusterAwareComponent, IMasterJ
         this.masterClusterConfigurationService = masterClusterConfigurationService;
     }
 
-    public async Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions, IList<LogItem> jobExecutionLogs)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions, IList<LogItem> jobExecutionLogs)
     {
         var clusterMode = masterClusterConfigurationService.Get()?.ClusterMode;
 
@@ -90,5 +90,17 @@ internal class MasterJobIntakeService : JobMasterClusterAwareComponent, IMasterJ
         {
             await masterLogsRepository.BulkInsertAsync(logsForNewlyInsertedJobs);
         }
+
+        // Not inserted means already here, or a row the repository failed without throwing (RavenDB's per-row
+        // fallback logs and continues), so check: same rule as ConfirmOnMasterAsync.
+        var insertedSet = new HashSet<Guid>(insertedJobIds);
+        var notInserted = jobs.Select(j => j.Id).Where(id => !insertedSet.Contains(id)).ToList();
+        var confirmed = new List<Guid>(insertedJobIds);
+        if (notInserted.Count > 0)
+        {
+            confirmed.AddRange(await masterJobsRepository.QueryExistingIdsAsync(notInserted));
+        }
+
+        return confirmed;
     }
 }

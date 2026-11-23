@@ -4,10 +4,13 @@ using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
+using JobMaster.Abstractions.StaticRecurringSchedules;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
+using JobMaster.Sdk.Abstractions.Models.Agents;
+using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Services;
@@ -41,6 +44,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.Schedule(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -83,7 +87,7 @@ public class JobMasterSchedulerTests
 
         schedulerMock
             .Setup(x => x.ScheduleAsync(It.Is<JobRawModel>(m => m.ClusterId == clusterId)))
-            .Returns(Task.CompletedTask)
+            .ReturnsAsync((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -203,6 +207,7 @@ public class JobMasterSchedulerTests
         var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -245,6 +250,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -286,6 +292,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -335,6 +342,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<JobRawModel>()))
             .Callback<JobRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -377,6 +385,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -420,6 +429,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -471,6 +481,7 @@ public class JobMasterSchedulerTests
         schedulerMock
             .Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
             .Callback<RecurringScheduleRawModel>(m => scheduled = m)
+            .Returns((BucketModel?)null)
             .Verifiable();
 
         var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
@@ -488,6 +499,668 @@ public class JobMasterSchedulerTests
         scheduled!.Priority.Should().BeNull();
         scheduled.Timeout.Should().BeNull();
         scheduled.MaxNumberOfRetries.Should().BeNull();
+    }
+
+    // Cluster id precedence: explicit → JobDefinitionConfig.ClusterId / [JobMasterClusterId] → default cluster.
+
+    [Fact]
+    public void OnceNow_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OnceNowAsync_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = await JobMasterScheduler.Instance.OnceNowAsync<ClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenExplicitClusterIdAndAttribute_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdAttrHandler>(clusterId: "c-explicit");
+
+        ctx.ClusterId.Should().Be("c-explicit");
+        explicitCluster.Jobs.Should().ContainSingle();
+        attrCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenHandlerHasDefinitionConfigClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<ClusterIdDefinitionHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void OnceNow_WhenAttributeClusterHasPriorityDisabled_ValidatesAgainstAttributeCluster()
+    {
+        // Guards against validating against the raw (null → default) clusterId argument instead of the
+        // resolved one: the default cluster allows Medium, only the attribute cluster disables it.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false,
+            disabledPriorities: new HashSet<JobMasterPriority> { JobMasterPriority.Medium });
+
+        JobMasterScheduler.Instance
+            .Invoking(s => s.OnceNow<ClusterIdAttrHandler>())
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage($"*Medium*disabled*{ClusterIdAttrHandler.ClusterId}*");
+        attrCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerHasClusterIdAttribute_UsesAttributeCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Recurring<ClusterIdAttrHandler>(new NeverRecursCompiledExpr());
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Recurring.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        defaultCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerPriorityIsDisabled_Throws_WithoutSaving()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        // No explicit priority: each run would resolve the handler's [JobMasterPriority(Critical)].
+        JobMasterScheduler.Instance
+            .Invoking(s => s.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr()))
+            .Should().Throw<InvalidOperationException>()
+            .WithMessage("*Critical*disabled*");
+
+        cluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task RecurringAsync_WhenHandlerPriorityIsDisabled_Throws()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        var act = () => JobMasterScheduler.Instance.RecurringAsync<CriticalPriorityHandler>(new NeverRecursCompiledExpr());
+
+        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*Critical*disabled*");
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerPriorityIsDisabled_ButExplicitPriorityAllowed_Schedules()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.Critical });
+
+        JobMasterScheduler.Instance.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr(), priority: JobMasterPriority.High);
+
+        cluster.Recurring.Should().ContainSingle().Which.Priority.Should().Be(JobMasterPriority.High);
+    }
+
+    [Fact]
+    public void Recurring_WhenHandlerPriorityAllowed_DoesNotStoreIt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterCluster("c-a", isDefault: true, new HashSet<JobMasterPriority> { JobMasterPriority.VeryLow });
+
+        JobMasterScheduler.Instance.Recurring<CriticalPriorityHandler>(new NeverRecursCompiledExpr());
+
+        // Checked only: still resolved from the handler on each run.
+        cluster.Recurring.Should().ContainSingle().Which.Priority.Should().BeNull();
+    }
+
+    [Fact]
+    public void Recurring_WhenExplicitClusterIdAndAttribute_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        JobMasterScheduler.Instance.Recurring<ClusterIdAttrHandler>(new NeverRecursCompiledExpr(), clusterId: "c-explicit");
+
+        explicitCluster.Recurring.Should().ContainSingle();
+        attrCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>();
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_PerCallOverrideKeepsConfigCluster()
+    {
+        // A per-call override (here priority) rebuilds the config in ApplyOverrides — the ClusterId must survive.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>(priority: JobMasterPriority.Critical);
+
+        configCluster.Jobs.Should().ContainSingle().Which.Priority.Should().Be(JobMasterPriority.Critical);
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithDefinitionAttributeClusterId_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        JobMasterScheduler.Instance.Advanced.OnceNow<ClusterIdDefinitionAttribute>(clusterId: "c-explicit");
+
+        explicitCluster.Jobs.Should().ContainSingle();
+        configCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithConfigObjectClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster("c-config-obj", isDefault: false);
+
+        var config = new JobDefinitionConfig("orders.process", clusterId: "c-config-obj");
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow(config);
+
+        ctx.ClusterId.Should().Be("c-config-obj");
+        configCluster.Jobs.Should().ContainSingle();
+        defaultCluster.Jobs.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedOnceNow_WithConfigObjectWithoutClusterId_UsesDefaultCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.OnceNow(new JobDefinitionConfig("orders.process"));
+
+        ctx.ClusterId.Should().Be("c-default");
+        defaultCluster.Jobs.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithDefinitionAttributeClusterId_UsesConfigCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var defaultCluster = RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster(ClusterIdDefinitionAttribute.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.Advanced.Recurring<ClusterIdDefinitionAttribute>(new NeverRecursCompiledExpr());
+
+        ctx.ClusterId.Should().Be(ClusterIdDefinitionAttribute.ClusterId);
+        configCluster.Recurring.Should().ContainSingle();
+        defaultCluster.Recurring.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void AdvancedRecurring_WithConfigObjectClusterId_ExplicitWins()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var configCluster = RegisterCluster("c-config-obj", isDefault: false);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var config = new JobDefinitionConfig("orders.recur", clusterId: "c-config-obj");
+        JobMasterScheduler.Instance.Advanced.Recurring(config, new NeverRecursCompiledExpr(), clusterId: "c-explicit");
+
+        explicitCluster.Recurring.Should().ContainSingle();
+        configCluster.Recurring.Should().BeEmpty();
+    }
+
+    // Cluster ids are matched ignoring case, but what's stored must use the configured casing.
+
+    [Fact]
+    public void OnceNow_WhenAttributeClusterIdDiffersInCase_SchedulesOnConfiguredClusterWithItsCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var attrCluster = RegisterCluster(ClusterIdAttrHandler.ClusterId, isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<UpperCaseClusterIdAttrHandler>();
+
+        ctx.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+        attrCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be(ClusterIdAttrHandler.ClusterId);
+    }
+
+    [Fact]
+    public void OnceNow_WhenExplicitClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+        var explicitCluster = RegisterCluster("c-explicit", isDefault: false);
+
+        var ctx = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>(clusterId: "C-EXPLICIT");
+
+        ctx.ClusterId.Should().Be("c-explicit");
+        explicitCluster.Jobs.Should().ContainSingle().Which.ClusterId.Should().Be("c-explicit");
+    }
+
+    [Fact]
+    public void CancelJob_WhenClusterIdDiffersInCase_FindsCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterCluster("c-default", isDefault: true);
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        var jobId = Guid.NewGuid();
+        schedulerMock.Setup(x => x.CancelJob(jobId)).Returns(true);
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        JobMasterClusterConnectionConfig.Create("c-cancel", "repo", "cnn");
+        JobMasterClusterAwareComponentFactories.AddFactory("c-cancel", factoryMock.Object);
+
+        JobMasterScheduler.Instance.CancelJob(jobId, clusterId: "C-Cancel").Should().BeTrue();
+    }
+
+    [Fact]
+    public void ComponentFactories_LookupIgnoresCase()
+    {
+        // Callers such as the API's /{clusterId}/... routes pass the raw id straight to GetFactory.
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var factory = new Mock<IJobMasterClusterAwareComponentFactory>().Object;
+        JobMasterClusterAwareComponentFactories.AddFactory("c-factory", factory);
+
+        JobMasterClusterAwareComponentFactories.GetFactory("C-Factory").Should().BeSameAs(factory);
+        JobMasterClusterAwareComponentFactories.TryGetFactory("C-FACTORY").Should().BeSameAs(factory);
+    }
+
+    [Fact]
+    public void StaticCollection_WhenProfileClusterIdDiffersInCase_UsesConfiguredCasing()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        JobMasterClusterConnectionConfig.Create("c-profile", "repo", "cnn", isDefault: true);
+
+        var profile = new StaticRecurringSchedulesProfileInfo("profile", "C-PROFILE", workerLane: null);
+        var definition = new RecurringScheduleDefinitionCollection(profile, "c-profile")
+            .Add(typeof(TestJobMasterHandler), "TimeSpanInterval", "00:06:00")
+            .ToReadOnly()
+            .Single();
+
+        definition.ClusterId.Should().Be("c-profile");
+        definition.Id.Should().StartWith("c-profile:");
+    }
+
+    // Receipts (item 6) and ConfirmOnMaster (item 7).
+
+    [Fact]
+    public void OnceNow_WhenStoredOnMaster_ReturnsStoredOnMasterReceipt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Returns((BucketModel?)null);
+
+        var receipt = JobMasterScheduler.Instance.OnceNow<TestJobMasterHandler>();
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.StoredOnMaster);
+        receipt.ClusterId.Should().Be("c-receipt");
+        receipt.BucketId.Should().BeNull();
+        receipt.AgentWorkerId.Should().BeNull();
+        receipt.AgentConnectionId.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task OnceNowAsync_WhenAcceptedOnTransport_ReturnsReceiptWithBucket()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        var bucket = NewBucket("c-receipt");
+        Guid? scheduledId = null;
+        schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(m =>
+            {
+                m.AssignSavePendingJobToBucket(bucket);
+                scheduledId = m.Id;
+            })
+            .ReturnsAsync(bucket);
+
+        var receipt = await JobMasterScheduler.Instance.OnceNowAsync<TestJobMasterHandler>();
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.AcceptedOnTransport);
+        receipt.BucketId.Should().Be(bucket.Id);
+        receipt.AgentWorkerId.Should().Be(bucket.AgentWorkerId);
+        receipt.AgentConnectionId.Should().Be(bucket.AgentConnectionId!.IdValue);
+        receipt.Context.Id.Should().Be(scheduledId!.Value);
+    }
+
+    [Fact]
+    public void Recurring_WhenStoredOnMaster_ReturnsStoredOnMasterReceipt()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>())).Returns((BucketModel?)null);
+
+        var receipt = JobMasterScheduler.Instance.Recurring<TestJobMasterHandler>(new NeverRecursCompiledExpr());
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.StoredOnMaster);
+        receipt.AgentConnectionId.Should().BeNull();
+    }
+
+    [Fact]
+    public void Recurring_WhenAcceptedOnTransport_ReturnsReceiptWithBucket()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var schedulerMock = RegisterMockCluster("c-receipt", isDefault: true);
+        var bucket = NewBucket("c-receipt");
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(m => m.AssignPendingRecurringScheduleToBucket(bucket))
+            .Returns(bucket);
+
+        var receipt = JobMasterScheduler.Instance.Recurring<TestJobMasterHandler>(new NeverRecursCompiledExpr());
+
+        receipt.Status.Should().Be(ScheduleReceiptStatus.AcceptedOnTransport);
+        receipt.BucketId.Should().Be(bucket.Id);
+        receipt.AgentConnectionId.Should().Be(bucket.AgentConnectionId!.IdValue);
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_Jobs_SkipsStoredOnMaster_AndGroupsByClusterIgnoringCase()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var clusterA = RegisterMockCluster("c-a", isDefault: true);
+        var clusterB = RegisterMockCluster("c-b", isDefault: false);
+        var sentToA = new List<IList<JobRawModel>>();
+        var sentToB = new List<IList<JobRawModel>>();
+        clusterA.Setup(x => x.ConfirmJobsOnMasterAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(sentToA.Add)
+            .Returns(Task.CompletedTask);
+        clusterB.Setup(x => x.ConfirmJobsOnMasterAsync(It.IsAny<IList<JobRawModel>>()))
+            .Callback<IList<JobRawModel>>(sentToB.Add)
+            .Returns(Task.CompletedTask);
+
+        var a1 = NewJobModel("c-a");
+        var a2 = NewJobModel("C-A");
+        var stored = NewJobModel("c-a");
+        var b1 = NewJobModel("c-b");
+
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, a1),
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, a2),
+            new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, stored),
+            new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, b1),
+        });
+
+        sentToA.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { a1, a2 });
+        sentToB.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { b1 });
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_RecurringSchedules_SkipsStoredOnMaster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var sent = new List<IList<RecurringScheduleRawModel>>();
+        cluster.Setup(x => x.ConfirmRecurringSchedulesOnMasterAsync(It.IsAny<IList<RecurringScheduleRawModel>>()))
+            .Callback<IList<RecurringScheduleRawModel>>(sent.Add)
+            .Returns(Task.CompletedTask);
+
+        var accepted = NewRecurringModel("c-a");
+        var stored = NewRecurringModel("c-a");
+
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, accepted),
+            new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, stored),
+        });
+
+        sent.Should().ContainSingle().Which.Should().BeEquivalentTo(new[] { accepted });
+    }
+
+    [Fact]
+    public async Task ConfirmOnMasterAsync_WhenAllStoredOnMaster_NeverCallsMaster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterMockCluster("c-a", isDefault: true); // strict mock: any confirm call fails the test
+
+        await new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewJobModel("c-a")).ConfirmOnMasterAsync();
+        await new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewRecurringModel("c-a")).ConfirmOnMasterAsync();
+        await JobMasterScheduler.Instance.Advanced.ConfirmOnMasterAsync(new[]
+        {
+            new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, NewJobModel("c-a")),
+        });
+    }
+
+    [Fact]
+    public async Task ReceiptConfirmOnMasterAsync_WhenAcceptedOnTransport_ConfirmsThatJob()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.ConfirmJobsOnMasterAsync(It.Is<IList<JobRawModel>>(l => l.Count == 1 && l[0] == job)))
+            .Returns(Task.CompletedTask)
+            .Verifiable();
+
+        await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).ConfirmOnMasterAsync();
+
+        cluster.Verify();
+    }
+
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenAcceptedAndInsertedCancelled_ReturnsTrue_WithoutCancelById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true); // strict: a cancel by id fails the test
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.InsertCancelledJobAsync(job)).ReturnsAsync(true);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenAcceptedButAlreadyOnMaster_CancelsByIdOnReceiptCluster()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        RegisterMockCluster("c-default", isDefault: true);
+        var cluster = RegisterMockCluster("c-a", isDefault: false);
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.InsertCancelledJobAsync(job)).ReturnsAsync(false);
+        cluster.Setup(x => x.CancelJobAsync(job.Id)).ReturnsAsync(false);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, job).CancelAsync()).Should().BeFalse();
+
+        cluster.Verify(x => x.CancelJobAsync(job.Id), Times.Once);
+    }
+
+    [Fact]
+    public async Task ReceiptCancelAsync_WhenStoredOnMaster_OnlyCancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true); // strict: an insert fails the test
+        var job = NewJobModel("c-a");
+        cluster.Setup(x => x.CancelJobAsync(job.Id)).ReturnsAsync(true);
+
+        (await new JobScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, job).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenAcceptedAndInsertedCancelled_ReturnsTrue_WithoutCancelById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.InsertCancelledRecurringScheduleAsync(schedule)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, schedule).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenAcceptedButAlreadyOnMaster_CancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.InsertCancelledRecurringScheduleAsync(schedule)).ReturnsAsync(false);
+        cluster.Setup(x => x.CancelRecurringAsync(schedule.Id)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.AcceptedOnTransport, schedule).CancelAsync()).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task RecurringReceiptCancelAsync_WhenStoredOnMaster_OnlyCancelsById()
+    {
+        using var _ = new StaticStateScope(new FakeRuntime(started: true));
+        var cluster = RegisterMockCluster("c-a", isDefault: true);
+        var schedule = NewRecurringModel("c-a");
+        cluster.Setup(x => x.CancelRecurringAsync(schedule.Id)).ReturnsAsync(true);
+
+        (await new RecurringScheduleReceipt(ScheduleReceiptStatus.StoredOnMaster, schedule).CancelAsync()).Should().BeTrue();
+    }
+
+    private static Mock<IJobMasterSchedulerClusterAware> RegisterMockCluster(string clusterId, bool isDefault)
+    {
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "cnn", isDefault);
+        clusterCfg.AddAgentConnectionString(name: "a", connectionString: "cnn-agent", repositoryTypeId: "repo-agent");
+        clusterCfg.MarkAsReady();
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+        return schedulerMock;
+    }
+
+    private static BucketModel NewBucket(string clusterId) => new(clusterId)
+    {
+        Id = $"{clusterId}.bucket",
+        Name = $"{clusterId}.bucket",
+        AgentConnectionId = new AgentConnectionId(clusterId, "a"),
+        AgentWorkerId = "w",
+        Status = BucketStatus.Active,
+        Priority = JobMasterPriority.Medium,
+    };
+
+    private static JobRawModel NewJobModel(string clusterId) => new(clusterId)
+    {
+        Id = Guid.NewGuid(),
+        JobDefinitionId = "def",
+        TriggerSourceType = JobMasterTriggerSourceType.Once,
+        Priority = JobMasterPriority.Medium,
+        ScheduledAt = DateTime.UtcNow,
+        NextPlanExecutionAt = DateTime.UtcNow,
+        Status = JobMasterJobStatus.PendingSave,
+        Timeout = TimeSpan.FromSeconds(5),
+        MsgData = "{}",
+        CreatedAt = DateTime.UtcNow,
+    };
+
+    private static RecurringScheduleRawModel NewRecurringModel(string clusterId) => new(clusterId)
+    {
+        Id = Guid.NewGuid(),
+        JobDefinitionId = "def",
+        MsgData = "{}",
+        CreatedAt = DateTime.UtcNow,
+        Priority = JobMasterPriority.Medium,
+    };
+
+    [JobMasterClusterId("C-ATTR")]
+    private sealed class UpperCaseClusterIdAttrHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class ScheduledCapture
+    {
+        public List<JobRawModel> Jobs { get; } = new();
+        public List<RecurringScheduleRawModel> Recurring { get; } = new();
+    }
+
+    private static ScheduledCapture RegisterCluster(string clusterId, bool isDefault, ISet<JobMasterPriority>? disabledPriorities = null)
+    {
+        var clusterCfg = JobMasterClusterConnectionConfig.Create(clusterId, "repo", "cnn", isDefault);
+        if (disabledPriorities != null)
+        {
+            clusterCfg.SetDisabledPriorities(disabledPriorities);
+        }
+
+        var capture = new ScheduledCapture();
+
+        var configServiceMock = new Mock<IMasterClusterConfigurationService>(MockBehavior.Strict);
+        configServiceMock.Setup(x => x.Get()).Returns(new ClusterConfigurationModel(clusterId));
+
+        var schedulerMock = new Mock<IJobMasterSchedulerClusterAware>(MockBehavior.Strict);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<JobRawModel>())).Callback<JobRawModel>(capture.Jobs.Add).Returns((BucketModel?)null);
+        schedulerMock.Setup(x => x.ScheduleAsync(It.IsAny<JobRawModel>()))
+            .Callback<JobRawModel>(capture.Jobs.Add)
+            .ReturnsAsync((BucketModel?)null);
+        schedulerMock.Setup(x => x.Schedule(It.IsAny<RecurringScheduleRawModel>()))
+            .Callback<RecurringScheduleRawModel>(capture.Recurring.Add).Returns((BucketModel?)null);
+
+        var factoryMock = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        factoryMock.SetupGet(x => x.ClusterId).Returns(clusterId);
+        factoryMock.Setup(x => x.GetComponent<IJobMasterSchedulerClusterAware>()).Returns(schedulerMock.Object);
+        factoryMock.Setup(x => x.GetComponent<IMasterClusterConfigurationService>()).Returns(configServiceMock.Object);
+
+        JobMasterClusterAwareComponentFactories.AddFactory(clusterId, factoryMock.Object);
+        return capture;
+    }
+
+    [JobMasterClusterId(ClusterId)]
+    private sealed class ClusterIdAttrHandler : IJobMasterHandler
+    {
+        public const string ClusterId = "c-attr";
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
+    }
+
+    private sealed class ClusterIdDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig
+    {
+        public const string ClusterId = "c-config";
+        public static JobDefinitionConfig Config { get; } = new JobDefinitionConfig("cluster-defid", clusterId: ClusterId);
+    }
+
+    [ClusterIdDefinitionAttribute]
+    private sealed class ClusterIdDefinitionHandler : IJobMasterHandler
+    {
+        public Task HandleAsync(JobContext job) => Task.CompletedTask;
     }
 
     private sealed class TestDefinitionAttribute : JobDefinitionConfigAttribute, IStaticJobDefinitionConfig

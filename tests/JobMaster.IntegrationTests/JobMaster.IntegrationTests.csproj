@@ -27,13 +27,15 @@
         <PackageReference Include="Testcontainers.MySql" Version="4.4.0" />
         <PackageReference Include="Testcontainers.MsSql" Version="4.4.0" />
         <PackageReference Include="Testcontainers.RavenDb" Version="4.4.0" />
+        <PackageReference Include="Testcontainers.Nats" Version="4.4.0" />
     </ItemGroup>
 
     <ItemGroup>
       <ProjectReference Include="..\..\src\JobMaster\JobMaster.csproj" />
-      <ProjectReference Include="..\..\src\Providers\JobMaster.Postgres\JobMaster.Postgres.csproj" />
-      <ProjectReference Include="..\..\src\Providers\JobMaster.MySql\JobMaster.MySql.csproj" />
-      <ProjectReference Include="..\..\src\Providers\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
-      <ProjectReference Include="..\..\src\Providers\JobMaster.RavenDb\JobMaster.RavenDb.csproj" />
+      <ProjectReference Include="..\..\src\StorageProviders\JobMaster.Postgres\JobMaster.Postgres.csproj" />
+      <ProjectReference Include="..\..\src\StorageProviders\JobMaster.MySql\JobMaster.MySql.csproj" />
+      <ProjectReference Include="..\..\src\StorageProviders\JobMaster.SqlServer\JobMaster.SqlServer.csproj" />
+      <ProjectReference Include="..\..\src\StorageProviders\JobMaster.RavenDB\JobMaster.RavenDB.csproj" />
+      <ProjectReference Include="..\..\src\StorageProviders\JobMaster.NatsJetStream\JobMaster.NatsJetStream.csproj" />
     </ItemGroup>
 </Project>

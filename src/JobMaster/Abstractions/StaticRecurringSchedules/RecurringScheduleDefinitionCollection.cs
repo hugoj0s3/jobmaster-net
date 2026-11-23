@@ -4,6 +4,9 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
 using JobMaster.Abstractions.RecurrenceExpressions;
 using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Abstractions.StaticRecurringSchedules;
@@ -44,9 +47,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="timeout">Maximum execution time per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
-    /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         string expressionType,
         string expression,
@@ -54,15 +57,15 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
         where Th : class, IJobMasterHandler
-        => Add(typeof(Th), expressionType, expression, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        => Add(typeof(Th), expressionType, expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
 
     /// <summary>
     /// Adds a recurring schedule for <paramref name="handlerType"/> using a text-based recurrence expression.
-    /// Non-generic counterpart of <see cref="Add{Th}(string, string, string?, JobMasterPriority?, TimeSpan?, int?, DateTime?, DateTime?, IWritableMetadata?)"/>
+    /// Non-generic counterpart of <see cref="Add{Th}(string, string, string?, JobMasterPriority?, TimeSpan?, int?, IWritableMetadata?, DateTime?, DateTime?)"/>
     /// for callers that only have a <see cref="Type"/> at hand (e.g. reflection-driven registration).
     /// </summary>
     /// <param name="handlerType">The job handler type. Must implement <see cref="IJobMasterHandler"/>.</param>
@@ -72,9 +75,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="timeout">Maximum execution time per occurrence. Defaults to the handler attribute or cluster default.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence. Defaults to the handler attribute or cluster default.</param>
-    /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         string expressionType,
@@ -83,12 +86,12 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
     {
         var compiled = RecurrenceExprCompiler.Compile(expressionType, expression);
-        return Add(handlerType, compiled, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        return Add(handlerType, compiled, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
     }
 
     /// <summary>
@@ -99,24 +102,24 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence.</param>
     /// <param name="timeout">Maximum execution time per occurrence.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
-    /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add<Th>(
         IRecurrenceCompiledExpr compiledExpr,
         string? defId = null,
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
         where Th : class, IJobMasterHandler
-        => Add(typeof(Th), compiledExpr, defId, priority, timeout, maxNumberOfRetries, startAfter, endBefore, metadata);
+        => Add(typeof(Th), compiledExpr, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore);
 
     /// <summary>
     /// Adds a recurring schedule for <paramref name="handlerType"/> using a pre-compiled recurrence expression.
-    /// Non-generic counterpart of <see cref="Add{Th}(IRecurrenceCompiledExpr, string?, JobMasterPriority?, TimeSpan?, int?, DateTime?, DateTime?, IWritableMetadata?)"/>
+    /// Non-generic counterpart of <see cref="Add{Th}(IRecurrenceCompiledExpr, string?, JobMasterPriority?, TimeSpan?, int?, IWritableMetadata?, DateTime?, DateTime?)"/>
     /// for callers that only have a <see cref="Type"/> at hand (e.g. reflection-driven registration).
     /// </summary>
     /// <param name="handlerType">The job handler type. Must implement <see cref="IJobMasterHandler"/>.</param>
@@ -125,9 +128,9 @@ public sealed class RecurringScheduleDefinitionCollection
     /// <param name="priority">Execution priority per occurrence.</param>
     /// <param name="timeout">Maximum execution time per occurrence.</param>
     /// <param name="maxNumberOfRetries">Max retries per occurrence.</param>
-    /// <param name="startAfter">UTC date before which no jobs fire.</param>
-    /// <param name="endBefore">UTC date after which no jobs fire.</param>
     /// <param name="metadata">Optional key-value metadata attached to every job occurrence.</param>
+    /// <param name="startAfter">UTC date before which no jobs fire.</param>
+    /// <param name="endBefore">Jobs fire only before this UTC time, none at or after it.</param>
     public RecurringScheduleDefinitionCollection Add(
         Type handlerType,
         IRecurrenceCompiledExpr compiledExpr,
@@ -135,9 +138,9 @@ public sealed class RecurringScheduleDefinitionCollection
         JobMasterPriority? priority = null,
         TimeSpan? timeout = null,
         int? maxNumberOfRetries = null,
+        IWritableMetadata? metadata = null,
         DateTime? startAfter = null,
-        DateTime? endBefore = null,
-        IWritableMetadata? metadata = null)
+        DateTime? endBefore = null)
     {
         if (!typeof(IJobMasterHandler).IsAssignableFrom(handlerType))
         {
@@ -149,12 +152,20 @@ public sealed class RecurringScheduleDefinitionCollection
             throw new ArgumentException("Invalid DefinitionId", nameof(defId));
         }
 
-        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
+        var jobDefinitionId = handlerType.GetJobDefinitionId();
+        // Profile → handler (JobDefinitionConfigAttribute / attribute) → default, for both cluster and lane.
+        // Cluster must be resolved here: the schedule itself is stored on that cluster. Matched ignoring case; the
+        // configured casing is what goes into the schedule id and onto master.
+        var clusterId = JobMasterClusterConnectionConfig.ToConfiguredClusterId(
+            JobUtil.GetClusterId(handlerType, this.profile.ClusterId) ?? defaultClusterId);
+        // Lane resolved here too (not per occurrence) so the stored schedule shows it. Static schedules are upserted
+        // on every startup, so a changed handler attribute still takes effect on the next deploy.
+        var workerLane = JobUtil.GetWorkerLane(handlerType, this.profile.WorkerLane);
         lock (unique)
         {
-            var id = GenerateUniqueId(handlerType, defId);
+            var id = GenerateUniqueId(clusterId, handlerType, defId);
             var definition = new StaticRecurringScheduleDefinition(
-                clusterId: string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId,
+                clusterId: clusterId,
                 jobDefinitionId,
                 compiledExpr: compiledExpr,
                 id: id,
@@ -164,7 +175,7 @@ public sealed class RecurringScheduleDefinitionCollection
                 startAfter: startAfter,
                 endBefore: endBefore,
                 metadata: metadata,
-                workerLane: this.profile.WorkerLane);
+                workerLane: workerLane);
 
             this.Add(definition);
             return this;
@@ -175,11 +186,9 @@ public sealed class RecurringScheduleDefinitionCollection
     {
         if (definition == null) throw new ArgumentNullException(nameof(definition));
 
-        var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
-
         ValidateDefinition(definition);
 
-        EnsureUnique(clusterId, definition.Id);
+        EnsureUnique(definition.ClusterId, definition.Id);
 
         items.Add(definition);
     }
@@ -213,7 +222,7 @@ public sealed class RecurringScheduleDefinitionCollection
         return sb.ToString();
     }
 
-    private string GenerateUniqueId(Type typeHandler, string? defId)
+    private string GenerateUniqueId(string clusterId, Type typeHandler, string? defId)
     {
         var profileId = SanitizeIdPart(profile.ProfileId);
         var handler = typeHandler;
@@ -221,14 +230,13 @@ public sealed class RecurringScheduleDefinitionCollection
         // Prefer attribute TypeId if present; else use short type name
         if (string.IsNullOrWhiteSpace(defId))
         {
-            defId = handler.GetCustomAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? handler.Name;
+            defId = handler.GetCachedAttribute<JobMasterDefinitionIdAttribute>()?.JobDefinitionId ?? handler.Name;
         }
 
         var defSubId = defId!;
         defSubId = SanitizeIdPart(defSubId);
 
         // Extremely unlikely, but guard in case of collision within this collection
-        var clusterId = string.IsNullOrEmpty(this.profile.ClusterId) ? defaultClusterId : this.profile.ClusterId;
         var candidate = $"{clusterId}:{profileId}:{defSubId}";
 
         if (!unique.Contains((clusterId, candidate)))
@@ -247,10 +255,9 @@ public sealed class RecurringScheduleDefinitionCollection
 
     private static void ValidateDefinition(StaticRecurringScheduleDefinition cfg)
     {
-        if (cfg.MaxNumberOfRetries > JobMasterConstants.MaxAllowedRetries)
+        if (cfg.MaxNumberOfRetries < 0)
         {
-            throw new ArgumentException(
-                $"MaxNumberOfRetries must be less than or equal to {JobMasterConstants.MaxAllowedRetries}.");
+            throw new ArgumentException("MaxNumberOfRetries cannot be negative.");
         }
 
         if (cfg.CompiledExpr == null) throw new ArgumentException("CompiledExpr is required.");

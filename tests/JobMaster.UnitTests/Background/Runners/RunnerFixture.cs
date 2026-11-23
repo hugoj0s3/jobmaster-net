@@ -11,6 +11,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Utils;
 using Moq;
 
@@ -35,6 +36,7 @@ internal sealed record RunnerFixture(
     RunnerFakes.FakeRecurringSchedulePlanner RecurringSchedulePlanner,
     RunnerFakes.FakeRecentlyInsertedRecurringScheduleQueue RecentlyInsertedQueue,
     Mock<IWorkerClusterOperations> WorkerClusterOps,
+    Mock<IJobMasterLogger> Logger,
     string WorkerId,
     string ClusterId,
     AgentConnectionId AgentConnectionId)
@@ -98,14 +100,17 @@ internal sealed record RunnerFixture(
         worker.SetupGet(x => x.HostId).Returns(hostId);
         worker.SetupGet(x => x.TransferBatchSize).Returns(50);
         worker.SetupGet(x => x.BucketBufferSize).Returns(10);
-        worker.SetupGet(x => x.StopRequested).Returns(false);
+        worker.SetupGet(x => x.GracefulStopRequested).Returns(false);
         worker.SetupGet(x => x.StopImmediatelyRequested).Returns(false);
-        worker.SetupGet(x => x.StopRequestedAt).Returns((DateTime?)null);
-        worker.SetupGet(x => x.StopGracePeriod).Returns((TimeSpan?)null);
-        worker.SetupGet(x => x.CancellationTokenSource).Returns(new CancellationTokenSource());
+        worker.SetupGet(x => x.GracefulStopRequestedAt).Returns((DateTime?)null);
+        worker.SetupGet(x => x.GracefulStopPeriod).Returns((TimeSpan?)null);
+        // A runner gets its stop control from the runtime's factory, linked to its worker's, when it starts.
+        var runtime = new FakeRuntime();
+        worker.SetupGet(x => x.Runtime).Returns(runtime);
+        worker.SetupGet(x => x.StopControl).Returns(StopControl.CreateLinked(runtime.StopControl));
         worker.SetupGet(x => x.BucketAwareSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
         worker.SetupGet(x => x.MainSemaphoreSlim).Returns(new SemaphoreSlim(1, 1));
-        worker.SetupGet(x => x.Runners).Returns(new List<IJobMasterRunner>());
+        worker.SetupGet(x => x.Runners).Returns(new RunnerRegistry());
         worker.SetupGet(x => x.WorkerClusterOperations).Returns(workerClusterOps.Object);
         worker.SetupGet(x => x.IsInitialized).Returns(true);
 
@@ -150,6 +155,7 @@ internal sealed record RunnerFixture(
             recurringSchedulePlanner,
             recentlyInsertedQueue,
             workerClusterOps,
+            logger,
             workerId,
             clusterId,
             agentConnectionId);

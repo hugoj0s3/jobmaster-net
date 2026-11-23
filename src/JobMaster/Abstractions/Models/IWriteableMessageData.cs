@@ -40,3 +40,17 @@ public interface IWriteableMessageData
     /// <summary>Returns a read-only view of the stored entries.</summary>
     public IReadableMessageData ToReadable();
 }
+
+/// <summary>Factory for creating <see cref="IWriteableMessageData"/> instances.</summary>
+public static class WriteableMessageData
+{
+    /// <summary>Creates a new empty message data builder.</summary>
+    public static IWriteableMessageData New() => new MessageData();
+
+    /// <summary>
+    /// Creates a message data builder pre-populated with a copy of <paramref name="dictionary"/>: later changes to
+    /// either one don't affect the other. Keys are matched ignoring case; if <paramref name="dictionary"/> holds one
+    /// key in different casings, the last value is kept under the first spelling.
+    /// </summary>
+    public static IWriteableMessageData FromDictionary(IDictionary<string, object?> dictionary) => new MessageData(dictionary);
+}

@@ -1,0 +1,17 @@
+{
+  "containerName": "mx-{{flavor}}-basic-exec",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-basic-exec",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-basic-exec",
+      "Standalone": true,
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:Standalone}}",
+      "Workers": [ { "WorkerName": "w1" } ]
+    }
+  ]
+}

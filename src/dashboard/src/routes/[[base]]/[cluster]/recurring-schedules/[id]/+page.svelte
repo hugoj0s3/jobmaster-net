@@ -151,7 +151,7 @@
 				const logsResp = await jm.GET("/{clusterId}/logs", {
 					params: {
 						path: { clusterId: cid },
-						query: { ReferenceGuid: sid, Category: LogCategory.RecurringSchedule, CountLimit: logsPageSize }
+						query: { ReferenceIds: [sid], Category: LogCategory.RecurringSchedule, CountLimit: logsPageSize }
 					}
 				});
 				recentLogs = logsResp.error ? [] : (logsResp.data ?? []) as LogEntry[];

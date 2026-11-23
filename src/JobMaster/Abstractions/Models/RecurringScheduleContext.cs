@@ -36,7 +36,7 @@ public class RecurringScheduleContext
     /// <summary>UTC date after which the schedule starts firing. <c>null</c> means no start restriction.</summary>
     public DateTime? StartAfter { get; internal set; }
 
-    /// <summary>UTC date after which the schedule stops firing. <c>null</c> means no end restriction.</summary>
+    /// <summary>The schedule fires only before this UTC time, never at or after it. <c>null</c> means no end restriction.</summary>
     public DateTime? EndBefore { get; internal set; }
 
     /// <summary>Key-value metadata attached to this schedule.</summary>

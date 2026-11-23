@@ -31,6 +31,10 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.DefaultJobTimeout"/> (1 minute).
     /// </summary>
     /// <param name="defaultJobTimeout">The maximum allowed execution duration per job.</param>
+    public IClusterStandaloneConfigSelector DefaultJobTimeout(TimeSpan defaultJobTimeout);
+
+    /// <inheritdoc cref="DefaultJobTimeout"/>
+    [Obsolete("Use DefaultJobTimeout instead.")]
     public IClusterStandaloneConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout);
 
     /// <summary>
@@ -39,6 +43,10 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.TransientThreshold"/> (10 minutes).
     /// </summary>
     /// <param name="transientThreshold">The look-ahead dispatch window.</param>
+    public IClusterStandaloneConfigSelector TransientThreshold(TimeSpan transientThreshold);
+
+    /// <inheritdoc cref="TransientThreshold"/>
+    [Obsolete("Use TransientThreshold instead.")]
     public IClusterStandaloneConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold);
 
     /// <summary>
@@ -46,7 +54,20 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.MaxRetryCount"/> (3 retries).
     /// </summary>
     /// <param name="defaultMaxRetryCount">The number of retry attempts allowed per job.</param>
+    public IClusterStandaloneConfigSelector DefaultMaxRetryCount(int defaultMaxRetryCount);
+
+    /// <inheritdoc cref="DefaultMaxRetryCount"/>
+    [Obsolete("Use DefaultMaxRetryCount instead.")]
     public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount);
+
+    /// <inheritdoc cref="IClusterConfigSelector.RetryDelays"/>
+    public IClusterStandaloneConfigSelector RetryDelays(params TimeSpan[] delays);
+
+    /// <inheritdoc cref="IClusterConfigSelector.InterceptRetry(Func{JobRetryContext, JobRetryDecision})"/>
+    public IClusterStandaloneConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor);
+
+    /// <inheritdoc cref="IClusterConfigSelector.InterceptRetry{TInterceptor}"/>
+    public IClusterStandaloneConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor;
 
     /// <summary>
     /// Sets the maximum byte size for job messages exchanged through the internal pipeline.
@@ -55,6 +76,10 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.MaxMessageByteSize"/> (128 KB).
     /// </summary>
     /// <param name="maxMessageByteSize">The maximum message size in bytes.</param>
+    public IClusterStandaloneConfigSelector MaxMessageByteSize(int maxMessageByteSize);
+
+    /// <inheritdoc cref="MaxMessageByteSize"/>
+    [Obsolete("Use MaxMessageByteSize instead.")]
     public IClusterStandaloneConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize);
 
     /// <summary>
@@ -63,6 +88,10 @@ public interface IClusterStandaloneConfigSelector
     /// Default: the local system time zone.
     /// </summary>
     /// <param name="ianaTimeZoneId">A valid IANA time zone identifier.</param>
+    public IClusterStandaloneConfigSelector IanaTimeZoneId(string ianaTimeZoneId);
+
+    /// <inheritdoc cref="IanaTimeZoneId"/>
+    [Obsolete("Use IanaTimeZoneId instead.")]
     public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId);
 
     /// <summary>
@@ -72,7 +101,7 @@ public interface IClusterStandaloneConfigSelector
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterLimits.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
@@ -80,6 +109,10 @@ public interface IClusterStandaloneConfigSelector
     /// Optional id of another configured cluster to archive finalized jobs and terminated recurring
     /// schedules to before they're purged here. When null, purged data is deleted outright as before.
     /// </param>
+    public IClusterStandaloneConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null);
+
+    /// <inheritdoc cref="DataRetentionTtl"/>
+    [Obsolete("Use DataRetentionTtl instead.")]
     public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null);
 
     /// <summary>
@@ -103,8 +136,21 @@ public interface IClusterStandaloneConfigSelector
     /// Registers an in-process worker that picks up and executes jobs for this standalone cluster.
     /// </summary>
     /// <param name="workerName">Optional logical name for this worker instance.</param>
+    /// <param name="workerLane">
+    /// The lane this worker runs (e.g. "email", "reports"). It runs only jobs with that lane.
+    /// Default: null — the worker runs jobs that have no lane.
+    /// </param>
+    /// <param name="parallelismFactor">
+    /// Scales how many jobs this worker runs at once, for every priority (see
+    /// <see cref="IAgentWorkerSelector.ParallelismFactor"/>). Default: the machine's processor count, capped at
+    /// <see cref="JobMasterDefaults.Worker.MaxParallelismFactor"/>.
+    /// </param>
     /// <param name="batchSize">Number of jobs pulled per transfer cycle. Default: 250.</param>
-    public IClusterStandaloneConfigSelector AddWorker(string? workerName = null, int batchSize = 250);
+    public IClusterStandaloneConfigSelector AddWorker(
+        string? workerName = null,
+        string? workerLane = null,
+        double? parallelismFactor = null,
+        int batchSize = 250);
 
     /// <summary>
     /// Sets the operational mode of this cluster.
@@ -112,10 +158,21 @@ public interface IClusterStandaloneConfigSelector
     /// See <see cref="ClusterMode"/> for a description of each mode.
     /// </summary>
     /// <param name="mode">The desired cluster mode.</param>
+    public IClusterStandaloneConfigSelector Mode(ClusterMode mode);
+
+    /// <inheritdoc cref="Mode"/>
+    [Obsolete("Use Mode instead.")]
     public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode);
 
     /// <inheritdoc cref="IClusterConfigSelector.MigrateTo"/>
+    public IClusterStandaloneConfigSelector MigrateTo(string targetActiveClusterId);
+
+    /// <inheritdoc cref="MigrateTo"/>
+    [Obsolete("Use MigrateTo instead.")]
     public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId);
+
+    /// <inheritdoc cref="IClusterConfigSelector.Archive"/>
+    public IClusterStandaloneConfigSelector Archive(string? targetActiveClusterId = null);
 
     internal IClusterStandaloneConfigSelector ClusterConnString(string connString);
     internal IClusterStandaloneConfigSelector ClusterRepoType(string repoType);

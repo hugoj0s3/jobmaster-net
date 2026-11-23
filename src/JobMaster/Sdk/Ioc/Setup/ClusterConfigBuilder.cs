@@ -27,10 +27,12 @@ using JobMaster.Sdk.Services.Agents;
 using JobMaster.Sdk.Services.Master;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Cache;
 using JobMaster.Sdk.Ioc.Setup.Binders;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
@@ -53,6 +55,16 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    /// <summary>
+    /// <list type="number">
+    /// <item>Copies the blueprint's connection-level values into <see cref="JobMasterClusterConnectionConfig"/> — cluster
+    /// id, repository type, connection string, default flag, mirror log, disabled priorities, additional config and agent
+    /// connections. This is the only place that copies them. The rest of the blueprint (cluster settings, workers, static
+    /// schedules) is validated and saved to master by <see cref="JobMasterRuntime.StartAsync"/>.</item>
+    /// <item>Registers the cluster's services into the IoC.</item>
+    /// <item>Calls each repository provider's IoC registration, for the master and for every agent repository type.</item>
+    /// </list>
+    /// </summary>
     public void Finish()
     {
         if (string.IsNullOrWhiteSpace(clusterDefinition.ClusterId))
@@ -76,9 +88,17 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         
         BootstrapBlueprintDefinitions.Clusters.Add(clusterDefinition);
         
+        // An archived standalone cluster has no agent connection: like on any archived cluster, its workers act as its
+        // Coordinator, which must have none. The standalone AddWorker binds every worker to the standalone connection.
+        var isArchivedStandalone = clusterDefinition.IsStandalone == true && clusterDefinition.ClusterMode == JobMaster.Abstractions.Models.ClusterMode.Archived;
+
         foreach (var w in clusterDefinition.Workers)
         {
             w.ClusterId = finalClusterId!;
+            if (isArchivedStandalone && JobMasterRuntime.ActsAsCoordinator(w, clusterDefinition))
+            {
+                w.AgentConnectionName = string.Empty;
+            }
         }
 
         foreach (var a in clusterDefinition.AgentConnections)
@@ -94,6 +114,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             isDefault: clusterDefinition.IsDefault);
 
         clusterCnnConfig.SetMirrorLog(clusterDefinition.MirrorLog);
+        clusterCnnConfig.SetRetrySettings(new JobMasterRetrySettings(
+            clusterDefinition.RetryDelays, clusterDefinition.RetryInterceptor, clusterDefinition.RetryInterceptorType));
+
+        // Same rule as handlers: registered scoped unless the app registered it itself.
+        if (clusterDefinition.RetryInterceptorType != null)
+            services.TryAddScoped(clusterDefinition.RetryInterceptorType);
 
         if (clusterDefinition.DisabledPriorities.Any())
             clusterCnnConfig.SetDisabledPriorities(clusterDefinition.DisabledPriorities);
@@ -134,40 +160,39 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         // Register agents
         foreach (var agentConnDefinition in clusterDefinition.AgentConnections)
         {
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnectionName))
-            {
-                throw new ArgumentException("AgentConnectionName must be defined via AgentConnectionName(...)");
-            }
+            agentConnDefinition.Validate();
 
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentConnString))
+            if (agentConnDefinition.IsHybrid)
             {
-                throw new ArgumentException("AgentConnString must be defined via AgentConnString(...)");
+                clusterCnnConfig.AddHybridAgentConnectionConfig(
+                    agentConnDefinition.AgentConnectionName,
+                    agentConnDefinition.Transport.AgentConnString!,
+                    agentConnDefinition.Transport.AgentRepoType!,
+                    agentConnDefinition.Transport.AgentAdditionalConnConfig,
+                    agentConnDefinition.Execution.AgentConnString!,
+                    agentConnDefinition.Execution.AgentRepoType!,
+                    agentConnDefinition.Execution.AgentAdditionalConnConfig);
             }
-            
-            if (string.IsNullOrWhiteSpace(agentConnDefinition.AgentRepoType))
+            else
             {
-                throw new ArgumentException("AgentRepoType must be defined via AgentRepoType(...)");
+                clusterCnnConfig.AddAgentConnectionString(
+                    agentConnDefinition.AgentConnectionName,
+                    agentConnDefinition.AgentConnString ?? string.Empty,
+                    agentConnDefinition.AgentRepoType!,
+                    agentConnDefinition.AgentAdditionalConnConfig);
             }
-            
-            clusterCnnConfig.AddAgentConnectionString(
-                agentConnDefinition.AgentConnectionName,
-                agentConnDefinition.AgentConnString ?? string.Empty,
-                agentConnDefinition.AgentRepoType!,
-                agentConnDefinition.AgentAdditionalConnConfig);
         }
         
-        if (clusterDefinition.IsStandalone == true)
+        if (clusterDefinition.IsStandalone == true && !isArchivedStandalone)
         {
             clusterCnnConfig.AddStandaloneAgentConnectionString();
         }
 
-        services.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        services.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
+        services.AddSingleton<IJobMasterScheduler>(JobMasterScheduler.Instance);
+        services.AddSingleton<IJobMasterSchedulerAdvanced>(JobMasterScheduler.Instance.Advanced);
 
         var clusterServiceRegistration = new ClusterIocRegistration(finalClusterId!, services);
         clusterServiceRegistration.ClusterServices.AddSingleton<IBucketSelectorAlgorithm, RandomBucketSelectorAlgorithm>();
-        clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
         clusterServiceRegistration.ClusterServices.AddSingleton<IJobMasterInMemoryCache, JobMasterInMemoryCache>();
         clusterServiceRegistration.ClusterServices.AddSingleton<DefaultKnownExceptionIdentifierStrategy>();
         clusterServiceRegistration.AddJobMasterComponent<IKnownExceptionIdentifier, KnownExceptionIdentifier>();
@@ -196,9 +221,11 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         clusterServiceRegistration.AddJobMasterComponent<IMasterHostService, MasterHostService>();
 
         JobMasterIocRegistrationAttribute.RegisterProviderExtensionsForMaster(clusterServiceRegistration, finalClusterRepoType, finalClusterId!);
-        
-        var agentRepoTypes = clusterDefinition.AgentConnections.Select(a => a.AgentRepoType)!.Distinct<string>().ToList();
-        agentRepoTypes.Add(finalClusterRepoType); // for standalone agents
+
+        var agentRepoTypes = new HashSet<string>(
+            clusterDefinition.AgentConnections.SelectMany(a => a.GetProviderRepoTypes()),
+            StringComparer.OrdinalIgnoreCase);
+        agentRepoTypes.Add(finalClusterRepoType); // Add the cluster repo type to the list of agent repo types.
         
         foreach (var agentRepoType in agentRepoTypes)
         {
@@ -209,34 +236,22 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         }
         
         // Register runtime setup. get all impl and register for IJobMasterRuntimeSetup
-        var assemblies = AppDomain.CurrentDomain.GetAssemblies()
-            .Where(a => !a.IsDynamic && !string.IsNullOrEmpty(a.Location))
-            .ToList();
-
-        var runtimeSetupTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterRuntimeSetup).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
+        var runtimeSetupTypes = typeof(IJobMasterRuntimeSetup).GetCachedConcreteTypesOf().ToList();
 
         foreach (var runtimeSetupType in runtimeSetupTypes)
         {
-            services.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
+            // Once per type in the main container, not once per cluster: each setup already covers every cluster, so a
+            // duplicate would run (and report its validation errors) twice.
+            services.TryAddEnumerable(ServiceDescriptor.Scoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType));
             clusterServiceRegistration.ClusterServices.AddScoped(typeof(IJobMasterRuntimeSetup), runtimeSetupType);
         }
         
-        // Automatically register all IJobMasterHandler implementations
-        var handlerTypes = assemblies
-            .SelectMany(a => a.GetTypes())
-            .Where(t => typeof(IJobMasterHandler).IsAssignableFrom(t) && 
-                        !t.IsInterface && 
-                        !t.IsAbstract)
-            .ToList();
-        
+        // Automatically register all IJobMasterHandler implementations. TryAdd: once per handler across clusters and
+        // JobMasterAssemblyDiscovery(), and an application's own registration (custom lifetime / factory) wins.
+        var handlerTypes = typeof(IJobMasterHandler).GetCachedConcreteTypesOf().ToList();
         foreach (var handlerType in handlerTypes)
         {
-            services.AddScoped(handlerType);
+            services.TryAddScoped(handlerType);
         }
         
         var factory = clusterServiceRegistration.BuildFactory();
@@ -247,6 +262,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     public IClusterConfigSelector SetAsDefault()
     {
         this.clusterDefinition.IsDefault = true;
+        return this;
+    }
+
+    public IClusterConfigSelector AllowOmittedTimeZone()
+    {
+        this.clusterDefinition.AllowOmittedTimeZone = true;
         return this;
     }
 
@@ -263,7 +284,7 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
     public IClusterConfigSelector ClusterRepoType(string repoType)
     {
-        this.clusterDefinition.RepoType = repoType;
+        this.clusterDefinition.RepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
 
@@ -296,6 +317,24 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
     }
 
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterConfigSelector RetryDelays(params TimeSpan[] delays)
+    {
+        this.clusterDefinition.SetRetryDelays(delays);
+        return this;
+    }
+
+    public IClusterConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor)
+    {
+        this.clusterDefinition.SetRetryInterceptor(interceptor);
+        return this;
+    }
+
+    public IClusterConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor
+    {
+        this.clusterDefinition.SetRetryInterceptorType(typeof(TInterceptor));
+        return this;
+    }
 
     public IClusterConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {
@@ -396,6 +435,12 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
         return this;
     }
 
+    public IClusterConfigSelector Archive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
+        return this;
+    }
+
     public IClusterStandaloneConfigSelector UseStandaloneCluster()
     {
         clusterDefinition.IsStandalone = true;
@@ -409,13 +454,10 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             throw new ArgumentException("Invalid agentConnectionName use 0-9, Aa-Zz and - _ only");
         }
         
-        var def = new AgentConnectionDefinition
-        {
-            AgentConnectionName = agentConnectionName,
-            AgentRepoType = repoType,
-            AgentConnString = cnnString,
-            AgentAdditionalConnConfig = additionalConnConfig,
-        };
+        var def = new AgentConnectionDefinition { AgentConnectionName = agentConnectionName };
+        def.Transport.AgentRepoType = repoType == null ? null : ProviderAssemblies.ToKnownRepositoryType(repoType);
+        def.Transport.AgentConnString = cnnString;
+        def.Transport.AgentAdditionalConnConfig = additionalConnConfig;
         clusterDefinition.AgentConnections.Add(def);
         return new AgentConnectionConfigSelector(def);
     }
@@ -492,6 +534,8 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
             DefaultJobTimeout(TimeSpan.Parse(config.DefaultJobTimeout, CultureInfo.InvariantCulture));
         if (config.DefaultMaxRetryCount.HasValue)
             DefaultMaxRetryCount(config.DefaultMaxRetryCount.Value);
+        if (config.RetryDelays != null)
+            RetryDelays(config.RetryDelays.Select(d => TimeSpan.Parse(d, CultureInfo.InvariantCulture)).ToArray());
         if (config.MaxMessageByteSize.HasValue)
             MaxMessageByteSize(config.MaxMessageByteSize.Value);
         if (config.IanaTimeZoneId != null)
@@ -516,20 +560,24 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
         if (config.Standalone)
         {
-            // IClusterStandaloneConfigSelector.AddWorker only accepts a name and a batch size — there is
-            // no standalone-side equivalent of WorkerLane, ParallelismFactor, SkipWarmUpTime, WorkerMode,
-            // BucketQtyConfig, BucketBufferSize, or the cluster-level ConnectionOptions dictionary, so those
-            // WorkerJsonConfig/ClusterJsonConfig fields are intentionally ignored here (not applicable to
+            // IClusterStandaloneConfigSelector.AddWorker only accepts a name, lane, parallelism factor and batch
+            // size — there is no standalone-side equivalent of SkipWarmUpTime, WorkerMode, BucketQtyConfig or
+            // BucketBufferSize, so those WorkerJsonConfig fields are intentionally ignored here (not applicable to
             // standalone mode), same as when configuring a standalone cluster through the fluent API.
             var standalone = UseStandaloneCluster();
             if (config.RepoType != null) standalone.ClusterRepoType(config.RepoType);
             if (config.ConnectionString != null) standalone.ClusterConnString(config.ConnectionString);
+
+            // Same cluster definition as the standalone builder, so the master options also reach the standalone
+            // agent connection (it copies the cluster's options when it's created in Finish).
+            if (config.ConnectionOptions != null && config.RepoType != null)
+                ConnectionOptionsBinderFactory.Create(config.RepoType).SetOptions(this, ToIgnoreCase(config.ConnectionOptions));
             foreach (var w in config.Workers ?? [])
             {
                 if (w.TransferBatchSize.HasValue)
-                    standalone.AddWorker(w.WorkerName, w.TransferBatchSize.Value);
+                    standalone.AddWorker(w.WorkerName, w.WorkerLane, w.ParallelismFactor, w.TransferBatchSize.Value);
                 else
-                    standalone.AddWorker(w.WorkerName);
+                    standalone.AddWorker(w.WorkerName, w.WorkerLane, w.ParallelismFactor);
             }
         }
         else
@@ -548,11 +596,54 @@ internal class ClusterConfigBuilder : IClusterConfigSelector
 
             foreach (var agent in config.AgentConnections ?? [])
             {
-                var agentSel = AddAgentConnectionConfig(agent.Name!, agent.RepositoryType, agent.ConnectionString);
-                if (agent.ProtectConnectionChanges.HasValue)
-                    agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
-                if (agent.ConnectionOptions != null && agent.RepositoryType != null)
-                    ConnectionOptionsBinderFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+                bool hasHybrid = agent.Transport != null || agent.Execution != null;
+                bool hasSingle = !string.IsNullOrEmpty(agent.RepositoryType) || !string.IsNullOrEmpty(agent.ConnectionString) || agent.ConnectionOptions != null;
+
+                if (hasHybrid && hasSingle)
+                {
+                    throw new ArgumentException($"Agent connection '{agent.Name}' cannot mix single-provider fields (RepositoryType/ConnectionString/ConnectionOptions) with hybrid fields (Transport/Execution).");
+                }
+
+                if (hasHybrid)
+                {
+                    if (agent.Transport == null || agent.Execution == null)
+                    {
+                        throw new ArgumentException($"Hybrid agent connection '{agent.Name}' must specify both 'Transport' and 'Execution' sections.");
+                    }
+
+                    var agentSel = AddAgentConnectionConfig(agent.Name!);
+                    var hybridSel = agentSel.UseHybrid();
+                    if (agent.ProtectConnectionChanges.HasValue)
+                        hybridSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
+
+                    hybridSel.Transport(t =>
+                    {
+                        if (agent.Transport.RepositoryType != null)
+                            t.AgentRepoType(agent.Transport.RepositoryType);
+                        if (agent.Transport.ConnectionString != null)
+                            t.AgentConnString(agent.Transport.ConnectionString);
+                        if (agent.Transport.ConnectionOptions != null && agent.Transport.RepositoryType != null)
+                            ConnectionOptionsBinderFactory.Create(agent.Transport.RepositoryType).SetOptions(t, ToIgnoreCase(agent.Transport.ConnectionOptions));
+                    });
+
+                    hybridSel.Execution(e =>
+                    {
+                        if (agent.Execution.RepositoryType != null)
+                            e.AgentRepoType(agent.Execution.RepositoryType);
+                        if (agent.Execution.ConnectionString != null)
+                            e.AgentConnString(agent.Execution.ConnectionString);
+                        if (agent.Execution.ConnectionOptions != null && agent.Execution.RepositoryType != null)
+                            ConnectionOptionsBinderFactory.Create(agent.Execution.RepositoryType).SetOptions(e, ToIgnoreCase(agent.Execution.ConnectionOptions));
+                    });
+                }
+                else
+                {
+                    var agentSel = AddAgentConnectionConfig(agent.Name!, agent.RepositoryType, agent.ConnectionString);
+                    if (agent.ProtectConnectionChanges.HasValue)
+                        agentSel.ProtectConnectionChanges(agent.ProtectConnectionChanges.Value);
+                    if (agent.ConnectionOptions != null && agent.RepositoryType != null)
+                        ConnectionOptionsBinderFactory.Create(agent.RepositoryType).SetOptions(agentSel, ToIgnoreCase(agent.ConnectionOptions));
+                }
             }
 
             foreach (var w in config.Workers ?? [])
@@ -608,41 +699,72 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout)
+    public IClusterStandaloneConfigSelector DefaultJobTimeout(TimeSpan defaultJobTimeout)
     {
        clusterDefinition.DefaultJobTimeout = defaultJobTimeout;
        return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold)
+    public IClusterStandaloneConfigSelector ClusterDefaultJobTimeout(TimeSpan defaultJobTimeout) => DefaultJobTimeout(defaultJobTimeout);
+
+    public IClusterStandaloneConfigSelector TransientThreshold(TimeSpan transientThreshold)
     {
         clusterDefinition.TransientThreshold = transientThreshold;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount)
+    public IClusterStandaloneConfigSelector ClusterTransientThreshold(TimeSpan transientThreshold) => TransientThreshold(transientThreshold);
+
+    public IClusterStandaloneConfigSelector DefaultMaxRetryCount(int defaultMaxRetryCount)
     {
         clusterDefinition.DefaultMaxRetryCount = defaultMaxRetryCount;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize)
+    public IClusterStandaloneConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount) => DefaultMaxRetryCount(defaultMaxRetryCount);
+
+    public IClusterStandaloneConfigSelector RetryDelays(params TimeSpan[] delays)
+    {
+        clusterDefinition.SetRetryDelays(delays);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor)
+    {
+        clusterDefinition.SetRetryInterceptor(interceptor);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor
+    {
+        clusterDefinition.SetRetryInterceptorType(typeof(TInterceptor));
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector MaxMessageByteSize(int maxMessageByteSize)
     {
         clusterDefinition.MaxMessageByteSize = maxMessageByteSize;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId)
+    public IClusterStandaloneConfigSelector ClusterMaxMessageByteSize(int maxMessageByteSize) => MaxMessageByteSize(maxMessageByteSize);
+
+    public IClusterStandaloneConfigSelector IanaTimeZoneId(string ianaTimeZoneId)
     {
         clusterDefinition.IanaTimeZoneId = ianaTimeZoneId;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
+    public IClusterStandaloneConfigSelector ClusterIanaTimeZoneId(string ianaTimeZoneId) => IanaTimeZoneId(ianaTimeZoneId);
+
+    public IClusterStandaloneConfigSelector DataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null)
     {
         clusterDefinition.SetDataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
         return this;
     }
+
+    public IClusterStandaloneConfigSelector ClusterDataRetentionTtl(TimeSpan dataRetentionTtl, string? targetArchivedClusterId = null) =>
+        DataRetentionTtl(dataRetentionTtl, targetArchivedClusterId);
 
     public IClusterStandaloneConfigSelector RetainDataForever()
     {
@@ -657,12 +779,16 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
     }
 
     public IClusterStandaloneConfigSelector AddWorker(
-        string? workerName = null, 
+        string? workerName = null,
+        string? workerLane = null,
+        double? parallelismFactor = null,
         int batchSize = 250)
     {
         var def = new WorkerDefinition
         {
             WorkerName = workerName ?? string.Empty,
+            WorkerLane = workerLane,
+            ParallelismFactor = parallelismFactor,
             TransferBatchSize = batchSize,
             AgentConnectionName = JobMasterConstants.StandaloneAgentConnName,
         };
@@ -670,15 +796,25 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode)
+    public IClusterStandaloneConfigSelector Mode(ClusterMode mode)
     {
         clusterDefinition.ClusterMode = mode;
         return this;
     }
 
-    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId)
+    public IClusterStandaloneConfigSelector ClusterMode(ClusterMode mode) => Mode(mode);
+
+    public IClusterStandaloneConfigSelector MigrateTo(string targetActiveClusterId)
     {
         clusterDefinition.MigrateTo(targetActiveClusterId);
+        return this;
+    }
+
+    public IClusterStandaloneConfigSelector ClusterMigrateTo(string targetActiveClusterId) => MigrateTo(targetActiveClusterId);
+
+    public IClusterStandaloneConfigSelector Archive(string? targetActiveClusterId = null)
+    {
+        clusterDefinition.Archive(targetActiveClusterId);
         return this;
     }
 
@@ -690,7 +826,7 @@ internal class ClusterStandaloneConfigBuilder : IClusterStandaloneConfigSelector
 
     public IClusterStandaloneConfigSelector ClusterRepoType(string repoType)
     {
-        clusterDefinition.RepoType = repoType;
+        clusterDefinition.RepoType = ProviderAssemblies.ToKnownRepositoryType(repoType);
         return this;
     }
     

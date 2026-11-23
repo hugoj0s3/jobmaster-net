@@ -6,6 +6,329 @@
 
 ---
 
+## JobMaster 0.0.12-alpha
+
+### Breaking changes
+
+- **`JobMasterDefaults.MinDataRetentionTtl` moved to the new `JobMasterLimits`.** `JobMasterDefaults` now holds only values you can change; `JobMasterLimits` holds the fixed ones: `MinDataRetentionTtl` (10 minutes), and the new `MinRetryDelay` (30 seconds) and `RetryInterceptorTimeout` (10 seconds). Use `JobMasterLimits.MinDataRetentionTtl` instead.
+- **Workers API: `Status`, `StopRequestedAt` and `StopGracePeriod` removed from the worker, and the `Status` filter from the list and count queries.** The `AgentWorkerStatus` enum is removed too. A worker's status was always the same as `IsAlive` (the stop fields were never set), so use `IsAlive` in the response and the `IsAlive` filter instead.
+- **`JobMaster.RavenDb` is now `JobMaster.RavenDB`**, matching the RavenDB client's casing. The package, assembly and namespace are renamed:
+  - Reference the `JobMaster.RavenDB` package (NuGet ids ignore case, so an existing `JobMaster.RavenDb` reference still resolves).
+  - Change `using JobMaster.RavenDb;` to `using JobMaster.RavenDB;`.
+  - If you load the provider by file name, the dll is now `JobMaster.RavenDB.dll` (file names are case-sensitive on Linux).
+
+  The repository type stays `"RavenDB"`, and the provider's configuration keys are unchanged.
+- **Metadata and message data keys ignore case.** `"Category"` and `"category"` are now the same key everywhere:
+  - Reads: `GetStringValue("CATEGORY")` finds a value set as `"Category"`.
+  - Overrides: call metadata overrides a handler's `[JobMasterMetadata]`, and a derived handler's attribute overrides its base class's, whatever the casing. Before, both keys were kept.
+  - Metadata filters (API, dashboard) match keys ignoring case on every provider.
+
+  When one key is set twice in different casings, the last value wins and the key keeps its first spelling and position.
+- **A recurring schedule's own metadata now overrides the handler's `[JobMasterMetadata]`.** It was the other way round, unlike one-off jobs (where the call wins) and unlike the schedule's priority, timeout and worker lane.
+- **`WritableMetadata.FromDictionary` now copies the dictionary.** Changes to the metadata no longer change your dictionary, and the other way round.
+- ⚠️ **Optional parameters now follow one order everywhere: `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`.**
+  - **`clusterId`** moves from last to right after the payload in every scheduling method, and to right after the id in `JobDefinitionConfig`.
+  - **`JobDefinitionConfig`:** `workerLane` also moves before `timeout`.
+  - **`RecurringScheduleDefinitionCollection.Add`** and the `Add<Th>` extensions (NaturalCron, `TimeSpan`, Cronos, NCrontab): `metadata` moves before `startAfter`/`endBefore`. These take no `clusterId`/`workerLane`, because those come from the profile.
+
+  New signatures:
+
+  ```csharp
+  // IJobMasterScheduler / IJobMasterSchedulerAdvanced (TDefinition overloads)
+  OnceNowAsync<T>(msgData, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+  OnceAtAsync<T>(dateTime, msgData, clusterId, priority, ...)      // OnceAfter<T> likewise
+  RecurringAsync<T>(expression, data, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+
+  // IJobMasterSchedulerAdvanced (JobDefinitionConfig overloads)
+  RecurringAsync(config, expression, data, clusterId, startAfter, endBefore)   // Once* already ended in (msgData, clusterId)
+
+  new JobDefinitionConfig(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)
+
+  // Static profiles
+  collection.Add<Th>(expressionType, expression, defId, priority, timeout, maxNumberOfRetries, metadata, startAfter, endBefore)
+  ```
+
+  The same change applies to the sync versions and to the `Recurring`/`RecurringAsync` extensions for `NaturalCronExpr`, `TimeSpan`, Cronos and NCrontab.
+  - **Unaffected calls:** calls that pass these parameters by name (`clusterId: "..."`, `priority: ...`) keep working, and so do calls that pass only the payload positionally, such as `OnceNowAsync<T>(msg)`.
+  - **Calls that fail to compile:** a call passing `priority` or a later option positionally with a non-null value, such as `new JobDefinitionConfig("id", JobMasterPriority.High)`, **except a positional end date, see below**. Switch it to named arguments.
+  - ⚠️ **Calls that still compile but change meaning: an end date passed positionally after a `null` start date becomes the start date.** These calls skip `startAfter` with `null` and pass `endBefore` positionally:
+    - `Recurring`/`RecurringAsync<T>` and the NaturalCron/`TimeSpan`/Cronos/NCrontab extensions;
+    - the `Advanced` overloads, e.g. `Recurring(config, expr, data, null, endDate)`;
+    - static `collection.Add`/`Add<Th>`, e.g. `Add<H>(expr, null, null, null, null, null, endDate)`.
+
+    The date now lands in `startAfter` and `endBefore` stays `null`, so the schedule stays idle until the date it should have stopped, then runs forever. Pass the dates by name (`startAfter:` / `endBefore:`), and check existing positional calls before upgrading.
+  - **Harmless:** any other literal `null` passed positionally now fills a different optional parameter, such as `clusterId`, and has no effect.
+- ⚠️ **Handler attributes are now inherited from base classes:** `[JobMasterClusterId]`, `[JobMasterPriority]`, `[JobMasterWorkerLane]`, `[JobMasterTimeout]` and `[JobMasterMaxNumberOfRetries]`.
+  - **Before:** they were only read from the handler class itself, and an attribute on a base class was ignored, unlike `JobDefinitionConfigAttribute`, which was already inherited.
+  - **Now:** a base class's attribute applies, and a handler's own attribute overrides it. If a handler's base class carries one of these attributes, its jobs now pick that setting up.
+  - **`[JobMasterMetadata]` is inherited too.** Its keys are merged across the hierarchy: a handler's key overrides the same key on a base class, and metadata passed when scheduling a one-off job still overrides both.
+- **Standalone workers can have a worker lane and a parallelism factor: `AddWorker(workerName, workerLane, parallelismFactor, batchSize)`.** The two new parameters come before `batchSize`, so a call passing the batch size by position (`AddWorker("worker-1", 500)`) no longer compiles; pass it by name: `AddWorker("worker-1", batchSize: 500)`. Before, a standalone worker had no lane, so a job with a lane (`[JobMasterWorkerLane]` or `workerLane:`) on a standalone cluster found no worker and only ran minutes later, through the fallback. `ConfigFromJson` now reads a standalone worker's `workerLane` and `parallelismFactor` too (they were ignored).
+- **`JobMasterScheduler` is now `internal`.** The concrete class was public by mistake; it's bootstrap plumbing behind `IJobMasterScheduler`. Inject `IJobMasterScheduler` (or `IJobMasterSchedulerAdvanced`) from DI instead of using `JobMasterScheduler.Instance`.
+- ⚠️ **Scheduling methods now return a receipt instead of the context.** Every `Once*` / `Recurring*` method (sync and async, `Advanced` overloads, and the NaturalCron/`TimeSpan`/Cronos/NCrontab extensions) returns a `JobScheduleReceipt` or `RecurringScheduleReceipt`. The context you used to get is on `Context`:
+
+  ```csharp
+  // Before
+  var ctx = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  // Now
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  var ctx = receipt.Context;
+  ```
+
+  The receipt also tells you where the job or schedule was when the call returned:
+  - `Status`: `StoredOnMaster` (saved on the master database) or `AcceptedOnTransport` (handed to an agent connection, which saves it on master shortly after).
+  - `ClusterId`, and for `AcceptedOnTransport` also `BucketId`, `AgentWorkerId` and `AgentConnectionId`.
+
+  The receipt doesn't change afterwards: `Status` keeps the value from scheduling time.
+- **Cancel and reschedule methods renamed to one rule.** No `Try` prefix, and "reschedule" is one word:
+
+  | Old | New |
+  |:---|:---|
+  | `TryCancelJob(id, ...)` | `CancelJob(jobId, ...)` |
+  | `TryCancelRecurringAsync(id, ...)` | `CancelRecurringAsync(recurringScheduleId, ...)` |
+  | `CancelRecurring(id, ...)` | `CancelRecurring(recurringScheduleId, ...)` |
+  | `ReScheduleAsync` / `ReSchedule` | `RescheduleAsync` / `Reschedule` |
+
+  `CancelJobAsync` keeps its name. Calls that pass the id by name (`id: ...`) need the new parameter name.
+- **`JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` and `GetJobDefinitionId` were removed from the public API.** They're the runtime's handler lookup and were public by mistake.
+- **The API's log `ReferenceId` is now base64url for jobs, recurring schedules and executions** (`ApiLogItem.ReferenceId`, 22 characters), the same id the rest of the API and the dashboard show. It used to be 32 hex characters. Other references (buckets, workers, clusters) are unchanged. **Log filter: `ReferenceId` and `ReferenceGuid` are replaced by `ReferenceIds`** (one or more, any of them matches): a job, recurring schedule or execution id in any format (the returned `ReferenceId`, a standard Guid, 32 hex characters) finds its logs, and other references match as written. Stored logs are unchanged, so older logs are found the same way.
+- **Disabled priorities are now checked against the cluster each job or schedule goes to, with the priority it actually resolves to.** Some setups that started before now fail at startup or at the call:
+  - **Startup** now also fails for a handler whose `JobDefinitionConfig.Priority` is disabled on its cluster, and for an `IStaticJobDefinitionConfig` (also on publisher-only apps) whose priority is disabled on its `ClusterId`. Before, only `[JobMasterPriority]` was checked.
+  - **`Recurring<T>` / `RecurringAsync<T>` without a `priority`** now throw when the handler's priority is disabled on the schedule's cluster. Before, the schedule was created and every run was delayed by about 2.5 minutes before running in the fallback bucket. The priority is only checked, not stored: each run still uses the handler's current priority.
+  - **Static recurring schedules without a priority** are checked the same way at startup, when the handler is in the app.
+- **`UseSqlTablePrefixForMaster` and `UseSqlTablePrefixForAgent` were removed.** They were obsolete since 0.0.11. Pass `tablePrefix` to the provider's own method instead:
+  - Master: `UsePostgresForMaster(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForMaster` / `UseSqlServerForMaster`, and `UsePostgres` / `UseMySql` / `UseSqlServer` for standalone clusters.
+  - Agent connection: `UsePostgresForAgent(connectionString, tablePrefix: "jm_")`, likewise `UseMySqlForAgent` / `UseSqlServerForAgent`.
+  - JSON config: `"ConnectionOptions": { "tablePrefix": "jm_" }`.
+- **`TryGetJson<T>` now throws when the stored value can't be deserialized as `T`.** It used to return `null`, the same as a missing key, so a payload that no longer matched its type was silently treated as absent. It still returns `null` when the key is missing or the value is `null`. Pass `ignoreDeserializationErrors: true` to get `null` on failure instead. `GetJson<T>` also throws `InvalidOperationException` on a deserialization failure; it now throws `KeyNotFoundException` only when the key is missing.
+- **`TryGetEnumValue<TEnum>` now throws when the stored value isn't a member of `TEnum`.** Before, a name it couldn't parse (`"WRONG"`) returned `null`, and a number that isn't a member, such as a member removed in a later version, came back as an undefined enum value. Both now throw `InvalidOperationException`; for a `[Flags]` enum, any combination of its members is accepted. A missing key still returns `null`. Pass `ignoreInvalidValues: true` to get `null` instead. `GetEnumValue<TEnum>` throws the same way.
+- **`IJobMasterMessageJsonSerializer` no longer has `TryDeserialize` methods.** JobMaster never called them. If you implemented the interface, delete both `TryDeserialize` overloads. `Deserialize` must throw when a value can't be deserialized, never return `null`/`default`: that's how a broken value is reported instead of being treated as missing.
+- **`JobMasterMessageJson` is no longer public.** It was the framework's internal hook for `SetJson` / `GetJson`. To produce or read the same JSON, use `new SystemTextJsonMessageSerializer()` (or the serializer you defined) directly.
+
+### Added
+
+- **`FallbackMessageJsonSerializer` (`JobMaster.Serialization`): change the `SetJson` / `GetJson` serializer and keep reading values stored before the change.** It writes with the first serializer and, on reads, tries the others in order whenever one throws. A fallback is only tried when a serializer throws, so every serializer except the last must reject data it doesn't own: JSON in another format read without an error comes back as an object with empty properties. When apps update one by one, deploy in two steps:
+
+  ```csharp
+  // Step 1, on every app: still writes the default format, already reads the new one.
+  services.DefineJobMasterMessageJsonSerializer(new FallbackMessageJsonSerializer(
+      new SystemTextJsonMessageSerializer(rejectUnknownProperties: true),
+      new MyNewtonsoftSerializer()));
+
+  // Step 2, once every app runs step 1: writes the new format, still reads the old one.
+  services.DefineJobMasterMessageJsonSerializer(new FallbackMessageJsonSerializer(
+      new MyStrictNewtonsoftSerializer(), // e.g. MissingMemberHandling.Error
+      new SystemTextJsonMessageSerializer()));
+  ```
+- **`SystemTextJsonMessageSerializer` (`JobMaster.Serialization`)**, the `System.Text.Json` serializer JobMaster uses by default for `SetJson` / `GetJson` (`new SystemTextJsonMessageSerializer()`, default options). Its format stays the same across versions, so it can be listed as a fallback. `rejectUnknownProperties: true` makes reads throw on JSON with properties the type doesn't have, for use before other serializers in a fallback; writes are unchanged.
+- **`WriteableMessageData.FromDictionary(dictionary)`**, like `WritableMetadata.FromDictionary`: a message data builder pre-populated with a copy of the dictionary.
+- **.NET 10 builds.** Every package now also targets `net10.0`: `JobMaster`, the storage and recurrence providers (`net10.0`, `net8.0`, `netstandard2.0`), and `JobMaster.Api` / `JobMaster.Dashboard` (`net10.0`, `net8.0`). Apps on .NET 10 get the `net10.0` build; nothing changes for .NET 8 or `netstandard2.0` apps.
+- **Per-handler default cluster: `[JobMasterClusterId("...")]` and `JobDefinitionConfig.ClusterId`.** You can now set a default cluster on the handler, the same way as worker lane, priority and the other job settings. When you don't pass `clusterId`, the scheduler checks the handler before falling back to the default cluster. Resolution order:
+  1. the `clusterId` passed to the call;
+  2. `ClusterId` from the handler's `JobDefinitionConfigAttribute` config, or from the `JobDefinitionConfig` you pass to an `Advanced` method;
+  3. `[JobMasterClusterId]` on the handler;
+  4. the default cluster.
+
+  ```csharp
+  [JobMasterClusterId("billing-cluster")]
+  public sealed class InvoiceHandler : IJobMasterHandler { ... }
+
+  await scheduler.OnceNowAsync<InvoiceHandler>(); // goes to "billing-cluster"
+  ```
+
+  This applies to one-off jobs, dynamic recurring schedules, the `Advanced` overloads, and static recurring schedules (both profiles and `[...Schedule]` attributes on the handler). For static schedules, the profile's own `ClusterId` still comes first; a profile that leaves it empty now uses each handler's cluster. Handler-level schedule attributes, which used to always go to the default cluster, now follow `[JobMasterClusterId]` too.
+- **Startup validation for unknown cluster ids.** Startup now fails when any of these names a cluster that isn't configured:
+  - a handler's `[JobMasterClusterId]`;
+  - a `JobDefinitionConfig.ClusterId` on an applied definition attribute;
+  - the `Config.ClusterId` of any `IStaticJobDefinitionConfig` type, even one only used for publishing;
+  - an `IStaticRecurringSchedulesProfile`'s `ClusterId`. Previously this only failed after the workers had already started, with a `KeyNotFoundException` while registering the profile's schedules.
+
+  Startup also rejects a handler that combines `[JobMasterClusterId]` with a `JobDefinitionConfigAttribute`, the same rule as the other individual attributes.
+- **Startup validation for a handler with more than one `JobDefinitionConfigAttribute`** (for example, two different subclasses). Before, this surfaced as a raw `AmbiguousMatchException`, usually crashing startup and otherwise failing scheduling, execution or handler lookup for unrelated jobs. It's now a clear validation error at startup that names the handler.
+- **Static recurring schedules now store their resolved worker lane.** A static schedule whose lane comes from the handler (`[JobMasterWorkerLane]` or its `JobDefinitionConfig`) now shows that lane in the API and dashboard. It used to show none. Jobs already ran on the right lane, so execution is unchanged.
+- **NaturalCron from a plain string:** `NaturalCronRecurringAsync<T>(string)`, `NaturalCronRecurring<T>(string)` and, for static profiles, `NaturalCronAdd<Th>(string)`. Before, you had to parse a `NaturalCronExpr` first or pass `NaturalCronExprCompiler.TypeId` yourself. An invalid expression throws at the call.
+
+  ```csharp
+  await scheduler.NaturalCronRecurringAsync<ReportHandler>("every day at 09:00");
+  collection.NaturalCronAdd<ReportHandler>("every monday at 08:00");
+  ```
+- **Confirm on master: `receipt.ConfirmOnMasterAsync()` and `scheduler.Advanced.ConfirmOnMasterAsync(receipts)`.** Makes sure a job or recurring schedule is saved on master, saving it now if it isn't there yet. When it returns, it's on master. Receipts that are already `StoredOnMaster` need no call to master. The batch version takes receipts from any cluster.
+
+  ```csharp
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  await receipt.ConfirmOnMasterAsync();
+
+  // Many at once (preferred over many single calls)
+  await scheduler.Advanced.ConfirmOnMasterAsync(receipts);
+  ```
+
+  Rarely needed: if your agent connections are healthy, you don't need it. Things to know before using it:
+  - A confirmed job can start later than it would otherwise, because it's picked up from master instead of going straight to its worker. A confirmed recurring schedule's first run can be delayed by up to about 10 minutes, so avoid it for schedules that recur at short intervals.
+  - If it throws, some items may or may not be saved. Calling it again is safe and never creates a second copy.
+  - JobMaster runs jobs at least once. Confirming after the cluster's data retention has removed an already-finished job saves it again, and it runs again; a removed cancelled or finished schedule comes back as active. Be careful using it when the data retention is short.
+- **Cancel from a receipt: `receipt.CancelAsync()`, `scheduler.CancelJobAsync(receipt)` and `scheduler.CancelRecurringAsync(receipt)`.** Unlike cancelling by id, it also works right after scheduling, before the job or schedule reaches master: it's cancelled there and never runs. Once it's on master, it behaves like cancelling by id, on the cluster it was scheduled on.
+
+  ```csharp
+  var receipt = await scheduler.OnceNowAsync<InvoiceHandler>(msg);
+  var cancelled = await receipt.CancelAsync();
+  ```
+
+  Returns `false` when it can't be cancelled anymore: the job is running or finished, or due to start in less than about a minute (a worker may already have it); the schedule had already ended. If it throws, calling it again is safe.
+- **`services.JobMasterAssemblyDiscovery()` for libraries your code never references directly.** JobMaster finds handlers, static recurring schedule profiles and job definitions in the assemblies your application has loaded, and .NET loads a library only when code uses one of its types. So a worker that only runs the handlers of a separate library, without naming any of its types, didn't find them: jobs failed with "handler not found" and the library's static recurring schedules were never created. Add such libraries explicitly:
+
+  ```csharp
+  services.JobMasterAssemblyDiscovery()
+      .AddAssemblyContaining<BillingHandler>();
+  ```
+
+  Also `AddAssembly(assembly)` and `AddAssemblies(...)`. It can be called before or after `AddJobMasterCluster`. The "handler not found" errors now point to it.
+- **`Archive(targetActiveClusterId = null)` (also on the standalone cluster builder): jobs waiting on an archived cluster are moved to an active cluster.** A job or recurring schedule saved at the moment its cluster switched to `Archived` used to stay there and never run. With a target, jobs and schedules waiting on the archived cluster, late ones included, are now moved to it and run there. The target is set with `Archive(targetActiveClusterId)`, or kept from an earlier `MigrateTo`. In JSON, use `"Mode": "Archived"` with `"TargetActiveClusterId"`. This needs a worker running for the archived cluster, in an app that also configures the target cluster; until one runs, they wait, and startup warns when the app has none. A late job with nowhere to go (no target, or a target that isn't configured) is logged as Critical.
+
+  ```csharp
+  cluster.Archive(targetActiveClusterId: "billing-v2");
+  ```
+
+- **RavenDB on a standalone cluster: `UseStandaloneCluster().UseRavenDb(...)`**, like `UsePostgres` / `UseMySql` / `UseSqlServer`. One RavenDB database holds the cluster and its jobs, with the same options as the cluster's `UseRavenDb`. Before, a standalone RavenDB cluster could only be configured with `ConfigFromJson`.
+
+- **`DisableAutoProvisionSqlSchema()` on a standalone cluster** (Postgres, MySQL, SQL Server), for when you create the tables yourself, for example with migrations. Before, it was only available on a regular cluster.
+
+- **Hybrid agent connections: `.UseHybrid().Transport(...).Execution(...)`.** An agent connection can now use one provider for transport (saving newly scheduled jobs and recurring schedules) and another provider for execution (dispatching due jobs for processing, running them on workers, and draining processing buckets). For example, use NATS JetStream for high-throughput scheduling ingestion and RavenDB or Postgres for execution:
+
+  ```csharp
+  cluster.AddAgentConnectionConfig("hybrid-conn")
+      .UseHybrid()
+      .Transport(t => t.UseNatsJetStream("nats://localhost:4222"))
+      .Execution(e => e.UseRavenDb("Urls=http://localhost:8080;Database=ExecDb"))
+      .ProtectConnectionChanges(true);
+  ```
+
+  In JSON (`ConfigFromJson`), configure `"Transport"` and `"Execution"` on the agent connection entry instead of top-level `"RepositoryType"` / `"ConnectionString"`. Workers attach to a hybrid connection by name like any other agent connection.
+  - A hybrid connection's repository type and fingerprint are stored as `hybrid:<transport>&&<execution>` (for example `hybrid:NatsJetStream&&RavenDB`), so `ProtectConnectionChanges` detects both endpoint changes and role swaps between transport and execution.
+  - **NATS `TransientThreshold` limit (5 minutes) now applies only when NATS is on the execution side.** A hybrid connection that uses NATS only for `Transport` and another provider for `Execution` can use a cluster `TransientThreshold` longer than 5 minutes.
+
+- **`JobContext.CancellationToken`: a handler can stop at its timeout.** It's cancelled when the job's `Timeout` passes while the handler is running, counted from the moment the handler starts (time spent getting the job ready doesn't reduce it), and 5 seconds after the worker starts stopping (deploy, restart, SIGTERM), so a handler about to finish still can. A worker's graceful stop doesn't cancel it: the worker takes no new jobs and lets the running ones finish. Pass it to your own async calls (`await http.GetAsync(url, job.CancellationToken)`) and the handler stops on time; the attempt counts as timed out and is retried like any failure. Before, nothing could stop a running handler: `Timeout` was only checked before the handler started, so a slow or stuck handler ran until it finished and kept its execution slot. A handler that ignores the token still behaves that way. For recurring schedules this matters most: the overlap lock lasts the job's timeout plus a minute, so a run lasting longer than that lets the next occurrence start alongside it. It's `CancellationToken.None` outside a run, e.g. on `JobScheduleReceipt.Context`.
+- **Configurable retry delays and retry interceptors.** Set per cluster (regular and standalone):
+  ```csharp
+  cfg.RetryDelays(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1)); // the last one repeats
+  cfg.InterceptRetry(ctx => ctx.Exception is ArgumentException
+      ? JobRetryDecision.StopEarly("invalid input")   // fail now, before MaxNumberOfRetries
+      : JobRetryDecision.UseRetryDelays());      // the RetryDelays above
+  cfg.InterceptRetry<MyRetryInterceptor>();      // IJobMasterRetryInterceptor from DI, for dependencies or I/O
+  ```
+  - `RetryDelays`: the wait before each retry, the last one repeating. Each must be at least 30 seconds (`JobMasterLimits.MinRetryDelay`). Also in `ConfigFromJson` as `"RetryDelays": ["00:00:30", "00:05:00"]`.
+  - A retry interceptor runs after each failed attempt that still has retries left: `RetryAfter(delay)`, `UseRetryDelays()` or `StopEarly(reason)`. The reason shows in the failed execution's message. It gets the job (`JobContext`), its `NumberOfFailures` (this failure included) and the `Exception` (a `TimeoutException` when the attempt timed out). It never adds attempts: `MaxNumberOfRetries` still caps them, and the interceptor isn't called once they're used up. One interceptor per cluster: a delegate or `InterceptRetry<T>()`.
+  - `IJobMasterRetryInterceptor` is resolved from DI in a new scope for each failed attempt (registered as scoped unless you registered it yourself), so scoped dependencies such as a database context work. It has 10 seconds to decide (`JobMasterLimits.RetryInterceptorTimeout`); the cancellation token is cancelled then, or earlier when a stopping worker cuts the job short (the job then retries on `RetryDelays`).
+  - A delay under 30 seconds from an interceptor is raised to 30 seconds. If an interceptor throws or doesn't decide in time, the job is retried using `RetryDelays`, and it's logged twice: a warning in the job's logs that points to the cluster's logs, and an error with the interceptor's exception in the cluster's logs (the interceptor applies to every job on the cluster).
+  - Every failed execution's message now says what happens next, as applied by the worker that ran it: `Retrying in 00:02:00 (RetryDelays).`, `Retrying in 00:05:00 (retry interceptor MyApp.BillingRetryInterceptor).`, `Stopped early by retry interceptor MyApp.BillingRetryInterceptor: invalid input`, or `Reached max retries (3).` (see "Failed executions say why they failed" under Changed).
+  - `GET` cluster (JobMaster.Api) now returns `RetryDelays` and `RetryInterceptor` (`None`, `Delegate` for a lambda or method passed to `InterceptRetry(...)`, or the interceptor type's full name), for information. They show what the last process running jobs (a Full or Execution worker) was configured with when it started; publisher-only and Coordinator-only processes don't change them. Each worker always retries by its own configuration, so during a deploy with mixed versions the failed execution's message is the one to trust. When a starting worker replaces stored settings that differ from its own, it logs it (Info, Cluster category); if that keeps happening, workers are running different configurations.
+
+### Changed
+
+- **Failed jobs are retried sooner.** The default wait before each retry is now 30 seconds, 2 minutes, 10 minutes, 30 minutes, then 1 hour for every later retry (`JobMasterDefaults.RetryDelays`). It used to be at least 10 minutes even for the first retry (a fixed 10 minutes plus a doubling wait), so with the default 3 retries a job took about 32 minutes to fail for good; it's now about 12.5 minutes. Set `RetryDelays` to choose your own.
+- **Failed executions say why they failed, and what happens next.** The message on a failed attempt (shown on the execution in the dashboard) used to repeat the log line without the error, e.g. `Job billing-sync failed after 120ms.` It now has the same shape on every failure path: what happened (for a handler error, the exception's type and message, kept to one short line), what happens next (the retry delay and where it came from, stopped early, or max retries reached), and, when there's a stack trace, `See the job's logs for the full error.` For example: `Failed after 120 ms: InvalidOperationException: Payment gateway unavailable. Retrying in 00:02:00 (RetryDelays). See the job's logs for the full error.` The job's log line carries the same text after `Job <definition id>:`, plus the full exception. Ids in these messages are base64, like the dashboard. The exception message is your own text: don't put secrets or personal data in exception messages your handlers throw.
+- **A successful run now writes a log with its duration**, at Info level in the JobExecution category, so it shows in the job's logs on the dashboard: `Job billing-sync: Succeeded after 120 ms.` (the handler's own time). Like every job log, it holds only the job definition id and the duration, never the job's message data or metadata. Before, a successful run only left its execution record.
+- **The maximum number of retries is no longer capped at 10.** `MaxNumberOfRetries` (call, `[JobMasterMaxNumberOfRetries]`, `JobDefinitionConfig`, static schedules) and the cluster's `DefaultMaxRetryCount` accept any value of 0 or more. Each attempt stores an execution record, so a very high value keeps that many per job.
+- **Every startup configuration error is now reported before anything starts, all in one list.** `StartJobMasterRuntimeAsync` throws one exception listing every problem, before any worker starts and before any cluster configuration or agent connection is saved. Before, it stopped at the first structural error, and some errors only showed up later:
+  - after the workers were already running: a static recurring schedule profile without a `ProfileId` or `Config`, a `Config` that throws, an invalid definition, `[...Schedule]` on a class that isn't a handler, or a static schedule whose priority is disabled on its cluster;
+  - after other clusters had already been saved: an agent connection whose fingerprint changed while `ProtectConnectionChanges` is on, or an archived cluster without a target that still holds unfinished jobs or schedules.
+- **Starting with no cluster configured now fails with a clear error** ("No cluster configured"), instead of a `NullReferenceException`.
+- **Two static recurring schedule profiles with the same `ProfileId` now fail at startup.** Their schedules got the same id, and one silently replaced the other.
+- **Job, recurring schedule and execution ids in log messages and error messages are now base64url**, the same 22-character id the API and dashboard show, so an id copied from the dashboard finds the matching log lines. They used to be written as standard GUIDs (`xxxxxxxx-xxxx-…`). Logs written before the upgrade keep the old format in their text; filtering by `ReferenceGuid` finds both.
+- **A recurring schedule's `endBefore` is now exclusive.** Jobs run only before `endBefore`, never at or after it. Before, an occurrence landing exactly on `endBefore` still ran: a daily 00:00 schedule with `endBefore` = 31 Oct 2026 00:00 ran once on 31 Oct. It now stops after 30 Oct. Occurrences at any other time are unaffected.
+- **An archived cluster with a target no longer fails startup because it holds unfinished jobs or schedules.** They're moved to the target instead, as described under Added. Without a target, startup still fails until the cluster only holds finished data.
+- **NATS: a message that keeps failing is retried longer before it's discarded.** Up to 50 attempts (about 47 minutes) when saving newly scheduled jobs and recurring schedules, and up to 5 (about 2 minutes) when running jobs. It was 30 and 3.
+- **Restarting or redeploying every worker no longer logs a burst of Critical "Worker not found" errors.** While an agent connection has no Full or Drain worker alive, its Lost buckets wait for one to come back. That used to log one Critical per bucket every minute, even during a normal restart. It's now one line per agent connection per minute ("No Full or Drain worker alive for agent connection …"), a Warning for the first 10 minutes and Critical after that, so an alert only fires when no worker came back.
+- **Your own DI registration of a handler is kept.** JobMaster registers every handler as scoped; it used to override a registration you made before `AddJobMasterCluster` (for example as a singleton or with a factory). It now only registers handlers you haven't registered yourself.
+
+- **NaturalCron upgraded from 1.0.1 to 1.1.0.** See the [NaturalCron 1.1.0 release notes](https://github.com/hugoj0s3/NaturalCron/releases/tag/v1.1.0) for its fixes and new syntax. Custom keywords are configured globally with `NaturalCronCustomKeywords.Configure`, so configure them in every process that schedules or runs recurring schedules.
+
+  > **Existing NaturalCron schedules may fire at different times.** 1.1.0 fixes occurrence bugs, so some existing expressions now produce different dates. For example, `every monday at 08:00` used to fire on Tuesday and now fires on Monday. Check the release notes against your expressions before upgrading.
+  >
+  > - **Occurrences already planned keep their old date.** The next corrected occurrence is computed after it. A weekly schedule can therefore fire once on the old day and then on the corrected day less than a week later.
+  > - **Upgrade every worker in the cluster together.** While old and new versions run side by side, whichever worker plans a schedule decides its next date. That can make a schedule alternate between the old and the corrected day.
+  > - **If a downstream process depends on the old day,** change the expression to say what you want before upgrading.
+
+### Deprecated
+
+- **Cronos and NCrontab string methods renamed with a provider prefix.** Methods that take a raw expression string are now named after their provider, like the new NaturalCron ones, since a plain string doesn't say which syntax it is. Use the prefixed names instead:
+
+  | Old (obsolete) | `JobMaster.Cronos` | `JobMaster.NCrontab` |
+  |:---|:---|:---|
+  | `RecurringAsync<T>(string)` | `CronosRecurringAsync<T>` | `NCrontabRecurringAsync<T>` |
+  | `Recurring<T>(string)` | `CronosRecurring<T>` | `NCrontabRecurring<T>` |
+  | `Add<Th>(string)` | `CronosAdd<Th>` | `NCrontabAdd<Th>` |
+
+  The old names still work, with an obsolete warning, and will be removed in a later release.
+
+- **Standalone cluster methods lose the `Cluster` prefix**, like the regular cluster ones already did: `DefaultJobTimeout`, `TransientThreshold`, `DefaultMaxRetryCount`, `MaxMessageByteSize`, `IanaTimeZoneId`, `DataRetentionTtl`, `Mode` and `MigrateTo`. The `Cluster…` names still work, with an obsolete warning, and will be removed in a later release. `ClusterId` is unchanged.
+
+### Performance
+
+- **Faster scheduling for handlers configured with attributes.** Handler attribute lookups are now cached per type. Creating a job for a handler using the classic attributes went from about 31 µs to 1.7 µs, with about 85% less memory allocated per job.
+
+### Fixed
+
+- **`GetByteArrayValue` / `TryGetByteArrayValue` now work in a handler.** Message data is stored as JSON, which holds a byte array as base64 text, so in a handler `TryGetByteArrayValue` returned `null` and `GetByteArrayValue` threw. They now read the stored value back as the original bytes.
+- **With a single cluster not marked as default, startup now catches a handler whose priority is disabled on it.** The check skipped handlers without their own cluster id in that setup; the call failed only when scheduling.
+- **`DisableAutoProvisionSqlSchema()` on one cluster no longer stops table creation for other clusters** (Postgres, MySQL, SQL Server). Depending on startup order, which could change between restarts, clusters and agent connections after the opted-out cluster got no tables and failed later with missing-table errors.
+- **Setting `IanaTimeZoneId` to a zone other than the machine's own no longer fails every restart.** The first start saved it, and every start after that failed with "please explicitly set the IanaTimeZoneId", although it was set. That error now appears only for what it describes: a process that doesn't set `IanaTimeZoneId`, on a machine whose time zone differs from the cluster's. Clusters registered with `AddJobMasterClusterForApi` are exempt, since the API uses the cluster's time zone and has no setting for it.
+- **`JobContext.NumberOfFailures` now has the job's real number of failures.** It was always `0` in a handler, even on a retry, so a handler couldn't tell a retry from a first attempt.
+- **Confirming a job or recurring schedule on master no longer fails when it's saved at the same moment by someone else** (SQL providers). When the agent's own save, or a second `ConfirmOnMasterAsync` for the same receipts, wrote one of them in between, the call threw a raw duplicate-key or deadlock error from the database. It now saves the rest and treats that one as already saved.
+- **Logs buffered when the app stops are now saved.** Logs are written to the master database in batches every 15 seconds, and the batch waiting when the process stopped was lost, so the last logs before a redeploy or restart were missing. They're now written when the process exits normally (stop, restart, SIGTERM, Ctrl+C), waiting up to 5 seconds. A hard kill or a crash still loses them.
+- **Archiving and migrating no longer delete a job or recurring schedule the other cluster didn't save.** Finished jobs and terminated schedules were deleted after being copied to the archive cluster, and held jobs and active schedules after being moved to the target cluster, even when one of them failed to save there (possible with RavenDB, which can skip a failed row without an error). An archived job then lost its history, and a migrated job never ran. Now only what the other cluster confirms is deleted; the rest stays and is retried on the next run.
+- **One unreadable message on an agent connection no longer loses the other messages pulled with it** (SQL providers, RavenDB). If reading a message failed with anything other than a JSON error, the rest of that batch was dropped; now only that message is skipped and logged. With NATS, a message that can't be read, JSON errors included, is now retried with a delay up to the retry limit, instead of restarting the consumer or, for a JSON error, being discarded at once.
+- **Message data and metadata are no longer written to the logs.** When a job or recurring schedule couldn't be queued, the Critical log included up to 500 characters of its message data and metadata, which can hold personal or sensitive data. The log now shows only their sizes, along with the id, status and other job details. The same applies when a stored job or recurring schedule can't be read back from the agent connection: that Critical log used to include the whole stored message (with NATS, its first 128 bytes, also on signature mismatch and exhausted retries), and now shows only the id and its size. Logs written by earlier versions may still contain them; purge them if that matters to you.
+- **Worker lanes ignore case everywhere.** `GET /workers?workerLane=Billing` returned nothing for a `"billing"` worker while `/workers/count` counted it; both now ignore case, like job routing already did.
+- **RavenDB: metadata filters match keys ignoring case**, like the SQL providers. Jobs and recurring schedules saved before this version only match a key typed in all lowercase until they're saved again (jobs are saved again as they run; static recurring schedules at startup).
+- **`JobMaster.SqlServer` no longer brings in a vulnerable `System.Security.Cryptography.Pkcs`.** `Microsoft.Data.SqlClient` depends on a version with known high-severity vulnerabilities ([GHSA-846f-f764-76mx](https://github.com/advisories/GHSA-846f-f764-76mx), [GHSA-2fmv-rv2c-59x7](https://github.com/advisories/GHSA-2fmv-rv2c-59x7)). The package now references the patched version directly (8.0.2, or 9.0.22 on .NET 10). `Microsoft.Data.SqlClient` stays on 6.1.4.
+- **`JobMaster.NatsJetStream` no longer brings in a vulnerable `Microsoft.Bcl.Memory`.** On `netstandard2.0`, the NATS client depends on version 9.0.0, which has a known high-severity vulnerability ([GHSA-73j8-2gch-69rq](https://github.com/advisories/GHSA-73j8-2gch-69rq)). The package now references the patched 9.0.22 directly. The NATS client stays on 2.7.2; `net8.0` and `net10.0` were never affected.
+- **`JobMaster.MySql` now depends on `MySqlConnector` 2.6.2** (was 2.5.0, which has a known moderate-severity vulnerability, [GHSA-473q-m89c-ghf8](https://github.com/advisories/GHSA-473q-m89c-ghf8)).
+- **`Archive()` on a standalone cluster now starts.** It always failed with "Coordinator workers (and Full workers on an Archived cluster) must not have an AgentConnectionName configured": a standalone worker is bound to the standalone cluster's own agent connection, while an archived cluster's workers must have none. An archived standalone cluster now has no agent connection, like any archived cluster, and `Archive("target")` moves its late jobs and schedules to the target.
+- **An archive cluster with a plain `AddWorker()` now starts.** Startup failed with "Workers without AgentConnectionName", although on an archived cluster that worker acts as its coordinator and needs no agent connection. The error now also names each worker and its cluster (an unnamed worker used to show as an empty list).
+- **Startup validation errors are no longer listed twice with more than one cluster.** JobMaster's own startup checks were registered once per configured cluster, so they ran, and reported each error, once per cluster.
+- **`ConfigFromJson` now applies `connectionOptions` on a standalone cluster.** With `"standalone": true` they were silently ignored, so options such as `tablePrefix` or the RavenDB certificate and timeouts couldn't be set through JSON. They now apply to the cluster's one connection, used for both its master and agent data.
+- **A cluster configured only with `ConfigFromJson` now finds its database provider.** With JSON, the provider is named only by `"RepoType"`, so its package (for example `JobMaster.Postgres`) was never loaded and nothing was registered for the cluster, without any error. JobMaster now loads the provider package for the repository type. Repository types are matched ignoring case (`"postgres"` is `"Postgres"`), in `ConfigFromJson` and in code. An unknown repository type, such as a typo, or a provider used in a role it doesn't support (NATS as the cluster database), now fails at configuration with an error saying what to fix.
+- **Cluster ids are now case-insensitive everywhere.** Cluster configuration lookups already ignored case, but the per-cluster component lookup didn't. So `clusterId: "Billing"` (or `[JobMasterClusterId("Billing")]`) against a cluster configured as `"billing"` failed with `KeyNotFoundException`. For a static profile, that failure happened at startup after the workers had started. Any casing now resolves to the configured cluster, and jobs and schedules are always stored with the configured casing.
+- **A priority disabled on one cluster no longer fails startup for handlers on other clusters.** Startup checked every handler against every cluster that disables a priority. So a `[JobMasterPriority(Critical)]` handler on the default cluster failed startup when another cluster disabled `Critical`. Each handler is now checked only against its own cluster: its `[JobMasterClusterId]` / `JobDefinitionConfig.ClusterId`, else the default cluster. A job sent to another cluster with an explicit `clusterId:` is still checked at the scheduling call.
+- **The synchronous `CancelJob` now saves the cancellation before returning.** It returned `true` without waiting for the database write, so a failed write (for example a concurrent update) was silently lost and the job could still run.
+- **Stopping or killing a worker no longer loses the jobs and recurring schedules it was saving** (Postgres, MySQL, SQL Server, RavenDB agent connections). Newly scheduled jobs wait on the agent connection until a worker saves them on master. The worker used to delete a batch from the agent as soon as it read it, so a batch still being saved when the process stopped (deploy, restart, crash) was lost without any log. Messages are now kept until they're confirmed on master, and a batch a worker didn't finish is picked up again by the next poll after a short lease (90 seconds to 10 minutes, depending on the batch size). A job saved twice that way is stored once.
+  - **Schema change:** two columns on the agent message table (`leased_until`, `lease_count`). They're added automatically at startup; with `DisableAutoProvisionSqlSchema()`, run the script for your database first: [PostgreSQL](migrations/0.0.12-alpha/agent-message-lease-migration-postgres.sql), [MySQL](migrations/0.0.12-alpha/agent-message-lease-migration-mysql.sql), [SQL Server](migrations/0.0.12-alpha/agent-message-lease-migration-sqlserver.sql). RavenDB needs nothing.
+  - A job or recurring schedule that still isn't saved after 1,000 attempts is moved aside on the agent connection (kept, never retried again) and logged as Critical with its id, so it can't block its bucket forever.
+- **A job is no longer counted as failed for something it didn't do.**
+  - Stopping a worker (deploy, restart) no longer records failed attempts for jobs that were about to start: they go back on master and run after the restart. A stopping worker doesn't start new jobs. A running handler that stops on `JobContext.CancellationToken` because the worker is stopping goes back on master the same way, without a failed attempt.
+  - A job whose handler finished but whose result couldn't be saved on master (database error at that moment) is no longer counted as failed and retried. It's logged as an error; if the result never reached master, the job runs again later.
+  - Jobs still count as failed when their handler throws or times out, and when the handler can't be created (for example a missing registration).
+- **Cancelling or rescheduling no longer fails when JobMaster updates the item at the same moment.** `CancelJobAsync` / `CancelJob`, `CancelRecurringAsync` / `CancelRecurring` and `RescheduleAsync` / `Reschedule` could throw an internal version-conflict exception when another update landed between reading the item and saving the change, typically cancelling a recurring schedule right after creating it, while its first occurrence was being planned. They now read the item again and retry (up to 3 times), and still return `false` if the item can no longer be cancelled or rescheduled (for example another process cancelled it, or it finished, meanwhile).
+- **Draining a bucket no longer takes back a job another bucket already has.** When a bucket was drained, its jobs were moved back to master even if one had meanwhile passed its deadline and been given to another bucket. That job could then run twice. Now a job is only moved back if nothing changed it since it was sent to the drained bucket. With NATS, a deleted job (for example cancelled, then removed by data retention) could also be brought back by a drain; it no longer is.
+- **NATS no longer keeps every message forever.** The JetStream stream of a NATS agent connection had no age or size limit, so every job and recurring schedule ever sent through it stayed on the NATS server's disk, even after it was handled, until the server's storage filled up and publishing failed. Messages are now kept for 30 days, handled or not. Existing streams are updated at the next startup (logged, Cluster category). Two new optional settings on the NATS agent connection:
+  ```csharp
+  .UseNatsJetStream("nats://localhost:4222", streamMaxAge: TimeSpan.FromDays(14), streamNumReplicas: 3)
+  ```
+  - `streamMaxAge` (default 30 days): a message still waiting after that is deleted, for example when every worker of the connection has been down that long, so keep it longer than any outage you want to survive.
+  - `streamNumReplicas` (default 1): how many NATS servers keep a copy of the messages. With 1, losing that server's disk loses its messages; use 3 on a 3-node NATS cluster. NATS rejects more replicas than it supports (at most 5, and at most the number of servers) when the stream is created.
+  - In `ConfigFromJson`: `"ConnectionOptions": { "streamMaxAge": "14.00:00:00", "streamNumReplicas": "3" }`.
+  - If processes using the same NATS agent connection set different values, the last one to start applies its own.
+- **The hardcoded job-timeout fallback now uses the documented default.** When no cluster configuration was available, a job with no timeout set fell back to a hardcoded 5 minutes instead of `JobMasterDefaults.DefaultJobTimeout` (1 minute). That fallback is now `JobMasterDefaults.DefaultJobTimeout`. Normal scheduling, with the cluster configuration loaded, already used the configured `DefaultJobTimeout` and is unaffected.
+
+### Notes
+
+- `CancelJob`/`CancelJobAsync`, `CancelRecurring`/`CancelRecurringAsync` and `Reschedule`/`RescheduleAsync` only receive an id, so they don't look up the handler's cluster. For a job or schedule on a non-default cluster, pass `clusterId` explicitly; it's available from `JobContext.ClusterId` / `RecurringScheduleContext.ClusterId`.
+
+---
+
+## JobMaster.Dashboard 0.0.7-alpha
+### Breaking changes
+- **Requires `JobMaster.Api` 0.0.12-alpha or later.** The job and recurring schedule pages now load their logs with the API's new `ReferenceIds` filter, which replaced `ReferenceId` / `ReferenceGuid` in 0.0.12 (see JobMaster 0.0.12-alpha above). Against an older API, those pages show no logs.
+### Changed
+- **New JobMaster theme colors.** The built-in `JobMaster Light` and `JobMaster Dark` themes are now green (`oklch(0.77 0.20 142)`, `#5cd251`) instead of indigo, with the same primary, secondary, accent, info, success, warning and error colors in both; only the backgrounds and text differ. Success is a darker emerald, so "Succeeded" badges stay distinct from the brand color. Custom themes and the other built-in themes are unchanged.
+### Added
+- **.NET 10 build.** The package now targets `net10.0` and `net8.0`.
+
+## JobMaster.Cronos 0.0.2-alpha / JobMaster.NCrontab 0.0.2-alpha
+### Deprecated
+- **String methods renamed with a provider prefix**: `CronosRecurringAsync<T>(string)` / `CronosRecurring<T>(string)` / `CronosAdd<Th>(string)`, and the same with `NCrontab`. The old `RecurringAsync<T>(string)` / `Recurring<T>(string)` / `Add<Th>(string)` names are `[Obsolete]`: with both packages referenced they were ambiguous. See JobMaster 0.0.12-alpha above.
+### Added
+- **.NET 10 build.** The packages now target `net10.0`, `net8.0` and `netstandard2.0`, and depend on `JobMaster` 0.0.12-alpha.
+
 ## JobMaster 0.0.11-alpha.3
 
 ### Added

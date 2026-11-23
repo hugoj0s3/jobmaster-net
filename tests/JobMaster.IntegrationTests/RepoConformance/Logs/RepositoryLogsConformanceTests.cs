@@ -94,10 +94,15 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
         Assert.Contains(byCategory, x => x.Id == info.Id);
         Assert.DoesNotContain(byCategory, x => x.Id == error.Id);
 
-        var byReferenceId = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceId = refId, CountLimit = 100 });
+        var byReferenceId = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceIds = new List<string> { refId }, CountLimit = 100 });
         Assert.Contains(byReferenceId, x => x.Id == warn.Id);
         Assert.Contains(byReferenceId, x => x.Id == error.Id);
         Assert.DoesNotContain(byReferenceId, x => x.Id == info.Id);
+
+        // Several references match any of them.
+        var byAnyReferenceId = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceIds = new List<string> { "no-such-ref", refId }, CountLimit = 100 });
+        Assert.Contains(byAnyReferenceId, x => x.Id == warn.Id);
+        Assert.DoesNotContain(byAnyReferenceId, x => x.Id == info.Id);
 
         var byKeyword = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { Keyword = "rebalanced", CountLimit = 100 });
         Assert.Contains(byKeyword, x => x.Id == warn.Id);
@@ -121,7 +126,7 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
 
         var inRange = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria
         {
-            ReferenceId = groupReferenceId,
+            ReferenceIds = new List<string> { groupReferenceId },
             FromTimestamp = baseTime.AddMinutes(1).AddSeconds(-1),
             ToTimestamp = baseTime.AddMinutes(3).AddSeconds(1),
             CountLimit = 100,
@@ -130,7 +135,7 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
 
         var paged = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria
         {
-            ReferenceId = groupReferenceId,
+            ReferenceIds = new List<string> { groupReferenceId },
             CountLimit = 2,
             Offset = 1,
         });
@@ -148,7 +153,7 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
         await Fixture.MasterLogs.BulkInsertAsync(items);
         await SettleAsync();
 
-        var count = await Fixture.MasterLogs.CountAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 2 });
+        var count = await Fixture.MasterLogs.CountAsync(new LogItemQueryCriteria { ReferenceIds = new List<string> { groupReferenceId }, CountLimit = 2 });
         Assert.Equal(7, count);
     }
 
@@ -175,7 +180,7 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
         Assert.Equal(2, deleted);
 
         await SettleAsync();
-        var remaining = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 100 });
+        var remaining = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceIds = new List<string> { groupReferenceId }, CountLimit = 100 });
         Assert.Equal(3, remaining.Count); // 4 older - 2 deleted + 1 newer
         Assert.Contains(remaining, x => x.Id == newer.Id);
 
@@ -205,7 +210,7 @@ public abstract class RepositoryLogsConformanceTests<TFixture>
         Assert.Equal(1, deleted);
 
         await SettleAsync();
-        var remaining = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceId = groupReferenceId, CountLimit = 100 });
+        var remaining = await Fixture.MasterLogs.QueryAsync(new LogItemQueryCriteria { ReferenceIds = new List<string> { groupReferenceId }, CountLimit = 100 });
         Assert.Equal(oldJobExecutionLog.Id, Assert.Single(remaining).Id);
 
         // DeleteByTimestampAsync is an unscoped, cluster-wide blanket delete with no lower bound -- the

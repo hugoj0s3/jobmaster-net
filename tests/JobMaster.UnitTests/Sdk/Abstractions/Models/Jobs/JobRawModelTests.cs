@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Utils;
 using Xunit;
 
@@ -32,6 +33,42 @@ public class JobRawModelTests
     }
 
     [Fact]
+    public void ToLogSummary_HasSizesButNotMsgDataOrMetadataContent()
+    {
+        var job = new JobRawModel("c1")
+        {
+            Id = Guid.NewGuid(),
+            MsgData = "{\"card\":\"4111-secret\"}",
+            Metadata = "{\"email\":\"user@secret.test\"}",
+        };
+
+        var summary = job.ToLogSummary();
+
+        summary.Should().NotContain("secret")
+            .And.Contain($"Id:{job.Id.ToBase64()}")
+            .And.Contain($"MsgDataLength:{job.MsgData.Length}")
+            .And.Contain($"MetadataLength:{job.Metadata.Length}");
+    }
+
+    [Fact]
+    public void ToLogSummary_RecurringSchedule_HasSizesButNotMsgDataOrMetadataContent()
+    {
+        var schedule = new RecurringScheduleRawModel("c1")
+        {
+            Id = Guid.NewGuid(),
+            MsgData = "{\"card\":\"4111-secret\"}",
+            Metadata = null,
+        };
+
+        var summary = schedule.ToLogSummary();
+
+        summary.Should().NotContain("secret")
+            .And.Contain($"Id:{schedule.Id.ToBase64()}")
+            .And.Contain($"MsgDataLength:{schedule.MsgData.Length}")
+            .And.Contain("MetadataLength:0");
+    }
+
+    [Fact]
     public void AssignSavePendingJobToBucket_DoesNotChangeStatus()
     {
         var bucket = NewAssignableBucket();
@@ -40,7 +77,7 @@ public class JobRawModelTests
         job.AssignSavePendingJobToBucket(bucket);
 
         job.Status.Should().Be(JobMasterJobStatus.PendingSave,
-            "JobSavePendingOperation.AddSavePendingJobAsync's short-circuit fast path checks " +
+            "JobSavePendingOperation.PushSavePendingJobAsync's short-circuit fast path checks " +
             "Status == PendingSave to decide whether it can inject the job directly into the " +
             "execution engine on the same worker; flipping Status here (as it previously did, to " +
             "InBucket) makes that check permanently false for every scheduled job, silently " +

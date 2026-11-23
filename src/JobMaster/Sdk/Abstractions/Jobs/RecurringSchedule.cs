@@ -6,6 +6,7 @@ using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Jobs;
@@ -72,7 +73,7 @@ internal class RecurringSchedule : JobMasterBaseModel
         DateTime? endBefore,
         string? workerLane) where T : IJobMasterHandler
     {
-        var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(typeof(T));
+        var jobDefinitionId = typeof(T).GetJobDefinitionId();
 
         if (string.IsNullOrEmpty(jobDefinitionId))
         {

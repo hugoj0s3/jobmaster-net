@@ -1,5 +1,7 @@
 ﻿# JobMaster.Api
 
+📚 [Documentation](https://docs.jobmaster.hugoj0s3.dev)
+
 The `JobMaster.Api` package transforms your orchestrator into a manageable service. It provides RESTful endpoints to monitor and manage clusters, jobs, and workers.
 
 ## 📦 Installation & NuGet

@@ -27,8 +27,19 @@ public class JobContext
     /// <summary>Number of previous failed execution attempts.</summary>
     public int NumberOfFailures { get; internal set; }
 
-    /// <summary>Maximum allowed execution time for this job.</summary>
+    /// <summary>
+    /// Maximum allowed execution time for this job. A running handler is only stopped when it observes
+    /// <see cref="CancellationToken"/>.
+    /// </summary>
     public TimeSpan Timeout { get; internal set; }
+
+    /// <summary>
+    /// Cancelled when <see cref="Timeout"/> passes while the handler is running. Pass it to your own async calls so the
+    /// handler stops on time; the attempt then counts as timed out and is retried like any failure. A handler that
+    /// ignores it runs until it finishes. <see cref="System.Threading.CancellationToken.None"/> outside a run
+    /// (e.g. <c>JobScheduleReceipt.Context</c>, a retry interceptor's <c>JobRetryContext.Job</c>).
+    /// </summary>
+    public CancellationToken CancellationToken { get; internal set; }
 
     /// <summary>Maximum number of automatic retries after failure.</summary>
     public int MaxNumberOfRetries { get; internal set; }

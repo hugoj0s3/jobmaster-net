@@ -134,32 +134,6 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         await masterGenericRecordRepository.DeleteAsync(MasterGenericRecordGroupIds.AgentWorker, workerId);
     }
 
-    public async Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null)
-    {
-        var worker = await this.GetWorkerAsync(workerId);
-        if (worker == null)
-        {
-            throw new InvalidOperationException($"Worker with id {workerId} does not exist.");
-        }
-        
-        worker.StopRequestedAt = DateTime.UtcNow;
-        worker.StopGracePeriod = gracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
-        var record = new AgentWorkerRecord(ClusterConnConfig.ClusterId)
-        {
-            AgentConnectionId = worker.AgentConnectionId?.IdValue ?? string.Empty,
-            Name = worker.Name,
-            Id = worker.Id,
-            Mode = worker.Mode,
-            WorkerLane = worker.WorkerLane,
-            ParallelismFactor = worker.ParallelismFactor,
-            StopRequestedAt = worker.StopRequestedAt,
-            StopGracePeriod = worker.StopGracePeriod,
-        };
-       
-        NotifyChanges();
-        await masterGenericRecordRepository.UpsertAsync(GenericRecordEntry.Create(ClusterConnConfig.ClusterId, MasterGenericRecordGroupIds.AgentWorker, record.Id, record));
-    }
-
     private IList<AgentWorkerRecord> GetAllAgentWorkers(bool useCache = true)
     {
         if (!useCache)
@@ -315,10 +289,7 @@ internal class MasterAgentWorkersService : JobMasterClusterAwareComponent, IMast
         public string? WorkerLane { get; set; }
         
         public double ParallelismFactor { get; set; } = 1;
-        
-        public DateTime? StopRequestedAt { get; set; }
-        public TimeSpan? StopGracePeriod { get; set; }
-        
+
         public string HostId { get; set; } = null!;
         
         public string HostDisplayName { get; set; } = null!;

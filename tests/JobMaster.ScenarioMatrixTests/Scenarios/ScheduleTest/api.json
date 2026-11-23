@@ -1,0 +1,30 @@
+{
+  "containerName": "api",
+  "dockerfilePath": "tests/TargetTestApi/Dockerfile",
+  "networkAlias": "api",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "auth": {
+    "requireAuthentication": false
+  },
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-standalone",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ScheduleStandalone}}"
+    },
+    {
+      "ClusterId": "mx-{{flavor}}-dist-one",
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ScheduleDistOne}}"
+    },
+    {
+      "ClusterId": "mx-{{flavor}}-dist-two",
+      "Default": false,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:ScheduleDistTwo}}"
+    }
+  ]
+}

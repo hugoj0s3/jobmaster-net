@@ -2,6 +2,7 @@
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Background.Runners;
+using JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
@@ -16,6 +17,8 @@ namespace JobMaster.Sdk.Background.Runners.DrainRunners;
 
 internal class PollingDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainProcessingJobsRunner
 {
+    private JobSavePendingOperation? savePendingOperation;
+
     public override TimeSpan SucceedInterval => TimeSpan.FromSeconds(3);
     public override TimeSpan WarmUpInterval => TimeSpan.FromSeconds(2.5);
     
@@ -44,25 +47,9 @@ internal class PollingDrainProcessingJobsRunner : DrainJobsRunnerBase, IDrainPro
             return OnTickResult.Skipped(TimeSpan.FromMinutes(1));
         }
 
-        var jobIds = processingJobs.Select(j => j.Id).ToList();
+        savePendingOperation ??= new JobSavePendingOperation(BackgroundAgentWorker, BucketId!);
 
-        bool hasFailed = false;
-        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(BackgroundAgentWorker.ClusterConnConfig.ClusterId);
-        foreach (var partition in jobIds.Partition(maxBatchSize))
-        {
-            try
-            {
-                await BackgroundAgentWorker.WorkerClusterOperations
-                    .ExecWithRetryAsync(o => o.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList())));
-            }
-            catch (Exception e)
-            {
-                logger.Error($"Drain: failed to bulk mark jobs as HeldOnMaster. PartitionSize={partition.Count}", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
-                hasFailed = true;
-            }
-        }
-
-        if (hasFailed)
+        if (!await savePendingOperation.HoldDrainedJobsOnMasterAsync(processingJobs))
         {
             return OnTickResult.Skipped(TimeSpan.FromSeconds(15));
         }

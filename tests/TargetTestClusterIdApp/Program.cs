@@ -1,0 +1,70 @@
+using System.Text.Json;
+using JobMaster.Abstractions;
+using JobMaster.Abstractions.Models;
+using JobMaster.Ioc.Extensions;
+using StackExchange.Redis;
+using TargetTestClusterIdApp;
+using TargetTestClusterIdApp.Handlers;
+using TargetTestClusterIdApp.Redis;
+
+var builder = WebApplication.CreateBuilder(args);
+
+var clusterConfigsJson = Environment.GetEnvironmentVariable("JOBMASTER_CLUSTER_CONFIGS_JSON");
+if (string.IsNullOrWhiteSpace(clusterConfigsJson))
+{
+    throw new InvalidOperationException("JOBMASTER_CLUSTER_CONFIGS_JSON environment variable must be set to a JSON array of cluster configs.");
+}
+
+var clusterConfigs = JsonSerializer.Deserialize<JsonElement[]>(clusterConfigsJson)
+    ?? throw new InvalidOperationException("JOBMASTER_CLUSTER_CONFIGS_JSON did not deserialize to a JSON array.");
+
+foreach (var clusterConfig in clusterConfigs)
+{
+    var json = clusterConfig.GetRawText();
+    builder.Services.AddJobMasterCluster(c => c.ConfigFromJson(json));
+}
+
+var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
+    ?? throw new InvalidOperationException("REDIS_CONNECTION_STRING environment variable must be set.");
+
+// Connected at startup, not lazily by the first job: under the first burst of jobs the connect can time out and
+// fail them. /health stays 503 until connected, so the harness doesn't schedule before Redis is ready.
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.AbortOnConnectFail = false;
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync(redisOptions));
+builder.Services.AddSingleton<ExecutionRecorder>();
+
+var app = builder.Build();
+
+app.MapGet("/health", (IConnectionMultiplexer redis) =>
+    redis.IsConnected ? Results.Ok(new { status = "ok" }) : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
+
+// Same request/response contract as TargetTestScheduleApp's /schedule/{handlerType}, so the scenario side can
+// reuse the existing ScheduleClient. ClusterId is passed straight through: null (the default) is the case
+// under test here -- the cluster must then come from the handler/definition, not the call.
+app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleRequest req, IJobMasterScheduler scheduler) =>
+{
+    if (req.QtyJobs < 1)
+    {
+        return Results.BadRequest("QtyJobs must be at least 1.");
+    }
+
+    var jobs = new List<JobScheduleReceipt>();
+    for (var i = 0; i < req.QtyJobs; i++)
+    {
+        var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
+        jobs.Add(await (handlerType.ToLowerInvariant() switch
+        {
+            "attribute" => scheduler.OnceNowAsync<AttributeOnceHandler>(metadata: metadata, clusterId: req.ClusterId),
+            "advanced" => scheduler.Advanced.OnceNowAsync<AdvancedOnceDefinitionAttribute>(metadata: metadata, clusterId: req.ClusterId),
+            "default" => scheduler.OnceNowAsync<DefaultOnceHandler>(metadata: metadata, clusterId: req.ClusterId),
+            _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: attribute, advanced, default.")
+        }));
+    }
+
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
+});
+
+await app.Services.StartJobMasterRuntimeAsync();
+
+app.Run();

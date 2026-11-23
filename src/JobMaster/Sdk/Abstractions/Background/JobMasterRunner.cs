@@ -4,13 +4,13 @@ using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Background;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners;
 
 namespace JobMaster.Sdk.Abstractions.Background;
 
 internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 {
-    private CancellationTokenSource? cts;
     private Task? taskRunner;
     private const int MaxOfConsecutiveFails = 15;
     private const int StopTimeoutSeconds = 10;
@@ -24,7 +24,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     private readonly bool bucketAwareLifeCycle;
     protected readonly IJobMasterLogger logger;
     private readonly IKnownExceptionIdentifier knownExceptionIdentifier;
-    private Exception? lastFailureException;
 
     private static readonly HashSet<Type> KeepAliveRunnerTypes = new()
     {
@@ -44,79 +43,87 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
     
     public Task StartAsync()
     {
-        if (bucketAwareLifeCycle)
-        {
-            // Independent runners get their own token but still respect main worker shutdown
-            cts = new CancellationTokenSource();
-        }
-        else
-        {
-            // Critical infrastructure runners share the main worker token
-            cts = BackgroundAgentWorker.CancellationTokenSource;
-        }
-        
-        taskRunner = Task.Run(() => RunAsync(cts.Token), cts.Token);
-        
+        StopControl = StopControlFactory.ForRunner(BackgroundAgentWorker);
+
+        // Listed before the task starts: the task removes it when it ends, which can be right away.
         this.BackgroundAgentWorker.Runners.Add(this);
+
+        // No token on Task.Run: a task cancelled before it starts would skip RunAsync and its cleanup.
+        var token = StopControl.StopToken;
+        taskRunner = Task.Run(() => RunAsync(token));
         return Task.CompletedTask;
     }
-    
+
+    /// <summary>
+    /// Cancels the runner and waits (bounded) for its task, which runs <see cref="OnStopAsync"/> when it ends.
+    /// </summary>
     public async Task StopAsync()
     {
-        this.BackgroundAgentWorker.Runners.Remove(this);
-        if (cts is null)
+        if (StopControl.IsNone)
         {
+            // Never started: no task to run the cleanup.
             await OnStopAsync();
             return;
         }
 
-        if (!cts.IsCancellationRequested)
+        await StopControl.StopAsync();
+
+        // Called from this runner's own task (its tick, or a worker stop it started): waiting would wait on itself.
+        if (CurrentRunner.Value == this || taskRunner is null)
         {
-#if NETSTANDARD2_0
-            cts.Cancel();
-#else
-            await cts.CancelAsync();
-#endif
+            return;
         }
 
-        if (taskRunner is not null && 
-            taskRunner.Status != TaskStatus.Faulted && 
-            taskRunner.Status != TaskStatus.Canceled && 
-            ConsecutiveFailedCount < MaxOfConsecutiveFails)
+        var timeout = Task.Delay(TimeSpan.FromSeconds(StopTimeoutSeconds));
+        if (await Task.WhenAny(taskRunner, timeout) == timeout)
         {
-            try
-            {
-                // Wait for runner to stop, but with a timeout to prevent hanging
-                var timeout = Task.Delay(TimeSpan.FromSeconds(StopTimeoutSeconds));
-                var completedTask = await Task.WhenAny(taskRunner, timeout);
-
-                if (completedTask == timeout)
-                {
-                    // Runner didn't stop in time, likely not respecting cancellation token
-                    logger.Warn($"Runner {this.GetType().Name} did not stop within {StopTimeoutSeconds} seconds. Forcing shutdown.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
-                }
-                else
-                {
-                    // Runner completed, check if it threw an exception
-                    await taskRunner;
-                }
-            }
-            catch (Exception ex) when (ex is OperationCanceledException or TaskCanceledException)
-            {
-                // Expected during shutdown, no action needed
-            }
-            // Let other exceptions bubble up to be handled by the caller
+            logger.Warn($"Runner {this.GetType().Name} did not stop within {StopTimeoutSeconds} seconds; its cleanup runs when it does.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         }
-        
-        await OnStopAsync();
     }
 
     public IJobMasterRuntime? Runtime => BackgroundAgentWorker.Runtime;
-    
+
+    protected JobMasterStopControlFactory StopControlFactory =>
+        (Runtime ?? throw new InvalidOperationException($"Runner {GetType().Name} has no runtime to get its stop controls from.")).StopControlFactory;
+
+    public StopControl StopControl { get; private set; } = StopControl.None;
+
+    // The runner whose task is running the current code, so StopAsync can tell a stop from inside it.
+    private static readonly AsyncLocal<JobMasterRunner?> CurrentRunner = new();
+
     private async Task RunAsync(CancellationToken ct)
     {
-        await OnStartAsync(ct);
+        CurrentRunner.Value = this;
+        var loopStarted = false;
+        try
+        {
+            await OnStartAsync(ct);
+            loopStarted = true;
+            await RunLoopAsync(ct);
+        }
+        finally
+        {
+            // Once per run, however the loop ended (stop, cancelled mid-delay, failure threshold).
+            this.BackgroundAgentWorker.Runners.Remove(this);
+            try
+            {
+                await OnStopAsync();
+            }
+            catch (Exception e)
+            {
+                logger.Error($"Runner {this.GetType().Name} OnStopAsync failed.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: e);
+            }
 
+            // An infrastructure runner ending stops its worker (returns at once if the worker is already stopping).
+            if (!bucketAwareLifeCycle && loopStarted)
+            {
+                await BackgroundAgentWorker.StopImmediatelyAsync();
+            }
+        }
+    }
+
+    private async Task RunLoopAsync(CancellationToken ct)
+    {
         while (true)
         {
             if (ConsecutiveFailedCount >= MaxOfConsecutiveFails && !KeepAliveRunnerTypes.Contains(this.GetType()))
@@ -129,7 +136,7 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 break;
             }
             
-            if (BackgroundAgentWorker.CancellationTokenSource.IsCancellationRequested)
+            if (BackgroundAgentWorker.StopControl.IsStopping())
             {
                 break;
             }
@@ -194,7 +201,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 
                 if (failureException is not null)
                 {
-                    lastFailureException = failureException;
                     await OnTickFailureAsync(failureException, ct);
                 }
             }
@@ -207,7 +213,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 // Measure failure tick duration for observability
                 logger.Debug($"Runner {this.GetType().Name} tick failed quickly. elapsed unknown due to exception.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
                 ConsecutiveFailedCount += CalcFailureWeight(ex);
-                lastFailureException = ex;
                 await OnTickFailureAsync(ex, ct);
 
                 plannedDelay = this.FailedInterval;
@@ -239,27 +244,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
                 await RunnerDelayUtil.DelayAsync(RunnerDelayUtil.CalcJitter((int)ConsecutiveFailedCount), ct);
             }
         }
-
-        if (ConsecutiveFailedCount >= MaxOfConsecutiveFails && !KeepAliveRunnerTypes.Contains(this.GetType()))
-        {
-            try
-            {
-                await OnTerminateFailureAsync(lastFailureException ?? new Exception($"Runner {this.GetType().Name} terminated: failure score {ConsecutiveFailedCount:F2} reached threshold {MaxOfConsecutiveFails}."));
-            }
-            catch (Exception terminateEx)
-            {
-                logger.Error($"Runner {this.GetType().Name} OnTerminateFailureAsync threw.", JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId, exception: terminateEx);
-            }
-        }
-
-        if (!bucketAwareLifeCycle)
-        {
-            await BackgroundAgentWorker.StopImmediatelyAsync();
-        }
-        else
-        {
-            await StopAsync();
-        }
     }
     
     public virtual Task OnTickFailureAsync(Exception ex, CancellationToken ct)
@@ -267,11 +251,6 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
         return Task.CompletedTask;
     }
 
-    public virtual Task OnTerminateFailureAsync(Exception lastException)
-    {
-        return Task.CompletedTask;
-    }
-    
     public virtual Task OnStartAsync(CancellationToken ct)
     {
         return Task.CompletedTask;
@@ -286,8 +265,8 @@ internal abstract class JobMasterRunner : IAsyncDisposable, IJobMasterRunner
 
     public async ValueTask DisposeAsync()
     {
-        await StopAsync(); 
-        cts?.Dispose(); 
+        await StopAsync();
+        StopControl.Dispose();
     }
     
     public abstract TimeSpan SucceedInterval { get; }

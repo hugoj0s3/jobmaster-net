@@ -10,10 +10,12 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Background;
 
@@ -49,7 +51,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
     }
 
     // Same-worker short-circuit still happens per job (cheap, in-memory), but everything that needs
-    // an actual agent-DB write is collected and sent through BulkAddForProcessingAsync in one call
+    // an actual agent-DB write is collected and sent through BulkPushForProcessingAsync in one call
     // instead of one dispatch call per job. Caller passes one bucket's jobs at a time -- grouping by
     // bucket and partitioning happen in AssignJobsToBucketsRunner, so a failure here only holds back
     // this one partition instead of the whole tick's batch.
@@ -57,6 +59,13 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         BucketModel bucket, IList<JobRawModel> jobs)
     {
         var toBulkDispatch = new List<JobRawModel>();
+
+        // The bucket's engine can be on another worker of this process (bucket ids are unique runtime-wide, they
+        // include the cluster id): short-circuit into it too, saving the publish round-trip.
+        var engine = backgroundAgentWorker.GetEngine(bucket.Id)
+            ?? backgroundAgentWorker.Runtime?.GetAllWorkers()
+                .Select(w => w.GetEngine(bucket.Id))
+                .FirstOrDefault(e => e is not null);
 
         foreach (var jobRaw in jobs)
         {
@@ -66,13 +75,12 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                 // and its bad status isn't the other jobs' problem -- throwing here would abort
                 // dispatch for the rest of a perfectly fine partition. Left untouched (not held on
                 // master) since we don't know what state it's legitimately in.
-                logger.Error($"Job {jobRaw.Id} is not in bucket, skipping dispatch. Status: {jobRaw.Status}", JobMasterLogCategory.Job, jobRaw.Id);
+                logger.Error($"Job {jobRaw.Id.ToBase64()} is not in bucket, skipping dispatch. Status: {jobRaw.Status}", JobMasterLogCategory.Job, jobRaw.Id);
                 continue;
             }
 
             try
             {
-                var engine = backgroundAgentWorker.GetEngine(bucket.Id);
                 if (engine != null &&
                     jobRaw.IsWithinOnboardingWindow() &&
                     engine.HasOnBoardingAvailability())
@@ -80,19 +88,19 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
                     var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
                     if (result == OnBoardingResult.Accepted)
                     {
-                        logger.Debug($"Short-circuit: Injecting job {jobRaw.Id} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Debug($"Short-circuit: Injecting job {jobRaw.Id.ToBase64()} directly into engine for bucket {bucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
                     if (result == OnBoardingResult.MovedToMaster)
                     {
-                        logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Warn($"Short-circuit failed, moved to master. JobId={jobRaw.Id.ToBase64()}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
                     if (result == OnBoardingResult.Cancelled)
                     {
-                        logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id}", JobMasterLogCategory.Job, jobRaw.Id);
+                        logger.Warn($"Short-circuit failed: job or recurring schedule was cancelled. JobId={jobRaw.Id.ToBase64()}", JobMasterLogCategory.Job, jobRaw.Id);
                         continue;
                     }
 
@@ -106,7 +114,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
             }
             catch (Exception ex)
             {
-                logger.Error($"Failed short-circuit attempt for job {jobRaw.Id}, holding on master.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
+                logger.Error($"Failed short-circuit attempt for job {jobRaw.Id.ToBase64()}, holding on master.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
                 jobRaw.MarkAsHeldOnMaster();
                 await masterJobsService.UpdateAsync(jobRaw);
             }
@@ -119,13 +127,18 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
 
         try
         {
-            await agentJobsDispatcherService.BulkAddForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
+            await agentJobsDispatcherService.BulkPushForProcessingAsync(bucket.AgentConnectionId, bucket.Id, toBulkDispatch);
         }
         catch (Exception ex)
         {
             logger.Error($"Failed to bulk dispatch {toBulkDispatch.Count} jobs to bucket {bucket.Id}.", JobMasterLogCategory.Job, toBulkDispatch[0].Id, exception: ex);
+            // The caller partitioned by the agent's batch size; master's can be smaller (e.g. NATS agents).
             var idsToHeldOnMaster = toBulkDispatch.Select(x => x.Id).ToList();
-            await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(idsToHeldOnMaster), masterJobsService.AcquireThrottler);
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+            foreach (var partition in idsToHeldOnMaster.Partition(maxBatchSize))
+            {
+                await masterJobsService.BulkUpdateAsync(BulkJobUpdateRequest.HeldOnMaster(partition.ToList()), masterJobsService.AcquireThrottler);
+            }
             throw;
         }
     }
@@ -172,7 +185,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id.ToBase64()}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
 
@@ -196,7 +209,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
+            logger.Error($"Job was added by another process or thread. JobId={jobRawModel.Id.ToBase64()}", JobMasterLogCategory.Job, jobRawModel.Id, exception: e);
         }
     }
     public void Update(JobRawModel jobRawModel, JobExecution? jobExecution = null, OperationThrottler? throttler = null)
@@ -234,7 +247,7 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         }
         catch (JobMasterDuplicationException e)
         {
-            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
+            logger.Error($"Recurring schedule was added by another process or thread. Id={recurringScheduleRawModel.Id.ToBase64()}", JobMasterLogCategory.RecurringSchedule, recurringScheduleRawModel.Id, exception: e);
         }
     }
 
@@ -340,45 +353,16 @@ internal class WorkerClusterOperations : JobMasterClusterAwareComponent, IWorker
         await masterBucketsService.UpdateAsync(bucket);
     }
 
-    public void MarkBucketAsLost(BucketModel bucket)
-    {
-        var lockToken = this.masterDistributedLockerService.TryLock(lockKeys.BucketLock(bucket.Id), TimeSpan.FromSeconds(10));
-        if (lockToken == null)
-        {
-            return;
-        }
-
-        try
-        {
-            bucket.MarkAsLost();
-            masterBucketsService.Update(bucket);
-        }
-        finally
-        {
-            masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), lockToken);
-        }
-    }
-    
     public async Task<int> CountActiveCoordinatorWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active && x.Mode.IsFullOr(AgentWorkerMode.Coordinator));
+        return workers.Count(x => x.IsAlive() && x.Mode.IsFullOr(AgentWorkerMode.Coordinator));
     }
     
     public async Task<int> CountWorkersAsync()
     {
         var workers = await masterAgentWorkersService.QueryWorkersAsync();
-        return workers.Count(x => x.Status() == AgentWorkerStatus.Active);
-    }
-    
-    public void CancelRecurringSchedule(Guid id)
-    {
-        var recurringScheduleRawModel = masterRecurringSchedulesService.Get(id);
-
-        if (recurringScheduleRawModel?.TryToCancel() == true)
-        {
-            masterRecurringSchedulesService.Update(recurringScheduleRawModel);
-        }
+        return workers.Count(x => x.IsAlive());
     }
 
     public async Task ExecWithRetryAsync(Action<IWorkerClusterOperations> func, int maxRetries = 5, int millisecondsToDelay = 200)

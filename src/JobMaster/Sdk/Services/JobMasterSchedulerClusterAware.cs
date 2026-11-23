@@ -1,9 +1,10 @@
-﻿using System;
+using System;
 using System.Collections.Concurrent;
 using System.Threading;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
@@ -18,6 +19,7 @@ using JobMaster.Sdk.Abstractions.Services;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Utils;
 using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services;
@@ -55,7 +57,7 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         lockKeys = new JobMasterLockKeys(clusterConnConfig.ClusterId);
     }
     
-    public async Task ScheduleAsync(JobRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(JobRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -71,11 +73,12 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.MarkAsHeldOnMaster();
             await masterJobsService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignSavePendingJobToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        await agentJobsDispatcherService.PushSavePendingJobAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
     public async Task BulkScheduleAsync(List<JobRawModel> rawModels)
@@ -114,19 +117,19 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
             var bucketId = bucketGroup.Key;
             var bucketJobs = bucketGroup.ToList();
             var agentConnectionId = bucketJobs[0].AgentConnectionId!;
-            var maxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(agentConnectionId.IdValue);
+            var maxBatchSize = OperationThrottlerSettingsFactory.GetAgentTransportMaxBatchSize(agentConnectionId.IdValue);
             foreach (var partition in bucketJobs.Partition(maxBatchSize))
             {
                 var partitionJobs = partition.ToList();
                 logger.Debug($"Bulk scheduling jobs. partition size: {partitionJobs.Count} for bucket {bucketId}",
                     JobMasterLogCategory.Job, partitionJobs.First().Id);
-                await agentJobsDispatcherService.BulkAddSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs,
+                await agentJobsDispatcherService.BulkPushSavePendingJobAsync(agentConnectionId, bucketId, partitionJobs,
                     SchedulingThrottlerFor(agentConnectionId));
             }
         }
     }
 
-    public void Schedule(RecurringScheduleRawModel rawModel)
+    public BucketModel? Schedule(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -142,14 +145,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             masterRecurringSchedulesService.Add(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        agentJobsDispatcherService.PushSavePendingRecur(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public void Schedule(JobRawModel job)
+    public BucketModel? Schedule(JobRawModel job)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -165,14 +169,15 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             job.MarkAsHeldOnMaster();
             masterJobsService.Add(job);
-            return;
+            return null;
         }
 
         job.AssignSavePendingJobToBucket(bucket);
-        agentJobsDispatcherService.AddSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        agentJobsDispatcherService.PushSavePendingJob(job, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
 
-    public async Task ScheduleAsync(RecurringScheduleRawModel rawModel)
+    public async Task<BucketModel?> ScheduleAsync(RecurringScheduleRawModel rawModel)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
@@ -187,129 +192,231 @@ internal class JobMasterSchedulerClusterAware : JobMasterClusterAwareComponent, 
         {
             rawModel.Active();
             await masterRecurringSchedulesService.AddAsync(rawModel);
-            return;
+            return null;
         }
 
         rawModel.AssignPendingRecurringScheduleToBucket(bucket);
-        await agentJobsDispatcherService.AddSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        await agentJobsDispatcherService.PushSavePendingRecurAsync(rawModel, SchedulingThrottlerFor(bucket.AgentConnectionId));
+        return bucket;
     }
+
+    public async Task ConfirmJobsOnMasterAsync(IList<JobRawModel> jobs)
+    {
+        var config = masterClusterConfigurationService.GetFresh();
+        if (config?.ClusterMode == ClusterMode.Archived)
+        {
+            throw new InvalidOperationException("Cluster mode is archived");
+        }
+
+        // Held on master, not PendingSave: if this insert beats the agent's save, the agent sees a duplicate and
+        // drops its message, so master's assign runner (OnMaster only) must be able to pick the row up.
+        foreach (var job in jobs)
+        {
+            job.MarkAsHeldOnMaster();
+        }
+
+        // Inserted now or already on master (e.g. the agent saved it first) is confirmed; anything else isn't.
+        var unConfirmed = new List<Guid>();
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
+        {
+            var result = await masterJobsService.BulkInsertIfNotExistsAsync(partition.ToList());
+            unConfirmed.AddRange(result[BulkInsertStatus.Unknow]);
+        }
+
+        if (unConfirmed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{unConfirmed.Count} job(s) could not be saved on master: {string.Join(", ", unConfirmed.Select(id => id.ToBase64()))}. Calling ConfirmOnMasterAsync again is safe.");
+        }
+    }
+
+    public async Task ConfirmRecurringSchedulesOnMasterAsync(IList<RecurringScheduleRawModel> schedules)
+    {
+        var config = masterClusterConfigurationService.GetFresh();
+        if (config?.ClusterMode == ClusterMode.Archived)
+        {
+            throw new InvalidOperationException("Cluster mode is archived");
+        }
+
+        foreach (var schedule in schedules)
+        {
+            schedule.Active();
+        }
+
+        // Same rule as ConfirmJobsOnMasterAsync.
+        var unConfirmed = new List<Guid>();
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(ClusterConnConfig.ClusterId);
+        foreach (var partition in schedules.Partition(maxBatchSize))
+        {
+            var result = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(partition.ToList());
+            unConfirmed.AddRange(result[BulkInsertStatus.Unknow]);
+        }
+
+        if (unConfirmed.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"{unConfirmed.Count} recurring schedule(s) could not be saved on master: {string.Join(", ", unConfirmed.Select(id => id.ToBase64()))}. Calling ConfirmOnMasterAsync again is safe.");
+        }
+    }
+
+    // No archived check: a cancelled row is final, which an archived cluster may hold.
+    public async Task<bool> InsertCancelledJobAsync(JobRawModel job)
+    {
+        // Final status: the agent's later save sees a duplicate and drops its message, so it never runs.
+        job.MarkAsCancelledBeforeSave();
+        var result = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+        return result[BulkInsertStatus.Inserted].Contains(job.Id);
+    }
+
+    public async Task<bool> InsertCancelledRecurringScheduleAsync(RecurringScheduleRawModel schedule)
+    {
+        if (!schedule.TryToCancel())
+        {
+            return false;
+        }
+
+        var result = await masterRecurringSchedulesService.BulkInsertIfNotExistsAsync(new List<RecurringScheduleRawModel> { schedule });
+        return result[BulkInsertStatus.Inserted].Contains(schedule.Id);
+    }
+
+    // Cancel and reschedule are a read, a rule check, then a versioned write. Another writer in between (the planner
+    // planning a new schedule, a runner moving a job, another process cancelling it) makes the write a version
+    // conflict: the whole read-check-write runs again, so the rule decides on the item's current state.
+    private readonly RetryVersionConflictPolicy retryVersionConflictPolicy = new(TimeSpan.FromMilliseconds(100), maxRetryCount: 3);
 
     public async Task<bool> CancelJobAsync(Guid jobId)
     {
-        var jobEntity = await masterJobsService.GetAsync(jobId);
-        if (jobEntity == null)
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
         {
-            return false;
-        }
+            var jobEntity = await masterJobsService.GetAsync(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
 
-        if (!jobEntity.TryToCancel())
-        {
-            return false;
-        }
+            if (!jobEntity.TryToCancel())
+            {
+                return false;
+            }
 
-        await masterJobsService.UpdateAsync(jobEntity);
-        return true;
+            await masterJobsService.UpdateAsync(jobEntity);
+            return true;
+        });
     }
 
     public bool CancelJob(Guid jobId)
     {
-        var jobEntity = masterJobsService.Get(jobId);
-        if (jobEntity == null)
+        return retryVersionConflictPolicy.Exec(() =>
         {
-            return false;
-        }
+            var jobEntity = masterJobsService.Get(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
 
-        if (!jobEntity.TryToCancel())
-        {
-            return false;
-        }
+            if (!jobEntity.TryToCancel())
+            {
+                return false;
+            }
 
-        masterJobsService.UpdateAsync(jobEntity);
-        return true;
+            masterJobsService.Update(jobEntity);
+            return true;
+        });
     }
 
-    public async Task<bool> CancelRecurringAsync(Guid id)
+    public async Task<bool> CancelRecurringAsync(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(id);
-        if (recurringScheduleEntity == null)
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
         {
-            return false;
-        }
+            var recurringScheduleEntity = await masterRecurringSchedulesService.GetAsync(recurringScheduleId);
+            if (recurringScheduleEntity == null)
+            {
+                return false;
+            }
 
-        if (!recurringScheduleEntity.TryToCancel())
-        {
-            return false;
-        }
-        
-        await masterRecurringSchedulesService.UpdateAsync(recurringScheduleEntity);
-        return true;
+            if (!recurringScheduleEntity.TryToCancel())
+            {
+                return false;
+            }
+
+            await masterRecurringSchedulesService.UpdateAsync(recurringScheduleEntity);
+            return true;
+        });
     }
 
-    public bool CancelRecurring(Guid id)
+    public bool CancelRecurring(Guid recurringScheduleId)
     {
-        var recurringScheduleEntity = masterRecurringSchedulesService.Get(id);
-        if (recurringScheduleEntity == null)
+        return retryVersionConflictPolicy.Exec(() =>
         {
-            return false;
-        }
+            var recurringScheduleEntity = masterRecurringSchedulesService.Get(recurringScheduleId);
+            if (recurringScheduleEntity == null)
+            {
+                return false;
+            }
 
-        if (!recurringScheduleEntity.TryToCancel())
-        {
-            return false;
-        }
-        
-        masterRecurringSchedulesService.Update(recurringScheduleEntity);
-        return true;
+            if (!recurringScheduleEntity.TryToCancel())
+            {
+                return false;
+            }
+
+            masterRecurringSchedulesService.Update(recurringScheduleEntity);
+            return true;
+        });
     }
 
-    public async Task<bool> ReScheduleAsync(Guid jobId, DateTime scheduledAt)
-    {
-        var config = masterClusterConfigurationService.Get();
-        if (config?.ClusterMode == ClusterMode.Archived)
-        {
-            throw new InvalidOperationException("Cluster mode is archived");
-        }
-        
-        var jobEntity = await masterJobsService.GetAsync(jobId);
-        if (jobEntity == null)
-        {
-            return false;
-        }
-        
-        if (!jobEntity.CanReSchedule())
-        {
-            return false;
-        }
-
-        jobEntity.ReSchedule(scheduledAt);
-        await masterJobsService.UpdateAsync(jobEntity);
-        
-        return true;
-    }
-
-    public bool ReSchedule(Guid jobId, DateTime scheduledAt)
+    public async Task<bool> RescheduleAsync(Guid jobId, DateTime scheduledAt)
     {
         var config = masterClusterConfigurationService.Get();
         if (config?.ClusterMode == ClusterMode.Archived)
         {
             throw new InvalidOperationException("Cluster mode is archived");
         }
-        
-        var jobEntity =  masterJobsService.Get(jobId);
-        if (jobEntity == null)
+
+        return await retryVersionConflictPolicy.ExecAsync(async () =>
         {
-            return false;
-        }
-        
-        if (!jobEntity.CanReSchedule())
+            var jobEntity = await masterJobsService.GetAsync(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
+
+            if (!jobEntity.CanReschedule())
+            {
+                return false;
+            }
+
+            jobEntity.Reschedule(scheduledAt);
+            await masterJobsService.UpdateAsync(jobEntity);
+            return true;
+        });
+    }
+
+    public bool Reschedule(Guid jobId, DateTime scheduledAt)
+    {
+        var config = masterClusterConfigurationService.Get();
+        if (config?.ClusterMode == ClusterMode.Archived)
         {
-            return false;
+            throw new InvalidOperationException("Cluster mode is archived");
         }
 
-        jobEntity.ReSchedule(scheduledAt);
-        masterJobsService.Update(jobEntity);
-        
-        return true;
+        return retryVersionConflictPolicy.Exec(() =>
+        {
+            var jobEntity = masterJobsService.Get(jobId);
+            if (jobEntity == null)
+            {
+                return false;
+            }
+
+            if (!jobEntity.CanReschedule())
+            {
+                return false;
+            }
+
+            jobEntity.Reschedule(scheduledAt);
+            masterJobsService.Update(jobEntity);
+            return true;
+        });
     }
 
     private OperationThrottler SchedulingThrottlerFor(AgentConnectionId agentConnectionId) =>

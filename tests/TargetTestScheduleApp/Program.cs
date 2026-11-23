@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
@@ -7,18 +6,6 @@ using StackExchange.Redis;
 using TargetTestScheduleApp;
 using TargetTestScheduleApp.Handlers;
 using TargetTestScheduleApp.Redis;
-
-// ConfigFromJson only sets RepoType as a string — it never calls a provider-specific method
-// directly, so the CLR would never actually load these assemblies into the AppDomain, and their
-// [JobMasterIocRegistration] providers (which register IMasterGenericRecordRepository etc.) would
-// be invisible to the AppDomain-based reflection scan in
-// JobMasterIocRegistrationAttribute.GetRegistrationTypes(). A `typeof(...)` reference alone is not
-// enough to guarantee this (the JIT can elide an unused ldtoken), so load them explicitly by path.
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDb.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -40,12 +27,17 @@ foreach (var clusterConfig in clusterConfigs)
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
     ?? throw new InvalidOperationException("REDIS_CONNECTION_STRING environment variable must be set.");
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+// Connected at startup, not lazily by the first job: under the first burst of jobs the connect can time out and
+// fail them. /health stays 503 until connected, so the harness doesn't schedule before Redis is ready.
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.AbortOnConnectFail = false;
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync(redisOptions));
 builder.Services.AddSingleton<IExecutionRecorder, RedisExecutionRecorder>();
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", (IConnectionMultiplexer redis) =>
+    redis.IsConnected ? Results.Ok(new { status = "ok" }) : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
 app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleRequest req, IJobMasterScheduler scheduler) =>
 {
@@ -56,7 +48,7 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
 
     var priority = (JobMasterPriority?)req.Priority;
 
-    var tasks = new List<Task<JobContext>>();
+    var tasks = new List<Task<JobScheduleReceipt>>();
     for (var i = 0; i < req.QtyJobs; i++)
     {
         var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
@@ -65,23 +57,64 @@ app.MapPost("/schedule/{handlerType}", async (string handlerType, ScheduleReques
             metadata.SetBoolValue("InjectFailure", true);
         }
 
-        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority, req.MaxNumberOfRetries));
+        tasks.Add(ScheduleHandler(handlerType, scheduler, metadata, req.ClusterId, req.AfterSeconds, priority, req.MaxNumberOfRetries, req.WorkerLane));
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    if (req.ConfirmOnMaster == true)
+    {
+        await scheduler.Advanced.ConfirmOnMasterAsync(jobs);
+    }
+
+    var cancelledJobIds = new List<Guid>();
+    if (req.CancelFromReceipt == true)
+    {
+        var cancelled = await Task.WhenAll(jobs.Select(async j => (j.JobId, Cancelled: await j.CancelAsync())));
+        cancelledJobIds.AddRange(cancelled.Where(c => c.Cancelled).Select(c => c.JobId));
+    }
+
+    if (req.CancelFromId == true)
+    {
+        var cancelled = await Task.WhenAll(jobs.Select(async j =>
+            (j.JobId, Cancelled: await RetryUntilOnMasterAsync(() => scheduler.CancelJobAsync(j.JobId, j.ClusterId)))));
+        cancelledJobIds.AddRange(cancelled.Where(c => c.Cancelled).Select(c => c.JobId));
+    }
+
+    return Results.Ok(new ScheduleResponse(
+        jobs.Select(j => j.Context.Id).ToList(),
+        jobs.Count(j => j.Status == ScheduleReceiptStatus.AcceptedOnTransport),
+        cancelledJobIds));
 });
 
 app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
 {
     var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
-    var context = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
-    return Results.Ok(new RecurringScheduleResponse(context.Id));
+    var receipt = await RecurringScheduleHandler(handlerType, scheduler, req.ExpressionTypeId, req.Expression, metadata, req.ClusterId);
+    if (req.ConfirmOnMaster == true)
+    {
+        await receipt.ConfirmOnMasterAsync();
+    }
+
+    var cancelled = false;
+    if (req.CancelFromReceipt == true)
+    {
+        cancelled = await receipt.CancelAsync();
+    }
+
+    if (req.CancelFromId == true)
+    {
+        cancelled = await RetryUntilOnMasterAsync(() => scheduler.CancelRecurringAsync(receipt.RecurringScheduleId, receipt.ClusterId));
+    }
+
+    return Results.Ok(new RecurringScheduleResponse(
+        receipt.Context.Id,
+        receipt.Status == ScheduleReceiptStatus.AcceptedOnTransport,
+        cancelled));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
 {
-    var cancelled = await scheduler.TryCancelRecurringAsync(id, clusterId);
+    var cancelled = await scheduler.CancelRecurringAsync(id, clusterId);
     return cancelled ? Results.Ok() : Results.NotFound();
 });
 
@@ -91,37 +124,62 @@ app.Run();
 
 return;
 
-static Task<JobContext> ScheduleHandler(
+// Cancel by id only finds the item once it's saved on master (the agent may not have saved it yet), so retry.
+static async Task<bool> RetryUntilOnMasterAsync(Func<Task<bool>> cancel)
+{
+    var deadline = DateTime.UtcNow.AddSeconds(60);
+    while (true)
+    {
+        if (await cancel())
+        {
+            return true;
+        }
+
+        if (DateTime.UtcNow >= deadline)
+        {
+            return false;
+        }
+
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+    }
+}
+
+static Task<JobScheduleReceipt> ScheduleHandler(
     string handlerType,
     IJobMasterScheduler scheduler,
     IWritableMetadata metadata,
     string? clusterId,
     int? afterSeconds,
     JobMasterPriority? priority,
-    int? maxNumberOfRetries = null)
+    int? maxNumberOfRetries = null,
+    string? workerLane = null)
 {
     return handlerType.ToLowerInvariant() switch
     {
         "fast" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppFastHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppFastHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "normal" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppNormalHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppNormalHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "slow" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppSlowHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppSlowHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "verylong" => afterSeconds.HasValue
-            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
+            ? scheduler.OnceAfterAsync<TestAppVeryLongHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppVeryLongHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
         "advanced-fast" => afterSeconds.HasValue
-            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries)
-            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries),
-        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast.")
+            ? scheduler.Advanced.OnceAfterAsync<TestAppAdvancedFastDefinitionAttribute>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.Advanced.OnceNowAsync<TestAppAdvancedFastDefinitionAttribute>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
+        // Lane from the handler's [JobMasterWorkerLane("billing")]; a workerLane in the request overrides it.
+        "billing-lane" => afterSeconds.HasValue
+            ? scheduler.OnceAfterAsync<TestAppBillingLaneHandler>(TimeSpan.FromSeconds(afterSeconds.Value), metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane)
+            : scheduler.OnceNowAsync<TestAppBillingLaneHandler>(metadata: metadata, clusterId: clusterId, priority: priority, maxNumberOfRetries: maxNumberOfRetries, workerLane: workerLane),
+        _ => throw new ArgumentException($"Unknown handlerType '{handlerType}'. Expected one of: fast, normal, slow, verylong, advanced-fast, billing-lane.")
     };
 }
 
-static Task<RecurringScheduleContext> RecurringScheduleHandler(
+static Task<RecurringScheduleReceipt> RecurringScheduleHandler(
     string handlerType,
     IJobMasterScheduler scheduler,
     string expressionTypeId,

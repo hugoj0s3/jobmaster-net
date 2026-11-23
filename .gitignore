@@ -162,3 +162,6 @@ riderModule.iml
 # nuget packages
 *.nupkg
 *.snupkg
+# Scenario tests on EC2: account values and run outputs
+misc/scenario-aws/scenario-aws.settings.sh
+artifacts/scenario-runs/

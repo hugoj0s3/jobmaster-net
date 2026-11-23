@@ -1,9 +1,9 @@
 using JobMaster.Abstractions.Models;
 using JobMaster.Ioc.Extensions;
-using JobMaster.RavenDb;
-using JobMaster.RavenDb.Agents;
-using JobMaster.RavenDb.Connections;
-using JobMaster.RavenDb.Master;
+using JobMaster.RavenDB;
+using JobMaster.RavenDB.Agents;
+using JobMaster.RavenDB.Connections;
+using JobMaster.RavenDB.Master;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Models.Agents;
@@ -35,6 +35,7 @@ namespace JobMaster.IntegrationTests.Fixtures.RepoConformance;
 public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 {
     private const string ClusterIdValue = "RT-RavenDb-1";
+    private const string OtherClusterIdValue = "RT-RavenDb-2";
     private const string AgentConnectionName = "AgentForRepoTests-RavenDb-1";
 
     private RavenDbContainer container = null!;
@@ -54,9 +55,13 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
 
     internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
 
+    internal override IMasterJobsRepository OtherClusterMasterJobs { get; set; } = null!;
+
+    internal override IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; } = null!;
+
     // Agent-side fingerprint resolver isn't part of RepositoryFixtureBase's contract either -- this fixture
     // only registers the master side of UseRavenDb, so RegisterForAgent never runs and there's no
-    // DI-resolved IAgentFingerprintResolver available. RavenDbAgentFingerprintResolverConformanceTests constructs the
+    // DI-resolved IAgentFingerprintResolver available. RavenDbAgentRawFingerprintResolverConformanceTests constructs the
     // resolver directly instead (same document store, no full agent-connection DI wiring needed).
     internal IRavenDbDocumentStoreManager DocumentStoreManager { get; private set; } = null!;
     internal string ConnectionString { get; private set; } = string.Empty;
@@ -94,6 +99,14 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
                 .UseRavenDb(agentConnectionString);
             cfg.Mode(ClusterMode.Active);
         });
+        // Same master database, another cluster id: only used to prove queries are scoped to their own cluster.
+        services.AddJobMasterCluster(OtherClusterIdValue, cfg =>
+        {
+            cfg.UseRavenDb(connectionString);
+            cfg.AddAgentConnectionConfig(AgentConnectionName)
+                .UseRavenDb(agentConnectionString);
+            cfg.Mode(ClusterMode.Active);
+        });
         serviceProvider = services.BuildServiceProvider();
 
         // Deliberately no StartJobMasterRuntimeAsync() call -- see the class doc above.
@@ -103,6 +116,10 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
         MasterJobs = factory.GetMasterRepository<IMasterJobsRepository>();
         MasterRecurringSchedules = factory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
+
+        var otherFactory = JobMasterClusterAwareComponentFactories.GetFactory(OtherClusterIdValue);
+        OtherClusterMasterJobs = otherFactory.GetMasterRepository<IMasterJobsRepository>();
+        OtherClusterMasterRecurringSchedules = otherFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
 
         ConnectionString = connectionString;
         // ClusterServiceProvider, not the fixture's own outer serviceProvider -- ClusterIocRegistration
@@ -121,13 +138,13 @@ public sealed class RavenDbRepositoryFixture : RepositoryFixtureBase
         var rawRepo = factory.ClusterServiceProvider
             .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
                 ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(RavenDbRepositoryConstants.RepositoryTypeId));
-        rawRepo.Initialize(agentConfig);
+        rawRepo.Initialize(agentConfig.Id, agentConfig.TransportConfig);
         AgentMessages = rawRepo;
 
         // Normally deployed by RavenDbJobMasterRuntimeSetup.OnBeforeStartAsync, which this fixture
         // deliberately never invokes (see the class doc above) -- without it, RavenDbRawMessagesDispatcherRepository's
         // queries (which target this index by name) throw IndexDoesNotExistException.
-        var messageCollectionName = agentConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
+        var messageCollectionName = agentConfig.TransportConfig.GetCollectionPrefix() + RavenDbCollectionNames.Message;
         await RavenDbMessageIndexes.DeployAsync(DocumentStoreManager.GetOrCreateStore(agentConnectionString), messageCollectionName);
 
         // Same reasoning, for AcquireAndFetchAsync's static index -- lives in the master database.

@@ -91,4 +91,7 @@ internal class OperationThrottler
             if (acquired) semaphore.Release();
         }
     }
+    
+    // Waits until a slot is free (or the acquire timeout passes) without holding it.
+    public async Task WaitForCapacityAsync() => await ExecAsync(() => Task.CompletedTask);
 }

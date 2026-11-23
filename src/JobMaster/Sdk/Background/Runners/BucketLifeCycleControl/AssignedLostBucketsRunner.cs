@@ -1,4 +1,5 @@
 ﻿using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Keys;
@@ -43,7 +44,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
     
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Skipped(this);
         }
@@ -60,7 +61,8 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
             var lostBuckets = buckets.Where(b => b.Status == BucketStatus.Lost);
 
             var workers = await masterAgentWorkersService.QueryWorkersAsync(useCache: false);
-            var workersAlive = workers.Where(x => x.Status() == AgentWorkerStatus.Active).ToList();
+            var workersAlive = workers.Where(x => x.IsAlive()).ToList();
+            var bucketsWithoutWorker = new List<BucketModel>();
 
             foreach (var bucket in lostBuckets)
             {
@@ -83,7 +85,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
                         // misconfigured a lane/priority so no real bucket ever matches — an exceptional,
                         // mistake-driven case, not routine operation. So there's nothing at risk here:
                         // no real worker can ever own the reserved fallback connection anyway (see
-                        // JobMasterRuntime.PreValidation), meaning this bucket can never be drained the
+                        // JobMasterRuntime.ValidateClusterDefinitions), meaning this bucket can never be drained the
                         // normal way. It's fine for its jobs to recover more slowly via the deadline
                         // runner instead — send it straight to ReadyToDelete.
                         if (bucket.ReadyToDelete())
@@ -102,7 +104,7 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
 
                     if (!workerToSelect.Any())
                     {
-                        logger.Critical($"Worker not found for bucket {bucket.Id}", JobMasterLogCategory.Bucket, bucket.Id);
+                        bucketsWithoutWorker.Add(bucket);
                         continue;
                     }
 
@@ -122,6 +124,24 @@ internal class AssignedLostBucketsRunner : JobMasterRunner
                 finally
                 {
                     masterDistributedLockerService.ReleaseLock(lockKeys.BucketLock(bucket.Id), bucketLockToken);
+                }
+            }
+
+            // One line per agent connection; the bucket Lost the longest decides the level. A restart or deploy (or a
+            // test stopping every worker) stays within the grace period, so only Warns.
+            foreach (var connectionBuckets in bucketsWithoutWorker.GroupBy(b => b.AgentConnectionId.IdValue))
+            {
+                var lostSince = connectionBuckets.Min(b => b.LastStatusChangeAt);
+                var message = $"No Full or Drain worker alive for agent connection {connectionBuckets.Key}: " +
+                              $"{connectionBuckets.Count()} Lost bucket(s) waiting, the oldest since {lostSince:O}.";
+
+                if (DateTime.UtcNow - lostSince < JobMasterConstants.LostBucketNoWorkerGracePeriod)
+                {
+                    logger.Warn(message, JobMasterLogCategory.Bucket);
+                }
+                else
+                {
+                    logger.Critical(message, JobMasterLogCategory.Bucket);
                 }
             }
         }

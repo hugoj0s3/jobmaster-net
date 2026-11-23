@@ -1,6 +1,29 @@
 # Reminders
 
-Follow-ups noted during work but deliberately deferred out of the PR they came up in.
+Follow-ups noted during work but deliberately deferred out of the PR they came up in. Grouped by kind: bugs / gaps
+(something is wrong or missing today), design follow-ups (works, but should change), ideas (not designed), and
+docs / benchmarks / positioning.
+
+---
+
+# Bugs / gaps
+
+## `RecurringScheduleTest.HybridNatsRavenDb`: two `static-cronos` runs 73 s apart (once, under load)
+
+2026-11-15, first EC2 run (`m5.xlarge`, peak load 7.8 on 4 vCPU): `static-cronos` (`*/6 * * * *`) had 2 executions
+73 s apart (expected ~360 s), different job ids. Passed twice since (`m5.2xlarge`, and locally). Undecided between: the
+first `:x6` slot ran ~4–5 min late (startup under load, timing only), or two jobs were planned for the same slot (real
+duplicate-planning bug). The spacing check now prints each job's `ScheduledAt` / `ExecutedAt` on failure (same
+`ScheduledAt` twice = duplicate planning). To settle it: repeat the unit several times on `m5.xlarge` (needs a repeat
+option in `misc/scenario-aws/run-scenarios.sh`).
+Hugo: a late first run would be a problem (a slot missed after start / deploy); extra runs right after a cancel are
+fine (already-planned burst). Test gap: Cronos / NCrontab skip the first-firing check (`ChecksFirstFiringTiming:
+false`, since `CreatedAt + Interval` is wrong for grid-aligned cron); re-enable it with the right expectation (first
+`:x6` mark after `CreatedAt`, same 1 min tolerance) so a slow first start fails clearly.
+Fix when porting the scenario to the flavor matrix (Hugo): per execution, check (1) the job's `ScheduledAt` is a real
+occurrence of the expression (grid marks for cron, `CreatedAt + n × interval` otherwise), (2) `ExecutedAt − ScheduledAt`
+within a tolerance, (3) each `ScheduledAt` only once, (4) count over the window ≈ occurrences in it; the average-gap
+check then goes. Today it only checks count ≥ 2, unique job ids, average gap and (non-cron) first-run timing.
 
 ## `OpenApiJsonConfigSeeder` trusts the request's `Host` header for a server-side fetch (SSRF)
 
@@ -14,135 +37,19 @@ Sandbox demo is unaffected (`UseApiUrl("/jm-api")` explicitly, never calls `From
 Fix direction (not implemented): require `ApiUrl` explicitly; drop the Host-based self-fetch branch in
 `SeedAsync`; `FromOpenApiJson(...)` keeps working only via an explicit absolute URL or file path.
 
-## `DashboardOAuthEndpoints`'s `redirect_uri` also derives from `ctx.Request.Host` — fine, but undocumented
+## Missing handler fallout (`RecurringSchedulePlanner.ScheduleNextJobsAsync`)
 
-Same Host-derived pattern in `BuildCallbackUrl`/`ResolveUrl` (`DashboardOAuthEndpoints.cs`), but not a bug
-here — the OAuth provider itself rejects a `redirect_uri` that doesn't exactly match what's registered for
-the Client ID, so a forged `Host` alone doesn't work. Only becomes a real issue if the provider allows
-loose/wildcard redirect matching, or the admin registered one. Gap is just doc: nothing tells admins to
-register the exact, full callback URL. Worth a line in the OAuth setup docs.
-
-## `JobMasterRuntime.StartAsync` validation is still split across two places
-
-Raised 2026-07-19 while working on the Migrating-mode PR. Point 1 (validation must fully complete
-before any `OnBeforeStartAsync` side effects run) was fixed as part of that PR — `PreValidation()` now
-runs right after the `ValidateAsync` loop and before `OnBeforeStartAsync`.
-
-Point 2, not yet addressed: some validation still happens *after* that point, inside the per-cluster
-loop in `StartAsync` — most notably the agent-connection fingerprint check
-(`existingConnection.Fingerprint != fingerprint` + `ProtectConnectionChanges` → throws) around
-`JobMaster\Sdk\Background\JobMasterRuntime.cs`. This check is interleaved with real side-effecting work
-in the same loop (saving connections, merging cluster config, persisting to DB), so a fingerprint
-mismatch on a later cluster in the loop can throw *after* earlier clusters in the same startup have
-already had connections saved / config persisted — an inconsistent partial-startup state, the same class
-of problem Point 1 fixed, just not yet untangled here.
-
-Properly fixing this means splitting the per-cluster loop into a validate-everything pass and a
-separate apply-everything pass — bigger and riskier than Point 1's reorder (connection registration,
-fingerprinting, and config persistence are currently one intertwined loop), and not a natural side
-effect of whatever feature happens to touch `JobMasterRuntime` next. Worth its own dedicated
-investigation/PR rather than opportunistic bundling.
-
-## `ConfigFromJson` — `RepoType` comparisons are case-sensitive, inconsistent with the rest of the surface
-
-Raised 2026-08-14 while checking `ConfigFromJson`'s case-sensitivity end to end. JSON property names
-(`PropertyNameCaseInsensitive` on the `string`/`Stream` overloads, `IConfiguration.Get<T>()`'s inherent
-case-insensitivity on the `IConfiguration` overload) and every enum-like string value (`ClusterMode`,
-`DisabledPriorities`, `WorkerMode`, `BucketQtyConfig` keys — all parsed via
-`Enum.TryParse(value, ignoreCase: true, ...)`) are deliberately case-insensitive, with test coverage to
-match.
-
-`RepoType` (`ClusterRepoType`/`AgentRepoType` — `"Postgres"`/`"MySql"`/`"SqlServer"`/`"NatsJetStream"`) is
-the one exception, and it doesn't look deliberate: `JobMasterIocRegistrationAttribute
-.RegisterProviderExtensionsForMaster`/`RegisterProviderExtensionsForAgent` resolve the provider module via
-a plain `repoTypeProp.GetValue(null)?.ToString() != repositoryType` (ordinal comparison, no
-`ignoreCase`), and `ConnectionOptionsBinderFactory`'s repo-type dictionary is built via
-`.ToDictionary(s => s.RepoType, s => s)` with no `StringComparer.OrdinalIgnoreCase` either. A lowercase
-`"postgres"` in a JSON config silently matches no registered provider instead of raising a clear
-validation error — the failure only surfaces later as a confusing missing-implementation error, not an
-obvious "invalid RepoType" message at config time.
-
-Fix should make repo-type comparisons case-insensitive throughout (both spots above), matching the rest
-of `ConfigFromJson`'s design. This was found by spot-checking one specific field, not a systematic
-sweep — worth auditing every other enum-like/identifier string this surface parses to confirm nothing
-else was missed the same way before considering this done.
-
-## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
-
-`OnStartingAsync` was renamed to `OnBeforeStartAsync` (interface + all implementers: `SqlJobMasterRuntimeSetup`,
-`PostgresJobMasterRuntimeSetup`, `NatsJetStreamJobMasterRuntimeSetup`, `DefaultRuntimeValidatorSetup`) to make
-room for a future `OnAfterStartedAsync` counterpart — a hook that runs once the runtime has fully started
-(workers created and started, `Started = true`), symmetric to `OnBeforeStartAsync` running before any of that.
-Not implemented yet; just the naming groundwork.
-
-## RavenDB's `RuntimeDbOperationLimit` defaults (50 cluster / 25 agent) are unvalidated guesses
-
-Raised 2026-08-19 while benchmarking the RavenDB provider (`JobMaster.RavenDb/RavenDbJobMasterRuntimeSetup.cs`).
-These values were carried over from Postgres/SqlServer's own defaults on the reasoning that RavenDB is
-also a remote HTTP-accessed database server, not because they were actually tuned for RavenDB's specific
-concurrency/throughput profile. A benchmark comparison at burst-1000/3-workers scale (with RavenDB's
-Message and Job static indexes both in place, see `RavenDbMessageIndexes`/`RavenDbJobIndexes`)
-found no measurable difference between 10/5 and 50/25 — meaning that comparison didn't actually validate
-50/25 as correct, only that neither value was the bottleneck at that specific scale. Whether 50/25 holds
-up at higher concurrency (larger worker counts, sustained paced load rather than a single burst) is still
-untested. Worth a dedicated tuning pass in a future version — sweep a wider range of values against both
-burst and paced tiers at larger scale, rather than assuming the SQL-derived defaults are actually right
-for RavenDB.
-
-## `AssignJobsToBucketsRunner`'s imminent-path lock caps claim throughput at one `TransferBatchSize` per 10s window
-
-Raised 2026-08-19 while benchmarking the RavenDB provider's `AcquireAndFetchAsync` at larger burst sizes
-(`JobMaster/Sdk/Background/Runners/JobAndRecurringScheduleLifeCycleControl/AssignJobsToBucketsRunner.cs`).
-Core SDK behavior, not RavenDB-specific -- applies identically to every provider.
-
-`BucketAssignerImminentLock` is a time-bucketed distributed lock keyed by a 10-second window
-(`ProbeWindowInSeconds`); only the one coordinator instance that wins it does anything that tick, every
-other coordinator instance just sees the lock held and skips. Combined with `TransferBatchSize` (default
-1000), this means a backlog bigger than one batch needs multiple ~10-second-apart cycles to fully drain,
-regardless of how many coordinator instances are configured or how fast the DB itself responds -- at
-burst-5000 scale this alone plausibly accounts for a large share of both SQL Server's and RavenDB's
-measured execution latency (SQL Server's ~41s Immediate mean at that scale roughly matches "4-5 cadence
-cycles," suggesting its own per-cycle DB cost is small relative to the cadence gate itself).
-
-The lock exists for a real reason, not defensively: without it, N concurrent coordinators would each
-independently query the same "top TransferBatchSize unlocked, ordered by NextPlanExecutionAt asc,
-Offset=0" candidate set and race to claim it. The race itself is safe (RavenDB/SQL both resolve it
-correctly per-document/per-row, no double-claim), but it's wasteful -- whichever coordinators lose the
-race paid for a full acquire round trip (query + patch/update + confirm) for few or zero rows, since
-every concurrent query targets the identical front-of-queue window rather than different slices of the
-backlog.
-
-Three possible future directions discussed, none implemented (all deferred out of the RavenDB-scoped
-PR this was raised in, and all are core-SDK changes affecting every provider):
-
-1. **Partition candidates across concurrent coordinators** (different offsets, hash-based sharding, or
-   similar) so they target genuinely different slices of the backlog instead of racing for the same
-   window. Would remove the waste properly, but is a real redesign of the claim path, not a small tweak.
-2. **Over-fetch and randomly thin the candidate list** -- e.g. query `TransferBatchSize * 1.5` candidates
-   and randomly drop back down to `TransferBatchSize` before attempting to claim, so two coordinators
-   racing at the same instant end up attempting different (though still overlapping) subsets by chance.
-   Considered and set aside (2026-08-19, user's own assessment: "too odd") -- also weak on the math: for
-   two independent random `k`-out-of-`N` draws, expected overlap is `k²/N` -- at `k=1000, N=1500` that's
-   ~667, meaning ~67% of each coordinator's claimed candidates would still collide on average. Reduces
-   wasted work, doesn't come close to eliminating it, and adds an odd "randomly discard rows you just
-   fetched" step to the claim path for a small payoff.
-3. **Add jitter to the coordinators' acquire-attempt cadence instead** (user's preferred direction,
-   2026-08-19) -- rather than reshaping which candidates get claimed, randomize *when* each coordinator
-   instance attempts the lock/probe cycle (e.g. a small random offset added to the polling interval per
-   instance) so concurrent coordinators don't all hit the lock at the same instant every cycle. Doesn't
-   change how many jobs get claimed per window (still capped by `TransferBatchSize`, still one winner per
-   10s bucket), but should reduce simultaneous lock-contention spikes -- the wasted round trips come from
-   many coordinators showing up to attempt the lock at the exact same moment, not from the lock itself.
-   Lower-risk and more conventional than option 2 (standard thundering-herd mitigation, no change to
-   claim/candidate semantics at all, just polling timing) -- the more promising direction to prototype
-   first if this gets picked up.
+Current guard just logs (Critical) and skips when a handler is gone; add logic to automatically terminate the
+recurring schedule after X consecutive errors or a time threshold so logs don't spam forever.
 
 ## Running the full `IntegrationTests` project unfiltered throws `Cluster ID 'RT-Postgres-1' already exists`
 
 Raised 2026-08-21 while running the complete test suite (Unit + Integration + Scenario, no filters) ahead
 of the RavenDB provider's first release. Not a RavenDB issue -- 0 of the 390 failures were RavenDB tests
 (RavenDB's own conformance suite passed 142/142, reproduced on a clean re-run). Every failure was in the
-Postgres/MySql/SqlServer RepoConformance suite.
+Postgres/MySql/SqlServer RepoConformance suite. Hit again 2026-11-14 running a filter that matched both SQL and
+RavenDB conformance classes; running them separately works. Since 2026-11-22 the `Repo Conformance Tests` workflow runs
+one job (one process) per provider, so CI is green; the root cause below is still open.
 
 **Root cause found 2026-08-21, confirmed from an actual CI log, not just reproduced locally.** The
 triggering error is `Connection refused` trying to reach RavenDB's Testcontainers instance while resolving
@@ -231,7 +138,168 @@ Deferred (reminder only, not fixed) per explicit request during PR review -- not
 publishing. Fix would be: give `TryGetApplicableIndexName` an `isLocked` parameter matching `BuildWhereRql`'s,
 and pass it explicitly from both call sites instead of relying on the comment.
 
-## Future: a second Jobs static index without the partition-lock fields will require `TryGetApplicableIndexName` to become a real index-selection mechanism, not a single-index check
+## `MasterJobsService.BulkUpdateAsync` overloads have no deadlock-specific handling
+
+Raised 2026-08-22 (SqlServer Pure, 100k-job burst, 40 full-mode workers on one DB): 28 SQL Server deadlocks
+(`SqlException 1205`), all inside `SqlServerMasterJobsRepository.BulkUpdateAsync`, all recovered by the caller's
+generic retry (`WorkerClusterOperations.ExecWithRetryAsync`, coarser, not deadlock-aware). `AcquireAndFetchAsync`
+returns an empty list on a deadlock (Hugo confirmed that's correct: a deadlocked claim rolls back before acquiring
+anything). Still open: decide what `BulkUpdateAsync` should do on a deadlock — likely the equivalent no-op result
+rather than reintroducing a retry policy.
+
+## SQL `BulkInsertIfNotExistsAsync` still checks then inserts (not atomic)
+
+`SqlMasterJobsRepository` / `SqlMasterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync` pre-read existing ids,
+then a guarded `INSERT ... WHERE NOT EXISTS`, then metadata entries for the ids the pre-read called new. The race with a
+concurrent insert of the same id (duplicate key or deadlock → rollback) is handled since 2026-11-14 by a per-row
+fallback, so nothing surfaces to callers. Left for later:
+- Proper: atomic per-provider insert-if-absent for jobs and metadata (Postgres `ON CONFLICT DO NOTHING`, MySQL
+  `INSERT IGNORE` / `ON DUPLICATE KEY`, SQL Server `MERGE`/`UPDLOCK, HOLDLOCK`), deriving "new" ids from what was
+  actually inserted instead of the pre-read. Would remove the fallback's extra round trips after a race.
+- `BuildQueryExistingIdsSql` (the pre-read) has no `cluster_id` filter, so a same-DB, same-prefix migrate can see the
+  source cluster's row as existing and skip copying its metadata/executions/logs.
+
+## `IanaTimeZoneId`: implicit default
+
+Found 2026-11-14 (settings audit). The inverted startup check was fixed the same day (see ChangeLog.internal); API-only
+clusters skip it via the internal `AllowOmittedTimeZone()` since the API selector can't set the zone. That skip
+is a stopgap: a public `IanaTimeZoneId` on `IBaseClusterConfigSelector` would let the API follow the same rule.
+Left: `ClusterConfigurationModel.IanaTimeZoneId` defaults to the local zone of whichever machine saves the cluster
+configuration first, and stays (sticky). An explicit zone that overwrites a different stored one is saved without a
+Warning (needs a "record exists" read: `GetFresh()` returns a default model with the local zone when nothing is stored).
+
+Discussed fix: make it required on every cluster configuration (every process, publishers included), validated in the
+aggregated startup list (missing / invalid IANA id); Warning when a process's value differs from the stored one
+(changing the zone shifts recurring schedules). Breaking; reach: ~23 C# `AddJobMasterCluster` setups (tests, target
+apps, fixtures, samples, benchmarks), ~189 scenario JSON files (~229 cluster entries: add `"IanaTimeZoneId": "UTC"`
+next to `"RepoType"`, scripted with sed, not PowerShell), READMEs, docs.
+
+## `DisablePriority` is applied per process, never stored
+
+Found 2026-11-14 while auditing which cluster settings are applied from memory vs from master. Disabled priorities live
+only in `JobMasterClusterConnectionConfig` (`SetDisabledPriorities` in `ClusterConfigBuilder.Finish`), never on master,
+so each process applies its own: the scheduler rejects a disabled priority at the call (`JobMasterScheduler`
+`EnsureCanSave`, the publisher's setting), while workers use it for bucket counts and `AssignJobsToBucketsRunner` for
+the fallback priority (the worker's setting). With different configs: disabled on the publisher only → jobs rejected
+though workers would run them; disabled on workers only → jobs scheduled that no bucket takes, each waits for the
+fallback bucket (~2.5 min). Not visible anywhere since it's not stored.
+
+Fix direction: store it on master like the other shared cluster settings and read it from there everywhere (scheduler
+check, worker bucket counts, fallback priority); workers read it at startup, same timing as `ClusterMode`.
+
+## NATS `TransientThreshold` limit is validated from memory but applied from master
+
+Found 2026-11-14, same audit. `NatsJetStreamJobMasterRuntimeSetup.ValidateAsync` checks this process's
+`clusterDefinition.TransientThreshold` (≤ 5 min with NATS execution), but the NATS runners use the stored value
+(`NatsJetStreamRunnerBase`: `masterClusterConfigurationService.Get()?.TransientThreshold`). A NATS worker setting
+2 min passes; another process of the same cluster without NATS starting later with 30 min overwrites the stored value,
+and the NATS runners then run past the limit.
+
+Fix direction: validate the value that will actually apply (this process's if set, else the stored one), and when a
+process saves a larger value for a cluster with NATS execution agents, reject it (or log Critical).
+
+## Master and agent on separate databases: covered once, not per provider
+
+Covered: hybrid RepoConformance (Postgres master, MySQL execution leg), and the `*Nats` / hybrid scenario variants keep
+agents off master. Not covered: the same setup per provider (e.g. a SQL agent on its own database of the same
+provider). Same-database setups can hide gaps that only show when master and agent state are independent (e.g.
+something provisioned only on "the one database"; plan item 24 was this kind of blind spot).
+
+---
+
+# Design follow-ups
+
+## SQL agent message base: review the generic dequeue
+
+Raised 2026-11-16. In `SqlRawMessagesDispatcherRepositoryBase`, `LeaseMessagesAsync` / `CreateBucketIfNotExistsAsync`
+are now `abstract` (every SQL provider overrides them). Still to review: `DequeueMessagesAsyncCore` (and
+`GetDequeueSelectSql`, used only by it) is a generic `SELECT` then `DELETE` with no row locking. Postgres, MySQL and
+SQL Server all override it, so it never runs and no test covers it; a provider that didn't override it wouldn't fail,
+but two workers pulling one bucket could both get the same rows. Rule (Hugo): if it's implemented, it needs to be
+tested; an implementation no provider uses is made `abstract` instead. So likely make it `abstract` and delete
+`GetDequeueSelectSql`. Also check the other base members with a body that every provider overrides.
+
+## Graceful worker stop is not reachable
+
+Found 2026-11-15 (worker stop cleanup). `WorkerStopCoordinatorRunner` reacts to two lock keys
+(`WorkerGracefulStopLock` → `RequestGracefulStop()`, `WorkerImmediateStopLock` → `StopImmediatelyAsync()`), but nothing
+sets them as a signal, and nothing else calls `RequestGracefulStop()` (renamed from `RequestStop()` in 0.0.12; it now
+takes an optional period, default 15 min, at least 1 min). Planned for the next version's signal service (Hugo: a
+friendly stop that drains for minutes, buckets Completing; must never be done as `StopControl.Stop()`, which would
+abort running jobs after 5 s). The record-side fields
+(`StopRequestedAt`, `StopGracePeriod`, `AgentWorkerStatus.Stopping`) were removed as never written; the in-memory
+deadline on the worker stays (Hugo: may be good to keep). If graceful stop is finished: a public way to request it,
+and exclude a stopping worker from `AssignedLostBucketsRunner`'s candidates (today a just-stopped worker's heartbeat is
+fresh for ~30 s, so it can be picked as drainer of its own bucket; recovered via `MarkBucketAsLostRunner`, only
+slower). Also `CleanupDeadWorkerRunner` takes `WorkerImmediateStopLock(deadWorker)` as its delete mutex, the same key
+the coordinator reads as "stop now" -- give it its own key.
+
+## `IJobMasterRuntimeSetup.OnAfterStartedAsync` — future symmetric hook
+
+`OnStartingAsync` was renamed to `OnBeforeStartAsync` (interface + all implementers: `SqlJobMasterRuntimeSetup`,
+`PostgresJobMasterRuntimeSetup`, `NatsJetStreamJobMasterRuntimeSetup`, `DefaultRuntimeValidatorSetup`) to make
+room for a future `OnAfterStartedAsync` counterpart — a hook that runs once the runtime has fully started
+(workers created and started, `Started = true`), symmetric to `OnBeforeStartAsync` running before any of that.
+Not implemented yet; just the naming groundwork.
+
+## RavenDB throttler and batch-size settings not calibrated under sustained load
+
+`RavenDbJobMasterRuntimeSetup` registers master batch 250 / throttler (5, 5000 ms), agent batch 250 / internal
+(5, 2500 ms) / scheduling (200, 2500 ms). The scheduling value was retuned during the 2026-09-02 throttler work (jitter
+fixed RavenDB's job loss at low scheduling capacity), but unlike Postgres and MySQL there's no full calibration
+sweep on record. The original 2026-08-19 comparison (burst-1000, 3 workers) only showed neither setting was the
+bottleneck at that scale. Worth a dedicated pass at larger worker counts and sustained paced load; mind the Community
+license cap (see Benchmarks) when comparing with the other providers.
+
+## `AssignJobsToBucketsRunner`'s imminent-path lock caps claim throughput at one `TransferBatchSize` per 10s window
+
+Raised 2026-08-19 while benchmarking the RavenDB provider's `AcquireAndFetchAsync` at larger burst sizes
+(`JobMaster/Sdk/Background/Runners/JobAndRecurringScheduleLifeCycleControl/AssignJobsToBucketsRunner.cs`).
+Core SDK behavior, not RavenDB-specific -- applies identically to every provider.
+
+`BucketAssignerImminentLock` is a time-bucketed distributed lock keyed by a 10-second window
+(`ProbeWindowInSeconds`); only the one coordinator instance that wins it does anything that tick, every
+other coordinator instance just sees the lock held and skips. Combined with `TransferBatchSize` (default
+1000), this means a backlog bigger than one batch needs multiple ~10-second-apart cycles to fully drain,
+regardless of how many coordinator instances are configured or how fast the DB itself responds -- at
+burst-5000 scale this alone plausibly accounts for a large share of both SQL Server's and RavenDB's
+measured execution latency (SQL Server's ~41s Immediate mean at that scale roughly matches "4-5 cadence
+cycles," suggesting its own per-cycle DB cost is small relative to the cadence gate itself).
+
+The lock exists for a real reason, not defensively: without it, N concurrent coordinators would each
+independently query the same "top TransferBatchSize unlocked, ordered by NextPlanExecutionAt asc,
+Offset=0" candidate set and race to claim it. The race itself is safe (RavenDB/SQL both resolve it
+correctly per-document/per-row, no double-claim), but it's wasteful -- whichever coordinators lose the
+race paid for a full acquire round trip (query + patch/update + confirm) for few or zero rows, since
+every concurrent query targets the identical front-of-queue window rather than different slices of the
+backlog.
+
+Three possible future directions discussed, none implemented (all deferred out of the RavenDB-scoped
+PR this was raised in, and all are core-SDK changes affecting every provider):
+
+1. **Partition candidates across concurrent coordinators** (different offsets, hash-based sharding, or
+   similar) so they target genuinely different slices of the backlog instead of racing for the same
+   window. Would remove the waste properly, but is a real redesign of the claim path, not a small tweak.
+2. **Over-fetch and randomly thin the candidate list** -- e.g. query `TransferBatchSize * 1.5` candidates
+   and randomly drop back down to `TransferBatchSize` before attempting to claim, so two coordinators
+   racing at the same instant end up attempting different (though still overlapping) subsets by chance.
+   Considered and set aside (2026-08-19, user's own assessment: "too odd") -- also weak on the math: for
+   two independent random `k`-out-of-`N` draws, expected overlap is `k²/N` -- at `k=1000, N=1500` that's
+   ~667, meaning ~67% of each coordinator's claimed candidates would still collide on average. Reduces
+   wasted work, doesn't come close to eliminating it, and adds an odd "randomly discard rows you just
+   fetched" step to the claim path for a small payoff.
+3. **Add jitter to the coordinators' acquire-attempt cadence instead** (user's preferred direction,
+   2026-08-19) -- rather than reshaping which candidates get claimed, randomize *when* each coordinator
+   instance attempts the lock/probe cycle (e.g. a small random offset added to the polling interval per
+   instance) so concurrent coordinators don't all hit the lock at the same instant every cycle. Doesn't
+   change how many jobs get claimed per window (still capped by `TransferBatchSize`, still one winner per
+   10s bucket), but should reduce simultaneous lock-contention spikes -- the wasted round trips come from
+   many coordinators showing up to attempt the lock at the exact same moment, not from the lock itself.
+   Lower-risk and more conventional than option 2 (standard thundering-herd mitigation, no change to
+   claim/candidate semantics at all, just polling timing) -- the more promising direction to prototype
+   first if this gets picked up.
+
+## Future: a second Jobs static index will require `TryGetApplicableIndexName` to become a real index-selection mechanism
 
 Raised 2026-08-21 (user's own forward-looking note during the same PR review, right after the two
 `TryGetApplicableIndexName` items above). `RavenDbJobIndexes` currently deploys exactly one static index
@@ -252,128 +320,152 @@ logic being hardcoded to match today's single index rather than being driven gen
 actual deployed index set covers. Worth designing both together whenever this gets picked up, rather than
 patching the isLocked assumption first and then redoing it again once a second index shows up.
 
-## No test (any provider) ever configures master and agent on genuinely separate databases
+## `BulkUpdateAsync` — single SQL round-trip
 
-Raised 2026-08-21 while investigating whether the RavenDB fallback-bucket scenario's Coordinator-only
-setup could mask an index-deployment timing gap (see `RavenDbJobMasterRuntimeSetup.OnBeforeStartAsync`
-investigation, same review). Checked and confirmed this is **not** RavenDB-specific -- it's the same
-across every provider:
+The current implementation issues one SQL statement per job. Replace with a single batched statement (e.g. a `VALUES`
+list joined to the target table) that atomically checks the row version, applies the update, and returns only the rows
+that were actually changed. This will likely require DB-specific SQL (e.g. PostgreSQL `UPDATE … FROM (VALUES …)` or SQL
+Server `MERGE`), so abstract behind the existing db-provider pattern.
 
-- `RepoConformanceBootstrap.cs`: `cfg.UsePostgresForMaster(postgres.GetConnectionString())` then
-  `cfg.AddAgentConnectionConfig(...).UsePostgresForAgent(postgres.GetConnectionString())` -- literally
-  the same connection string for master and agent. Identical pattern for MySql and SqlServer in the same
-  file, and for RavenDB in `RavenDbRepositoryFixture.cs` (`cfg.UseRavenDb(connectionString)` for both).
-- Every `FallbackBucketTest/*Pure` scenario variant (Postgres/MySql/SqlServer/RavenDb) configures only
-  one `ConnectionString`, no separate `AgentConnections` at all -- expected there specifically, since
-  fallback is defined to always reuse the master's own connection regardless of provider, not a gap on
-  its own.
+## Scheduler locking strategy
 
-But outside the fallback-specific case, there is currently **no integration or scenario test, for any
-provider, that ever exercises master and an agent connection pointing at genuinely different database
-instances** -- the realistic production topology once a cluster has real Coordinator + Execution workers
-rather than everything colocated. Same-database test setups can accidentally paper over bugs that only
-manifest when master-side and agent-side state are truly independent (e.g. a resource -- index, schema,
-whatever -- that only got provisioned on "the one database" because it happened to double as both roles
-in the test, not because the provisioning path actually covers agent connections correctly on their own).
-Worth adding at least one conformance/scenario configuration per provider with master and agent on
-distinct database instances, to close this blind spot -- broader than any single provider's PR, so not
-attempted here.
+Re-evaluate the locker usage (we probably no longer need the "saving" locks). Ideal design is per-resource locking;
+keep the current action-level approach only if the refactor is too costly right now.
 
-## RavenDB provider has no configurable request timeout
+## Runner reads and scan planning
 
-Raised 2026-08-22 while benchmarking RavenDB under a 25k-job burst (13 executors, Pure mode).
-`RavenDbDocumentStoreManager.GetOrCreateStore` constructs the `DocumentStore` with only
-`Urls`/`Database`/`Certificate` set -- no `Conventions.RequestTimeout` override, so every RavenDB
-operation uses RavenDB.Client's own defaults with no way for a JobMaster user to raise or lower it via
-`UseRavenDb(...)`'s connection string, unlike Postgres/SqlServer/MySql which all expose a timeout knob
-in their connection strings already.
+- **Cache for bucket and worker reads**: Runners currently call `QueryAllNoCacheAsync` for buckets (and workers) on
+  every tick, causing redundant DB round-trips. Evaluate switching to the in-memory cache (`QueryAllAsync` or a
+  dedicated cache key) so hot reads are served from memory. Invalidate on write so correctness is preserved; profile
+  the cache-miss rate before deciding on TTL vs. event-driven invalidation.
+- **ScanPlanner**: move LockerSlot selection into ComputeScanPlanHalfWindow result reuse across the runners.
 
-Real failures observed under load: all 18 executor-side exceptions in that run were
-`Raven.Client.Exceptions.RavenException: An exception occurred while contacting
-http://db:8080/databases/.../bulk_docs?` wrapping `SocketException (104): Connection reset by peer` --
-notably a socket-level connection reset, not a `TimeoutException`, so it's not certain a
-`RequestTimeout` increase alone would have prevented these specifically (a reset means the *server* tore
-down the connection; the client being more patient doesn't change that). RavenDB's own server logs
-showed no crash/restart/throttling message at the time.
+## `DisableAutoProvisionSqlSchema` still per cluster, not per connection
 
-**Leading explanation, confirmed via RavenDB's official pricing page (ravendb.net/buy)**: the Community
-license caps a cluster to **3 CPU cores and 6GB RAM total, regardless of what the host/container
-actually has available**. Our benchmark's RavenDB container was given 8 CPU/8GB for tier 2/3 -- RavenDB
-itself can never use more than 3 cores/6GB of that no matter the allocation, so under a 13-18-executor
-concurrent burst it's running with far less real headroom than every other engine in the same benchmark.
-This lines up with two other observations from the same benchmarking session: (1) bumping the container
-to 8/8 didn't meaningfully help RavenDB the way it helped SqlServer, since the extra resources were
-simply unusable under Community licensing; (2) RavenDB Pure's job-loss count got progressively worse
-across tiers (2,579 -> 7,432 -> 10,495 at 25k/50k/100k jobs) even as container resources grew, consistent
-with a fixed real ceiling that the growing job volume increasingly outpaces. Not proven as *the* root
-cause of the specific connection resets (no direct server-side confirmation), but a real, documented
-constraint that would plausibly produce exactly this symptom under sustained concurrent load -- worth
-keeping in mind for any future RavenDB benchmark/capacity comparison against the other (unlicensed,
-uncapped) providers, since it isn't an apples-to-apples resource comparison as configured.
+The `tablePrefix` SQL setting was moved off the generic `UseSqlTablePrefixForMaster`/`UseSqlTablePrefixForAgent` methods
+(removed in 0.0.12) onto each provider's own `UsePostgresForMaster(..., tablePrefix:)`/etc. parameter, because it's
+genuinely per-connection. `DisableAutoProvisionSqlSchema` was deliberately left out of that pass —
+`SqlJobMasterRuntimeSetup.GetAgentConfigsToProvision` reads the *cluster's own* flag even when deciding whether to
+provision *agent* tables, so today it applies uniformly to the master DB and every agent connection in that cluster,
+with no independent per-connection switch. Revisit if a real use case for per-connection granularity comes up (e.g.
+auto-provision the master DB but manage one particular agent DB's schema manually) — at that point it could follow the
+same per-provider-parameter + JSON-binder pattern `tablePrefix` now uses.
 
-Regardless of whether it fixes this specific failure, a configurable request timeout is something the
-RavenDB provider should support anyway (parity with the other providers, and useful for tuning
-regardless of this bug) -- add a `requestTimeout` parameter to `ConfigExtensions.UseRavenDb`, threaded
-through to `DocumentConventions.RequestTimeout` in `RavenDbDocumentStoreManager`. Not implemented here;
-this was a benchmarking session, not a provider-feature PR.
+## JobDefinition-based scheduling — static recurring schedules still open
 
-## `MasterJobsService.BulkUpdateAsync` overloads have no deadlock-specific retry, unlike `AcquireAndFetchAsync` used to
+One-time and dynamic-recurring scheduling via `IJobMasterScheduler.Advanced` (`JobDefinitionConfig`/
+`JobDefinitionConfigAttribute`/`IJobMasterSchedulerAdvanced`) shipped in 0.0.11-alpha — see ChangeLog.md.
+Still open: `RecurringScheduleDefinitionCollection.Add<Th>()` (static recurring schedules) has the same
+handler-type coupling and hasn't been given the same treatment yet.
 
-Raised 2026-08-22 while benchmarking JobMaster SqlServer Pure under a 100k-job burst, 40 full-mode
-workers sharing one DB. That run hit 28 real SQL Server deadlocks (`SqlException 1205`), all inside
-`SqlServerMasterJobsRepository.BulkUpdateAsync`, all recovered by retry (none exhausted their retry
-budget) -- so this specific run never actually needed a change. But investigating it surfaced a real
-asymmetry: at the time, `AcquireAndFetchAsync` wrapped its repository call in a purpose-built
-`retryDeadlockPolicy` (3 retries, jittered backoff, specifically designed so concurrent deadlock victims
-don't re-collide on the same rows), while both `BulkUpdateAsync` overloads on the same service had no such
-wrapping at all -- relying entirely on the *caller*'s generic retry (`WorkerClusterOperations.ExecWithRetryAsync`,
-coarser, not deadlock-aware).
+## Clean up `JobMaster.Abstractions`
 
-**Partially addressed since**: `AcquireAndFetchAsync` no longer uses `retryDeadlockPolicy` at all -- it now
-catches a deadlock directly and returns an empty list immediately (Hugo confirmed this replacement design
-is correct, not a bug; a deadlocked claim rolls back before acquiring anything, so it's functionally
-identical to a tick that found nothing ready). That closes the original "should return empty instead of
-throwing" half of this reminder, but on a different mechanism than the "match `AcquireAndFetchAsync`'s
-retry wrapping" framing here originally assumed. The `BulkUpdateAsync` asymmetry itself is still open:
-those overloads still have no deadlock-specific handling of their own. Worth revisiting what "match the
-acquire path" should now mean given that path no longer retries deadlocks either -- possibly the same
-catch-and-return-empty-equivalent (an empty/no-op update result) rather than reintroducing a retry policy.
+It should hold only interfaces meant for external implementation (still the intent, e.g. storage providers), even
+though many of those implementations were later made internal. Over time concrete public types landed there too
+(`JobDefinitionConfig`, `JobMasterDefaults`, `NeverRecursExprCompiler`, `RecurrenceCompilerFactory`, the handler
+attributes in `Abstractions.Models.Attributes`, model enums, ...). Move them to namespaces that match their role, the
+way `JobMaster.Serialization` now holds the concrete serializers while `IJobMasterMessageJsonSerializer` stays in
+`Abstractions.Serialization`. Breaking namespace change for users: do it in one pass during alpha (ChangeLog entry, no
+`[Obsolete]`), not piecemeal.
 
-## `CronosExprExtensions`/`NCrontabExprExtensions` have colliding method names
+## Serialization
 
-Both classes expose identically-named/signed methods (`Recurring<T>`/`RecurringAsync<T>`/`Add<Th>`, all
-taking a plain `string`), so using both `JobMaster.Cronos` and `JobMaster.NCrontab` together makes calls
-ambiguous. Auto-discovery (try each compiler until one parses) was considered and rejected — Cronos and
-NCrontab both parse the same common cron syntax, so it'd be non-deterministic, not just an edge case.
+- **Enum store format: `SetEnumValue<TEnum>(key, value, StoreFormat = Number)`**: Today `SetEnumValue` (MsgData) is
+  persisted as a number, because `InternalJobMasterSerializer` uses default STJ options. `StoreFormat` (`Number` /
+  `Name`) is needed, not just nice to have (Hugo): both formats carry a versioning risk, so the user picks the one that
+  fits how their enum evolves. A number breaks when members are renumbered or reordered (implicit values); a name
+  breaks when a member is renamed. Only the write side changes: `TryGetEnumValue` already accepts a name or a number
+  and checks it's a defined member (`[Flags]`: all bits defined), so either risk surfaces as an exception, not a wrong
+  value.
+- **Hypothesis: put enum support back on Metadata**: It was removed in 0.0.11 (with `byte[]`) because it "round-trips
+  ambiguously". That no longer holds for reads: the read is typed, so a stored number or name is rebuilt and checked,
+  as MsgData does since 0.0.12. What's left to decide is how it looks where metadata is used:
+  - **Dashboard / API**: a number shows as `1`, a name as `Green`.
+  - **Metadata filters**: they match the stored value, so `Color = 1` or `Color = "Green"`. Mixing formats on one key
+    means a filter only matches half the data, so the format should be one per key (or per cluster), not per call.
+  - **Write side**: `SetEnumValue` should come back with `StoreFormat`, same reason as MsgData. Smallest first step if
+    needed: only `TryGetEnumValue` / `GetEnumValue` on `IReadableMetadata`, with users writing through
+    `SetStringValue` / `SetIntValue` (as the 0.0.11 ChangeLog already advises), which already lets them choose the
+    format.
+  - `byte[]` stays off Metadata: useless for filtering and display, and metadata should stay small.
+- **Source Generator Context (`JsonSerializerContext`)**: Upgrade `InternalJobMasterSerializer` to use
+  `System.Text.Json` Source Generators. By declaring the exact types being serialized (e.g., `JobRawModel`,
+  `Dictionary<string, object?>`), we can completely eliminate runtime reflection for JSON parsing, achieving AOT-level
+  speed with zero allocations.
 
-Fix direction (not implemented): prefix each provider's methods with its name
-(`CronosRecurringAsync<T>`/`CronosAdd<Th>`, `NCrontabRecurringAsync<T>`/`NCrontabAdd<Th>`, etc.), mark the
-old ambiguous methods `[Obsolete]` rather than removing them, defer deduping the two classes' identical
-bodies until the obsolete methods are actually removed later.
+## Tests: exact-text `WithMessage` assertions
 
-## Hybrid worker concept: independent transport configuration per connection role
+A handful of tests assert on exact or substring exception message text (e.g. `JobMasterSchedulerClusterAwareTests.cs`
+asserts the full string `"Cluster mode is archived"`; several others assert `"*keyword*"` substrings). Prefer
+asserting exception type (and, where the specific culprit matters, a targeted property) instead — message text is easy
+to reword incidentally and breaks these tests for no functional reason. Worth a pass to check every
+`WithMessage`/`.Message.Should()` usage across the suite and loosen or remove where the wording isn't the actual thing
+under test.
 
-Raised 2026-08-25 during a benchmarking session. Idea: let a worker's save/dispatch path and its execution
-path be configured against different connections independently, rather than assuming both roles share one
-implicit configuration. Just a concept at this point, not designed or scoped -- worth revisiting later.
+---
 
-Rough shape sketched at the time, for reference only (not an actual API, naming/structure not settled):
+## Startup tests: a `JobMaster.StartupTests` project (was plan item 19)
 
-```csharp
-AddWorker("worker-1")
-    .ConfigHybridConnection()
-    .SaveTransport([nats-connection])
-    .Execution([raven-db]);
-```
+Whole-`StartAsync` tests (validation before anything starts, provisioning order, one aggregated error list) in their
+own project, since `StartAsync` touches process-wide statics; the helper-level tests were dropped (Hugo). Not needed for
+0.0.12.
 
-## `JobMasterDefinitionIdAttribute.GetJobHandlerTypeFromId` re-scans all assemblies per distinct handler type
+## Docs: cancel and reschedule are undocumented (jobmaster-doc)
 
-On a cache miss it does a full assembly scan but only caches the one entry it was looking for, so N
-distinct handler types pay N full scans instead of one. Hot path: called on every job execution. Fix:
-populate the whole map from the one scan (per-type canonical ID via `GetJobDefinitionId`), consistent
-with how `DefaultRuntimeValidatorSetup` already resolves IDs for its duplicate check.
+Left out of the 0.0.12 docs restructure on purpose (Hugo, 2026-11-23), to keep One-off Scheduling simple. Still to
+document: cancel by id (`CancelJobAsync` / `CancelJob`, `CancelRecurringAsync` / `CancelRecurring`: only once on master,
+`false` when running / finished / due in about a minute, non-default cluster needs `clusterId`), cancel from a receipt
+(`receipt.CancelAsync()`, `CancelJobAsync(receipt)`: works before the job reaches master), and `RescheduleAsync` /
+`Reschedule` (runs a *finished* job again; the XML doc was corrected 2026-11-23). Natural home: next to the receipts
+page (`docs/distributed/receipts.md`), since receipt cancel needs the transport explained.
 
-## Idea: opt-in `EnforceJobDefinitionIdExplicit` validation setting
+## Worker name / lane format: not checked at startup validation (small)
+
+`MasterAgentWorkersService.CreateValidatedWorkerAsync` checks a worker's name and lane (letters, numbers, `-`, `_`,
+1–25 characters, `IsValidForSegment(…, 25)`), but only when the worker registers on master. By then the cluster config
+and agent connections are saved, and earlier workers in the same app may already run: the case plan item 19 meant to
+rule out. Fix: the same two checks in `JobMasterRuntime.ValidateClusterDefinitions`, next to the duplicate worker name /
+lane checks, so they join the one aggregated error list. Keep the registration check as an assert. Found 2026-11-22.
+
+## Recurrence providers: name the package in "Unknown recurrence type" (was plan item 21)
+
+A stored schedule keeps only its expression type id; a process that runs it without calling `AddJobMasterCronos()` /
+`AddJobMasterNCrontab()` fails with `Unknown recurrence type: Cronos` (loud, unlike the repo-type gap item 21 fixed).
+Decided: keep the explicit call; only make the message say what to do, e.g. `Install JobMaster.Cronos and call
+AddJobMasterCronos()`. Left as is for 0.0.12 (Hugo).
+
+## Re-check the older reminders against the code (rest of plan item 9)
+
+Plan item 9 removed what 0.0.12 finished (agent pull losing its batch, no stop entry point, the cancellation review;
+the lambda adapter was already here). Still to do: re-check the older entries against the current code (e.g. the
+`AcquireAndFetchAsync` deadlock part, RavenDB timeouts) and drop or update the stale ones.
+
+## SQL auto-provision: no test for two clusters (was plan item 24's test)
+
+The fix is in 0.0.12 (`SqlJobMasterRuntimeSetup` filters the clusters to provision instead of `return`ing at the first
+opted-out one; ChangeLog "Fixed"), but nothing tests it: two clusters on the same SQL provider, the first with
+`DisableAutoProvisionSqlSchema()`, the second provisioned → the second's master and agent tables exist.
+
+# Ideas
+
+## `JobMaster.Api` independent of the `JobMaster` package, like the Dashboard
+
+Added 2026-11-14 (Hugo): desirable, not sure it's achievable. `JobMaster.Dashboard` has no `JobMaster` reference (only
+embedded static files; it talks to the API over HTTP), so it can be deployed and versioned on its own.
+`JobMaster.Api` references `JobMaster` and registers clusters through `AddJobMasterCluster` (see
+`AddJobMasterClusterForApi`), so it runs the SDK's startup, validation and master services in-process, and needs the
+same version as the workers plus a DB provider package per master type.
+Main problem: the DB providers. The API reads the master database through the SDK's repositories, and those live in the
+provider packages (`JobMaster.Postgres`, `JobMaster.MySql`, `JobMaster.SqlServer`, `JobMaster.RavenDB`), which all
+depend on `JobMaster`.
+Constraint (Hugo): no per-provider API packages (`JobMaster.Api.RavenDB`, `JobMaster.Api.Postgres`, ...). The API
+must work with the same provider packages the workers use, or with none.
+Options to look into, within that: a split of `JobMaster` into a small core (models, master repositories) and the
+runtime, with the existing provider packages depending only on the core, so the API references the core plus the usual
+provider package; or the API calling a worker-hosted endpoint instead of the database (no provider at all). Also: API-only quirks like the `AllowOmittedTimeZone()` exemption
+exist because the API goes through the full cluster startup.
+
+## Opt-in `EnforceJobDefinitionIdExplicit` validation setting
 
 A handler with no explicit ID attribute silently falls back to `Type.FullName` — renaming/moving the class
 then breaks resolution for anything already persisted under the old name. Idea: an opt-in setting that
@@ -381,19 +473,184 @@ fails/warns startup validation when a handler relies on that fallback, alongside
 duplicate-ID check in `DefaultRuntimeValidatorSetup`. Open question: handler discovery is `AppDomain`-wide,
 not per-cluster, so the setting's scope (global vs. per-cluster) isn't settled.
 
-## `JobMasterScheduler` was `public` by oversight, not design — fixed 2026-09-19, watch for other bootstrap-plumbing classes with the same slip
+## Cluster-aware bulk persistence
 
-Raised/fixed 2026-09-19. `src\JobMaster\JobMasterScheduler.cs`'s concrete `JobMasterScheduler` class only
-exists so `AddJobMasterClusterExtensions.cs` can populate `BootstrapBlueprintDefinitions.JobMasterScheduler`
-before the DI container is built — the same bootstrap trick `JobMasterRuntimeSingleton.Instance` uses right
-next to it (`JobMasterRuntimeSingleton` is already correctly `internal static`). `JobMasterScheduler` was
-`public class` instead, unintentionally exposing its static `Instance` singleton as if it were a supported
-DI bypass, even though the class's own XML doc already said to prefer injecting `IJobMasterScheduler`.
-Confirmed via grep that only `AddJobMasterClusterExtensions.cs` (same assembly) and
-`JobMaster.UnitTests\JobMasterSchedulerTests.cs` (covered by `JobMaster`'s `InternalsVisibleTo` grant)
-ever referenced the concrete type — every other consumer (samples, benchmarks, providers) depends only on
-`IJobMasterScheduler`. Changed to `internal class`; full solution rebuild clean.
+Jobs scheduled through `JobMasterSchedulerClusterAware` are written to the agent first, then asynchronously synced to
+the master DB. This is intentional for performance — especially with message broker agents — but creates a durability
+gap: if the agent goes down or gets corrupted before the sync completes, those jobs are lost. The risk should be very
+rare or zero in healthy clusters. Plan 0.0.12 item 7 dropped an automatic flush in favor of explicit
+`ConfirmOnMasterAsync`, so the gap is still open for callers that don't confirm. The goal is a durable buffering layer
+that batches schedule writes and ensures they reach the master DB reliably, even under failure conditions.
 
-Since this was a plain oversight rather than a deliberate choice, worth a quick audit of any other
-DI-bootstrap-only concrete classes in the SDK for the same public/internal slip, rather than assuming
-`JobMasterScheduler` was the only one.
+**Proposed approach:**
+
+1. **In-memory buffer** — accumulate scheduled jobs in memory inside `JobMasterSchedulerClusterAware` rather than
+   dispatching each one immediately.
+2. **Bulk flush** — write buffered jobs to the generic repository in a single batched operation, reducing round-trips
+   and lock contention on the master DB.
+3. **Partitioned records** — group jobs into fixed-size partitions (e.g., 100 jobs per record) so each write remains
+   compact and independently recoverable.
+4. **Dual flush triggers** — flush either when the buffer reaches the item threshold or when a configurable time window
+   elapses, whichever comes first.
+5. **Partition runner** — introduce a background runner that polls for unflushed partitions by group ID and promotes
+   them to the master DB, decoupling write buffering from master DB availability.
+6. **`SaveOperation` reuse** — once stable, evaluate whether the same mechanism can back `SaveOperation` writes.
+   Requires careful analysis to avoid conflicts with the scheduler's own flush cycle.
+
+> ⚠️ This feature introduces a write-ahead style buffer. The failure window shrinks to the flush interval rather than
+> being eliminated entirely — operators should configure the flush interval based on their durability tolerance.
+
+## Lambda adapter: reserved definition-id prefix
+
+Not in 0.0.12 (was plan item 22, Hugo 2026-10-30). A separate project lets users schedule static-method lambdas
+(Hangfire-style) to ease migration. Every job needs a definition id, so lambda jobs need ids that never collide with
+user handlers.
+- Per-method id with a reserved prefix, e.g. `jm-lambda:Billing.Invoices.Send(System.Guid)`: dashboard / stats show
+  which method ran, and a later move to a real handler can reuse a meaningful id.
+- `JobDefinitionIdResolver.GetJobHandlerTypeFromId` checks reserved prefixes first and returns the adapter handler
+  type; the adapter reads method + arguments from the job data. The adapter project registers its prefix + handler
+  type through a small hook (internal + `InternalsVisibleTo`, like providers, or a minimal SDK API).
+
+Open:
+- Prefix format: a character that can't be in a .NET `FullName` (e.g. `:`) so the `FullName` fallback never collides;
+  consistent with `hybrid:`.
+- Enforce the reservation: the startup validator rejects user `[JobMasterDefinitionId]` / `JobDefinitionConfig` ids
+  starting with a reserved prefix.
+- Per-job settings (priority, cluster, lane, timeout, retries) come from the call's optional parameters or defaults,
+  not handler attributes; the per-cluster disabled-priority check must account for it.
+- Security: invoking a method named in stored job data means anyone who can write to the master DB can call arbitrary
+  static methods. Allow-list the types / assemblies registered with the adapter.
+- Signature drift (method renamed / parameters changed while jobs are queued): fail with a clear "method not found".
+
+## Job logging from the handler through `JobContext`
+
+Raised 2026-11-14 (Hugo). Let a handler write its own log lines from the `JobContext` (e.g. `context.Log(level,
+message)` / `LogInfo` / `LogWarning` / `LogError`). Only reachable through `JobContext`, so every line is written
+during an execution: link it to that execution (Hugo), so it shows with the run in the dashboard. Logging outside a
+handler is the app's own logger, not JobMaster's.
+
+Keep handler lines distinguishable from the engine's own (failures, timeouts, etc.), e.g. a new log category or a flag
+on the log item, so the dashboard can show them together but filter either out. Category naming: add a new member,
+never rename `JobExecution` (stored by name: SQL writes `category.ToString()`; a rename orphans existing logs and breaks
+the archive / purge). Candidates, keeping the execution link in the name: `JobExecutionHandler` (next to
+`JobExecution`, makes the pairing obvious), `ExecutionHandler`, `JobExecutionUser` ("user" clashes with the dashboard's
+logged-in user), `JobHandler` (doesn't say it's tied to an execution). Name and implementation still to be decided.
+
+Open:
+- Retention: `DeleteOldLogsRunner` skips `JobExecution`-category logs because they're archived / purged with their job
+  in `DeleteOldFinalJobsRunner`. A new handler category needs the same treatment, or handler lines expire on the
+  general log TTL while the job is kept.
+- Reuse the cluster's `JobMasterLogger` (batched, `MaxQueueLimit` 10,000, Debug dropped) or a separate queue, so a
+  chatty handler can't push out JobMaster's own logs.
+- Limits: message size and lines per execution.
+- What the user writes is their responsibility, but the docs should say these logs are stored and shown in the
+  dashboard (don't log secrets / personal data).
+
+## Optional dead-letter handler
+
+Raised 2026-10-30. When a job or schedule can't be saved or read, the Critical log is today the only trace (and since
+0.0.12 it carries ids and sizes only, never message data). SQL and RavenDB `PullMessagesAsync` delete on pull, so once
+master save and the agent re-push both fail, the job exists only in memory (NATS naks and is redelivered, no loss):
+- Save and re-queue both failed (`PollingSavePendingJobsRunner`, `PollingSaveRecurringScheduleRunner`, the drain
+  safeguard in `JobSavePendingOperation`): **possible** loss, not certain. The master write may have committed before
+  throwing, and in the batch-timeout path in-flight saves keep running (no token passed). The drain path returns
+  `Failed`, but `PollingDrainSavePendingJobsRunner` only backs off; the job was already pulled and is not retried.
+- Unreadable message on SQL / RavenDB: **certain** loss for that message (already pulled); since 2026-11-14 the rest
+  of its batch is no longer lost with it.
+
+Idea (not designed): an optional handler, no-op by default, e.g. `IJobMasterDeadLetterHandler` ("dead letter" rather
+than "lost", since most cases may already be saved). Context carries ids, `IReadableMessageData`, metadata, a reason
+(`SaveAndRequeueFailed` / `DrainSaveFailed` / `UnreadablePayload`) and the exception; raw payload for unreadable ones.
+Call guarded (try/catch + timeout). Open: per-cluster registration (like `EnableMirrorLog`) vs global DI; one
+interface vs three.
+
+## NATS: keep save-pending messages that keep failing in a KV store
+
+Raised 2026-11-16 (Hugo: future, not now). On SQL, a save-pending message leased `MaxSavePendingLeaseCount` (1000)
+times is logged Critical and moved to `JMReserved-Terminated::<address>` (kept, never pulled again). NATS has no
+such limit today, and `AckTerm` would drop the message. Idea: same rule on NATS, using JetStream's delivery count
+(`NumDelivered` in the message metadata) instead of `lease_count`. Past the limit, write the message to a NATS KV
+bucket (keyed by message id), log the same Critical summary (`ToLogSummary()`, never the payload), then `AckTerm`.
+
+## NATS: `WorkQueue` retention instead of `Limits` + `MaxAge`
+
+Raised 2026-11-16. Since 0.0.12 the stream keeps messages 30 days (`MaxAge`), handled or not, so a handled message still
+uses disk for 30 days and a message waiting longer than that (all workers down) is deleted. `WorkQueue` retention
+removes a message exactly when it's acked or `AckTerm`'d (checked on NATS 2.10: 3 → 0) and never one that can still be
+delivered. Open: retention can't be changed on an existing stream (new stream + migration); one consumer per subject
+(JobMaster has one per bucket subject, check overlaps); `AckTerm` then deletes, so keeping poison messages needs the
+KV idea above.
+
+## Generate the SQL schema script from the command line
+
+Raised 2026-11-13, after plan item 24; not in 0.0.12. For users with `DisableAutoProvisionSqlSchema()` who manage the
+schema themselves. The scripts are already plain strings from an `ISqlGenerator` + table prefix
+(`MasterTableCreatorScripts`, `AgentTableCreatorScripts`, Postgres `CreateCaseInsensitiveCollationSql`), no connection
+needed. Shape: a public method (e.g. `SqlSchemaScripts.Generate(provider, prefix, master, agent)`) plus an optional thin
+`dotnet tool` (`dotnet jobmaster sql-script --provider postgres --prefix JM_ --master --agent`).
+
+Open:
+- Scripts aren't idempotent: existence is checked in C# (`SqlJobMasterRuntimeSetup`), so a dump is plain `CREATE TABLE`.
+  Re-runnable output needs a per-provider `IF NOT EXISTS` form.
+- Upgrades: auto-provision only creates missing tables, no ALTER/migration concept. Create-only covers first install;
+  decide whether this grows into versioned upgrade scripts.
+- Master and agent generated separately (different DBs/providers, hybrid legs); the master DB also needs the agent
+  tables for the fallback connection (`ProvisionAgentTablesAsync` in `ConfigClustersAsync`).
+- Scripts and generators are `internal`: public API in SqlBase, or `InternalsVisibleTo` for a tool project.
+
+---
+
+# Docs / benchmarks / positioning
+
+## Docs: cluster settings are sticky, retry settings aren't
+
+For the cluster configuration page (plan item 10). Shared cluster settings (`TransientThreshold`, `DefaultJobTimeout`,
+`DefaultMaxRetryCount`, `MaxMessageByteSize`, `DataRetentionTtl`, `ClusterMode`, ...) are saved as
+`clusterDefinition.X ?? stored`: removing a setting from code doesn't reset it, the stored value stays. To go back, set
+it to the default once (e.g. `TransientThreshold(JobMasterDefaults.TransientThreshold)`), then the line can go. On
+purpose: an instance that doesn't mention a setting must not reset it for everyone (and removing `.Mode(Archived)`
+must not reactivate a cluster). The API's cluster endpoint shows what's stored.
+
+Retry settings are the exception: never read back (each worker retries by its own code), so every process with a Full
+or Execution worker overwrites the stored `RetryDelays` / `RetryInterceptor` at startup; removing `RetryDelays(...)` from the
+workers goes back to the built-in delays. A worker replacing different stored settings logs it (Info, Cluster category);
+if it keeps repeating, workers run different configurations.
+
+## Dashboard: "Failure & Retries" panel compares failures with max retries
+
+Seen in the sandbox 2026-11-14: a job with `MaxNumberOfRetries = 2` that failed every time shows "Number Of Failures 3"
+next to "Max Number Of Retries 2" with a full red bar, which reads as one attempt too many. It's correct: 1 attempt +
+2 retries = 3 attempts, all failed (`HasRetriesLeft` is `NumberOfFailures < MaxNumberOfRetries`; the last failure is
+counted by `MarkAsFailed`). Show it as attempts ("3 of 3", i.e. `NumberOfFailures` / `MaxNumberOfRetries + 1`) or as
+retries used ("2 of 2", `min(failures, max)` / `max`) with failures shown separately.
+
+## Dashboard: show the cluster's retry settings
+
+Since 2026-11-14 the API's cluster endpoint returns `RetryDelays` and `RetryInterceptor` (`None` / `Delegate` / the
+interceptor type's full name), stored at startup by the last process running jobs (Full / Execution worker) that started. Show
+them in the dashboard's cluster view, with a note that each worker retries by its own configuration and the failed
+execution's message records what was actually applied.
+
+## `DashboardOAuthEndpoints`'s `redirect_uri` derives from `ctx.Request.Host` — fine, but undocumented
+
+Same Host-derived pattern in `BuildCallbackUrl`/`ResolveUrl` (`DashboardOAuthEndpoints.cs`), but not a bug
+here — the OAuth provider itself rejects a `redirect_uri` that doesn't exactly match what's registered for
+the Client ID, so a forged `Host` alone doesn't work. Only becomes a real issue if the provider allows
+loose/wildcard redirect matching, or the admin registered one. Gap is just doc: nothing tells admins to
+register the exact, full callback URL. Worth a line in the OAuth setup docs.
+
+## Benchmarks
+
+- **RavenDB Community license caps resources**: the Community license limits a cluster to **3 CPU cores and 6 GB RAM**
+  whatever the container gets (ravendb.net/buy), so RavenDB benchmarks run with less real capacity than the other
+  (uncapped) providers. Seen 2026-08-22: going to 8 CPU / 8 GB didn't help RavenDB the way it helped SQL Server, and
+  job loss grew with volume (2,579 → 7,432 → 10,495 at 25k/50k/100k). Keep in mind for any capacity comparison.
+- **Re-run the RavenDB+NATS benchmark with capped (not unlimited) worker CPU/memory**: Local testing (2026-09-07/08)
+  found that uncapped worker CPU quietly made `Environment.ProcessorCount` inside each worker container report the full
+  host core count instead of 1-2, which unlocked dramatically higher execution throughput (~90/sec → ~330+/sec) — but
+  running many workers fully uncapped simultaneously (10+) reliably collapses the host (containers fail to
+  start/answer, all schedule requests time out). The safer, repeatable middle ground found so far: cap workers at
+  **2 CPU / 4GB each**, DB at **3 CPU / 6GB**, NATS at **3 CPU / 4GB** — gives most of the throughput benefit without
+  the collapse risk. Next step: repeat this properly (3x-averaged, not single runs) on a dedicated machine with 20
+  workers once a suitably sized box is provisioned (a DigitalOcean CPU-Optimized droplet, 48 vCPU/96GB, ~$1.50/hr, was
+  sized for this — 20 workers x 2 CPU = 40 vCPU + DB/NATS headroom).

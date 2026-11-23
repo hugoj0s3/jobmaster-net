@@ -525,6 +525,149 @@ public class JobsExecutionEngineTests
         AssertControlsEmpty(f);
     }
 
+    [Fact]
+    public async Task Simulate_WhenHandlerHonoursTheCancellationToken_TimeoutStopsItAndRetries()
+    {
+        // The handler gets JobContext.CancellationToken, cancelled at its Timeout counted from the handler's start: a
+        // handler passing it on stops, and the attempt counts as timed out and is retried.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.MasterHandler.RunUntilCancelled = true;
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.Timeout = TimeSpan.FromMilliseconds(200);
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(4));
+
+        var retried = f.SingleUpdateWatcher.Should().ContainSingle(j => j.Status == JobMasterJobStatus.OnMaster).Subject;
+        retried.NumberOfFailures.Should().Be(1);
+        retried.NextPlanExecutionAt.Should().BeAfter(DateTime.UtcNow);
+        f.MasterHandler.ExecutionCount.Should().Be(0);
+
+        AssertControlsEmpty(f);
+    }
+
+    [Fact]
+    public async Task Simulate_WhenTheWorkBeforeTheHandlerIsSlow_TheHandlerStillGetsItsFullTimeout()
+    {
+        // The "Processing" write takes 3.2 s, longer than Timeout + the old 2.5 s grace; the handler needs 250 ms of its
+        // 400 ms Timeout. The clock starts with the handler, so it succeeds.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.Ops.Setup(x => x.UpdateAsync(It.Is<JobRawModel>(j => j.Status == JobMasterJobStatus.Processing), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler>()))
+            .Returns(() => Task.Delay(TimeSpan.FromMilliseconds(3200)));
+        f.MasterHandler.RunFor = TimeSpan.FromMilliseconds(250);
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.Timeout = TimeSpan.FromMilliseconds(400);
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(5));
+
+        f.MasterHandler.ExecutionCount.Should().Be(1);
+        f.SingleUpdateWatcher.Should().Contain(j => j.Id == job.Id && j.Status == JobMasterJobStatus.Succeeded);
+        f.SingleUpdateWatcher.Should().OnlyContain(j => j.NumberOfFailures == 0);
+    }
+
+    [Fact]
+    public async Task Simulate_WhenTheWorkerStopsDuringTheHandler_TheJobIsInterruptedNotFailed()
+    {
+        // The engine's stop aborts the running job (after its own wait); a handler honouring the token stops, and that
+        // isn't the job's failure.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.MasterHandler.RunUntilCancelled = true;
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.Timeout = TimeSpan.FromMinutes(5);
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromMilliseconds(500));
+        await f.Engine.FlushToMasterAsync();
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        f.SingleUpdateWatcher.Should().Contain(j => j.Id == job.Id && j.Status == JobMasterJobStatus.OnMaster && j.NumberOfFailures == 0);
+        f.SingleUpdateWatcher.Should().NotContain(j => j.Status == JobMasterJobStatus.Failed || j.NumberOfFailures > 0);
+    }
+
+    [Fact]
+    public async Task Simulate_WhenSavingTheSuccessFails_DoesNotCountAFailureNorRetry()
+    {
+        // The handler did its work; only the master write after it failed. Not the job's failure.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.Ops.Setup(x => x.UpdateAsync(It.Is<JobRawModel>(j => j.Status == JobMasterJobStatus.Succeeded), It.IsAny<JobExecution?>(), It.IsAny<OperationThrottler>()))
+            .ThrowsAsync(new TimeoutException("master down"));
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        f.MasterHandler.ExecutionCount.Should().Be(1);
+        f.SingleUpdateWatcher.Should().NotContain(j => j.Status == JobMasterJobStatus.Failed || j.Status == JobMasterJobStatus.OnMaster);
+        f.SingleUpdateWatcher.Should().OnlyContain(j => j.NumberOfFailures == 0);
+    }
+
+    [Fact]
+    public async Task Simulate_WhenTheWorkerIsStopping_PutsTheJobBackWithoutRunningIt()
+    {
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        await f.Engine.TryOnBoardingJobAsync(job);
+        f.Worker.SetupGet(x => x.StopImmediatelyRequested).Returns(true);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        f.MasterHandler.ExecutionCount.Should().Be(0);
+        f.SingleUpdateWatcher.Should().Contain(j => j.Id == job.Id && j.Status == JobMasterJobStatus.OnMaster && j.NumberOfFailures == 0);
+        f.SingleUpdateWatcher.Should().NotContain(j => j.Status == JobMasterJobStatus.Processing || j.Status == JobMasterJobStatus.Failed);
+    }
+
+    [Fact]
+    public async Task Simulate_WhenTheAppContainerIsDisposedBeforeTheHandler_PutsTheJobBackWithoutAFailure()
+    {
+        // Resolving the handler through the app's (disposed) container throws before the handler starts.
+        var f = JobsExecutionEngineFixture.Create(bufferSize: 10);
+        f.ClusterCfg.Setup(x => x.Get()).Returns(JobsExecutionEngineFixture.ActiveClusterConfig(f.ClusterId));
+        f.Buckets.Setup(x => x.Get(f.BucketId, It.IsAny<TimeSpan?>()))
+            .Returns(JobsExecutionEngineFixture.ActiveBucket(f.ClusterId, f.BucketId));
+        f.ScopeServices.Setup(x => x.GetService(typeof(FakeJobMasterHandler))).Throws(new ObjectDisposedException("IServiceProvider"));
+
+        var job = JobsExecutionEngineFixture.CreateInBucketJob();
+        job.MaxNumberOfRetries = 3;
+        await f.Engine.TryOnBoardingJobAsync(job);
+
+        await f.Engine.PulseAsync();
+        await Task.Delay(TimeSpan.FromSeconds(1));
+
+        f.MasterHandler.ExecutionCount.Should().Be(0);
+        f.SingleUpdateWatcher.Should().Contain(j => j.Id == job.Id && j.Status == JobMasterJobStatus.OnMaster && j.NumberOfFailures == 0);
+        f.SingleUpdateWatcher.Should().NotContain(j => j.Status == JobMasterJobStatus.Failed || j.NumberOfFailures > 0);
+    }
+
     // ── CheckDeadlineJobsAsync ────────────────────────────────────────────────
 
     [Fact]

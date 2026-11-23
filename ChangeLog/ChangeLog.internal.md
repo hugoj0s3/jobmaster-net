@@ -4,6 +4,1315 @@
 > Documents implementation details, class-level changes, architectural decisions, and bug root causes for each release.
 > This file will be kept updated until the stable version, at which point [ChangeLog.md](ChangeLog.md) will be populated from it as the user-facing release notes.
 
+### JobMaster 0.0.12-alpha
+> Every entry describes the change compared with `v0.0.11-alpha.3`. Test counts in the entries are snapshots from when each change landed. Current: solution builds with 0 errors, 1012/1012 unit tests pass on `net8.0` and `net10.0` (975/975 on the `netstandard2.0` build).
+
+#### Standalone: RavenDB, worker lane + parallelism, `DisableAutoProvisionSqlSchema` (2026-11-22)
+Found while writing the Getting Started docs.
+- `JobMaster.RavenDB.ConfigExtensions.UseRavenDb(IClusterStandaloneConfigSelector, ...)`: the standalone overload was
+  missing; the runtime already worked (standalone reuses the cluster's connection and repo type as its agent
+  connection), only `ConfigFromJson` with `"standalone": true` reached it. Same options as the master overload.
+- `IClusterStandaloneConfigSelector.AddWorker(workerName, workerLane, parallelismFactor, batchSize)` (breaking: the two
+  new parameters come before `batchSize`). Before, a standalone worker had no lane, so a lane job matched no bucket
+  (`MasterBucketService.FilterApplicableBuckets` compares lanes exactly) and only ran through the no-bucket fallback:
+  measured 3 min 48 s on standalone Postgres, now about 5 s. The standalone `ConfigFromJson` branch passes
+  `WorkerLane` / `ParallelismFactor` through (they were ignored).
+- `JobMaster.SqlBase.ConfigExtensions.DisableAutoProvisionSqlSchema(IClusterStandaloneConfigSelector)`: the generic one
+  is constrained to the regular selector. Both provisioning steps read the flag from the cluster config, so it covers
+  master and agent tables; verified on an empty Postgres (no table created, startup fails on the first missing one).
+- `ConfigFromJson` standalone branch now runs `ConnectionOptionsBinderFactory.Create(repoType).SetOptions(this, …)`,
+  like the regular branch (it skipped them). The standalone builder shares `clusterDefinition`, and the standalone
+  agent connection copies the cluster's `AdditionalConnConfig` in `Finish`, so the options reach both sides. Verified
+  on Postgres with `"TablePrefix": "Custom_"`: master and agent tables all `custom_*`, the job ran.
+- Scenario `WorkerLaneTest` (new), with a topology axis (`ScenarioTopology { Standalone, Distributed }`, crossed with
+  the flavors in `Variants()`; Standalone excludes the NATS / Hybrid flavors like BasicExecution): two containers on one
+  cluster, a worker without a lane and a `billing` one; 10 jobs each without a lane, with `workerLane:` on the call, and
+  through `[JobMasterWorkerLane("billing")]` (`TestAppBillingLaneHandler`) run once each, within 120 s (under the
+  fallback), on the right container. `ScenarioRunner` sets each container's hostname to its container name, so the
+  tracker's `HostId` names the container. PostgresPure Standalone + Distributed passed locally; other flavors not run yet.
+- Tests: `RavenDbConnectionOptionsTests.UseRavenDb_Standalone_SetsRepoTypeConnStringAndPrefix`,
+  `SqlAutoProvisionSelectionTests.DisableAutoProvisionSqlSchema_Standalone_SetsFlag`, standalone
+  `ConfigFromJsonTests` asserts lane + parallelism. 1014/1014 unit tests on `net8.0` and `net10.0`.
+
+#### Archive cluster `AddWorker()` + runtime setups registered once (2026-11-23)
+Found while rewriting the Archiving docs: the documented archive-cluster setup couldn't start.
+- `DefaultRuntimeValidatorSetup`'s "workers without AgentConnectionName" check only exempted `Coordinator` mode, while
+  `JobMasterRuntime.ValidateClusterDefinitions` (and the worker itself) treat a `Full` worker on an `Archived` cluster as
+  a coordinator. Now one rule: `JobMasterRuntime.ActsAsCoordinator` (private → internal), used by the new testable
+  `ValidateWorkersHaveAgentConnection(clusters)`. Message lists `'name' on cluster 'id'`, `(unnamed)` for no name.
+- `ClusterConfigBuilder.Finish` registered every `IJobMasterRuntimeSetup` in the main container with `AddScoped` per
+  cluster, so with N clusters each setup ran N times (validation errors listed N times, provisioning repeated, both
+  idempotent). Now `TryAddEnumerable`: once per type. The per-cluster container registration is unchanged.
+- Tests: `DefaultRuntimeValidatorSetupTests.ValidateWorkersHaveAgentConnection_*` (archived Full ok, Coordinator ok,
+  active Full errors naming worker + cluster), `RuntimeRegistrationTests.RuntimeSetups_AreRegisteredOncePerType_NotOncePerCluster`.
+  Verified on Postgres: standalone source + archive cluster with plain `AddWorker()` fails before, starts after.
+- Standalone `Archive()` never started: `ClusterStandaloneConfigBuilder.AddWorker` binds every worker to
+  `StandaloneAgentConnName`, and `ValidateClusterDefinitions` rejects a connection on a worker that `ActsAsCoordinator`.
+  `ClusterConfigBuilder.Finish` now clears it on those workers and skips `AddStandaloneAgentConnectionString` when the
+  standalone definition is `Archived`; `JobMasterRuntime` skips registering the standalone connection on master then
+  (`TryGetAgentConnectionConfig(StandaloneAgentConnName)` creates it on demand, so the guard is needed there too; uses
+  `clusterDefinition.ClusterMode ?? stored`, since `modelToSave.ClusterMode` is only updated later in that method).
+  Only an archived mode set in code is handled (same as the worker checks). Test: `StandaloneArchiveTests`. Verified on
+  Postgres: active standalone with a held job, restarted as `Archive("new-cluster")`, job moved within one sweep.
+
+#### Logs: filter by `ReferenceIds`, a log per successful run, the overlap message (Hugo, 2026-11-22)
+- **`ReferenceIds` replaces `ReferenceId` + `ReferenceGuid`** (breaking for the API input). Callers had to know Guid
+  references are stored as `"N"` and pick `ReferenceGuid`; everything else exact via `ReferenceId`.
+  - `ApiLogItemQueryCriteria.ReferenceIds` (`string[]`) passes the ids as given (empty ones dropped).
+    `LogItemQueryCriteria.ReferenceIds` (`IList<string>`, empty = no filter).
+  - `JobMasterLogger.QueryAsync` / `CountAsync` expand them once (`ToStoredReferenceIds`): each id as written plus
+    every Guid form of it (`GuidBase64Util.ToGuidsForms`: `"D"`, `"N"`, base64), ordinal set. Matching both ways keeps
+    a cluster id that happens to read as a Guid (22 base64url chars, 32 hex) matching as written.
+    `GuidBase64Util.TryParseFlexible` returns `Guid?` without throwing (`Guid.TryParse`, then a 22-char base64url check
+    before `FromBase64`), so non-Guid references cost nothing.
+  - SQL: `sql.InClauseFor("reference_id", "@ReferenceIds")`; RavenDB: `e.ReferenceId in ($referenceIds)`.
+  - Dashboard job / recurring schedule pages send `ReferenceIds: [id]`; `schema.d.ts` updated by hand. Scenario client
+    sends `ReferenceIds`.
+  - Tests: logger expansion (Guid in any format includes `"N"`; non-Guid and Guid-looking cluster ids kept as
+    written), API pass-through, returned base64 id round trip; logs conformance: several ids match any of them (all 4
+    providers). Checked in the sample app: job page `?ReferenceIds=<base64>` → 200 with its logs; the API matches a
+    job reference given as base64, `"D"`, `"N"`, upper-case `"D"`.
+- **A log per successful run:** the Debug `ExecuteJobAsync completed successfully` (never stored: Debug isn't written to
+  master) is now Info, JobExecution category, reference = job id: `Job <definition id>: Succeeded after <n> ms.`
+  (`JobExecutionMessages.Succeeded`, the handler's own time like a failure's). Definition id and duration only, never
+  the job's message data or metadata. Shows on the job's dashboard page (which reads JobExecution logs).
+- **Overlap message:** `JobExecutionMessages.RecurringOverlap(id, expressionTypeId, expression)` →
+  `Not run: overlap with a run still in progress of recurring schedule <id> (<type> <expression>). Failed, not
+  retried.` The engine reads the schedule only on that path to get its expression (left out if it can't be read).
+
+#### SQL `BulkInsertIfNotExists`: the per-row fallback retries deadlocks (Hugo, 2026-11-22)
+- Found by the conformance matrix on GitHub (first run where the SQL providers ran to completion): MySQL
+  `BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce` (recurring schedules)
+  threw `Deadlock found when trying to get lock`. The batch transaction falls back to one row per transaction on a
+  conflict (duplicate key or deadlock), but the per-row step only caught a duplicate key: on MySQL a single row can
+  still deadlock with another writer of it (locks on the unique index and the metadata tables).
+- `SqlMasterJobsRepository` and `SqlMasterRecurringSchedulesRepository`: the per-row insert runs through a
+  `RetryDeadlockPolicy` (50 ms, 3 retries). Each retry reads again, so it either finds
+  the row saved by the other writer or inserts it; a duplicate key is still "not inserted by us".
+- Timing-dependent: passed in the run before, and not reproduced locally (the two MySQL concurrent-writer tests
+  pass 5 of 5 runs; MySQL / Postgres / SQL Server groups 163 of 166, 3 skipped).
+
+#### One cancellation tree: `StopControl` (Hugo, 2026-11-22)
+- Why: mapped 2026-11-20. Five unrelated roots (worker source, a source per bucket runner, `TaskQueueItem`'s source,
+  the retry interceptor's, NATS fixed timeouts), the runtime had no token, and the stop waits didn't fit together
+  (runtime 6 s vs the queue aborting at 1 + 5 s). Next version's write API ("abort job 123", stop signals) needs one
+  place to stop or abort one job, runner or worker.
+- `Sdk/Background/Cancellation`: `StopControl` = a stop token (take no new work; running work continues) and an
+  abort token (cancel what runs), each linked to the parent's; abort also stops. `StopControl.None` (like
+  `CancellationToken.None`) is every owner's value until it takes its own; linking to None throws.
+  `JobMasterStopControlFactory` (owned by the runtime, no reference to it) is the one place that builds them:
+  `ForRoot`, `ForWorker`, `ForRunner`, `ForTaskItem`, `ForHandler`, `ForRetryInterceptor`, `Cleanup(limit)` (not
+  linked on purpose: work that must finish during a stop). Named `StopControl`, not "scope", to avoid IoC scopes.
+- Tree: runtime (constructor, `ForRoot`) → worker (top of `StartAsync`) → runner (top of `StartAsync`, infra and
+  bucket runners alike) → task item (`EnqueueJobsAsync`, child of the execution runner's control, passed to the
+  engine through `GetOrCreateEngine(runnerStopControl, …)`). Owners take their own control (no setters). The worker's
+  `CancellationTokenSource` and `TaskQueueItem`'s are gone; the item passes its abort token to the run delegate.
+  Infra runners no longer share the worker's source: an infra runner ending still stops its worker through
+  `StopImmediatelyAsync`, which now stops the worker's own control first, then each runner. The runtime stops its
+  root first at shutdown.
+- `HandlerStopControl` (`ForHandler`, right before the handler): cancelled on the job's abort, on its timeout, or
+  `ImmediateGracefulStopPeriod` (5 s) after the job's stop. A stop alone never cancels a handler, or graceful stops
+  would kill running jobs. The engine's interrupted path = job aborted or the 5 s ran out; the timeout path only
+  handles the job's own timeout. Registration removed first in `Dispose`.
+- Terms (glossary in the factory): graceful stop = `RequestGracefulStop(period?)` (signal; buckets Completing, no new
+  jobs, `DefaultGracefulStopPeriod` 15 min, at least `MinGracefulStopPeriod` 1 min; renamed from `RequestStop`,
+  `StopRequested(At)`, `StopGracePeriod`; lock key string unchanged), immediate stop = `StopImmediatelyAsync`,
+  abort. Comments that called the immediate stop's flush "graceful" now say stop / flush.
+- Budget, sized for Docker's 10 s before SIGKILL: `ImmediateGracefulStopPeriod` 5 s + `ImmediateStopCleanupPeriod`
+  2 s = `ImmediateStopTimeout` 7 s: the runtime's wait per worker (was 6 s) and `TaskQueueControl.ShutdownAsync`'s
+  wait before its last-resort abort (was 1 + 5 s). `ShutdownAsync` also disposes the waiting items it drops.
+- Retry interceptor: its source is `ForRetryInterceptor` (linked to the job's abort, 10 s cap); cut short by an
+  abort → Warn on the job, no cluster Error. NATS acks / progress / terminate and the 7 s consumer wait use
+  `Cleanup`. `ForOperation(parent, limit)` (linked to the caller's token + cap): the NATS stream setup (10 s, now
+  linked to the runner's / consumer setup's token; was unlinked), the consumer setup (10 s; had no cap at all when the
+  caller passed a token), the heartbeat publish (5 s, now linked to the runner's token), the dispatcher publish (15 s,
+  no caller token). Not converted: the NATS consumer and keep-alive linked sources. No token yet on the flush to
+  master, the bucket hand-over and the HeldOnMaster write: the data layer takes none.
+- Fixed in passing: `NatsJetStreamConnector.EnsureStreamInternalAsync` released the per-entry lock even when its
+  10 s wait had timed out (`gotEntry` unchecked), freeing another caller's hold so two stream setups could run at
+  once. The release is now guarded, as the consumer setup's already was.
+- Open: a cached engine keeps the first runner's control; `Worker.Dispose` / `JobMasterRunner.DisposeAsync` still
+  have no callers. No new unit tests (Hugo); scenario verification on GitHub.
+
+#### Cancel and reschedule retry on a version conflict (Hugo, 2026-11-21)
+- Found by the matrix `DataRetentionArchiveTest` on PostgresNats / HybridNatsRavenDb (AWS run; reproduced locally on
+  Hybrid): `DELETE /recurring-schedule` right after the schedule reached master returned 500. App log:
+  `JobMasterVersionConflictException` from `JobMasterSchedulerClusterAware.CancelRecurringAsync` →
+  `MasterRecurringSchedulesService.UpdateAsync`. A cancel is read → `TryToCancel()` → versioned write; the other writer
+  is most likely the planner's first-occurrence update (`RecurringSchedulePlanner.UpdateAndReleasePlanLockAsync`), fed
+  by the save path's recently-inserted queue (also for AlreadyInserted). NATS saves on message arrival, so the window
+  lines up with a cancel issued as soon as the schedule is visible. The internal exception escaped the public API.
+- New `RetryVersionConflictPolicy` (`Sdk/Abstractions/Exceptions`, same shape as `RetryDeadlockPolicy`: retry
+  interval + max retry count, `Exec` / `ExecAsync`, constant interval + up to 50% jitter, `Thread.Sleep` on the sync
+  path). Re-runs the delegate on `JobMasterVersionConflictException` only; rethrows it after the retries, anything
+  else at once. The delegate is the whole read-check-write, so each retry reads again and re-applies the rule.
+- `JobMasterSchedulerClusterAware`: one policy (100 ms, 3 retries → up to 4 runs) around `CancelJobAsync`,
+  `CancelJob`, `CancelRecurringAsync`, `CancelRecurring` (`TryToCancel()`), `RescheduleAsync`, `Reschedule`
+  (`CanReschedule()`). Why retry rather than a status-guarded update by id (Hugo): a conflict can also mean another
+  process cancelled or terminated the item, so the rule must decide again on the fresh copy. The internal
+  `WorkerClusterOperations.CancelJob` / `MarkAsHeldOnMaster` have the same pattern; left as is (engine/runner paths,
+  several already behind `ExecWithRetryAsync`). The service still logs each conflict as Error before rethrowing.
+- Tests: `RetryVersionConflictPolicyTests` (retries the whole delegate, async and sync; rethrows after 3 retries;
+  no retry on other exceptions); `JobMasterSchedulerClusterAwareTests` (8): conflict then success for the six
+  methods, schedule final by the retry → `false`, every attempt conflicting → throws after 4 writes. With the policy
+  never retrying, 11 of these fail.
+
+#### Draining a bucket's processing queue: version-checked, never inserts (Hugo, 2026-11-20)
+- A processing message's job is always on master already (save-pending dispatches only what it inserted, with the
+  version the insert set; `AssignJobsToBucketsRunner` dispatches the models its `BulkUpdateAsync` returned, new
+  versions set). But the message can be stale: the job's deadline takes it back and another bucket gets it.
+- Before: the polling drain used `BulkUpdateAsync(HeldOnMaster(ids))`, by id with no version or bucket check
+  (`Processing` not excluded), so a stale message moved back a job another bucket owned or was running: it could run
+  twice, or that bucket's write hit a version conflict. The NATS drain used `Upsert` of the message's copy: the
+  version check covered that case, but its `Add` branch re-inserted a job deleted since (e.g. cancelled, then purged)
+  as HeldOnMaster.
+- Now both use `JobSavePendingOperation.HoldDrainedJobsOnMasterAsync(jobs)` (replaces `HoldDrainedJobOnMasterAsync`):
+  `MarkAsHeldOnMaster()` on the message copies, then the version-checked `BulkUpdateAsync(IList<JobRawModel>)`. A job
+  that changed on master since isn't touched (logged Warn, per job); nothing is inserted. Partitioned inside by
+  `GetMasterMaxBatchSize`, like `SaveAndAckAsync`: a failed partition is logged and the rest still run; returns false
+  if one failed. Polling: one call, false → failed tick. NATS: always acked, no nak (the job is on master; the
+  deadline check brings back one left in the bucket).
+- Test: `JobSavePendingOperationTests.HoldDrainedJobsOnMasterAsync_OnlyMovesBackJobsUnchangedOnMaster` (fails with
+  the by-id update back). Per-provider version check already covered by
+  `BulkUpdate_Models_ShouldOnlyUpdate_RowsWithMatchingVersion`.
+
+#### A save-pending tick with unconfirmed saves counts as failed (Hugo, 2026-11-20)
+- `JobSavePendingOperation.SaveAndAckAsync` / `RecurringScheduleSavePendingOperation.SaveAndAckAsync` returned true
+  when a partition had `Unknow` ids (not confirmed on master, so not acked and leased again). Now false, like a failed
+  partition and like the single-item NATS saves, so the runner's tick is `Failed`. Already logged (Warn, ids) by the
+  master services. One unknown can't stop the runner: its message stays leased ≥ 90 s and the ticks between succeed.
+- Tests: the 4 runner "not confirmed on master" tests (jobs / recurring, normal / drain) now also assert `Failed`
+  (the jobs ones fail with the partition returning true).
+
+#### NATS stream MaxAge + replicas (Hugo, 2026-11-16)
+- Found on a real NATS 2.10 server: the stream was created with only `Subjects` + `DuplicateWindow` (`Limits`
+  retention, no limits), so acked and `AckTerm`'d messages stayed forever (3 acked → 3 stored, still readable).
+- `NatsJetStreamConstants`: `MaxAge` (30 d), `DefaultNumReplicas` (1), `DuplicateWindow` (2 min, NATS default; only
+  dedups `DoPublishAsync`'s own timeout retry, each publish has a new id).
+- User settings `streamMaxAge` / `streamNumReplicas`: optional params on the 4 `UseNatsJetStream` overloads and
+  `ConfigFromJson` connection options (binder keys ignore case whatever the caller's dictionary comparer), stored in
+  `AdditionalConnConfig` (`NatsJetStreamConfigKey.StreamMaxAgeKey` / `StreamNumReplicasKey`). No JobMaster-side
+  range checks (Hugo: let NATS reject, so a NATS change doesn't need ours). Checked on NATS 2.10 standalone: create
+  with 3 replicas → `replicas > 1 not supported in non-clustered mode`; 6 → `must be <= 5`; but an update of an
+  existing 1-replica stream to 3 is accepted and reports 3 (still one copy).
+- `NatsJetStreamConnector.EnsureStreamInternalAsync`: creates with both values; an existing stream with other values is
+  `UpdateStreamAsync`'d and logged (Info, Cluster). `EnsureStreamAsync` now takes the caller's logger.
+- Not changed: `Limits` retention (`WorkQueue` noted in reminders), consumer settings.
+- Tests: binder unit tests; `NatsJetStreamStreamSettingsTests` (new `Testcontainers.Nats` 4.4.0 +
+  NatsJetStream reference in IntegrationTests): new stream gets the defaults, an old stream is updated (mutation-checked).
+
+#### Save-pending messages that keep failing are moved aside (Hugo, 2026-11-16)
+- `JobMasterConstants.MaxSavePendingLeaseCount = 1000`. `AgentJobsDispatcherRepository.LeaseSavePendingJobsAsync` /
+  `LeaseSavePendingRecurAsync` don't return a message leased that many times: they log it Critical (lease count +
+  `ToLogSummary()`: job id, message id, payload length; never the payload) and move it to
+  `JMReserved-Terminated::<original full address>` (`FullBucketAddressIdsUtil.GetTerminatedBucketAddress`; `::` is
+  invalid in ids, so no bucket collides). The save operation and the service layer are unchanged.
+- The row is kept forever; `HasJobsAsync` / destroy only look at the real addresses, so the bucket can still be deleted.
+- Raw repository: new `UpdateBucketAsync(fullBucketAddressId, messageIds, newFullBucketAddressId)` (unleases too) and
+  `CreateBucketIfNotExistsAsync` (the terminated bucket row, needed by the foreign key). All polling providers; NATS
+  (not polling) throws `NotSupportedException`, like its `PullMessagesAsync` (see "Lease / ack on every polling provider").
+- Tests: `AgentJobsDispatcherRepositoryLeaseTests` (message at the limit moved, the rest returned), Postgres
+  conformance `UpdateBucket_ShouldMoveOnlyTheGivenMessages_Unleased` (8/8).
+
+#### A job attempt counts as failed only when the handler failed (Hugo, 2026-11-17)
+- `ExecuteJobAsync`: `handlerStarted` / `handlerSucceeded` around `HandleAsync`. Catch order: version conflict (moved
+  first, so a conflict on the success write keeps its handling) → `when (handlerSucceeded)`: Error log, no
+  `RetryOrFailAsync` (it used to count a failure and re-run a job that had succeeded) → `when (!handlerStarted && e is
+  OperationCanceledException or ObjectDisposedException)`: Warn + HeldOnMaster (stop, or the app's container gone, before
+  the handler) → timeout → generic (handler threw; resolution failures for a real reason still count, so a missing
+  handler ends `Failed` instead of bouncing forever).
+- A stopping worker (`StopImmediatelyRequested`) doesn't start a job: HeldOnMaster before `ProcessingStarted()`.
+- Found by `DrainModeTest.PostgresDist` at 25k jobs (`JM_DRAIN_JOBS_MULTIPLIER=5`): 62 jobs started after the host
+  disposed the app's container (caught by the slot-lambda scope catch, so 0 counted); 5k showed 0.
+- Tests: 3 engine tests (success write fails → no failure, no retry; worker stopping → not run, back on master; handler
+  resolution throws `ObjectDisposedException` → back on master, no failure), all fail with their fix disabled.
+- The timeout clock starts at the handler. It used to start with the slot (`TaskQueueItem.Start` → `CancelAfter(Timeout
+  + 2.5 s)`), so pre-handler work (recurring lock + validation, the Processing write, handler resolution) ate into the
+  handler's time, and a slow write meant a timeout counted against the job. Now `TaskQueueItem` has no timer (its token
+  is the stop token, cancelled only by `Abort`); `ExecuteJobAsync` links a `handlerTimeout` to it with
+  `CancelAfter(Timeout)` right before `HandleAsync`, disposed in `finally`. A `handlerStopwatch` gives the reported
+  elapsed time. Catches: stop token cancelled → Warn "Interrupted: the worker is stopping" + HeldOnMaster (no failure);
+  `handlerTimeout` cancelled → timeout + RetryOrFail. `TaskQueueItem.IsTimedOut()` (the queue's slot accounting) is
+  unchanged.
+- Tests: `Simulate_WhenTheWorkBeforeTheHandlerIsSlow_TheHandlerStillGetsItsFullTimeout` (Processing write 3.2 s,
+  Timeout 400 ms, handler 250 ms → Succeeded, 0 failures; fails with the clock started before the write),
+  `Simulate_WhenTheWorkerStopsDuringTheHandler_TheJobIsInterruptedNotFailed`; `TaskQueueControlTests` timeout test
+  rewritten as `Simulate_TaskPastItsTimeout_ReportsTimedOut_ButOnlyAbortCancelsIt`.
+
+#### The app's container stops the workers when disposed (Hugo, 2026-11-17)
+- Why: nothing in JobMaster stopped the workers on shutdown (no `IHostedService`, the unused `JobMasterRuntime.Stop()`),
+  so the process ended with runners mid-tick: no `OnStopAsync`, no execution flush, no bucket hand-over. At the
+  container's disposal, not at `ProcessExit`: in a hosted app the host disposes the app's container (handlers' DI)
+  before `ProcessExit`, so jobs still starting would hit a disposed container. No hosted service (Hugo).
+- `JobMasterRuntime` is `IAsyncDisposable` + `IDisposable`: both run `StopWorkersAsync(ShutdownStopTimeout)` (6 s;
+  every worker's `StopImmediatelyAsync` in parallel, Warn per worker not done in time).
+  Registered in the main container once, by factory (`TryAddSingleton<IJobMasterRuntime>(_ => JobMasterRuntimeSingleton.Instance)`):
+  the container disposes only what it created. `StartJobMasterRuntimeAsync` resolves it from the container
+  (`GetService`; null → "No cluster configured"), so it's created, and later disposed, by the container.
+  `IAsyncDisposable` on netstandard2.0 comes from `Microsoft.Bcl.AsyncInterfaces` (via the DI package).
+- The container's disposal is the only stop. An app that never disposes its container gets no stop; nothing is lost
+  (lease, heartbeat, deadline runner recover it), it's only slower. `JobMasterLogger` keeps its own `ProcessExit`
+  final flush, which now runs after the workers stopped (at the disposal), so their shutdown logs are included.
+- `ExecuteJobAsync` gets the job's DI scope from the slot (created in the `TaskQueueItem` lambda). If creating it
+  throws `ObjectDisposedException` (container gone), the job never started: Warn on the job, back on master
+  (HeldOnMaster), no failure counted.
+- `DrainModeTest` (all 5 variants) writes a failure report (`DrainModeFailureReport`). PostgresDist: 0 failed attempts,
+  0 not started, both with this setup and with the old one (stop at `ProcessExit`, runtime outside DI), against 52
+  `ObjectDisposedException` on 2026-11-15, before the runner cleanup made the stop fast (no 30 s wait, parallel
+  runners). SqlServerDist: 0 too. The other variants share fixed test identifiers in one Redis, so they only pass run
+  one at a time (to fix).
+- Tests: `RuntimeRegistrationTests` (one factory registration for two clusters; fails with an instance registration),
+  `StartJobMasterRuntimeTests` (no cluster → the clear error; fails with `GetRequiredService`).
+
+#### Lost bucket with no worker: Warn, then Critical, once per connection (Hugo, 2026-11-17)
+- `AssignedLostBucketsRunner` collected buckets with no alive Full / Drain worker on their connection and logged
+  Critical per bucket per tick, also during any restart or a test stopping every worker (DrainModeTest). It now logs
+  one line per agent connection: Warning while the oldest such bucket has been Lost (`LastStatusChangeAt`, set by
+  `MarkAsLost`, persisted with the bucket) for less than `JobMasterConstants.LostBucketNoWorkerGracePeriod`
+  (10 min), Critical after. No bucket reference id on the grouped line.
+- Tests: Warn at 2 min / Critical at 15 min, once for 2 buckets on one connection (mutation-checked).
+
+#### Agent dispatcher names: Push / Lease / Ack on both layers (Hugo, 2026-11-16)
+- `IAgentJobsDispatcherService` `Add*` → the repository's `Push*` verbs: `PushSavePendingJob(Async)`,
+  `BulkPushSavePendingJobAsync`, `PushForProcessingAsync`, `BulkPushForProcessingAsync`, `PushSavePendingRecur(Async)`.
+- `IAgentJobsDispatcherRepository` `PushForSaving(Async)` (recurring) → `PushSavePendingRecur(Async)`, like its
+  `LeaseSavePendingRecurAsync` / `AckSavePendingRecurAsync`. Plain rename (all internal), no old names kept.
+- `IJobMasterBackgroundAgentWorker.ServiceProvider` → `MainServiceProvider` (2026-11-17): it's the app's container
+  (handlers, retry interceptors), disposed by the host before `ProcessExit`; JobMaster's own per-cluster containers
+  (`GetClusterAwareService<T>()`) are separate and never disposed. Same "main" name as `mainServices` /
+  `mainServiceProvider` elsewhere. Also removed the unused `IJobMasterRuntime.CountWorkersForCluster` / `Stop()`.
+- `BootstrapBlueprintDefinitions.JobMasterScheduler` / `JobMasterJsonSerializer` / `JobMasterRuntime` removed: copies
+  of `JobMasterScheduler.Instance` / `JobMasterMessageJson`'s own serializer / `JobMasterRuntimeSingleton.Instance`.
+  Registrations use the singletons; `AddJobMasterCluster` sets the default serializer with
+  `JobMasterMessageJson.SetMessageSerializerIfNotSet(...)` (a `DefineJobMasterMessageJsonSerializer` call before it
+  still wins). Tests no longer set a separate `new JobMasterRuntime()`.
+- Cluster containers no longer register `IJobMasterRuntime` / `IJobMasterScheduler` / `IJobMasterSchedulerAdvanced`
+  (the scheduler pair was registered twice, and nothing there used it). `RecurringSchedulePlanner`, the only cluster
+  component taking the runtime, reads `JobMasterRuntimeSingleton.Instance.StartingAt` like `JobsExecutionEngine`.
+
+#### SQL bulk insert didn't set the model's version: saved jobs never ran (Hugo, 2026-11-16)
+- `SqlMasterJobsRepository.BuildBulkInsertIfNotExistsSql` (and the recurring one) stored a new `Version` but never
+  called `SetVersion` on the model, unlike the single insert. The bulk save-pending path dispatches the models it just
+  inserted, so the engine's version-checked `BulkUpdateAsync` (→ `Onboarded`) matched 0 rows and dropped every job
+  silently: they stayed `InBucket` until the deadline runner. Found by `ScheduleTest.PostgresNats` (0 of 225
+  executions), reproduced as a local process against Postgres + NATS containers (5/5 stuck `InBucket`, 5/5
+  `Succeeded` after the fix). Never released (bulk save-pending is new in this branch). RavenDB already set it.
+- Tests: `BulkInsertIfNotExists_InsertedModels_CanBeBulkUpdatedRightAway` (jobs) and
+  `BulkInsertIfNotExists_InsertedModel_CanBeUpdatedRightAway` (recurring), 8/8 on the 4 providers, both fail without
+  the fix on Postgres.
+
+#### Lease / ack on every polling provider (Hugo, 2026-11-16)
+- `AckAsync` / `UpdateBucketAsync` moved to `SqlRawMessagesDispatcherRepositoryBase` (one `DELETE` / `UPDATE` with
+  `sql.InClauseFor`, partitioned by the agent max batch size); Postgres' own copies removed.
+- MySQL `LeaseMessagesAsync`: `SELECT … FOR UPDATE SKIP LOCKED` + `UPDATE` in one transaction, `UTC_TIMESTAMP(6)`
+  clock; `CreateBucketIfNotExistsAsync` via `ON DUPLICATE KEY UPDATE`.
+- SQL Server `LeaseMessagesAsync`: `UPDATE` through a `TOP` CTE `WITH (UPDLOCK, READPAST, ROWLOCK)` + `OUTPUT`,
+  `SYSUTCDATETIME()` clock; `CreateBucketIfNotExistsAsync` via `IF NOT EXISTS … WITH (UPDLOCK, SERIALIZABLE)`.
+- RavenDB: `LeasedUntil` / `LeaseCount` on `RavenDbMessageDocument`, `LeasedUntil` added to the
+  `ByBucketAndReferenceTime` index map (redeployed at startup, so no migration). Lease = index query + load +
+  in-memory re-check (stale index) + optimistic-concurrency `SaveChanges` (a conflict leases nothing this poll); this
+  process's clock. Ack = delete by document id. `UpdateBucketAsync` = copy under the new bucket's document id + delete
+  (the bucket is part of the id). `CreateBucketIfNotExistsAsync` no-op.
+- Migration scripts: `agent-message-lease-migration-mysql.sql`, `…-sqlserver.sql` (next to the Postgres one).
+- The 4 lease / ack / move conformance tests moved from the Postgres class to the shared base (all 4 providers).
+
+#### Agent message `lease_count` (Hugo, 2026-11-16)
+- New `lease_count` column on `message_dispatcher` (`int NOT NULL DEFAULT 0`), added like `leased_until`: in the create
+  script, auto-added to existing tables by `SqlJobMasterRuntimeSetup`, and in the Postgres migration script.
+- Postgres `LeaseMessagesAsync` increments it in the same `UPDATE … RETURNING` and returns it as
+  `JobMasterRawMessage.LeaseCount` (this lease included; 0 for pulled messages). Not used yet: it is the base for
+  handling a message that keeps failing.
+- Verified: the `ALTER` on an existing table with rows (row starts at 0, increments) on real Postgres 16, MySQL 8.0
+  and SQL Server 2022; create script via the SQL agent-message conformance tests (15/15). Conformance
+  `Lease_AfterTheLeaseEnds_ShouldReturnTheMessagesAgain_CountingEachLease` checks 1, then 2.
+
+#### Save-pending tick fails when a partition fails (Hugo, 2026-11-16)
+- `JobSavePendingOperation.SaveAndAckAsync` / `RecurringScheduleSavePendingOperation.SaveAndAckAsync` return `bool`:
+  false when a partition hit its catch (the other partitions are still saved and acked). The 4 polling save runners
+  (normal + drain, jobs + recurring) return `OnTickResult.Failed` then instead of `Success`.
+- Why: a tick that keeps failing (master down, broken worker) now counts toward the runner's consecutive-failure stop;
+  for an Active/Completing bucket `BucketAwareRunner.OnStopAsync` marks it Lost and another worker takes it, a draining
+  bucket's runner is restarted by `DrainRunnersCoordinator.RecoverDrainRunnersAsync`. One successful tick resets the
+  count, so a single bad row (its lease keeps it out of the next ticks) doesn't stop a healthy runner.
+- Test: `PollingSavePendingJobsRunnerTests` — insert throws → tick `Failed`, nothing acked, message stays leased;
+  verified it fails with the runner always returning `Success`.
+
+#### `BulkJobUpdateRequest.HeldOnMaster` skips final-status jobs (Hugo, 2026-11-16)
+- Bug: it only skipped jobs already `OnMaster`, so a late caller (a stale drain-processing message, the publish-failure
+  compensation in `BulkDispatchJobsToBucketAsync`, an engine flush racing a finished execution) could move a
+  `Succeeded` / `Failed` / `Cancelled` job back to `OnMaster` and run it again.
+- Fix: also excludes `JobMasterJobStatusUtil.GetFinalStatuses()` (as `Cancel` does); `Processing` stays allowed, deadline
+  recovery relies on it. No caller moves a final job back on purpose (`HeldOnMasterDeadlineTimeoutJobsRunner` already
+  filtered them out before the call).
+- Tests: conformance `BulkUpdate_Request_HeldOnMaster_ShouldSkip_OnMasterAndFinalJobs` (4 providers) adds a `Succeeded`
+  job that must stay `Succeeded`. Unit: `WorkerClusterOperationsTests` covers the cross-worker engine lookup in
+  `BulkDispatchJobsToBucketAsync` (the bucket's engine on another worker of this process gets the job, nothing is
+  published); verified it fails with the lookup removed.
+
+#### `JobMasterParallelUtil.ForEachAsync` cancellation on netstandard2.0 (Hugo, 2026-11-16)
+- Bug (netstandard2.0 only; net6+ calls `Parallel.ForEachAsync`): the hand-written `ForEachAsyncLegacy`, when
+  cancelled while waiting for a free slot, threw at once with items still running (a caller acting on "what didn't
+  run" saw them as not run while they were), disposed the semaphore under them (their `Release()` then threw
+  `ObjectDisposedException`), and when the cancellation was seen at the loop top it `break`s and completed without
+  throwing (caller thinks everything ran).
+- Fix: same contract as `Parallel.ForEachAsync` -- on cancellation start no new item, wait for the running ones
+  (propagating their exceptions), then throw `OperationCanceledException`.
+- Tests: `JobMasterParallelUtilTests` (also compiled into the netstandard2.0 test project): cancelled mid-loop waits
+  for the running items, starts no new one, then throws; uncancelled runs every item. Verified the cancellation test
+  fails on the netstandard2.0 build with the old loop.
+
+#### Worker stop cleanup (Hugo, 2026-11-15)
+- `OnTerminateFailureAsync` removed (`IJobMasterRunner`, `JobMasterRunner`, overrides in `WorkerStopCoordinatorRunner`,
+  `AssignJobsToBucketsRunner`, `NatsJetStreamRunnerBase`): a runner that hit the failure threshold always stops next
+  (`StopAsync`, or `StopImmediatelyAsync` → every runner's `StopAsync`), so `OnStopAsync` always ran too and every
+  override repeated its `OnStopAsync` (buckets marked Lost / fallback ready-to-delete / NATS consumer stopped twice).
+  `lastFailureException` went with it (only read there).
+- `JobMasterBackgroundAgentWorker.StopImmediatelyAsync`:
+  - The flag is set first under `mutex` and repeat calls return (it was set after the runner loop, so every infra
+    runner whose loop ended re-ran the whole stop).
+  - Runners stop in parallel (`Task.WhenAll`, was one by one); a runner whose stop throws is logged and doesn't skip
+    the rest.
+  - One fresh pass over master marks Lost every bucket this worker owns except Lost / ReadyToDelete
+    (`SelectBucketsToHandOver`), Draining / ReadyToDrain included so their drain restarts on another worker. Replaces
+    the `BucketsCreatedOnRuntime` loop (wrote stale in-memory snapshots back) and the master loop (no ReadyToDelete
+    exemption, so a drained bucket could go back to Lost), both run synchronously inside `mutex`.
+  - Removed the 30 s wait and `DeleteWorkerAsync` (it threw "in use" whenever the worker was still `IsAlive()` after
+    the wait, i.e. most of the time); `CleanupDeadWorkerRunner` removes the record later.
+  - `WorkerStopCoordinatorRunner.OnStopAsync` / `MarkAllBucketAsLostAsync` removed (same pass, coordinator-capable
+    workers only, skipped Draining); its 3 unused services too. `IWorkerClusterOperations.MarkBucketAsLost` (sync)
+    removed, no caller left. `BucketAwareRunner.OnStopAsync` stays: single-runner stops (its Draining exemption is right
+    there, the worker isn't going away).
+- Graceful-stop record fields removed (never written in practice): `AgentWorkerModel.StopRequestedAt` /
+  `StopGracePeriod` (the record's fields weren't even mapped in `ToModel`), `AgentWorkerModel.Status()` and the public
+  `AgentWorkerStatus` enum (`Stopping` unreachable, so it equalled `IsAlive()`; callers use `IsAlive()`),
+  `IMasterAgentWorkersService.StopGracefulWorkerAsync` (no caller), `ApiAgentWorker.Status` / `StopRequestedAt` /
+  `StopGracePeriod`, `ApiAgentWorkerCriteria.Status`, dashboard `schema.d.ts` entries (pages use `isAlive`).
+  `RequestStop()` now sets the in-memory deadline to now + `DefaultGracefulStopPeriod`. `CleanupDeadWorkerRunner`'s
+  stop-deadline check went (`LastHeartbeat + 15 min`, always covered by the `LastHeartbeat + 30.5 min` check).
+- Tests: `StopImmediatelyBucketHandOverTests` (all statuses: Draining / ReadyToDrain in, Lost / ReadyToDelete out;
+  other workers' buckets out); `CleanupDeadWorkerRunnerTests` grace-period case removed.
+- `JobMasterRunner` stop lifecycle:
+  - Bug: a runner stopping from inside itself waited `StopTimeoutSeconds` (10 s) on its own task and logged "did not
+    stop": bucket runners at loop end (`StopAsync()`), `NatsJetStreamRunnerBase` (unresponsive consumer →
+    `this.StopAsync()` in its tick), `WorkerStopCoordinatorRunner` (tick → `StopImmediatelyAsync` → its own
+    `StopAsync`). And when the stop landed during a delay (the usual case), `Task.Delay` threw and the loop-end step
+    never ran, so cleanup only came from an outside `StopAsync`, which also ran `OnStopAsync` next to the loop's own.
+  - Now the runner's task does its cleanup in `finally` (remove from `Runners`, `OnStopAsync` with errors logged, then
+    `StopImmediatelyAsync` for infra runners as before): once, however the loop ended. `StopAsync` only cancels and
+    waits (10 s, Warn if late); called from the runner's own flow (`AsyncLocal` current runner) it doesn't wait.
+  - `StartAsync` adds to `Runners` before `Task.Run` (a quick end could remove before the add), and `Task.Run` gets no
+    token (cancelled before starting, it skipped `RunAsync` and its cleanup).
+  - Tests: `JobMasterRunnerLifecycleTests` (outside stop mid-delay: prompt, cleanup once, removed; stop from own tick:
+    no 10 s self-wait, cleanup once). Verified the self-wait test fails with the guard removed.
+- Worker `Runners`: was a plain `List` mutated from many runner tasks (each removes itself when it ends, and
+  `StopImmediatelyAsync` now stops them in parallel) while stops and `DrainRunnersCoordinator` enumerated it, so a
+  concurrent `Remove` could throw "Collection was modified" mid-enumeration or corrupt the list. Now a locked
+  `RunnerRegistry` (`Add` / `Remove` / `Snapshot()`); readers work on the snapshot.
+- Execution flush at stop: `TaskQueueControl.ShutdownAsync` disposed jobs still running after its 5 s wait, and
+  `TaskQueueItem.Dispose` called `Task.Dispose()` on them, which throws on a task not completed. The throw aborted
+  `ShutdownAsync`, so `JobsExecutionEngine.FlushToMasterAsync` never wrote the onboarded and waiting jobs (already
+  taken out of their queues) back as HeldOnMaster; they came back only by deadline. Now `TaskQueueItem.Dispose` no
+  longer disposes the task (nothing uses its wait handle), and `ShutdownAsync` aborts those jobs before disposing them
+  (they never got the cancellation before). Cancel-then-dispose is safe for the job still holding the token: checked
+  on net8.0 / net10.0 that a cancelled token whose source is disposed still reports cancelled, throws
+  `OperationCanceledException`, and works with `Register`, `SemaphoreSlim.WaitAsync`, `Task.Delay` (only `WaitHandle`
+  throws, unused here).
+  - Test: `TaskQueueItemTests` (running job aborted + disposed: no throw, the job sees the cancellation). Verified it
+    fails with `Task.Dispose()` back.
+
+#### `JobMasterLimits` for fixed values (Hugo, 2026-11-14)
+- `JobMasterDefaults` read as "can be changed", but `MinDataRetentionTtl` (released), `MinRetryDelay` and
+  `RetryInterceptorTimeout` (both new) are fixed. Moved to a new public static `JobMasterLimits` (same namespace).
+  Public, not internal, so selector / interceptor XML docs keep their `cref`s and users can read the values. Plain move,
+  no `[Obsolete]` forwarder (alpha); one breaking line for `MinDataRetentionTtl`. Older-release ChangeLog entries keep
+  the old name. `Worker.MaxParallelismFactor` stays: it caps the default parallelism, so it is a default.
+
+#### `IanaTimeZoneId` startup check inverted (Hugo, 2026-11-14)
+- Bug: `ValidateClusterDefinitions` errored when `clusterDefinition.IanaTimeZoneId != null` and the stored zone ≠ the
+  machine's local zone. First start passed (nothing stored → falls back to local) and saved the explicit zone; every
+  restart then failed, though the value matched what's stored. A process that did *not* set it on a machine in another
+  zone passed silently, the case the message is about. Unnoticed since most run in UTC containers.
+- Fix: condition is now `== null`, in `internal static ValidateOmittedTimeZone(clusterId, defined, existing, local)`
+  (returns the error or null). The message names the local and the stored zone instead of the (null) defined one.
+- API-only exemption: with the fix, an API process on a machine in another zone would fail startup, and the API selector
+  (`IBaseClusterConfigSelector`) has no `IanaTimeZoneId`. `AddJobMasterClusterForApi` now calls the new internal
+  `AllowOmittedTimeZone()` (sets the internal `ClusterDefinition.AllowOmittedTimeZone`), which
+  skips the check. Safe: a process that doesn't set the zone plans with the stored one. Not unit-tested (plumbing).
+- Not done: a Warning when an explicit zone overwrites a different stored one. `GetFresh()` returns a default model
+  (zone = local) when nothing is stored, so first start can't be told apart from a change without another read.
+- Tests: `TimeZoneStartupCheckTests` (explicit zone ≠ local on restart passes, not set + differs asks to set it, not set
+  + matches passes).
+
+#### Failed-execution messages unified (Hugo, 2026-11-14)
+- Before: handler error / timeout wrote the same text to `JobExecution.OutcomeMessage` and the JobExecution log, but
+  only the log had the exception, so the attempt in the dashboard never said why it failed. The overlap path worded the
+  log and the execution differently and put a dashed GUID in the execution (against item 17's base64 rule);
+  "recurring schedule not found" had no log; the conflict path had its own long text.
+- New `JobExecutionMessages` (static, one method per path): `HandlerFailed(elapsedMs, exception, nextStep)`,
+  `TimedOut(elapsedMs, timeout, nextStep)`, `RecurringOverlap(id)`, `RecurringScheduleNotFound(id)`,
+  `ConcurrentChange(status)`. Shape: what happened → what's next (the retry `*Log` text) → "See the job's logs for the
+  full error." only when the log has a stack (handler error, conflict). Exception message on one line, capped at 500
+  chars (`outcome_message` is max-length; the cap keeps it a summary). Each path builds it once for both the execution
+  and the log; the log line is prefixed `Job <definition id>: ` (`ForLog`) since the log list mixes jobs. The timeout
+  path's `TimeoutException` (for the retry interceptor) gets its own short text.
+- The `JobExecution` log category means "kept with the job" (job id as reference, archived / purged with it), not
+  "about one attempt"; left as is (stored by name), to document.
+- Tests: `JobExecutionMessagesTests` (full handler-failed text, long multi-line exception kept to one short line,
+  empty message → type name, timeout without pointer, base64 ids, conflict status + pointer).
+
+#### `JobContext.CancellationToken` (Hugo, 2026-11-14)
+- Finding: the job timeout never stopped a running handler. `TaskQueueItem.Start()` does `CancelAfter(Timeout + 2.5 s)`
+  and passes the token to `ExecuteJobAsync`, which only checks it before the handler; `HandleAsync(JobContext)` had no
+  way to see it, and `TaskQueueControl` frees a slot only when the task completes. Verified with a throwaway
+  `TaskQueueItem` probe (token cancelled at 100 ms, work still running at 600 ms, ran to the end). Consequences: a
+  stuck handler holds its slot forever; the "timed out" catch was only reachable before the handler started; a
+  recurring run longer than `Timeout + 1 min` outlives its overlap lock.
+- Fix (Hugo picked option B over abandoning the task, which would let the retry overlap the still-running handler):
+  `JobContext.CancellationToken` (non-nullable, `None` outside a run: receipt context, retry interceptor context), set by
+  the engine to the attempt's timeout token right before `HandleAsync`. A handler that honours it throws
+  `OperationCanceledException`, which the existing timeout catch turns into a retry (`TimeoutException` for the
+  retry interceptor). `HandleAsync`'s signature is unchanged.
+- `JobConvertUtilTests` property-parity guard ignores it, like `RecurringSchedule` (set at run time, not on `Job`).
+- Test: `JobsExecutionEngineTests.Simulate_WhenHandlerHonoursTheCancellationToken_TimeoutStopsItAndRetries` (200 ms
+  timeout, handler waits on the token → retried, `NumberOfFailures` 1). Verified: with `CancellationToken.None` set
+  instead, it fails (the handler never returns).
+
+#### Retry delays and retry interceptors (Hugo, 2026-11-14)
+- Before: `JobRawModel.TryRetry()` hardcoded `30 s × 2^(failures−1)` plus `JobProcessDeadlineDefaultDuration` (10 min) on
+  every retry (in since the initial commit, no recorded reason), and `JobMasterConstants.MaxAllowedRetries = 10` capped
+  retries. Checked before dropping the 10 min: the retry is only computed after the handler's `await` returns (catch in
+  `ExecuteJobAsync`, `HandleErrorAsync`) and `ScheduleRetry` clears `ProcessDeadline`, so a short delay can't overlap
+  the attempt or be picked by `HeldOnMasterDeadlineTimeoutJobsRunner`.
+- Public: `IJobMasterRetryInterceptor.DecideAsync(JobRetryContext, CancellationToken)` → `Task<JobRetryDecision>`
+  (`JobMaster.Abstractions`); `JobRetryContext { Job, NumberOfFailures, Exception }` and readonly struct
+  `JobRetryDecision` (`RetryAfter` / `UseRetryDelays` / `StopEarly(reason)`, `default` = `UseRetryDelays`) in
+  `Abstractions.Models`; selectors `RetryDelays(params TimeSpan[])`, `InterceptRetry(Func<...>)`, `InterceptRetry<T>()`
+  on both cluster builders; `JobMasterDefaults.RetryDelays` (30 s, 2 m, 10 m, 30 m, 1 h), `MinRetryDelay` (30 s),
+  `RetryInterceptorTimeout` (10 s). Decisions (Hugo): per cluster only (branch on `Job.JobDefinitionId` / `WorkerLane`
+  in the interceptor); one method returning a decision rather than separate delay / stop-early methods;
+  "interceptor", not "policy" (first name): a policy reads as owning the retry count (as in Polly), an interceptor
+  hooks into a retry JobMaster owns and can adjust or cancel it, never add attempts; `InterceptRetry` over `OnRetry`
+  (Polly's `OnRetry` is a notification, and it runs before the retry is decided); `UseRetryDelays`
+  named after the config method so `RetryDelays` + an interceptor read as they work; `NumberOfFailures` aligned with the
+  internal name, counted (1 on the first failure); `Task` like `IJobMasterHandler`; no reason enum, a timeout passes
+  a `TimeoutException`; `StopEarly` rather than `Stop`, so it reads as "before `MaxNumberOfRetries`".
+- `ClusterDefinition.SetRetryDelays` (non-empty, each ≥ 30 s) / `SetRetryInterceptor` / `SetRetryInterceptorType`
+  (one interceptor, else `InvalidOperationException`) → `Finish()` copies `JobMasterRetrySettings` to
+  `JobMasterClusterConnectionConfig` and `TryAddScoped`s the interceptor type. `ConfigFromJson`: `RetryDelays` string
+  array only.
+- `JobRetryDecider` (per engine): no interceptor → `DelayFor(n)` (last repeats); delegate → called directly; DI
+  interceptor → new async scope, `CancellationTokenSource(RetryInterceptorTimeout)` covering the resolve, `Task.WhenAny`
+  so an interceptor ignoring the token still can't hold the slot. Throw / timeout → `UseRetryDelays` + two logs
+  (Hugo): Warn in `JobExecution` (job id), no exception, pointing to the cluster's logs (the attempt's own failure is
+  the Error there, and the job still retries); Error in `Cluster` (cluster id) with the exception (the interceptor is
+  per cluster, so it's broken for every job on it). `RetryAfter` clamped to
+  `MinRetryDelay`. The context's `Job` is built after counting the failure.
+- `JobRawModel.TryRetry()` → `HasRetriesLeft()` + `ScheduleRetry(delay)`; the engine's `RetryOrFailAsync` (both call
+  sites) fails without calling the interceptor once retries are used up, and `StopEarly` fails with "Stopped early by
+  retry interceptor: reason" in the execution message.
+- Versioning (Hugo's concern): retries are decided on the executing worker, but the stored settings came from
+  whichever process started last, publishers and coordinators included, so the cluster view could show a rule no
+  job runs under. Fixed two ways (Hugo picked both): (2) only a process with a Full or Execution worker writes them
+  (`workerDefinitions.Any(w => w.Mode.IsFullOr(Execution))`); mixed versions during a deploy stay last-writer-wins,
+  accepted. (3) Every failed execution's message ends with what was applied, from methods on the settings:
+  `RetryingLog(delay, resolution)`, `StoppedEarlyLog(reason)`, `MaxRetriesReachedLog(max)`; `JobRetryOutcome` carries a
+  `JobRetryResolution` (RetryDelays / InterceptorUsedRetryDelays / InterceptorCustomDelay / InterceptorBelowMinimum /
+  InterceptorFailed / InterceptorStoppedEarly; `IsStopEarly` reads it, so a stop never carries a meaningless
+  `default` resolution). Not job
+  metadata: that's the user's space (shown, filtered, size-limited). Checked the other stored cluster settings: they
+  only overwrite when set (`?? modelToSave.X`) and are shared configuration read from master, so they don't have this
+  problem. The writer condition has no test (it's inside `StartAsync`); the texts and sources do.
+- Unlike the shared settings (sticky: `?? stored`), retry settings are overwritten by every executing worker at
+  startup, so removing `RetryDelays(...)` goes back to the built-in delays. Logged when it happens (Hugo):
+  `ReplacedStoredSettingsLog(storedDelays, storedInterceptor)` returns the Info text only when they differ (null otherwise,
+  so restarts with the same config stay quiet); `StartAsync` logs it in the Cluster category before overwriting.
+- Stored for information (Hugo): `ClusterConfigurationModel.RetryDelays` / `RetryInterceptor` (from
+  `JobMasterRetrySettings.InterceptorDescription`: `None` / `Delegate` / type full name), written in `StartAsync` from
+  the process's effective settings and never read back; no schema change (JSON generic record). `ApiClusterModel`
+  exposes both. Dashboard display left for later (reminder). Tests: `RetryConfigTests` (`InterceptorDescription` None /
+  Delegate / type name; delays + interceptor round-trip through the record; a record saved before these fields reads the built-in
+  defaults) and generic-record RepoConformance `Upsert_ShouldRoundTrip_ClusterConfigurationRetrySettings` (all four
+  providers, own entry id so the fixture's cluster configuration isn't overwritten). The unit tests drop
+  `AdditionalConfig` from the in-memory record: a `JobMasterConfigDictionary` stays a dictionary object until a
+  provider serializes the values, and `ToObject` calls `ToString()` on it (fine on every provider, not in memory).
+- Cap removed: `MaxAllowedRetries` deleted; attribute, scheduler (jobs and recurring) and static definitions now only
+  reject negative values.
+- Found by the context test: `JobConvertUtil.ToJobContext(Job)` never copied `NumberOfFailures`, so handlers always saw
+  0. Fixed.
+- Tests: `JobRetryDeciderTests` (built-in and cluster delays incl. repeat, floor, `StopEarly` + reason, `UseRetryDelays`,
+  throwing interceptor, counted context + exception, DI interceptor with a new scope per call, slow interceptor
+  cancelled + fallback), `RetryConfigTests` (under 30 s / empty throw, delays + interceptor allowed, two interceptors
+  throw incl. standalone,
+  `ConfigFromJson`, `ScheduleRetry` waits exactly the delay). Verified: without the floor or the throw / timeout
+  fallback, those tests fail. 947/947.
+
+#### Repository types ignore case (Hugo, 2026-11-14)
+- Same rule as cluster ids (`ToConfiguredClusterId`): matched ignoring case at the input, stored and used as a key in
+  one casing, so DI keys, throttler templates, `SqlGeneratorFactory` and the runtime-setup filters keep comparing
+  exactly. New `ProviderAssemblies.ToKnownRepositoryType`: the built-in casing from `AssemblyNameByRepositoryType`
+  when it matches ignoring case, else unchanged (third-party providers keep their exact name).
+- Applied where a repo type string comes in: `ClusterConfigBuilder.ClusterRepoType` (both builders),
+  `AddAgentConnectionConfig`, `AgentConnectionProviderSelector` / `AgentConnectionConfigSelector.AgentRepoType`,
+  `ConnectionOptionsBinderFactory.Create` (`ConfigFromJson` calls it with the raw JSON value) and
+  `JobMasterIocRegistrationAttribute.RegisterProviderExtensions`. `FormatHybridRepoType` formats both legs with it,
+  so a hybrid id always reads `hybrid:NatsJetStream&&RavenDB` (Hugo).
+- `MissingProviderHint` no longer says "case-sensitive".
+- Tests: `ProviderAssembliesTests` (every built-in in lower / upper / own casing, unknown unchanged, hybrid format;
+  the no-provider test now uses an unknown name), `ConfigFromJsonTests.ConfigFromJson_RepoTypesInAnyCasing_UseTheBuiltInCasing`
+  (cluster, single agent, both hybrid legs, `ConnectionOptions` for the binder lookup). Verified: with an ordinal
+  match the 7 new cases fail.
+
+#### SQL `BulkInsertIfNotExistsAsync`: per-row fallback on a race (Hugo, 2026-11-14)
+- Check-then-insert under READ COMMITTED: another writer committing the same id between the pre-read and the insert
+  (agent's save vs `ConfirmOnMasterAsync`, two confirms of the same receipts) hit the primary key, rolled back the whole
+  transaction and threw. Deadlocks between the same writers likewise.
+- Same shape as RavenDB's fallback: the old body is now `InsertIfNotExistsInOneTransactionAsync`; on `DuplicateKey` or
+  `Deadlock` (`IsBatchConflict`) the public method retries one row per transaction (`InsertIfNotExistsPerRowAsync`),
+  a duplicate there meaning "already saved, not inserted by us". Differences from RavenDB: no partition step (callers
+  already partition to the master batch size), sequential, and other errors still throw (the repos have no logger;
+  callers verify with `QueryExistingIdsAsync` or retry on the next tick).
+- `SqlMasterRecurringSchedulesRepository` now takes `IKnownExceptionIdentifier` (constructor of the base + the three
+  providers), like the jobs repository already did.
+- Tests: `BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce` (jobs and
+  recurring RepoConformance, all providers): 5 rounds of 6 writers inserting the same 30 rows in shuffled order; no
+  throw, each row reported inserted by exactly one writer, all on master. Rows carry metadata, since without entries
+  the guarded insert can skip silently and the pre-read still reports the row (the reminder's pre-read gap).
+  Verified with the fallback disabled: all 6 SQL variants fail, with duplicate keys (MySQL, SQL Server, on the row and
+  on the metadata entries) and deadlocks (Postgres, MySQL), so deadlocks belong in the fallback too.
+
+#### `JobMasterLogger` flushes on process exit (Hugo, 2026-11-14)
+- `Dispose()` (with its final flush) never ran: the per-cluster containers are registered in the main container as
+  instances, which MS DI never disposes, and there's no stop entry point (no `StopJobMasterRuntimeAsync`, no
+  `IHostedService`, `JobMasterRuntime.Stop()` has no caller; the old reminder assumed item 7 added one, it didn't).
+- The logger now subscribes to `AppDomain.CurrentDomain.ProcessExit` (raised on a normal exit, hosted apps included)
+  and runs `Dispose()` from it; `Interlocked` guard since it can be reached twice, unsubscribes in `Dispose`.
+- The final flush drained only one batch (`FlushCoreAsync` takes `MaxBatchSize` = 100) while up to `MaxQueueLimit`
+  (10,000) can be queued. It now loops until empty, capped at `FinalFlushTimeout` (5 s) so a down database can't
+  hang exit; a failed insert still dequeues its batch, so the loop always ends.
+- Test: `JobMasterLoggerTests.Dispose_WhenMoreThanOneBatchIsBuffered_ShouldWriteAllOfThem` (slow insert keeps the
+  background flush on the lock so 250 pile up). Verified by putting back the single-batch flush: it fails.
+- A real stop path (graceful worker stop, then flush) stays a separate item (`reminders.md`, "No stop entry point").
+
+#### Archive / migrate delete only what the target confirmed (Hugo, 2026-11-14)
+- `DeleteOldFinalJobsRunner`, `DeleteOldInactiveRecurringSchedulesRunner`, `MigrateJobsRunner` and
+  `MigrateRecurringSchedulesRunner` copied rows to another cluster, then deleted every source row without looking at
+  the result. `RavenDbMasterJobsRepository.BulkInsertFallbackPerRowAsync` logs and swallows non-`ConcurrencyException`
+  errors (on purpose: parallel rows, throwing would drop the ids that succeeded), so such a job was deleted and never
+  saved. The migrate pair was missing from the old reminder and is the worse case (unrun jobs).
+- `IMasterJobIntakeService` / `IMasterRecurringScheduleIntakeService.BulkInsertIfNotExistsAsync` now return the ids
+  confirmed on the target: inserted + `QueryExistingIdsAsync` of the rest (same rule as `ConfirmOnMasterAsync`; both
+  providers scope that query to the target cluster). The runners delete only those (for jobs, only their
+  JobExecution logs) and log an Error with the count kept; the rest is retried next tick (migrate: after the lock
+  expires). RavenDB's per-row swallow stays: the return value is the contract on every provider.
+- Same four runners now partition by `GetMasterMaxBatchSize(target cluster)` before the intake call (the standard;
+  they passed up to `TransferBatchSize` at once). The existing per-batch body became a private `ArchivePartitionAsync`
+  / `MigratePartitionAsync` called per partition, so executions and logs are queried per partition (no split needed)
+  and each partition is confirmed and deleted before the next.
+- Two more unpartitioned master bulk calls: `CancelJobsFromRecurScheduleInactiveOrCanceledRunner`'s cancel (up to
+  `TransferBatchSize` ids in one `BulkUpdateAsync`), and `WorkerClusterOperations.BulkDispatchJobsToBucketAsync`'s
+  held-on-master fallback (caller partitions by the agent's batch size, master's can be smaller, e.g. NATS). Both now
+  loop by `GetMasterMaxBatchSize(this cluster)`. Repositories chunk internally, but inside one transaction (SQL) or one
+  `SaveChanges` (RavenDB), so only caller partitioning keeps each transaction small.
+- Tests: `MasterJobIntakeServiceTests` (missing job not confirmed, only non-inserted ids checked),
+  `DeleteOldFinalJobsRunnerTests` / `DeleteOldInactiveRecurringSchedulesRunnerTests` (unconfirmed row + its logs kept).
+  Verified by breaking the intake check and the runner delete: the new tests fail.
+- Not covered (reminder kept): SQL's pre-insert read `BuildQueryExistingIdsSql` has no `cluster_id` filter, so a
+  same-DB, same-prefix migrate skips copying metadata / executions / logs for the job.
+
+#### Agent messages: no payload in logs, one bad message per batch (Hugo, 2026-11-13)
+- Payload in logs (finding from item 17's "checked" claim, which missed these): `AgentJobsDispatcherRepository`'s three
+  deserialize-failure Criticals logged the whole `message.Payload`; NATS `NatsJetStreamRunnerBase` logged
+  `LogPreview(payload, 128)` on delivery-count exceeded, signature mismatch, malformed JSON and exhausted retries.
+  Now `ToLogSummary()` extensions on `JobMasterRawMessage` (core `Sdk.Abstractions.Extensions`) and `INatsJSMsg<byte[]>`
+  (`NatsJetStreamMsgExtensions`), both via `JobMasterRawMessageExtensions.FormatLogSummary`: `Id` (CorrelationId →
+  base64), `MessageId`, `PayloadLength`. `LogPreview` deleted; a debug line's `{payload}` dropped.
+- `AgentJobsDispatcherRepository` pull loops catch `Exception`, not `JsonException`: SQL / RavenDB delete on pull, so a
+  non-JSON exception lost the whole batch (already-parsed ones included). Now only that message is skipped.
+- NATS deserialize: any exception, `JsonException` included (Hugo) → `TryNakFailAsync`, terminated after the same
+  limit as processing failures via new `GetMaxFailureRetries()`. Retrying may help: transient (e.g. memory), or a newer
+  worker can read it during a rolling upgrade; bad JSON otherwise only comes from data written directly to the store.
+  Before, `JsonException` terminated at once and any other exception faulted the consumer and looped until
+  `MaxDeliver` (10000).
+- `MaxMsgRetriesForLostRisk` 30 → 50, `MaxMsgRetriesForNoLostRisk` 3 → 5 (Hugo). With the 1/5/15/30/60s backoff:
+  about 47 min on transport runners, about 2 min on execution runners.
+
+#### SQL auto-provision: one opted-out cluster skipped the rest (Plan0.0.12Alpha item 24)
+- `SqlJobMasterRuntimeSetup.ConfigClustersAsync` / `ConfigAgentsAsync` did `return` instead of `continue` on a cluster
+  with `DisableAutoProvisionSqlSchema()`. `GetAllConfigs()` is a `HashSet` (randomized string hash per process), so
+  which clusters were skipped could change between restarts. Affected Postgres too (its tables come from the base).
+- Fixed by moving the filter into `GetClustersToProvision()` / `GetAgentConfigsToProvision()`; the loops have no skip
+  left. `SqlAutoProvisionSelectionTests` (no DB; order-independent since the result is a filtered set).
+
+#### Hybrid agent connection (Plan0.0.12Alpha item 8 / PlanHybridAgentConnection.md)
+- Format (Hugo): `hybrid:<transport>&&<execution>` for both `RepositoryTypeId` and fingerprint, in
+  `Sdk.Utils.RepoTypeAndFingerprintUtil` (`FormatHybridRepoType` / `FormatHybridFingerprint`, `IsHybrid`,
+  `TryParseHybridRepoType` / `TryParseHybridFingerprint` returning `(Transport, Execution)?`, null when not hybrid or a
+  leg is invalid). Same-provider hybrids (e.g. `hybrid:Postgres&&Postgres`, even the same connection string) are allowed
+  (Hugo).
+- Validation (Hugo: explicit throws):
+  - Provider repo type: `a-z A-Z 0-9 - _`, max 50 chars, never `hybrid:...` (`IsValidSingleRepoTypeId`, one shared
+    message `InvalidSingleRepoTypeIdMessage`). Checked at provider registration (`JobMasterIocRegistrationAttribute`,
+    `ClusterIocRegistration.Add*`, `InvalidOperationException`) and for every agent connection in
+    `ClusterConfigBuilder.Finish` via `AgentConnectionDefinition.Validate()` (`ArgumentException`, same "must be defined"
+    messages as 0.0.11; a hybrid leg's message names the leg). `JobMasterRuntime.ValidateClusterDefinitions` re-runs
+    `IsValid()` as a safety net and checks each stored repo type / fingerprint pair (`RepoTypeAndFingerprintUtil.IsValid`).
+  - Provider fingerprint: no `:` or `&&`, max 100 chars. New ones come from `GenerateSingleFingerprint()` (Guid `"N"`; the
+    SQL resolver used `"D"`); stored 0.0.11 fingerprints still validate and are kept.
+- Public selectors: new `IAgentConnectionProviderSelector` (internal provider setters only; 0.0.11 declared them on
+  `IAgentConnectionConfigSelector`, now only on the base) is the base of `IAgentConnectionConfigSelector` and the argument of `IHybridAgentConnectionConfigSelector.Transport(...)` /
+  `.Execution(...)`. `IAgentConnectionConfigSelector.UseHybrid()` returns the hybrid selector; `AgentConnName` and
+  `ProtectConnectionChanges` stay on the connection selectors only (Hugo). The agent-side provider methods took
+  `IAgentConnectionConfigSelector` in 0.0.11 and are now generic over `IAgentConnectionProviderSelector`, returning the
+  caller's selector type (`UsePostgresForAgent<T>`, `UseMySqlForAgent<T>`, `UseSqlServerForAgent<T>`,
+  `UseNatsJetStream<T>`, agent `UseRavenDb<T>`); `IConnectionOptionsBinder.SetOptions` takes
+  `IAgentConnectionProviderSelector` too. JSON: `AgentConnectionJsonConfig.Transport` / `Execution`
+  (`AgentProviderJsonConfig`) with per-leg `ConnectionOptions`; mixing them with top-level
+  `RepositoryType` / `ConnectionString` / `ConnectionOptions` throws.
+- `AgentConnectionDefinition`: `Transport` / `Execution` (`AgentProviderDefinition`) replace the 0.0.11
+  `AgentRepoType` / `AgentConnString` / `AgentAdditionalConnConfig` setters. A single connection has one provider in both
+  (same instance), so `IsHybrid` is `!ReferenceEquals(Transport, Execution)` and those three are now read-only, computed
+  (hybrid: formatted repo type once both legs are valid, null connection string / config). `UseHybrid()` switches to two
+  providers and throws if a single-provider repo type, connection string or additional config is already set; the
+  single-provider selector setters throw after `UseHybrid()`.
+- `JobMasterAgentConnectionConfig`: `ConnectionString` / `AdditionalConnConfig` moved to two `JobMasterAgentProviderConfig`
+  legs, `TransportConfig` and `ExecutionConfig` (the same instance for a single connection); `IsHybrid` added. Built
+  only through `NewSingle(...)` / `NewHybrid(...)` (constructors are private); `NewHybrid` throws when both legs are the
+  same instance.
+  `JobMasterClusterConnectionConfig.GetAllAgentProviderConfigs()` returns the reference-distinct legs for
+  schema/collation/index provisioning (`SqlJobMasterRuntimeSetup`, `PostgresJobMasterRuntimeSetup`,
+  `RavenDbJobMasterRuntimeSetup`) and `MarkAsReady` locking. New internal `IHasAdditionalConnConfig`, implemented by
+  `JobMasterClusterConnectionConfig` and `JobMasterAgentProviderConfig`, so RavenDB's option readers (`GetCertificate`,
+  `GetCollectionPrefix`, timeouts) exist once instead of once per config type. The RavenDB cluster and agent
+  `UseRavenDb<T>` share one private `AppendConnectionOptions`.
+- IoC: `ClusterConfigBuilder.Finish` registers the provider extensions for every leg
+  (`AgentConnectionDefinition.GetProviderRepoTypes()`). `BucketRunnersFactory` uses `TransportConfig.RepositoryTypeId` for
+  the save-pending / drain-save-pending runners and `ExecutionConfig.RepositoryTypeId` for the execution /
+  drain-processing runners.
+- Dispatcher (Hugo): `AgentJobsDispatcherRepository<TSavePending, TProcessing>` became a non-generic abstract base with two
+  sealed subclasses, `SingleAgentJobsDispatcherRepository` (one raw repo for both roles) and
+  `HybridJobsDispatcherRepository`, built with `new` by `JobMasterClusterAwareComponentFactory.GetRepositoryDispatcher`
+  from the keyed raw `SavingPending:` / `Processing:` repos (`ClusterServiceProviderExtensions`). Removed: the 5 provider
+  `<P>JobsDispatcherRepository` classes, `IAgentJobsDispatcherRepository<TSavePending, TProcessing>`, the keyed dispatcher
+  registration, and the `AddRepositoryDispatcher<TDispatcher, ...>` / `AddRepositoryDispatcher<TDispatcher>` overloads;
+  providers call `AddRepositoryDispatcher<TSavePending, TProcessing>(repoType)`, which registers only the raw repos. The
+  base's unused `AgentConnConfig` field is gone.
+- Fingerprint resolver, same shape (Hugo): provider classes `<P>AgentFingerprintResolver` (which implemented
+  `IAgentFingerprintResolver`) became `<P>AgentRawFingerprintResolver` implementing the new internal
+  `IAgentRawFingerprintResolver` (SQL base, Postgres, MySql, SqlServer, NatsJetStream, RavenDB). New abstract
+  `AgentFingerprintResolver` with sealed `SingleAgentFingerprintResolver` (returns the raw fingerprint unchanged, so
+  stored ones still match) and `HybridAgentFingerprintResolver` (`hybrid:<t>&&<e>`); the factory builds either with
+  `new`. `AddFingerprintResolver<T>` takes an `IAgentRawFingerprintResolver`.
+- Single initialization: `IAgentRawMessagesDispatcherRepository` and `IAgentRawFingerprintResolver` expose
+  `IsInitialized`, and every raw implementation throws `InvalidOperationException` on a second `Initialize`. The two
+  bases skip legs that are already initialized (so Single's shared instance is initialized once) and throw on their own
+  second call. Each check-initialize-set runs under a private `object` lock (netstandard2.0, no `System.Threading.Lock`);
+  the bases lock before calling the raw ones, never the reverse.
+- NATS specifics (Hugo): `NatsJetStreamJobMasterRuntimeSetup.ValidateAsync` enforces `TransientThreshold <= 5 minutes`
+  only when `a.ExecutionConfig.RepositoryTypeId == NatsJetStreamConstants.RepositoryTypeId`. `NatsJetStreamRunnerBase`
+  resolves `TransportConfig` vs `ExecutionConfig` based on `LostRisk()` (`High` = saving/transport, `Medium` =
+  processing/execution) and caps `transientThreshold` passed to `CreateOrUpdateConsumerAsync` at
+  `NatsJetStreamConstants.MaxThreshold` (5 min). `NatsJetStreamConnector.entries` is keyed by
+  `$"{config.Id}::{config.ConnectionString}"` so two NATS legs on different servers don't collide on `config.Id`.
+- Throttlers & batch sizes: `OperationThrottlerSettingsFactory` provides role-specific `GetInternalAgentTransportThrottler`,
+  `GetInternalAgentExecutionThrottler`, `GetAgentTransportMaxBatchSize`, and `GetAgentExecutionMaxBatchSize`, used by
+  `AgentJobsDispatcherService`, `JobMasterSchedulerClusterAware`, and `AssignJobsToBucketsRunner`.
+  `HasJobsAsync` / `CreateBucketAsync` / `DestroyBucketAsync` touch both legs, so instead of a transport slot (0.0.11)
+  they run one at a time per agent connection (new `GetBucketLifecycleThrottler`, capacity 1) and, inside it, wait
+  while either leg's throttler is full (new `OperationThrottler.WaitForCapacityAsync`, take-and-release, never
+  nested, so a single connection's shared throttler is safe) (Hugo). Rare calls (bucket create/destroy, drain checks),
+  so waiting is fine. Their unused `throttler` parameter was removed from `IAgentJobsDispatcherService`.
+- Tests: `HybridAgentConnectionTests` (36 tests, some theories: format / parse, repo type and fingerprint validation,
+  `AgentConnectionDefinition` validation and computed fields, fluent & JSON config incl. `UseRavenDb` on a single
+  connection and on a leg, NATS `TransientThreshold` on transport vs execution, Single / Hybrid dispatcher and resolver,
+  double `Initialize`, `BucketRunnersFactory`, throttler batch sizes). 885/885 unit tests; RavenDB RepoConformance
+  160 passed / 3 skipped.
+
+#### Message data JSON / byte[] reads (Hugo, 2026-11-13)
+- `KeyValueBag.TryGetJson<T>(key, ignoreDeserializationErrors = false)` (also `IReadableMessageData`, `MessageData`):
+  null only for a missing / null value; a failed deserialize or a non-string value throws `InvalidOperationException`
+  with key + `typeof(T).Name` + exception type name. A missing serializer setup is checked before the `try`
+  (`JobMasterMessageJson.EnsureSerializerInitialized`), so it throws even with `ignoreDeserializationErrors: true`. The inner exception is not attached, since a custom serializer may
+  echo the payload in its message. `GetJson<T>` keeps `KeyNotFoundException` for missing only.
+- `KeyValueBag.TryGetEnumValue<TEnum>(key, ignoreInvalidValues = false)` (same rule as JSON, Hugo): parse, then
+  `Enum.IsDefined`; `[Flags]` enums accept any value whose bits all belong to defined members. A comma string on a
+  non-`[Flags]` enum is rejected before `Enum.TryParse`, which would OR it into a possibly defined value. Numbers
+  must be integral (`sbyte`…`ulong`): the old `Convert.ToInt64` rounded `1.6` (in memory, or `decimal` after
+  storage) to 2 and turned `true` / `char` into numbers. A number that doesn't fit the underlying type is rejected
+  instead of truncated (`Enum.ToObject` turns 300 into 44 on a `byte` enum). Invalid →
+  `InvalidOperationException` (key + enum name, no value).
+- `SetJson(key, null)` now returns after setting null. It used to fall through and overwrite the key with the string
+  `"null"`, which the stricter `TryGetJson` would have rejected. 0.0.11 shipped that bug, so jobs and schedules stored
+  by it can hold `"null"`: `TryGetJson` treats a stored JSON `null` literal, or an empty / whitespace value, as
+  missing, so they still run on 0.0.12 workers during a rolling upgrade.
+- `TryGetByteArrayValue` decodes a string value from base64 (`Convert.FromBase64String`, since `TryFromBase64String`
+  isn't on `netstandard2.0`): STJ writes `byte[]` as base64, and `InternalJobMasterSerializer`'s dictionary
+  normalization hands it back as a string. Test with 20,000 seeded random arrays (0–47 bytes, empty included) checks that the DateTime /
+  Guid string normalization never claims a base64 value.
+- `JobMasterMessageJson` made internal. `IJobMasterMessageJsonSerializer` / `DefineJobMasterMessageJsonSerializer` stay
+  public, with XML docs on process-wide scope, same config on every node, no conversion of stored values, and a
+  `TypeNameHandling` / `SerializationBinder` security warning (message data is writable by anyone with schedule or
+  storage access and deserialized on workers).
+- Both `TryDeserialize` overloads removed from `IJobMasterMessageJsonSerializer`, its implementations and the internal
+  facade (Hugo): never called, and `TryGetJson` / the fallback rely on `Deserialize` throwing. Both `Deserialize`
+  overloads stay; their docs now require throwing instead of returning `null` / `default`.
+- 0.0.11's internal `DefaultJobMasterMessageJsonSerializer` (`JobMaster` root) became the public sealed
+  `SystemTextJsonMessageSerializer` in `JobMaster.Serialization` (Hugo: not `Abstractions`, it isn't an extension
+  point; no `JobMaster` prefix, the namespace scopes it, even though MassTransit has a class of the same name in
+  `MassTransit.Serialization`). Documented as
+  fixed-format (STJ default options) so it's safe as a fallback. New ctor flag `rejectUnknownProperties` (reads use
+  `UnmappedMemberHandling.Disallow`; writes unchanged): as the first reader of the step-1 fallback, the lenient
+  default reads new-format (camelCase) JSON as an empty object without throwing, so the chain would never reach the
+  new serializer. Narrow flag instead of `JsonSerializerOptions`, so the write format can't drift. The
+  interface stays in `JobMaster.Abstractions.Serialization`.
+- New `FallbackMessageJsonSerializer` (`JobMaster.Serialization`, `public sealed`):
+  `(primary, params fallbacks)`, nulls rejected. `Serialize` → primary. Reads call each reader's `Deserialize` in
+  order and return the first success. All failed → `InvalidOperationException` listing reader + exception type names, no inner
+  exception (payload). Documented limits: fallback only on throw, so every reader but the last must be strict; and the
+  two-step rolling deploy (strict old, new) then (strict new, old).
+  `FallbackMessageJsonSerializerTests` (fakes) and `SystemTextJsonMessageSerializerTests` (real STJ, including
+  the step-1-node-reads-camelCase scenario).
+
+#### `UseSqlTablePrefixForMaster` / `UseSqlTablePrefixForAgent` removed
+- Deleted from `JobMaster.SqlBase/ConfigExtensions.cs` (obsolete since 0.0.11; replaced by each provider's `tablePrefix`
+  parameter).
+
+#### Startup: validate everything before anything starts (Plan0.0.12Alpha item 19)
+- New `DoStartAsync` order, a `ThrowIfFailed` after each validation step:
+  1. `ValidateClusterDefinitions` + every `IJobMasterRuntimeSetup.ValidateAsync` + static-schedule build (one list);
+  2. `ValidateArchivedStorageAsync`;
+  3. `OnBeforeStartAsync` (provisioning);
+  4. `ValidateFingerprintAsync`;
+  5. save loop → workers → `SaveStaticRecurringSchedules`.
+- `StartAsync` wraps `DoStartAsync` and clears a private `StartupState` instance (validation messages, built static
+  schedules, resolved agent fingerprints keyed by agent connection id) in a `finally`, so a retry after a failed start
+  starts clean (Hugo: one bag instead of values passed between steps).
+- `PreValidation()` → `ValidateClusterDefinitions(errors)`, now first: every throw is `errors.Add` with the same message
+  (Hugo: collect). A missing definition / conn string / repo type skips the rest of that cluster; the two
+  target-cluster pairs (`== null` then `.ClusterMode`) became `else if`.
+- Default-cluster handling stays in `ValidateClusterDefinitions`, which now runs before the `ValidateAsync` validators:
+  single cluster → set as default; none configured → new error (the cluster loops ran zero times and startup used to
+  crash later with a `NullReferenceException` on `Default!`); several without a default → the existing error. Before,
+  the default was only set after `ValidateAsync`, so with one cluster not marked default `ValidateDisabledPriorities`
+  got a null default and skipped attribute-less handlers (false negative, found while planning).
+- New `StaticRecurringScheduleDefinitionsBuilder` (moved from `BootstrapStaticRecurringSchedules`): each error is
+  collected per profile / handler (reflection `Config` exceptions unwrapped); disabled-priority check per definition.
+  New: cross-profile duplicate `(ClusterId, Id)` check (two profiles sharing a `ProfileId` collided and the second
+  `UpsertStatic` replaced the first; inside one collection a repeated `defId` already gets a `-1` suffix, so the
+  collection's own "Duplicate static schedule Id" throw is effectively unreachable). Bootstrap only upserts now.
+- `ValidateArchivedStorageAsync` prevents lost jobs (an archived cluster without a target runs nothing and moves
+  nothing). Read-only, runs **before** provisioning, after the configuration checks passed (Hugo: no fingerprint
+  created until everything else is valid). A not-yet-provisioned schema counts as empty, like `GetFreshClusterConfig`
+  (`SchemaNotProvisioned`: Postgres 42P01, SQL Server 208, MySQL 1146; RavenDB's collection query just returns
+  nothing), via `AnyUnlessSchemaNotProvisionedAsync`. Queries in the private `CheckArchivedHoldsOnlyFinalDataAsync`.
+- `ValidateFingerprintAsync` runs after provisioning (needs the agent tables, and the resolvers are get-or-create), so
+  the only writes before validation completes are schema DDL and each agent's own fingerprint. The protected-change
+  check is an inline `if` (Hugo). It keeps the master's and the agent's fingerprint in `StartupState` so the save loop
+  doesn't call the resolvers again; the unprotected "fingerprint changed, updating" Warn stays in the save loop.
+- The two "not found" throws were unreachable (`ClusterConfigBuilder.Finish` registers a config per cluster and per
+  agent definition): the save loop uses `GetAgentConnectionConfig`, the worker's `Cluster not found` stays as an assert.
+- Known limitation, unchanged: `[...Schedule]` on a nested handler class fails (synthesized ProfileId is `attr:` +
+  FullName, `+` invalid); now reported at startup like any other error.
+- `reminders.md` "validation is still split" removed. Tests: none at helper level (Hugo: test the whole `StartAsync`);
+  whole-startup tests planned in a separate `JobMaster.StartupTests` project.
+
+#### Base64 ids in log text and API `ReferenceId` (Plan0.0.12Alpha item 17)
+- Rule (Hugo): what users read is base64url, pointers/references stay as they are.
+- `GuidBase64Extensions` (`ToBase64`, `ParseFlexible`) moved from `JobMaster.Api` to core as `GuidBase64Util`
+  (`JobMaster.Sdk.Utils`, next to the other `*Util` classes; Hugo), extension methods kept, still internal; the Api
+  uses it via `InternalsVisibleTo`. Meant as the one place for base64 Guid parsing and generation (Hugo). Its tests
+  moved to `UnitTests/Sdk/Utils`, so they now also run against the `netstandard2.0` build. The scenario tests keep
+  their own `GuidBase64` copy: that project references no JobMaster project.
+- Log message text: job / recurring-schedule / execution Guids via `.ToBase64()` (core runners, engine,
+  `WorkerClusterOperations`, `JobSavePendingOperation`, NATS execution runner, RavenDB jobs repo), incl. both
+  `ToLogSummary()`. Exception messages a user reads too: Confirm's "could not be saved on master",
+  `JobMasterDuplicationException`, `JobMasterVersionConflictException` (their `Id` property stays a Guid),
+  `JobExecution` "no outcome". Bucket / worker / agent-connection ids are strings and untouched.
+- Unchanged on purpose: stored log `ReferenceId` (`"N"`, `JobMasterLoggerExtensions`), the runners' `"N"` lookups,
+  lock keys, document ids, SQL. No migration.
+- `ApiLogItem.FromDomain`: `ReferenceId` parsed with `Guid.TryParseExact(..., "N")` → base64, anything else as-is.
+  The raw `ReferenceId` filter stays an exact match (guessing "is this base64?" could hit 22-char non-Guid ids);
+  `ReferenceGuid` already accepts base64. Revisit storing base64 only if that turns out to be a problem (Hugo).
+- Skipped (Hugo): keyword search matching all three Guid forms for logs written before the change.
+- Security (Hugo): `JobRawModel` / `RecurringScheduleRawModel.ToLogSummary()` no longer include `MsgData` / `Metadata`
+  content (first 500 chars before), only `MsgDataLength` / `MetadataLength`. Callers: the Critical "failed to add to
+  queue" logs in `PollingSavePendingJobsRunner` / `PollingSaveRecurringScheduleRunner` and the drain-safeguard log in
+  `JobSavePendingOperation`. Size kept because those failures can be caused by an oversized message. (The "no other log
+  line" check missed the raw agent message logs; fixed 2026-11-13, see above.) Tests: `JobRawModelTests.ToLogSummary_*`.
+- `ParseFlexible` is a plain static call, not a `string` extension (Hugo): `GuidBase64Util.ParseFlexible(value)`;
+  `ToBase64()` stays a `Guid` extension.
+- Tests: `ApiLogItemTests` (Guid → base64, non-Guid unchanged, returned id → `ReferenceGuid` → stored value);
+  `ParseFlexible` accepts `"N"`; Confirm tests assert the base64 id. 812/812 + 771/771 (netstandard) unit tests pass.
+
+#### Archived safety net: late-job sweep to a target cluster (Plan0.0.12Alpha item 18)
+- Why: the scheduler's `GetFresh()` Archived check isn't atomic with the write, so a job/schedule can land on a cluster
+  right after it became Archived. Archived clusters only ran heartbeat + cleanup, so it was stuck forever (reminder
+  "The archived check before a master write can't close the archived race").
+- `JobMasterRuntime`: the unfinished-data check (non-final jobs / schedules → throw) now runs only for an Archived
+  cluster without a target (`modelToSave.TargetActiveClusterId`, configured or stored); with one, the migrate runners
+  move what's left. `TargetActiveClusterId` is never cleared, only replaced (it already was `configured ?? stored`);
+  only the migrate runners read it, on Migrating/Archived. PreValidation now allows `TargetActiveClusterId` on Archived
+  too. After save, on Archived with a target: Warn when this app has no worker for it (all allowed workers act as
+  Coordinator), else Warn when the target isn't configured here.
+- No mode-transition rule (Hugo): Active → Archived is allowed directly; a target means no check, no target means the
+  unfinished-data check. Simpler, and not startup-order dependent (an app without `Mode`, e.g. Api/Dashboard, saves a
+  new cluster as Active first). Note: `MasterClusterConfigurationService.GetFresh()` never returns null (falls back to
+  a default Active model); use `IsSaved()` to tell a new cluster from a saved Active one.
+- New `Archive(string? targetActiveClusterId = null)` (`IClusterConfigSelector`) / `Archive(...)` (standalone, `IClusterStandaloneConfigSelector`; no `Cluster` prefix). Same pass: the
+  standalone selector's other public `Cluster…` methods got unprefixed names, old ones `[Obsolete]` forwarders, same
+  pattern as `IClusterConfigSelector` (Hugo). `ClusterId` and the internal `ClusterConnString` / `ClusterRepoType` /
+  `ClusterAdditionalConfig` unchanged.
+  → `ClusterDefinition.Archive`: sets Archived, and the target only when given (never cleared). `MigrateTo` stays
+  Migrating-only (Hugo).
+- `JobMasterBackgroundAgentWorker.LoadArchivedRunnersAsync` also starts `MigrateJobsRunner` and
+  `MigrateRecurringSchedulesRunner`, plus `MarkBucketAsLostRunner` and `HeldOnMasterDeadlineTimeoutJobsRunner`: jobs
+  already in buckets of dead workers go back to `OnMaster` once their deadline passes and are moved too (Hugo; replaces
+  a "drain through Migrating first" doc note). The deadline runner skips Active/Completing buckets, hence the Lost
+  marking. `AssignedLostBucketsRunner` stays out: no Drain/Full worker on Archived, it would only log Critical.
+- Both runners: count first (`ProbeForAcquireAsync` / `ProbeCountForAcquireAsync`) before acquiring, `Skipped` when 0
+  (also on Migrating). On Archived: no target → Critical; target not configured in this process → Critical (Error on
+  Migrating, unchanged). `SucceedInterval` 2.5 min on Archived, 30 s otherwise.
+- Decisions (Hugo): Archived → Active/Migrating stay allowed; startup Warn + per-sweep Critical rather than a startup
+  throw for an unregistered target or a missing worker.
+- Tests: `ClusterDefinitionArchiveTests`, `MigrateRunnersTests` (count first, Critical vs Error, interval);
+  `RunnerFixture` now exposes the logger mock. Scenario `ArchivedModeTest/PostgresPure` phases 2–3: stray-old
+  Active → Migrating (no Coordinator, 20 jobs + 1 schedule held), stored mode flipped to Archived via SQL (the race),
+  restart as Archived with `MigrateTo` stray-new → moved and run, same ids.
+
+#### Case-insensitive metadata / message-data keys and worker lanes (Plan0.0.12Alpha item 12)
+- Measured first with new RepoConformance tests (`Query_MetadataFilter_KeyIgnoresCase`,
+  `Query_WorkerLane_Filter_IgnoresCase`, jobs + recurring schedules): Postgres (ICU nondeterministic collation
+  `und-u-ks-level2`), MySQL and SQL Server already ignored case for keys and lanes through their column collation.
+  RavenDB ignored case for lane values but not for metadata keys (a key is a field path, case-sensitive in RQL).
+- `KeyValueBag`: `OrdinalIgnoreCase` (Hugo); the `IDictionary` constructor and `ToDictionary()` go through
+  `JobMasterDictionaryUtils.ToCaseInsensitive()` (always a copy; the constructor used to wrap the caller's
+  dictionary). `Merge` and `JobUtil.GetHandlerMetadata` ignore case too.
+- Collision rule (Hugo): plain indexer, so the last value wins and the key keeps its first spelling and position.
+  Remove-then-add was rejected because it can reorder the keys.
+- `Job.FromRecurringSchedule`: `Merge(handler, schedule)`, the schedule wins (Hugo); the old test asserted the
+  opposite on purpose and was flipped.
+- `WriteableMessageData.FromDictionary` added for symmetry (Hugo). The `Writeable` vs `Writable` naming mismatch is
+  left as is for now (Hugo).
+- Lanes: `GET /workers` used `Ordinal` (`/count` used `OrdinalIgnoreCase`); the duplicated filter is now one
+  `WorkersEndpoints.FilterWorkers`. Also `MasterBucketService` lane filter, the bucket-assignment fallback-timer
+  dictionary, the standalone drainer `Distinct`. `PreValidation`'s exact check (rejects two spellings of one lane)
+  stays.
+- RavenDB: the jobs / recurring-schedule metadata projections (`MetadataValues` + 3 typed buckets) store lowercased
+  keys and the filter lowercases its key (`RavenDbFilterClauseBuilder`, opt-in `lowercaseKey`). `MetadataJson`
+  (what's returned) stays verbatim. Generic records unchanged: their `Values` are the stored data, not a projection.
+  Existing documents keep mixed-case projection keys until re-saved; accepted with a ChangeLog note, no migration.
+  Done by hand rather than a Newtonsoft converter: the query side needs lowercasing anyway, and a converter would
+  silently stop working if the client's serializer changed.
+
+#### `EndBefore` exclusive + flaky planner test (Hugo, 2026-10-31)
+- Flaky `RecurringSchedulePlannerTests.PlanNextDates_WithEndBefore_ShouldRespectEndBound` (~1 in 5 full-suite runs,
+  never alone): it took `DateTime.UtcNow` twice; when both calls returned the same tick, `endBefore = base + 2min`
+  exactly, the 12th 10-second occurrence landed on `endBefore`, and the planner kept it (`at > stopAt` only).
+- That exposed the semantics: docs said "after which no jobs fire" (inclusive), the name says "before". Decided
+  (Hugo): exclusive, like the name; `StartAfter` is effectively exclusive too (first run = next occurrence after it).
+  - `PlanNextDates`: with an explicit end, an occurrence equal to it stops the loop (the plain horizon stays inclusive).
+  - Ended check at the top of the planner: `EndBefore <= UtcNow` (was `<`). `RecurringScheduleRawModel`'s status was
+    already exclusive (`EndBefore > now` = active).
+  - Repository `EndBeforeFrom`/`EndBeforeTo` filters are ranges on the stored value, unchanged.
+- Test made deterministic (fixed past dates, no clock reads): exactly 11 dates, the last 10 s before `endBefore`.
+- XML docs (7 `endBefore` params, 3 `EndBefore` properties) and jobmaster-doc `recurring-schedule.md` (new
+  "Start and end dates" section with the 31 Oct example).
+
+#### Unit tests against the `netstandard2.0` builds (Hugo, 2026-10-31)
+- Before: no test ever ran a `netstandard2.0` build (a .NET 8/10 test project always loads the `net8.0`/`net10.0`
+  builds), so the `#if NETSTANDARD2_0` / `!NET6_0_OR_GREATER` paths were compiled but never executed.
+- New `tests/JobMaster.UnitTests.NetStandard` (`net8.0`): compiles the `JobMaster.UnitTests` files (no copies;
+  `Api/` and `Dashboard/` excluded, those packages have no `netstandard2.0` build) and references the 9 libraries with
+  `SetTargetFramework="TargetFramework=netstandard2.0"`. Verified the output's `JobMaster.dll` is the
+  `.NETStandard,Version=v2.0` build. 738/738 pass (782 minus the 44 Api/Dashboard tests). A switch on the existing
+  project was rejected: its Api/Dashboard references would put the `net8.0` `JobMaster.dll` in the same output.
+- `InternalsVisibleTo("JobMaster.UnitTests.NetStandard")` added next to the `JobMaster.UnitTests` grant in the 7
+  libraries that have one. Needs `Microsoft.Extensions.Configuration` (the original gets it through the ASP.NET Core
+  framework reference).
+- Scope: our `netstandard2.0` code on the .NET 8 runtime, not .NET Framework runtime behaviour. The package graph is
+  restored for `net8.0`, so transitive dependencies resolve to their `net8.0` assets (e.g. MSB3277 on
+  `Microsoft.Bcl.AsyncInterfaces` 8 vs 10, harmless on .NET 8 where those types are built in).
+- CI: `unit-tests.yml` runs it as a second test step. Scenario target apps on `netstandard2.0` builds: deferred (Hugo).
+
+#### SqlServer: patched `System.Security.Cryptography.Pkcs` pinned (2026-10-31)
+- `Microsoft.Data.SqlClient` pulls a vulnerable `Pkcs` (8.0.1 on `netstandard2.0` / `net8.0`, 9.0.18 on `net10.0`;
+  GHSA-846f-f764-76mx high, GHSA-2fmv-rv2c-59x7 moderate), reported since the SDK 10 move (transitive audit).
+- Fix: direct `PackageReference` to the latest patch of the same major, per target (8.0.2 / 9.0.22), in
+  `JobMaster.SqlServer.csproj` with a comment to drop it once SqlClient depends on a fixed version. NuGet picks the
+  highest requested version, so the pin wins; `dotnet list package --vulnerable` is clean.
+- SqlClient stays 6.1.4 (Hugo). 7.1.1 isn't a fix on its own: it still supports `netstandard2.0` but pulls the same
+  vulnerable `Pkcs`.
+- Verified: unit tests 782/782 on `net8.0` and `net10.0`; SqlServer RepoConformance 150 passed (3 measurement tests
+  skipped as always).
+- NATS done the same way, see below.
+
+#### NatsJetStream: patched `Microsoft.Bcl.Memory` pinned (2026-10-31)
+- `NATS.Client.*` 2.7.2 pulls `Microsoft.Bcl.Memory` 9.0.0 (GHSA-73j8-2gch-69rq, high) on `netstandard2.0` only (a
+  polyfill the modern targets don't need). Pinned 9.0.22 (latest patch of the same major) under a
+  `netstandard2.0` condition, with a comment to drop it once the NATS client depends on a fixed version. NATS client
+  stays 2.7.2 (no NATS 3 move). The solution now builds with no NU190x warnings.
+- Tests run on `net8.0` / `net10.0`, so they don't execute the `netstandard2.0` build where the pin applies; it's a
+  patch release of a package the client already uses, so the risk is low.
+
+#### SDK 10, `.slnx`, `net10.0` target (Hugo, 2026-10-30)
+- `global.json`: SDK `10.0.100`, `rollForward: latestFeature` (was `8.0.0` / `major`, which resolved to SDK 8 and
+  can't read `.slnx`). Builds still target `net8.0` / `netstandard2.0`; only the tooling moved.
+- `JobMaster.sln` → `JobMaster.slnx` (`dotnet sln migrate`); `.sln` deleted, not kept alongside (two files drift).
+  Both `RepoRootLocator`s (scenario tests, benchmarks) now look for `global.json` instead of `JobMaster.sln`.
+- Targets: the 9 libraries `net10.0;net8.0;netstandard2.0`; Api / Dashboard `net10.0;net8.0`; UnitTests
+  `net8.0;net10.0` (the suite runs on both). Test apps, integration / scenario tests, benchmarks, sample stay
+  `net8.0`. All `#if`s are `NETx_OR_GREATER` / `NETSTANDARD2_0`, so `net10.0` takes the `net8.0` paths unchanged.
+- Package conditions `'$(TargetFramework)' == 'net8.0'` → `!= 'netstandard2.0'` (`CryptoRandom` in `JobMaster`,
+  `Npgsql` 10 in Postgres): with an exact match the `net10.0` build lost them (CS0246).
+- Api keeps `Microsoft.AspNetCore.OpenApi` 8.0.14 + `Swashbuckle.AspNetCore` 7.3.1 on both targets (Hugo). Possible
+  follow-up: OpenApi 10.x on `net10.0`, which needs `Microsoft.OpenApi` 2.x and therefore Swashbuckle 10 + conditional
+  code.
+- CI: every `setup-dotnet` installs the SDK from `global-json-file` plus `8.0.x` (runtime for the `net8.0` tests);
+  `unit-tests.yml` builds `JobMaster.slnx`.
+- Dockerfiles: build stage `sdk:8.0` → `sdk:10.0` (restoring a project that references `net10.0` libraries needs SDK
+  10: NETSDK1045, and `COPY . .` brings `global.json` in). Runtime stages stay `aspnet:8.0`; verified with a real
+  `TargetTestScheduleApp` image build + `--list-runtimes`.
+- New build warnings compared with SDK 8 (an SDK-8 build of the pre-migration commit was the baseline):
+  NU1903 `Microsoft.Bcl.Memory` 9.0.0 (via NatsJetStream) and NU1902/NU1903 `System.Security.Cryptography.Pkcs`
+  8.0.1 / 9.0.11 (via SqlServer): SDK 10 audits transitive packages by default, the dependencies were always there.
+  SYSLIB0057 in `RavenDbConnectionOptionsBinder` (the `X509Certificate2(path, password)` ctor, obsolete from .NET 9;
+  only the `net10.0` build reports it): fixed with `X509CertificateLoader.LoadPkcs12FromFile` under
+  `#if NET9_0_OR_GREATER` (not available on `net8.0` / `netstandard2.0`, which keep the ctor). A RavenDB client
+  certificate is a PFX; a non-PKCS#12 file now fails at load on `net10.0` instead of at the TLS handshake. Covered by
+  the existing `RavenDbConnectionOptionsTests` certificate tests (password-protected PFX), which run on both test
+  targets. Already there before: NU1902 `MySqlConnector` 2.5.0, CS8887 in
+  `NatsJetStreamRunnerBase`.
+- `MySqlConnector` 2.5.0 → 2.6.2 (minor) in all 6 projects that reference it (MySql provider, ScenarioTests, 4
+  benchmarks), so versions don't diverge; `dotnet list package --vulnerable` is clean for the provider.
+- The transitive `System.Security.Cryptography.Pkcs` and `Microsoft.Bcl.Memory` warnings are fixed by pins, see the
+  SqlServer and NatsJetStream entries above.
+
+#### Provider folders split + `JobMaster.RavenDb` → `JobMaster.RavenDB` (Hugo, 2026-10-30)
+- `src/Providers` split into `src/StorageProviders` (SqlBase, Postgres, MySql, SqlServer, RavenDB, NatsJetStream; NATS
+  isn't a DB, hence "storage") and `src/RecurrenceProviders` (Cronos, NCrontab). Same split for the solution folders
+  (`Providers` folder renamed to `StorageProviders`, keeping its GUID; new `RecurrenceProviders`). Namespaces of the
+  moved projects are unchanged.
+- RavenDB project / assembly / package / namespace renamed to `JobMaster.RavenDB` (matches the RavenDB client).
+  Class names (`RavenDb*`) unchanged. `RavenDbConfigKeys.NamespaceUniqueKey` keeps `"JobMaster.RavenDb"` on purpose:
+  it's the identity of the provider's config values in `JobMasterConfigDictionary`, not a display name.
+- Done with per-file `git mv` (156 renames): whole-folder renames were refused because the C# extension's language
+  server held handles in `obj/`. Case-only renames need `git mv` on Windows (`core.ignorecase`), or Linux checkouts
+  keep the old casing. The old `src/Providers/*/obj|bin` folders (gitignored) are left behind until nothing holds them.
+- Updated: the solution, test / sample / benchmark csproj references, 5 Dockerfiles (Linux paths are
+  case-sensitive; verified with a real `TargetTestScheduleApp` image build), `pack-local.sh/.ps1`,
+  `InternalsVisibleTo("JobMaster.RavenDB")`, the `Assembly.LoadFrom("JobMaster.RavenDB.dll")` calls, and the provider
+  map in `ProviderAssemblies`.
+
+#### Provider assembly loaded by repository type (Plan0.0.12Alpha item 21, bug fix)
+- Root cause: with `ConfigFromJson` the provider is only a string, so nothing names a type from e.g.
+  `JobMaster.Postgres`, .NET never loads it, and `JobMasterIocRegistrationAttribute.RegisterProviderExtensionsFor*`
+  found no `[JobMasterIocRegistration]` and returned silently. Verified with a two-run repro (scratchpad copy of
+  `HEAD` vs working tree): `HEAD` leaves the assembly unloaded and registers nothing, even for a typo.
+- New internal `Sdk.Reflection.ProviderAssemblies`: repo type id → first-party assembly name map, `EnsureLoaded`
+  (`Assembly.Load`, then `TypeDiscovery.AddAssembly` like `JobMasterAssemblyDiscovery()`, so every assembly JobMaster
+  loads on purpose goes through one entry point; `FileNotFoundException` = package not installed, left to the error
+  below) and the error hint.
+  Hardcoded because core can't reference the providers' constants; `ProviderAssembliesTests` guards it against each
+  provider's `RepositoryType`.
+- `RegisterProviderExtensionsForMaster/Agent` share one `RegisterProviderExtensions` (were copies): loads first,
+  then throws when nothing registered. Two messages: no provider for the type (install hint, or the list of built-in
+  types) vs a provider without that role (`NatsJetStream` has no `RegisterForMaster`). Repo types were kept
+  case-sensitive here because they're also DI keys; since 2026-11-14 they're normalized at the input instead (see
+  "Repository types ignore case").
+- `ConnectionOptionsBinderFactory.Create` loads the provider before its rescan (`connectionOptions` in JSON is bound
+  before `Finish`).
+
+#### `JobMasterAssemblyDiscovery()` for unreferenced libraries (Plan0.0.12Alpha item 20)
+- Root cause: .NET loads an assembly only when code uses one of its types, and every scan only sees loaded assemblies.
+  Verified with a two-project repro (worker referencing a handler library it never names): the library stays
+  unloaded and `GetJobHandlerTypeFromId("billing")` is null; after `AddAssemblyContaining<BillingHandler>()` it
+  resolves.
+- Public `IJobMasterAssemblyDiscoveryBuilder` (`JobMaster.Abstractions.Ioc`) returned by
+  `services.JobMasterAssemblyDiscovery()` (`JobMaster.Ioc.Extensions.JobMasterAssemblyDiscoveryExtensions`); builder
+  shape chosen by Hugo over an `Action<>` callback. Internal `JobMasterAssemblyDiscoveryBuilder`: rejects null and
+  dynamic assemblies, adds to `TypeDiscovery.AddedAssemblies` (unioned into `GetLoadedAssemblies()`), and
+  `TryAddScoped`s the assembly's handlers.
+- Order independence: the builder registers the assembly's handlers in DI itself (`TryAddScoped`), so it works before
+  or after `AddJobMasterCluster`, and handlers stay container-managed (scoped, disposed with the job's scope).
+  `ClusterConfigBuilder` now uses `TryAddScoped` too: once per handler across clusters, and an app's own registration
+  wins instead of being overridden.
+- `JobDefinitionIdResolver.AssemblyDiscoveryHint` appended to the "not found" / "not registered" errors and the
+  recurring planner's Critical log.
+- Tests: `Ioc/JobMasterAssemblyDiscoveryTests` (6). They use the test assembly itself, not a fake one: the added set is
+  process-wide, and a fake would show its types twice to every other test's scans.
+
+#### One type scan per assembly: `TypeDiscovery` (Plan0.0.12Alpha items 14 and 4)
+- New `JobMaster.Sdk.Reflection.TypeDiscovery` (internal static): `ConcurrentDictionary<Assembly, Type[]>`, filled once per
+  assembly; the assembly list is re-read on every call, so a later-loaded assembly is picked up. Typed shortcuts
+  (Hugo): `typeof(T).GetCachedConcreteTypesOf()` extension (cached per assembly + base type) and
+  `StaticRecurringSchedulesProfileTypes()`.
+  - Safe load: `ReflectionTypeLoadException` → the loadable types; any other exception → the assembly is skipped.
+    No logging (Hugo).
+  - One filter: `!IsDynamic`. The empty-`Location` filter some scans had is dropped, so single-file / in-memory
+    assemblies are scanned too (before, the validator, `ClusterConfigBuilder` and `ConnectionOptionsBinderFactory`
+    skipped them while `JobMasterRuntime` / `GetJobHandlerTypeFromId` didn't).
+  - An extension on `Type` rather than a generic, so it also works for interfaces with `static abstract` members
+    (`IStaticJobDefinitionConfig`), which can't be generic arguments.
+  - `GetJobHandlerTypeFromId` maps every handler on a miss (no per-assembly index or lock); the handler types are
+    cached, so a repeated miss is only dictionary lookups.
+  - `GetJobHandlerTypeFromId` / `GetJobDefinitionId` and the id map moved off the attribute into internal
+    `JobMaster.Sdk.Reflection.JobDefinitionIdResolver` (Hugo); `JobMasterDefinitionIdAttribute` is just the attribute now.
+    `type.GetJobDefinitionId()` is an extension, and `serviceProvider.GetJobHandler(jobDefinitionId)` holds the
+    engine's lookup + DI resolve + checks (same exceptions/messages as before).
+    Tests moved to `Sdk/Reflection/JobDefinitionIdResolverTests`. Dead `JobUtil.JobHandlerTypeMap` removed.
+  - `TypeDiscovery` and `JobDefinitionIdResolver` live in `JobMaster.Sdk.Reflection` (Hugo), not `Sdk.Utils`.
+- Moved onto it: the validator's four scans, `JobMasterRuntime`'s two (profiles, `[RecurringSchedule]`; the
+  disabled-priority one was removed in item 13), `ClusterConfigBuilder` (runtime setups, handlers),
+  `JobMasterIocRegistrationAttribute`, `ConnectionOptionsBinderFactory`, `JobMasterRuntimeSingleton`, `SqlGenerator`.
+  Left: `RecurrenceCompilerFactory` (reads only JobMaster's own assembly).
+- **Item 4:** a `GetJobHandlerTypeFromId` miss maps every handler at once (id from `GetJobDefinitionId`: config →
+  `[JobMasterDefinitionId]` → full name, first wins on a duplicate id, which startup validation rejects). The handler
+  types come from `TypeDiscovery`'s per-assembly cache, so a repeated miss (e.g. item 13's `GetHandlerPriority` on a
+  publisher-only app) is dictionary lookups, not a rescan. Now `internal` (Hugo), and so is `GetJobDefinitionId`: only
+  JobMaster itself and the unit tests called them.
+- Tests: `TypeDiscoveryTests` (fake `Assembly`: one `GetTypes()` per assembly across calls, later assembly picked up,
+  partial load keeps loadable types, failing assembly skipped, concrete filter), `GetJobHandlerTypeFromId` by
+  `[JobMasterDefinitionId]`, by full name, unknown id twice. 765/765 unit tests; one RepoConformance test on all four
+  providers (starts real runtimes).
+
+#### Disabled-priority validation scoped per cluster (Plan0.0.12Alpha item 13)
+- **Startup:** `JobMasterRuntime.PreValidation`'s `DisabledPriorities` loop is gone. It checked every handler in the
+  AppDomain against every cluster with disabled priorities (false positive across clusters) and read only
+  `[JobMasterPriority]` (missed `JobDefinitionConfig.Priority`). Replaced by
+  `DefaultRuntimeValidatorSetup.ValidateDisabledPriorities` (aggregated with the other startup errors):
+  - handlers: `JobUtil.GetClusterId(t, null) ?? default` × `JobUtil.GetJobMasterPriority(t, null)`;
+  - definition-only `IStaticJobDefinitionConfig` (Hugo): `config.ClusterId ?? default` × `config.Priority ?? Medium`
+    (what `Job.New(config)` stores);
+  - unknown cluster ids are skipped (`ValidateClusterIds` reports them).
+- **Dynamic recurring (Hugo: fail at registration):** `JobMasterScheduler.EnsureCanSave(RecurringScheduleRawModel)`
+  checks `Priority ?? JobUtil.GetHandlerPriority(JobDefinitionId)`, the same resolution as each run
+  (`Job.FromRecurringSchedule`). Checked only, not stored. `GetHandlerPriority` returns `null` when the handler isn't
+  in the process (publisher-only config path), so that case keeps the old explicit-only check.
+- **Static recurring bootstrap:** the same `Priority ?? GetHandlerPriority` against each definition's cluster (the
+  schedule's cluster can differ from the handler's own, which startup checks). Reported with the other startup errors,
+  before any worker starts (`StaticRecurringScheduleDefinitionsBuilder`, item 19).
+- `GetHandlerPriority` goes through `GetJobHandlerTypeFromId`, so a miss rescans the assemblies (item 4).
+- Tests: 7 `ValidateDisabledPriorities` unit tests (other-cluster OK, own cluster, default cluster, config priority,
+  inherited attribute, definition-only, unknown cluster), 4 scheduler tests (`Recurring`/`RecurringAsync` throw on a
+  handler-resolved disabled priority without saving; explicit allowed priority wins; resolved priority isn't stored).
+  757/757 unit tests.
+
+#### Cancel from a receipt (Plan0.0.12Alpha item 16)
+- `IJobMasterScheduler.CancelJobAsync(JobScheduleReceipt)` / `CancelRecurringAsync(RecurringScheduleReceipt)`, and
+  `receipt.CancelAsync()` calling them. Cancel by id only finds rows on master, so it returned `false` for an item
+  still on the agent transport, which then ran.
+  - `AcceptedOnTransport`: `IJobMasterSchedulerClusterAware.InsertCancelledJobAsync` /
+    `InsertCancelledRecurringScheduleAsync` insert the receipt's model already cancelled
+    (`BulkInsertIfNotExistsAsync`; no archived check, unlike confirm: a final row is allowed on an archived cluster).
+    Inserted → `true`: every agent save inserts
+    first and treats a duplicate as handled, so the agent's copy never runs. Not inserted (already on master) → the
+    existing cancel by id.
+  - `StoredOnMaster`: the existing cancel by id, on the receipt's `ClusterId`.
+  - New `JobRawModel.MarkAsCancelledBeforeSave()` (final `Cancelled`, bucket/agent/deadline/plan fields cleared):
+    `TryToCancel` only accepts `OnMaster` / `InBucket`. Schedules reuse `TryToCancel` (works from `PendingSave`).
+  - The cancel-by-id fallback keeps `TryToCancel`'s window: it refuses jobs due within ~50s (15s clock-skew padding +
+    30s `OnBoardingWindow` + 5s). Not relaxed here: needs its own check of every unversioned update path.
+  - A late cancel after data retention purged a finished job inserts a `Cancelled` row: final, so it's archived /
+    purged like any other.
+  - Tests: unit (insert-cancelled, routing per receipt status, `JobSavePendingOperation` duplicate → `AlreadyExists`
+    without dispatch), a `Cancelled` job in the RepoConformance finalized-insert test, and `ConfirmOnMasterTest/PostgresPure`
+    extended with a cancel-from-receipt step and a cancel-by-id step (passed, 9m24s): nothing whose cancel returned
+    `true` ran, and master kept it cancelled after the agent's late save.
+
+#### Schedule receipts + ConfirmOnMaster (Plan0.0.12Alpha items 6 and 7)
+- **Receipts (item 6, breaking).** `JobScheduleReceipt` / `RecurringScheduleReceipt` are returned by every
+  `Once*`/`Recurring*` method and extension.
+  - Built from the raw model (`internal readonly model`): fields captured in the constructor, `Context` built on
+    first read and cached. `JobContext` is read-only for users, so sharing the cached instance is safe.
+  - `IJobMasterSchedulerClusterAware.Schedule*` returns `BucketModel?`: the bucket it was handed to, `null` when it
+    went to master (no bucket, Migrating mode). `JobMasterScheduler.ToReceipt` maps that to `StoredOnMaster` /
+    `AcceptedOnTransport`. Hot-path cost: one receipt per call.
+- **ConfirmOnMaster (item 7).** Explicit and on demand only. No automatic confirm (in-memory buffer flushed on a
+  timer + shutdown drain): too complex and not free on the hot path (Hugo).
+  - `JobScheduleReceipt.ConfirmOnMasterAsync()` → `Advanced.ConfirmOnMasterAsync(receipts)`: skips
+    `StoredOnMaster`, groups by cluster (`OrdinalIgnoreCase`), calls
+    `JobMasterSchedulerClusterAware.ConfirmJobsOnMasterAsync` / `ConfirmRecurringSchedulesOnMasterAsync`.
+  - Those throw for an `Archived` cluster (`GetFresh()`), mark jobs `MarkAsHeldOnMaster()` / schedules `Active()`,
+    then partition by `GetMasterMaxBatchSize` and call `BulkInsertIfNotExistsAsync` per partition (new
+    `IMasterJobsService` / `IMasterRecurringSchedulesService` methods over the existing repository methods).
+  - **Why held on master / Active:** every agent save inserts first and treats a duplicate as already handled. If
+    the confirm wins, the agent drops its message, so the row must be one master's runners pick up
+    (`AssignJobsToBucketsRunner` only takes `OnMaster`); a `PendingSave` row would never run.
+  - **Verification:** the repositories' `BulkInsertIfNotExistsAsync` now both return the inserted ids (recurring used
+    to return nothing). Ids not inserted are checked with a new bulk, cluster-scoped `QueryExistingIdsAsync`; any id
+    neither inserted nor existing throws. This covers RavenDB jobs' per-row fallback, which logs and continues on
+    non-concurrency errors.
+  - No late-confirm guard: JobMaster is at-least-once; a confirm after data retention purged a finished job
+    re-inserts it and it runs again. Documented.
+- **Fixed:** `RecurringScheduleSavePendingOperation` rethrew `JobMasterDuplicationException`, so the runner re-queued
+  an already-saved schedule forever. Now logged as a warning and treated as saved, like the job path, and still
+  enqueued on `IRecentlyInsertedRecurringScheduleQueue` so a schedule confirmed before the agent's save keeps the
+  ~1s fast planning path instead of waiting for `ScheduleRecurringJobsRunner`.
+- **Deferred to [reminders.md](reminders.md):** SQL check-then-insert race in `BulkInsertIfNotExistsAsync`
+  (duplicate key / deadlock → rollback; needs a Deadlock + DuplicateKey retry policy), the unscoped
+  `BuildQueryExistingIdsSql`, partitioning in the migrate/archive runners, and RavenDB's swallowed per-row errors in
+  archive-then-delete.
+- **Tests:**
+  - Unit (729/729): receipt status and fields for jobs + recurring; confirm skips `StoredOnMaster`, groups by
+    cluster ignoring case, marks held/Active, partitions, only checks existence for not-inserted ids, throws for
+    missing ids and for an archived cluster; recurring duplicate still enqueued.
+  - RepoConformance (all 4 providers): `BulkInsertIfNotExistsAsync` with non-final rows returns only inserted ids;
+    `QueryExistingIdsAsync`, including `QueryExistingIds_ShouldIgnore_OtherClusterIds`. For that, each fixture now has
+    a second, never-started cluster on the same database/tables (`RT-<Provider>-2`, exposed as
+    `OtherClusterMasterJobs` / `OtherClusterMasterRecurringSchedules`). Mutation-checked: dropping the SQL
+    `cluster_id` filter fails it on all 3 SQL providers. Full suites: SQL 450 passed / 9 skipped, RavenDB 156 / 3.
+  - Scenario `ConfirmOnMasterTest/PostgresPure` (distributed cluster, 2 agent connections): 300 confirmed jobs on
+    master as soon as the request returns and each runs once; a confirmed recurring schedule is on master straight
+    away and keeps firing (no duplicates). Passed (about 7 minutes including image builds).
+
+#### NaturalCron 1.1.0 + prefixed cron string methods (Plan0.0.12Alpha items 2 and 3)
+- **NaturalCron `1.0.1` → `1.1.0`** in `JobMaster.csproj`. It builds with no code change: `TryParse`, `Parse` and `TryGetNextOccurrenceInTz` keep their signatures and the "base time is wall-clock in that tz" semantics.
+  - **PR #8 (shipped in 1.0.2)** makes the *UTC* occurrence methods return `DateTimeKind.Utc`. JobMaster never called those: `NaturalCronCompiledExpr` uses `TryGetNextOccurrenceInTz`, and the planner converts with `TimeZoneUtils.ConvertDateTimeTzToUtc`, which ignores the incoming `Kind`. So the fix doesn't change JobMaster's results. `NaturalCronExprCompilerTests.GetNextOccurrence_NoTzRule_ConvertsToExpectedUtcInstant` pins the equivalent guarantee on JobMaster's own path.
+  - **1.1.0's occurrence fixes do change JobMaster's results** (user-facing note in `ChangeLog.md`). `GetNextOccurrence_EveryWeekdayAtTime_ReturnsThatWeekday` is the regression test. Verified: it fails on 1.0.1 (Tuesday) and passes on 1.1.0.
+    - **No replanning on upgrade, by design.** The planner is watermark-based (`LastPlanCoverageUntil`), so it never plans the same instant twice. Each schedule keeps its already-materialized occurrence on the old date, and the new version plans the next one from there. In a mixed-version cluster, whichever version takes the per-schedule plan lock picks the next date. The `ChangeLog.md` note tells users to upgrade every worker together.
+  - **Not adopted:** custom keywords (`NaturalCronCustomKeywords`) are process-global, so each process that compiles an expression needs them configured. That includes the publisher, at `RecurringAsync`, the static bootstrap and the planner's workers. No JobMaster-side wiring was added.
+- **New `NaturalCronExprExtensions` string overloads:** `NaturalCronRecurringAsync<T>`/`NaturalCronRecurring<T>` compile through `RecurrenceExprCompiler.Compile(NaturalCronExprCompiler.TypeId, ...)`. `NaturalCronAdd<Th>` goes through the collection's `(TypeId, string)` overload, the same path as the existing `NaturalCronExpr` `Add<Th>`. The existing `NaturalCronExpr` overloads keep their names: they don't collide.
+- **`CronosExprExtensions`/`NCrontabExprExtensions`:** new `Cronos*`/`NCrontab*`-prefixed `RecurringAsync`/`Recurring`/`Add`.
+  - **Convention (Hugo):** a method that takes a raw expression string carries its provider's name, since a plain string doesn't say which syntax it is. The NaturalCron string overloads follow the same rule.
+  - **Docs and messages:** don't present the prefixes as a fix for using Cronos and NCrontab together, because nobody is expected to reference both.
+  - The old names are `[Obsolete]` and forward to the prefixed ones in the same class. As decided, the two classes' identical bodies are deduped only once the obsoletes are removed.
+  - **Updated callers:** `TargetTestRecurringApp`'s `StaticCronosProfile`/`StaticNCrontabProfile`, and both packages' NuGet READMEs. Samples and benchmarks didn't use them.
+  - The core `IJobMasterScheduler.Recurring<T>(string expressionTypeId, string expression, ...)` instance methods still win over the obsolete extensions, so `TargetTestRecurringApp/Program.cs`, which imports both namespaces, was unaffected.
+- **Tests:**
+  - `NaturalCronExprCompilerTests` (5), including a `tz Asia/Tokyo` expression evaluated in `America/New_York`: the expression's zone wins, unlike Cronos/NCrontab, which ignore time zones.
+  - `StringExprExtensionsTests` (5): the file imports both cron namespaces, so the prefixed methods are proven to resolve without ambiguity. It also checks that each prefixed method forwards its own provider's compiled expression to the scheduler and collection, that an invalid NaturalCron string throws before reaching the scheduler, and that the obsolete `Add` still forwards.
+  - 709/709 unit tests pass and the full solution builds with 0 errors. Scenario tests were not rerun.
+
+#### Breaking (attribute inheritance)
+- **What changed (Hugo's call):** the classic single-value handler attributes are now read with `inherit: true` in the five `JobUtil.Get*` lookups. Before, `GetCustomAttributes(false)` ignored a base class's `[JobMasterClusterId]`/`[JobMasterPriority]`/`[JobMasterWorkerLane]`/`[JobMasterTimeout]`/`[JobMasterMaxNumberOfRetries]`.
+- **Why:** the old behavior was inconsistent.
+  - `JobDefinitionConfigAttribute` (`TryGetAppliedConfig`) and `[JobMasterDefinitionId]` (`GetJobDefinitionId`) were already inherited.
+  - The validator's "don't mix families" check already read with `GetCustomAttribute` (inherited), while its cluster-id check went through `JobUtil` (not inherited).
+  - None of these attributes set `Inherited = false`, so their declarations already advertised inheritance.
+- **Override semantics:** `AllowMultiple = false` means a derived class's own attribute shadows the base one; reflection returns only the nearest.
+- **Also aligned:** the startup disabled-priority check (item 13) reads the priority through `JobUtil.GetJobMasterPriority`, so an inherited disabled priority fails startup instead of only failing when scheduling.
+- **`[JobMasterMetadata]` is inherited too** (Hugo). It's `AllowMultiple = true`, so `inherit: true` returns base and derived entries together, and the old `.ToDictionary` would have thrown on a shared key.
+  - New `JobUtil.GetHandlerMetadata` walks from the top-most base down to the handler, reading each class's own attributes (cached, `inherit: false`), and overwrites per level. So derived-wins is explicit, not dependent on reflection's unspecified inherited-attribute order (observed derived-first).
+  - The same key twice on a single class still throws, as before.
+  - `Job.New` uses it; recurring occurrences get it through `Job.FromRecurringSchedule` → `Job.New`.
+- **Recurring schedules:** the schedule's own metadata wins over the handler's `[JobMasterMetadata]`, like call metadata for one-off jobs (see item 12, `Job.FromRecurringSchedule`).
+- **Tests:**
+  - `JobUtilTests`: inheritance of all five attributes, derived-overrides-base, metadata inherited, derived metadata key overrides base and unique keys merge, call metadata overrides attribute.
+  - Classic-attribute inheritance mutation-checked in both directions.
+  - 695/695 pass.
+- **Docs:** `jobmaster-doc` `job-configuration.md` "Attributes" section.
+
+#### Fixed (case-insensitive cluster ids)
+- **The mismatch** (found in review): `JobMasterClusterConnectionConfig.TryGet`/`Equals`/`GetHashCode` and the new startup validators all matched cluster ids with `OrdinalIgnoreCase`, and `PreValidation` already rejects ids that differ only in case. But `JobMasterClusterAwareComponentFactories`' dictionary was case-sensitive. So `[JobMasterClusterId("Billing")]` against `"billing"` passed validation, then `OnceNow<T>()` threw `KeyNotFoundException`. For a static profile, `BootstrapStaticRecurringSchedules` threw after `worker.StartAsync()`, the exact failure the new check was meant to prevent.
+- **Decision (Hugo):** make everything case-insensitive rather than tightening the check to `Ordinal`.
+  - The factories dictionary now uses `StringComparer.OrdinalIgnoreCase`. This matters for raw-id callers like the API routes.
+  - The bootstrap `GroupBy` gets the same comparer.
+- **Stored ids must use the configured casing,** not whatever the caller or attribute wrote. Otherwise a job would land in master with `ClusterId = "Billing"`, splitting lock keys (`JobMasterLockKeys`) and static-schedule ids (`{clusterId}:{profile}:{def}`), and missing case-sensitive DB filters (Postgres).
+  - New `internal JobMasterClusterConnectionConfig.ToConfiguredClusterId(id)`: the configured `ClusterId` for a case-insensitive match, else the input unchanged.
+  - It's applied at the two resolution points: `JobMasterScheduler.ResolveClusterId` (all scheduling plus Cancel/Reschedule) and `RecurringScheduleDefinitionCollection.Add` (static schedules).
+- **Tests:** 5 new `JobMasterSchedulerTests` cover attribute, explicit, cancel and static-profile casing, plus a raw factory lookup. Mutation-checked: removing the normalization fails 3 of them, and making the factories case-sensitive fails the factory test. 690/690 pass.
+
+#### Performance
+- **Handler attribute lookups are cached per type** (Hugo's idea), via the new internal `Sdk\Utils\TypeAttributeCacheExtensions`: `GetCachedAttribute<T>(inherit)` and `GetCachedAttributes<T>(inherit)`.
+  - **Hot-path callers** (the reason for it): `JobUtil.GetTimeout/GetWorkerLane/GetClusterId/GetMaxNumberOfRetries/GetJobMasterPriority/GetHandlerMetadata`, `JobDefinitionConfigAttribute.TryGetAppliedConfig` and `JobMasterDefinitionIdAttribute.GetJobDefinitionId`. Startup uses it too; see "Cache scope" below.
+  - **`TryGetConfig`'s static-`Config` reflection** is cached per definition type as well.
+  - **Cache scope:**
+    - **Hugo's call:** every type-attribute lookup goes through the helpers, startup included. That covers the validator (`TryGetConfig`, `GetJobDefinitionId`, `ValidateClusterIds`, the mixing and multiple-definition checks), `RecurringScheduleAttribute` discovery, `RecurringScheduleDefinitionCollection`'s id generation, `GetJobHandlerTypeFromId` and `JobMasterIocRegistrationAttribute` discovery.
+    - Assembly-level lookups (`JobMasterApiAssemblyInfo`) aren't type attributes and are unchanged.
+    - **Why:** the validator and runtime must resolve through the same code to stay in agreement. A plain-reflection copy is how they drift, as with the cluster-id case mismatch.
+    - **Cost:** the AppDomain-wide scans add one entry per scanned type for the process lifetime. A no-match result now shares `Array.Empty<Attribute>()`, so each such entry is just its dictionary slot.
+    - **Semantics:** the single-attribute call sites switched from `GetCustomAttribute<T>()` use attributes with `AllowMultiple = false` or a `!= null` check, so "first match" equals the old result.
+  - **Measured on the real `Job.New(clusterId, handlerType)`** (Release, 200k calls, scratch benchmark against HEAD vs. the working tree):
+
+    | Handler | before | cached |
+    |:---|:---|:---|
+    | classic attributes | 31.5 µs / 9.5 KB | 1.7 µs / 1.3 KB |
+    | `JobDefinitionConfigAttribute` | 7.9 µs / 2.5 KB | 0.95 µs / 0.95 KB |
+    | none | 2.2 µs / 1.5 KB | 0.9 µs / 0.95 KB |
+
+    The remainder is the `Job` allocation itself.
+  - **Semantics:**
+    - The cache is keyed by (type, attribute type, inherit) and filled with the type-filtered `Attribute.GetCustomAttributes(type, attrType, inherit)`.
+    - `JobUtil` reads with `inherit: true` (see "Breaking (attribute inheritance)") and takes the first match.
+    - **Deliberate difference (Hugo's call):** `GetCachedAttribute` returns the first match instead of throwing `AmbiguousMatchException` like `GetCustomAttribute<T>()` did. The old throw ran on the per-job path and inside `GetJobHandlerTypeFromId`'s scan of every handler, so one handler with two `JobDefinitionConfigAttribute` subclasses would break lookup for all jobs. It also crashed `DefaultRuntimeValidatorSetup` mid-scan, through `GetJobDefinitionId` and the mixing check.
+    - The "one definition attribute per handler" rule is now a startup validation error instead: `ValidateSingleDefinitionAttribute`. The mixing check also switched to the non-throwing `GetCachedAttributes<JobDefinitionConfigAttribute>().Any()`.
+  - **Why keyed per attribute type,** not "all attributes per type": `GetCustomAttributes(inherit)` instantiates unrelated attributes.
+    - `GetJobHandlerTypeFromId` scans every handler type, so one handler with a throwing attribute constructor anywhere in the AppDomain (e.g. a test handler's `[JobMasterMaxNumberOfRetries(11)]`) would break handler lookup for every job.
+    - Guarded by `TypeAttributeCacheExtensionsTests.GetCachedAttribute_DoesNotInstantiateUnrelatedAttributes`.
+  - **Sharing caveat:** cached attribute instances are shared, so they must never be mutated after reading. `JobMasterMetadataAttribute` has setters, but only for named attribute arguments, and nothing writes to them outside constructors.
+  - 685/685 unit tests pass.
+
+#### Fixed
+- **Hardcoded defaults replaced with `JobMasterDefaults`** in `JobUtil.GetTimeout`/`GetMaxNumberOfRetries` and `Job.New(clusterId, JobDefinitionConfig, ...)`.
+  - **Timeout:** the last-resort fallback was `TimeSpan.FromMinutes(5)`, while `JobMasterDefaults.DefaultJobTimeout` (which also initializes `ClusterConfigurationModel.DefaultJobTimeout`) is 1 minute. So a null `masterConfig` behaved differently from a freshly defaulted one. It only hits that path when `IMasterClusterConfigurationService.Get()` returns null; in normal scheduling the config is loaded and its `DefaultJobTimeout` wins.
+  - **Retries:** the literal `3` became `JobMasterDefaults.MaxRetryCount`, which has the same value, so nothing changes.
+  - **Tests:** the assertions that pinned 5 min / 3 in `JobUtilTests` and `JobTests` now reference `JobMasterDefaults`, and the two `JobUtilTests` methods were renamed `..._UsesJobMasterDefault`.
+  - Spotted by Hugo.
+
+#### Breaking
+- **`clusterId` moved from last to right after the payload** (Hugo's call; it's an alpha, so documented instead of shimmed). Applies to:
+  - every `Once*`/`Recurring*` overload in `IJobMasterScheduler` and the `TDefinition` overloads of `IJobMasterSchedulerAdvanced`, plus their explicit and implicit implementations in `JobMasterScheduler`;
+  - the config `Recurring`/`RecurringAsync` overloads, which become `(config, expr, data, clusterId, startAfter, endBefore)`;
+  - the `Recurring`/`RecurringAsync` extensions in `NaturalCronExprExtensions`, `TimeSpanIntervalCompiledExprExtensions`, `CronosExprExtensions` and `NCrontabExprExtensions`, including their forwarding calls.
+
+  One canonical order for optional parameters everywhere (Hugo): `clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata`, with `startAfter`/`endBefore` after them where present. As a result:
+  - `JobDefinitionConfig` becomes `(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)`, with the property order matching.
+  - `RecurringScheduleDefinitionCollection.Add` (4 overloads) and the 4 extension `Add<Th>` methods move `metadata` before `startAfter`/`endBefore`, including forwarding calls, crefs and `<param>` order.
+  - The scheduler methods already matched.
+  - Internal constructors and factories (`Job.New`, `StaticRecurringScheduleDefinition`, the private `NewJob`/`NewRecurSchedule`) were left alone.
+
+  Every moved option swapped places with one of a different type, so a non-null positional option gets a compile error. **Exception (found in review, accepted by Hugo):**
+  - **What breaks:** both date parameters moved one slot right, because `clusterId` was inserted before them (scheduler `Recurring*`, extensions, Advanced) or `metadata` moved ahead of them (collection `Add`/`Add<Th>`). An old positional call that passes `null` for `startAfter` and a date for `endBefore`, e.g. `Recurring(config, expr, data, null, end)` or `Add<H>(expr, null, null, null, null, null, end)`, still compiles, but binds `startAfter = end`, `endBefore = null`. The schedule stays idle until the intended end, then runs forever.
+  - **The rejected fix:** putting the dates before `metadata` would have restored their old positions everywhere except the config `Recurring` overload.
+  - **Hugo's call:** keep the canonical order. There are no known external users yet, so the risk is accepted and documented in `ChangeLog.md`. No call site in this repo or the doc examples passes the dates positionally.
+  - **A `startAfter >= endBefore` check wouldn't catch it,** because the swapped call leaves `endBefore` null.
+  - **Not moved:** the config `Once*` overloads already ended in `(msgData, clusterId)`. `Cancel*`/`Reschedule*` take `clusterId` as their only optional parameter.
+  - **Placement:** after the payload, not before it (Hugo's choice between the two), so the common positional `OnceNowAsync<T>(msg)` keeps compiling.
+  - **Misbinding:** the slot `clusterId` took was previously `JobMasterPriority?`, so a non-null positional option now fails to compile. The exception is the date pair: a `null` start plus a positional end date shifts into `startAfter` (see the exception note above).
+  - **Docs:** XML `<param>` order and every `cref` signature were updated to match.
+  - **Verification:** solution plus all target apps build with 0 errors, and nothing in the repo needed a call-site change (every caller uses named arguments). 676/676 unit tests pass.
+  - `tests/TargetTestClusterIdApp` is in `JobMaster.slnx` under `tests`, alongside the other target apps.
+
+#### Added
+- **Cluster id via attribute / `JobDefinitionConfig`** (Plan0.0.12Alpha item 1). The resolution order matches the other job settings: explicit → applied config → individual attribute → default.
+  - **New public API:** `JobMasterClusterIdAttribute` (`Abstractions\Models\Attributes\`), and `JobDefinitionConfig.ClusterId`, as the **first** optional constructor parameter: `(jobDefinitionId, clusterId, priority, workerLane, timeout, maxNumberOfRetries, metadata)`. This is breaking for positional callers; see "Breaking" above.
+  - **`JobUtil.GetClusterId(Type, string?)`:** explicit → `JobDefinitionConfigAttribute.TryGetAppliedConfig(t)?.ClusterId` → `[JobMasterClusterId]`. It returns `null` instead of the default cluster, like `GetWorkerLane`, because each caller has its own default. The scheduler uses `JobMasterClusterConnectionConfig.Default`, while the static-recurring collection uses the `defaultClusterId` it was constructed with.
+  - **`JobMasterScheduler`:**
+    - The cluster is resolved once, in `NewJob`/`NewJob<T>`/`NewRecurSchedule`/`NewRecurSchedule<T>`. The `<T>` overloads use `GetClusterId(typeof(T), clusterId)`; the config overloads use `clusterId ?? config.ClusterId`.
+    - `EnsureCanSave(...)` lost its `string? clusterId` parameter and now reads the resolved `ClusterId` from the raw model.
+    - Bug this avoids: the old signature re-resolved the raw argument, so with an attribute cluster it would have checked disabled priorities and the scheduler component against the **default** cluster while saving to the attribute cluster. `JobMasterSchedulerTests.OnceNow_WhenAttributeClusterHasPriorityDisabled_ValidatesAgainstAttributeCluster` guards it.
+    - `ApplyOverrides` now carries `config.ClusterId` through when it rebuilds the config for per-call overrides.
+  - **Static recurring:** the cluster has to be resolved at registration, because the schedule itself is stored on that cluster. (The static worker lane is resolved at registration too; see "Static worker lane resolved at registration" below.)
+    - `StaticRecurringSchedulesProfileInfo.ClusterId` is now `string?`, with blank normalized to `null`. `null` means "the profile declared none". `IsValid` only checks the format when a value is set. Hugo chose this over a separate `HasExplicitClusterId` flag.
+    - `RecurringScheduleDefinitionCollection.Add(Type, ...)` resolves `ToConfiguredClusterId(JobUtil.GetClusterId(handlerType, profile.ClusterId) ?? defaultClusterId)`, giving profile → handler → default, normalized to the configured casing. That value is passed into `GenerateUniqueId`, which is prefixed with the cluster id, and into `EnsureUnique`. Neither re-derives it from the profile any more.
+    - `JobMasterRuntime.BootstrapStaticRecurringSchedules` now passes the raw profile `ClusterId`, plus the global default, to the collection. The synthesized `[...Schedule]`-attribute profiles pass `clusterId: null`, so handler attributes are respected there too; before, they were hard-wired to the default cluster.
+    - One profile can now span several clusters, so the disabled-priority check and the upsert loop iterate over all definitions grouped by `def.ClusterId` instead of by `cfg.info.ClusterId`.
+  - **`DefaultRuntimeValidatorSetup`:**
+    - `JobMasterClusterIdAttribute` was added to the "don't mix with `JobDefinitionConfigAttribute`" check.
+    - New `internal static ValidateClusterIds(handlerTypes, staticJobDefinitionConfigTypes, configuredClusterIds)` (case-insensitive) covers handler-resolved cluster ids and every `IStaticJobDefinitionConfig` type's `Config.ClusterId`, including publisher-only definitions (Hugo's call).
+    - It is a static helper so it can be unit-tested, because `ValidateAsync` scans every loaded assembly, and the unit-test assembly deliberately contains rule-breaking handlers.
+    - `GetConfig` can't throw there, because a type missing `Config` already returns early further up.
+    - New `internal static ValidateStaticProfileClusterIds(profileTypes, configuredClusterIds)` checks each `IStaticRecurringSchedulesProfile`'s static `ClusterId`. Profiles are discovered the same way as `BootstrapStaticRecurringSchedules`; a blank or unset `ClusterId` is valid.
+      - The gap predates this PR (Hugo spotted it). An unknown profile `ClusterId` passed `info.IsValid`, which only checks the format, and the disabled-priority check skipped it via `SingleOrDefault` → `null`.
+      - It then threw `KeyNotFoundException` from `JobMasterClusterAwareComponentFactories.GetFactory` in the upsert loop. That loop runs in `StartAsync` **after** `worker.StartAsync()`, so the workers kept running, `Started` stayed `false`, and the profile's schedules were never registered.
+      - The tests use plain types with the same static members rather than real profile implementations, so the runtime's assembly-wide profile discovery never picks them up.
+  - **Not changed (decided):** `CancelJob`/`Reschedule`/`CancelRecurring` still fall back to the default cluster. They only receive an id, so there is no handler type to look up. This is documented in the `IJobMasterScheduler` XML docs. The `clusterId` param docs on the scheduling methods, on `IJobMasterSchedulerAdvanced`, and on `IStaticRecurringSchedulesProfile.ClusterId` were updated to the new precedence.
+  - **Static worker lane resolved at registration** (Hugo's change, for consistency with cluster id). `RecurringScheduleDefinitionCollection.Add` now stores `JobUtil.GetWorkerLane(handlerType, profile.WorkerLane)` (profile → handler config/attribute → none) instead of `profile.WorkerLane` alone.
+    - **End result unchanged:** occurrences used to resolve the handler lane per occurrence through `Job.FromRecurringSchedule` → `GetWorkerLane(handler, schedule.WorkerLane)` and now just get the stored lane.
+    - **But the stored static schedule now shows its real lane** in the API and dashboard.
+    - **Nothing is lost:** static schedules are upserted every startup (`RecurringScheduleRawModel.UpdateStaticFromDefinition` sets `WorkerLane`), so a changed handler attribute still takes effect on the next deploy.
+    - **Dynamic `RecurringAsync` schedules are unchanged** and still resolve the lane per occurrence.
+    - Covered by 4 new `RecurringScheduleDefinitionCollectionTests`.
+  - **Tests:**
+    - `JobUtilTests`: `GetClusterId` for each precedence case.
+    - `JobMasterSchedulerTests`: jobs sync/async, dynamic recurring, Advanced `TDefinition` and config-object overloads, override preservation, and resolved-cluster validation.
+    - `RecurringScheduleDefinitionCollectionTests`: profile wins, handler attribute, definition config, default, and one profile spanning clusters.
+    - New `DefaultRuntimeValidatorSetupTests`.
+    - 676/676 unit tests pass.
+    - New scenario test `ClusterIdTest/PostgresPure` with its own `tests/TargetTestClusterIdApp`. A separate app is needed because a cluster id on a handler, definition or profile that isn't configured fails startup validation, so these handlers can't live in the shared schedule or recurring apps.
+      - One container runs a default and a target standalone cluster. These paths pass no `clusterId` and must reach the target cluster: one-off via `[JobMasterClusterId]`, one-off via an Advanced definition's `Config.ClusterId`, static recurring via `[JobMasterClusterId]` + `[TimeSpanIntervalSchedule]`, and static recurring via a profile's `ClusterId`. A plain handler is the control and must reach the default cluster.
+      - Each path is checked two ways: the `JobContext.ClusterId` the handler recorded (`ExecutionRecord` gained an optional `ClusterId`), and the API (jobs and schedules on the expected cluster, none on the other).
+      - Passes. It also fails as expected when `JobUtil.GetClusterId` is mutated to ignore the attribute and definition.
+
 ### JobMaster 0.0.11-alpha.3
 #### Added
 - **`IsAlive` query filter on Hosts** (`JobMaster.Api`) — `ApiHostCriteria.cs` gained `public bool? IsAlive { get; set; }`; `HostsEndpoints.cs`'s `ListHostsAsync`/`CountHostsAsync` both gained `if (criteria.IsAlive.HasValue) hosts = hosts.Where(h => h.IsAlive() == criteria.IsAlive.Value).ToList();` right after `service.QueryAllAsync()`, mirroring `WorkersEndpoints.cs`'s existing `IsAlive` handling on `/workers`/`/workers/count` exactly (same in-memory-filter-after-fetch shape, since `IsAlive()` is a computed property derived from heartbeat data merged at read time — not a persisted column any repository could push a `WHERE` filter down to). Added purely to let `JobMaster.Dashboard`'s Overview page fetch a real offline count instead of a hardcoded `0` (see below).

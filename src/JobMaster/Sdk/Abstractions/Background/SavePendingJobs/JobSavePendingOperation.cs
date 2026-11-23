@@ -1,23 +1,23 @@
 ﻿using JobMaster.Abstractions.Models;
-using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
+using JobMaster.Sdk.Abstractions.Repositories;
 using JobMaster.Sdk.Abstractions.Services.Agent;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Abstractions.Background.SavePendingJobs;
 
 /// <summary>
-/// Encapsulates the logic for persisting a <see cref="JobRawModel"/> that arrives in the
-/// <c>PendingSave</c> state, covering both normal ingestion and bucket-drain scenarios.
-/// <para>
-/// Depending on context, the operation either: holds the job on the master (HeldOnMaster),
-/// short-circuits it directly into the local <c>JobsExecutionEngine</c>, or assigns it to a
-/// selected bucket and publishes it to the agent dispatcher for remote execution.
-/// </para>
+/// Saves <see cref="JobRawModel"/>s that arrive in the <c>PendingSave</c> state on master, for normal ingestion and
+/// bucket drains. A job is held on master or assigned to a bucket (<see cref="AssignAsync"/>); once inserted, an
+/// assigned job is dispatched through <see cref="IWorkerClusterOperations.BulkDispatchJobsToBucketAsync"/> (this
+/// process's engine for that bucket, or a publish). Polling runners save leased batches
+/// (<see cref="SaveAndAckAsync"/>), the NATS runner one message at a time (<see cref="SaveAndDispatchAsync"/>).
 /// </summary>
 internal class JobSavePendingOperation
 {
@@ -29,6 +29,14 @@ internal class JobSavePendingOperation
     protected readonly IJobMasterLogger logger;
     protected readonly IJobMasterBackgroundAgentWorker backgroundAgentWorker;
     private readonly string bucketId;
+
+    /// <summary>
+    /// How long a save-pending batch is leased (jobs and recurring schedules): room for the whole batch, 0.5 s per
+    /// message, at least 1.5 min, at most 10 min. A lease that runs out only costs duplicate work; a long one keeps a
+    /// stopped worker's messages hidden longer.
+    /// </summary>
+    internal static TimeSpan LeaseFor(int bufferSize) =>
+        JobMasterMathUtil.Clamp(TimeSpan.FromSeconds(bufferSize * 0.5), TimeSpan.FromSeconds(90), TimeSpan.FromMinutes(10));
 
     /// <summary>
     /// Initializes the operation by resolving all required cluster-aware services from the
@@ -54,313 +62,199 @@ internal class JobSavePendingOperation
         this.bucketId = bucketId;
     }
     
+    
     /// <summary>
-    /// Persists a job as <c>HeldOnMaster</c> during a bucket drain, with a fallback safe-guard
-    /// that re-enqueues the job via the agent dispatcher if the primary upsert fails.
+    /// Holds the jobs of a draining bucket's processing queue on master. A processing job is always on master already,
+    /// so this only updates it, and only where master's version still matches the message's copy: a job that changed
+    /// since (taken back by its deadline and given to another bucket, finished, deleted) is left as is. Partitioned by
+    /// the master batch size; a failed partition is logged and the others still run. Returns false when a partition
+    /// failed; the job is still on master either way, and the deadline check brings back one left in this bucket.
     /// </summary>
-    /// <remarks>
-    /// On a duplication exception the job is considered already handled and
-    /// <see cref="SaveDrainResultCode.AlreadyExists"/> is returned without re-enqueuing.
-    /// On any other failure the safe-guard attempts to reassign the job to the current bucket
-    /// and dispatch it; if that also fails the result is <see cref="SaveDrainResultCode.Failed"/>.
-    /// </remarks>
-    /// <param name="job">The job to persist.</param>
-    /// <returns>
-    /// <see cref="SaveDrainResultCode.Success"/> on a clean persist;
-    /// <see cref="SaveDrainResultCode.AlreadyExists"/> on duplication;
-    /// <see cref="SaveDrainResultCode.FailedSafeGuarded"/> when the primary write failed but the
-    /// safe-guard dispatch succeeded; or <see cref="SaveDrainResultCode.Failed"/> when both paths fail.
-    /// </returns>
-    public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainWithSafeGuardAsync(JobRawModel job)
+    public async Task<bool> HoldDrainedJobsOnMasterAsync(IList<JobRawModel> jobs)
     {
-        try
+        var allSucceed = true;
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(backgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
         {
-            job.MarkAsHeldOnMaster();
-            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-            return SaveDrainResultCode.Success;
-        }
-        catch (JobMasterDuplicationException e)
-        {
-            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, job.Id, exception: e);
-            return SaveDrainResultCode.AlreadyExists;
-        }
-        catch
-        {
-            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id);
             try
             {
-                var bucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
-                if (bucket is null)
+                var partitionJobs = partition.ToList();
+                foreach (var job in partitionJobs)
                 {
-                    logger.Critical($"No bucket available to reassign job during drain safeguard. Job: {job.ToLogSummary()}", JobMasterLogCategory.Job, job.Id);
-                    return SaveDrainResultCode.Failed;
+                    job.MarkAsHeldOnMaster();
                 }
-                job.AssignSavePendingJobToBucket(bucket);
-                await agentJobsDispatcherService.AddSavePendingJobAsync(job);
-                return SaveDrainResultCode.FailedSafeGuarded;
+
+                var updated = await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.BulkUpdateAsync(partitionJobs));
+                var updatedIds = new HashSet<Guid>(updated.Select(x => x.Id));
+                foreach (var job in partitionJobs.Where(x => !updatedIds.Contains(x.Id)))
+                {
+                    logger.Warn($"Drain: job not held on master, it changed on master since it was sent to bucket {bucketId}.", JobMasterLogCategory.Job, job.Id);
+                }
             }
             catch (Exception e)
             {
-                logger.Critical("Failed to add job to queue", JobMasterLogCategory.Job, job.Id, exception: e);
-                return SaveDrainResultCode.Failed;
+                logger.Error($"Drain: failed to hold a partition of {partition.Count} job(s) on master for bucket {bucketId}. Continuing with the remaining partitions.",
+                    JobMasterLogCategory.Bucket, bucketId, exception: e);
+                allSucceed = false;
             }
         }
+
+        return allSucceed;
     }
-    
+
     /// <summary>
-    /// Persists a job as <c>HeldOnMaster</c> during a bucket drain using an insert (not upsert).
-    /// Unlike <see cref="AddPendingSaveJobForDrainWithSafeGuardAsync"/>, this method has no
-    /// fallback re-dispatch path on failure.
+    /// Decides where a pending-save job goes and applies it to the job: held on master (past
+    /// <paramref name="cutOffDate"/>, or no bucket available; returns null) or assigned to a bucket (returned).
+    /// A job in the onboarding window goes to <paramref name="currentRunnerBucket"/> while its engine on this worker
+    /// has room: it then starts from memory, with no processing message to write and pull. Otherwise the bucket
+    /// <c>SelectBucketAsync</c> picks. Which engine or queue then runs it is the dispatch's choice.
     /// </summary>
-    /// <param name="job">The job to persist.</param>
-    /// <returns>
-    /// <see cref="SaveDrainResultCode.Success"/> on a clean insert;
-    /// <see cref="SaveDrainResultCode.AlreadyExists"/> on duplication;
-    /// or <see cref="SaveDrainResultCode.Failed"/> on any other error.
-    /// </returns>
-    public async Task<SaveDrainResultCode> AddPendingSaveJobForDrainAsync(JobRawModel job)
+    public async Task<BucketModel?> AssignAsync(BucketModel? currentRunnerBucket, JobRawModel job, DateTime cutOffDate)
     {
-        try
-        { 
-            job.MarkAsHeldOnMaster();
-            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(job));
-            return SaveDrainResultCode.Success;
-        }
-        catch (JobMasterDuplicationException dupE)
-        {
-            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, job.Id, exception: dupE);
-            return SaveDrainResultCode.AlreadyExists;
-        }
-        catch (Exception ex)
-        {
-            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id, exception: ex);
-            return SaveDrainResultCode.Failed;
-        }
-    }
-    
-    /// <summary>
-    /// Transitions a job to <c>HeldOnMaster</c> via an upsert during bucket drain processing.
-    /// A version-conflict exception is treated as a benign race — another runner already claimed
-    /// or updated the job — and returns <see cref="SaveDrainResultCode.Skipped"/>.
-    /// </summary>
-    /// <param name="job">The job to mark as held on master.</param>
-    /// <returns>
-    /// <see cref="SaveDrainResultCode.Success"/> on a clean upsert;
-    /// <see cref="SaveDrainResultCode.Skipped"/> on a version conflict;
-    /// or <see cref="SaveDrainResultCode.Failed"/> on any other error.
-    /// </returns>
-    public async Task<SaveDrainResultCode> HeldOnMasterProcessingForDrainAsync(JobRawModel job)
-    {
-        try
+        if (job.GetSafeNextPlanExecutionAt() > cutOffDate)
         {
             job.MarkAsHeldOnMaster();
-            await backgroundAgentWorker.WorkerClusterOperations.ExecWithRetryAsync(o => o.Upsert(job));
-            return SaveDrainResultCode.Success;
+            return null;
         }
-        catch (JobMasterVersionConflictException)
-        {
-            // Conflict means another runner already claimed or updated this job — treat as handled.
-            return SaveDrainResultCode.Skipped;
-        }
-        catch
-        {
-            logger.Error("Failed to hold job on master", JobMasterLogCategory.Job, job.Id);
-            return SaveDrainResultCode.Failed;
-        }
-    }
-    
-    /// <summary>
-    /// Main ingestion path for a <c>PendingSave</c> job. Routes the job through one of three paths
-    /// depending on its next-execution time, the local engine state, and bucket availability:
-    /// <list type="number">
-    ///   <item>
-    ///     <description>
-    ///       <b>HeldOnMaster (future job):</b> if <c>NextPlanExecutionAt</c> is beyond
-    ///       <paramref name="cutOffDate"/> the job is inserted directly as <c>HeldOnMaster</c>
-    ///       so the master scheduler can re-evaluate it later.
-    ///     </description>
-    ///   </item>
-    ///   <item>
-    ///     <description>
-    ///       <b>Short-circuit into local engine:</b> if the job falls within the onboarding window,
-    ///       the owning bucket is active, and the local <c>JobsExecutionEngine</c> has onboarding
-    ///       capacity, the job is persisted and injected directly — skipping the NATS publish round-trip.
-    ///     </description>
-    ///   </item>
-    ///   <item>
-    ///     <description>
-    ///       <b>Bucket selection + publish:</b> a target bucket is selected via
-    ///       <see cref="IMasterBucketsService"/>, the job is assigned and persisted, then published
-    ///       to the agent dispatcher for remote execution.
-    ///     </description>
-    ///   </item>
-    /// </list>
-    /// In all failure paths the job is held on master so it can be reassigned on the next cycle.
-    /// </summary>
-    /// <param name="jobRaw">The pending-save job to process.</param>
-    /// <param name="cutOffDate">
-    /// The horizon beyond which a job's next execution is considered too far in the future to
-    /// dispatch now; jobs past this threshold are held on master.
-    /// </param>
-    /// <returns>
-    /// An <see cref="AddSavePendingResult"/> describing the outcome code, the bucket the job was
-    /// assigned to (if any), the published message ID (if dispatched), and any exception that
-    /// occurred during a failed publish attempt.
-    /// </returns>
-    public async Task<AddSavePendingResult> AddSavePendingJobAsync(JobRawModel jobRaw, DateTime cutOffDate)
-    {
         
-        // Insert-first flow to avoid extra read; duplicate key maps to AlreadyExists
-        if (jobRaw.GetSafeNextPlanExecutionAt() > cutOffDate)
+        var engine = 
+            currentRunnerBucket is null ? null :
+            backgroundAgentWorker.GetEngine(currentRunnerBucket!.Id);
+        if (engine is not null && job.IsWithinOnboardingWindow() && engine.HasOnBoardingAvailability())
         {
-            jobRaw.MarkAsHeldOnMaster();
-            try
-            {
-                await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
-            }
-            catch (JobMasterDuplicationException ex)
-            {
-                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
-                return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
-            }
-            catch (Exception ex)
-            {
-                logger.Error("Failed to persist job as HeldOnMaster.", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
-                throw;
-            }
-            
-            return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
-        }
-
-        var currentBucket = masterBucketsService.Get(bucketId, JobMasterConstants.BucketFastAllowDiscrepancy);
-        var engine = backgroundAgentWorker.GetEngine(bucketId);
-        
-        logger.Debug($"AddSavePendingJobAsync: JobId={jobRaw.Id} " +
-                     $"BucketId={bucketId} " +
-                     $"IsOnBoarding={jobRaw.IsWithinOnboardingWindow()} " +
-                     $"EngineAvailable={engine is not null} " +
-                     $"BucketStatus={currentBucket?.Status} " +
-                     $"OnBoardingAvailability={engine?.CountOnBoardingAvailability()} " +
-                     $"NextPlanAt={jobRaw.NextPlanExecutionAt:O} " +
-                     $"CutOffDate={cutOffDate:O}");
-        
-        // Short-circuit: Try to inject directly into JobsExecutionEngine if on same worker
-        if (engine is not null && 
-            jobRaw.Status == JobMasterJobStatus.PendingSave && 
-            currentBucket?.Status == BucketStatus.Active &&
-            jobRaw.IsWithinOnboardingWindow() && 
-            engine.HasOnBoardingAvailability())
-        {
-            jobRaw.AssignToBucket(currentBucket);
-            
-            logger.Debug("Short-circuit: adding directly into the execution engine", JobMasterLogCategory.Job, jobRaw.Id);
-            try
-            {
-                await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
-            }
-            catch (JobMasterDuplicationException e)
-            {
-                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-                return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
-            }
-
-            try
-            {
-                // Force is safe here; capacity was already checked above.
-                var result = await engine.TryOnBoardingJobAsync(jobRaw, forceIfNoCapacity: true);
-                if (result == OnBoardingResult.Accepted)
-                {
-                    logger.Debug("Short-circuit accepted", JobMasterLogCategory.Job, jobRaw.Id);
-                    return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId, null);
-                }
-
-                if (result == OnBoardingResult.MovedToMaster)
-                {
-                    return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster, bucketId, null);
-                }
-                
-                if (result == OnBoardingResult.Cancelled)
-                {
-                    // Engine already updated the job state (cancelled or failed by recurring schedule check).
-                    return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
-                }
-
-                // TooEarly, Busy, Invalid: job is persisted as InBucket but engine rejected it.
-                // Hold on master so the master runner can reassign it on the next cycle.
-                logger.Error($"Unexpected OnBoardingResult. JobId={jobRaw.Id} Result={result}", JobMasterLogCategory.Job, jobRaw.Id);
-                jobRaw.MarkAsHeldOnMaster();
-                await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-                return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMaster);
-            }
-            catch (Exception e)
-            {
-                logger.Error("Short-circuit failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-                jobRaw.MarkAsHeldOnMaster();
-                await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-                return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: bucketId, exception: e);
-            }
+            job.AssignToBucket(currentRunnerBucket!);
+            return currentRunnerBucket!;
         }
 
         var selectedBucket = await masterBucketsService.SelectBucketAsync(
             JobMasterConstants.BucketFastAllowDiscrepancy,
-            jobRaw.Priority,
-            jobRaw.WorkerLane);
+            job.Priority,
+            job.WorkerLane);
 
-        if (selectedBucket == null)
+        if (selectedBucket is null)
         {
-            jobRaw.MarkAsHeldOnMaster();
+            job.MarkAsHeldOnMaster();
+            return null;
+        }
+
+        job.AssignToBucket(selectedBucket);
+        return selectedBucket;
+    }
+
+    /// <summary>
+    /// Saves one pending-save job (already assigned by <see cref="AssignAsync"/>) on master and, if this call inserted
+    /// it into a bucket, dispatches it. Returns whether the job is on master now (inserted or already there); false
+    /// means not saved, so the caller keeps its message.
+    /// </summary>
+    public async Task<bool> SaveAndDispatchAsync(JobRawModel job, BucketModel? targetBucket)
+    {
+        var result = await masterJobsService.BulkInsertIfNotExistsAsync(new List<JobRawModel> { job });
+        if (result[BulkInsertStatus.Unknow].Contains(job.Id))
+        {
+            return false;
+        }
+
+        // An AlreadyInserted job was saved, and dispatched, before.
+        if (targetBucket is not null && result[BulkInsertStatus.Inserted].Contains(job.Id))
+        {
             try
             {
-                await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
+                await workerClusterOperations
+                    .BulkDispatchJobsToBucketAsync(backgroundAgentWorker, targetBucket, new List<JobRawModel> { job });
             }
-            catch (JobMasterDuplicationException e)
+            catch (Exception e)
             {
-                logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-                return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
+                // Only log here: the dispatch holds a failed job back on master itself.
+                logger.Error($"Failed to dispatch job to bucket {targetBucket.Id}.", JobMasterLogCategory.Job, job.Id, exception: e);
             }
-            
-            return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterNoBucket);
         }
 
-        jobRaw.AssignToBucket(selectedBucket);
-        try
+        return true;
+    }
+
+    /// <summary>
+    /// Saves leased pending-save jobs on master, acks the messages of every job now on master, then dispatches the
+    /// ones this call inserted to the bucket they were assigned to (<paramref name="bucketAssignments"/>; a job not in
+    /// it is held on master). A message not acked (job not confirmed on master) is leased again later.
+    /// Returns false when a partition failed or a job wasn't confirmed on master (the others are still saved), so the
+    /// runner counts the tick as failed.
+    /// </summary>
+    public async Task<bool> SaveAndAckAsync(
+        BucketModel currentRunnerBucket,
+        IList<(JobRawModel Job, string AckKey)> leasedJobs,
+        IDictionary<Guid, BucketModel> bucketAssignments)
+    {
+        var allSaved = true;
+        // The same job can arrive in more than one message: save it once, ack all of them.
+        var ackKeysByJobId = leasedJobs.ToLookup(x => x.Job.Id, x => x.AckKey);
+        var jobs = leasedJobs.Select(x => x.Job).DistinctBy(x => x.Id).ToList();
+
+        var maxBatchSize = OperationThrottlerSettingsFactory.GetMasterMaxBatchSize(backgroundAgentWorker.ClusterConnConfig.ClusterId);
+        foreach (var partition in jobs.Partition(maxBatchSize))
         {
-            await workerClusterOperations.ExecWithRetryAsync(o => o.AddAsync(jobRaw), millisecondsToDelay: 25);
-        }
-        catch (JobMasterDuplicationException e)
-        {
-            logger.Warn("Job duplication detected", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-            return new AddSavePendingResult(AddSavePendingResultCode.AlreadyExists);
-        }
-        catch (Exception e)
-        {
-            logger.Error("Failed to insert job; holding on master", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-            jobRaw.MarkAsHeldOnMaster();
-            await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
+            try
+            {
+                if (!await SaveAndAckPartitionAsync(currentRunnerBucket, partition.ToList(), bucketAssignments, ackKeysByJobId))
+                {
+                    allSaved = false;
+                }
+            }
+            catch (Exception e)
+            {
+                // The partition's unacked messages are leased again; continue with the rest of the batch.
+                logger.Error($"Failed to save a partition of {partition.Count} pending job(s) for bucket {bucketId}. Continuing with the remaining partitions.",
+                    JobMasterLogCategory.Bucket, bucketId, exception: e);
+                allSaved = false;
+            }
         }
 
-        try
+        return allSaved;
+    }
+
+    // Returns whether every job of the partition is on master (none Unknow).
+    private async Task<bool> SaveAndAckPartitionAsync(
+        BucketModel currentRunnerBucket,
+        IList<JobRawModel> jobs,
+        IDictionary<Guid, BucketModel> bucketAssignments,
+        ILookup<Guid, string> ackKeysByJobId)
+    {
+        var bulkResult = await masterJobsService.BulkInsertIfNotExistsAsync(jobs);
+
+        // On master now (inserted or already there), so master owns the job: its messages can go even if the
+        // dispatch below fails (the dispatch holds a failed publish back on master; the bucket's deadline check
+        // catches the rest). Unknow ones are leased again.
+        var ackKeys = bulkResult[BulkInsertStatus.Inserted]
+            .Concat(bulkResult[BulkInsertStatus.AlreadyInserted])
+            .SelectMany(id => ackKeysByJobId[id])
+            .ToList();
+        await agentJobsDispatcherService.AckSavePendingJobsAsync(currentRunnerBucket.AgentConnectionId, bucketId, ackKeys);
+
+        // Only what this call inserted is dispatched: an AlreadyInserted job was saved, and dispatched, before.
+        var insertedIds = new HashSet<Guid>(bulkResult[BulkInsertStatus.Inserted]);
+        var jobsByBucket = jobs
+            .Where(x => insertedIds.Contains(x.Id) && bucketAssignments.ContainsKey(x.Id))
+            .GroupBy(x => bucketAssignments[x.Id].Id);
+
+        foreach (var bucketJobs in jobsByBucket)
         {
-            logger.Debug($"Publishing job {jobRaw.Id} to agent {jobRaw.AgentWorkerId} bucket {selectedBucket.Id}", JobMasterLogCategory.Job, jobRaw.Id);
-            
-            var publishedMessageId = await agentJobsDispatcherService.AddForProcessingAsync(jobRaw);
-            
-            return new AddSavePendingResult(AddSavePendingResultCode.Published, bucketId: selectedBucket.Id, publishedMessageId: publishedMessageId);
+            var targetBucket = bucketAssignments[bucketJobs.First().Id];
+            var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentExecutionMaxBatchSize(targetBucket.AgentConnectionId.IdValue);
+            foreach (var partition in bucketJobs.ToList().Partition(agentMaxBatchSize))
+            {
+                try
+                {
+                    // Short-circuits into the bucket's engine when it runs in this process, publishes otherwise.
+                    await workerClusterOperations.BulkDispatchJobsToBucketAsync(backgroundAgentWorker, targetBucket, partition.ToList());
+                }
+                catch (Exception e)
+                {
+                    // Only log here: the dispatch holds a failed partition back on master itself.
+                    logger.Error($"Failed to dispatch a partition of {partition.Count} job(s) to bucket {targetBucket.Id}. Continuing with the remaining partitions.",
+                        JobMasterLogCategory.Bucket, targetBucket.Id, exception: e);
+                }
+            }
         }
-        catch (PublishOutcomeUnknownException ex)
-        { 
-            logger.Error("Publish outcome unknown for job; will hold on master", JobMasterLogCategory.Job, jobRaw.Id, exception: ex);
-            jobRaw.MarkAsHeldOnMaster();
-            await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-            return new AddSavePendingResult(AddSavePendingResultCode.HeldOnMasterPublishedUnknown, bucketId: selectedBucket.Id, publishedMessageId: ex.SupposedPublishedId, exception: ex);
-        }
-        catch (Exception e)
-        { 
-            logger.Error("Failed to add job to processing", JobMasterLogCategory.Job, jobRaw.Id, exception: e);
-            jobRaw.MarkAsHeldOnMaster();
-            await workerClusterOperations.ExecWithRetryAsync(o => o.UpsertAsync(jobRaw), millisecondsToDelay: 25);
-            return new AddSavePendingResult(AddSavePendingResultCode.PublishFailed, bucketId: selectedBucket.Id, exception: e);
-        }
+
+        return bulkResult[BulkInsertStatus.Unknow].Count == 0;
     }
 }

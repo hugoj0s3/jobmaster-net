@@ -2,6 +2,7 @@ using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -189,12 +190,13 @@ public class DeleteOldFinalJobsRunnerTests
                 receivedExecutions = executions;
                 receivedLogs = logs;
             })
-            .Returns(Task.CompletedTask);
+            .ReturnsAsync((IList<JobRawModel> jobs, IList<JobExecution> _, IList<LogItem> _) => jobs.Select(j => j.Id).ToList());
 
         var archiveFactory = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
         archiveFactory.SetupGet(x => x.ClusterId).Returns(archiveClusterId);
         archiveFactory.Setup(x => x.GetComponent<IMasterJobIntakeService>()).Returns(intakeService.Object);
         JobMasterClusterAwareComponentFactories.AddFactory(archiveClusterId, archiveFactory.Object);
+        JobMasterClusterConnectionConfig.Create(archiveClusterId, "repo", "conn"); // target's batch size lookup
 
         var runner = new DeleteOldFinalJobsRunner(f.Worker.Object);
         var result = await runner.OnTickAsync(CancellationToken.None);
@@ -208,4 +210,55 @@ public class DeleteOldFinalJobsRunnerTests
         f.JobsRepository.Jobs.Should().BeEmpty();
         f.LogsRepository.Logs.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task OnTickAsync_WhenArchiveDoesNotConfirmAJob_ShouldKeepThatJobAndItsLogs()
+    {
+        // Must never delete from the source what isn't confirmed on the archive: the archive may have failed
+        // to save it without throwing (RavenDB's per-row fallback).
+        var f = RunnerFixture.Create();
+        var archiveClusterId = $"archive-{JobMasterRandomUtil.NewGuid4():N}";
+        f.ClusterConfig.Config = ConfigWithTtl(TimeSpan.FromDays(7));
+        f.ClusterConfig.Config.TargetArchivedClusterId = archiveClusterId;
+
+        var confirmedJob = RunnerFixture.FinalizedJob(DateTime.UtcNow.AddDays(-30));
+        var unconfirmedJob = RunnerFixture.FinalizedJob(DateTime.UtcNow.AddDays(-30));
+        f.JobsRepository.Jobs.Add(confirmedJob);
+        f.JobsRepository.Jobs.Add(unconfirmedJob);
+
+        var confirmedLog = JobExecutionLog(f.ClusterId, confirmedJob.Id);
+        var unconfirmedLog = JobExecutionLog(f.ClusterId, unconfirmedJob.Id);
+        f.LogsRepository.Logs.Add(confirmedLog);
+        f.LogsRepository.Logs.Add(unconfirmedLog);
+
+        var intakeService = new Mock<IMasterJobIntakeService>(MockBehavior.Strict);
+        intakeService
+            .Setup(x => x.BulkInsertIfNotExistsAsync(
+                It.IsAny<IList<JobRawModel>>(), It.IsAny<IList<JobExecution>>(), It.IsAny<IList<LogItem>>()))
+            .ReturnsAsync(new List<Guid> { confirmedJob.Id });
+
+        var archiveFactory = new Mock<IJobMasterClusterAwareComponentFactory>(MockBehavior.Strict);
+        archiveFactory.SetupGet(x => x.ClusterId).Returns(archiveClusterId);
+        archiveFactory.Setup(x => x.GetComponent<IMasterJobIntakeService>()).Returns(intakeService.Object);
+        JobMasterClusterAwareComponentFactories.AddFactory(archiveClusterId, archiveFactory.Object);
+        JobMasterClusterConnectionConfig.Create(archiveClusterId, "repo", "conn"); // target's batch size lookup
+
+        var runner = new DeleteOldFinalJobsRunner(f.Worker.Object);
+        var result = await runner.OnTickAsync(CancellationToken.None);
+
+        result.Status.Should().Be(TicketResultStatus.Success);
+        f.JobsRepository.Jobs.Should().ContainSingle().Which.Id.Should().Be(unconfirmedJob.Id);
+        f.LogsRepository.Logs.Should().ContainSingle(l => l.Id == unconfirmedLog.Id);
+    }
+
+    private static LogItem JobExecutionLog(string clusterId, Guid jobId) => new()
+    {
+        ClusterId = clusterId,
+        Id = JobMasterRandomUtil.NewGuid7(),
+        Level = JobMasterLogLevel.Error,
+        Message = "test",
+        Category = JobMasterLogCategory.JobExecution,
+        ReferenceId = jobId.ToString("N"),
+        TimestampUtc = DateTime.UtcNow.AddDays(-30),
+    };
 }

@@ -1,7 +1,8 @@
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using FluentAssertions;
-using JobMaster.RavenDb;
+using JobMaster.RavenDB;
+using JobMaster.Sdk.Abstractions.Ioc.Definitions;
 using JobMaster.Sdk.Ioc.Setup;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -119,6 +120,21 @@ public class RavenDbConnectionOptionsTests : IDisposable
         Binder().SetOptions(agentSel, new Dictionary<string, object> { ["collectionPrefix"] = "Custom_" });
 
         cluster.clusterDefinition.AgentConnections[0].AgentAdditionalConnConfig!
+            .TryGetValue<string>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CollectionPrefixKey)
+            .Should().Be("Custom_");
+    }
+
+    [Fact]
+    public void UseRavenDb_Standalone_SetsRepoTypeConnStringAndPrefix()
+    {
+        var clusterDefinition = new ClusterDefinition();
+        var standalone = new ClusterStandaloneConfigBuilder(clusterDefinition);
+
+        standalone.UseRavenDb("Urls=http://localhost:8080;Database=Test", collectionPrefix: "Custom_");
+
+        clusterDefinition.RepoType.Should().Be(RavenDbRepositoryConstants.RepositoryTypeId);
+        clusterDefinition.ConnString.Should().Be("Urls=http://localhost:8080;Database=Test");
+        clusterDefinition.AdditionalConnConfig!
             .TryGetValue<string>(RavenDbConfigKeys.NamespaceUniqueKey, RavenDbConfigKeys.CollectionPrefixKey)
             .Should().Be("Custom_");
     }

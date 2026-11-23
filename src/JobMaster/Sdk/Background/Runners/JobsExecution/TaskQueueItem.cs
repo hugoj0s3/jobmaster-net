@@ -1,4 +1,5 @@
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Background.Cancellation;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 
@@ -8,22 +9,25 @@ namespace JobMaster.Sdk.Background.Runners.JobsExecution;
 /// <typeparam name="T">The type of value associated with the task</typeparam>
 internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
 {
-    private readonly CancellationTokenSource cancellationTokenSource;
     private readonly Func<CancellationToken, Task> runAsync;
     private readonly Action? afterAction;
-    private readonly TimeSpan cancellationTimeout;
     private bool started;
 
-    public TaskQueueItem(string id, T value, TimeSpan timeout, Func<CancellationToken, Task> action, Action? afterAction = null, TimeSpan? cancellationTimeout = null)
+    public TaskQueueItem(
+        StopControl stopControl,
+        string id, 
+        T value, 
+        TimeSpan timeout, 
+        Func<CancellationToken, Task> action,
+        Action? afterAction = null)
     {
         Id = id;
         Value = value;
+        StopControl = stopControl;
         runAsync = action;
         Task = Task.CompletedTask; // initialized so status checks work pre-start
         Timeout = timeout;
-        this.cancellationTimeout = cancellationTimeout ?? timeout;
         EnqueuedAt = DateTime.UtcNow;
-        cancellationTokenSource = new CancellationTokenSource();
         this.afterAction = afterAction;
     }
     
@@ -45,9 +49,10 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
     public DateTime? StartedAt { get; set; }
     
     /// <summary>
-    /// Cancellation token source for aborting the task
+    /// The job's stop control, a child of its runner's: aborted by <see cref="Abort"/> or with the runner, worker or runtime.
+    /// It has no timer: a job's timeout is the handler's own.
     /// </summary>
-    public CancellationTokenSource CancellationTokenSource => cancellationTokenSource;
+    public StopControl StopControl { get; }
     
     /// <summary>
     /// Checks if the task has exceeded its timeout duration
@@ -60,14 +65,11 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
     public TimeSpan GetElapsedTime() => DateTime.UtcNow - EnqueuedAt;
 
     /// <summary>
-    /// Aborts the task by cancelling its cancellation token
+    /// Aborts the task through its stop control's abort token.
     /// </summary>
     public void Abort()
     {
-        if (!cancellationTokenSource.IsCancellationRequested)
-        {
-            cancellationTokenSource.Cancel();
-        }
+        StopControl.Abort();
     }
     
     public void Start()
@@ -75,11 +77,8 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
         if (started) return;
         started = true;
         StartedAt = DateTime.UtcNow;
-        if (cancellationTimeout > TimeSpan.Zero)
-        {
-            try { cancellationTokenSource.CancelAfter(cancellationTimeout); } catch { /* ignore */ }
-        }
-        Task = runAsync(cancellationTokenSource.Token);
+        // The abort token, like the item's own source before: a stop lets the job run on.
+        Task = runAsync(StopControl.AbortToken);
 
         if (afterAction != null)
         {
@@ -94,7 +93,8 @@ internal class TaskQueueItem<T> : ITaskQueueItem<T>, IDisposable
             disposable.Dispose();
         }
         
-        cancellationTokenSource?.Dispose();
-        Task.Dispose();
+        // Not Task.Dispose(): it throws on a task still running (shutdown disposes those), and a task needs no
+        // disposing unless its wait handle was used.
+        StopControl.Dispose();
     }
 }

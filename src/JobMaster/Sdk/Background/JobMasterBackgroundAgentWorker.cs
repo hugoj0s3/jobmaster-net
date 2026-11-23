@@ -14,6 +14,7 @@ using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners;
 using JobMaster.Sdk.Background.Runners.BucketLifeCycleControl;
 using JobMaster.Sdk.Background.Runners.CleanUpData;
@@ -44,7 +45,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public IJobMasterRuntime? Runtime => JobMasterRuntimeSingleton.Instance;
 
-    public bool StopRequested { get; internal set; }
+    public bool GracefulStopRequested { get; internal set; }
 
     public int TransferBatchSize { get; private set; } = 0;
 
@@ -53,13 +54,13 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public AgentWorkerMode Mode => agentWorkerSnapshot.Mode;
 
-    public CancellationTokenSource CancellationTokenSource { get; private set; } = new CancellationTokenSource();
+    public StopControl StopControl { get; private set; } = StopControl.None;
 
     public IBucketRunnersFactory BucketRunnersFactory { get; private set; } = null!;
 
-    public IServiceProvider ServiceProvider { get; private set; } = null!;
+    public IServiceProvider MainServiceProvider { get; private set; } = null!;
 
-    public IList<IJobMasterRunner> Runners { get; private set; } = new List<IJobMasterRunner>();
+    public RunnerRegistry Runners { get; } = new RunnerRegistry();
     public bool IsOnWarmUpTime()
     {
         return SkipWarmUpTime == false && Runtime?.IsOnWarmUpTime() == true;
@@ -74,8 +75,8 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public bool IsInitialized { get; private set; } = false;
 
-    public DateTime? StopRequestedAt { get; private set; }
-    public TimeSpan? StopGracePeriod { get; private set; }
+    public DateTime? GracefulStopRequestedAt { get; private set; }
+    public TimeSpan? GracefulStopPeriod { get; private set; }
 
     public double ParallelismFactor => agentWorkerSnapshot.ParallelismFactor;
 
@@ -86,7 +87,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     // Services
     private IMasterBucketsService masterBucketsService = null!;
-    private IMasterAgentWorkersService masterAgentWorkersService = null!;
 
     private IJobMasterLogger logger = null!;
 
@@ -101,7 +101,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     private void InitializeDependencies()
     {
         masterBucketsService = this.GetClusterAwareService<IMasterBucketsService>();
-        masterAgentWorkersService = this.GetClusterAwareService<IMasterAgentWorkersService>();
         BucketRunnersFactory = this.GetClusterAwareComponent<IBucketRunnersFactory>();
         WorkerClusterOperations = this.GetClusterAwareComponent<IWorkerClusterOperations>();
 
@@ -122,7 +121,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         }
         else
         {
-            // PreValidation guarantees every non-Coordinator worker on an Active cluster resolves to
+            // ValidateClusterDefinitions guarantees every non-Coordinator worker on an Active cluster resolves to
             // a registered agent connection, so agentWorkerSnapshot.AgentConnectionId is never null here.
             await StartNonCoordinatorAsync(agentWorkerSnapshot.AgentConnectionId!);
         }
@@ -153,11 +152,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         MarkInitialized();
     }
 
-    // Archive clusters only ever hold finalized data (enforced at startup) and never dispatch or
-    // schedule jobs, so the bucket-assignment/scheduling coordinator runners would be permanent
-    // no-ops here — only heartbeat (already started above) and the deletion/cleanup runners apply.
+    // Archive clusters never dispatch or schedule jobs, so the bucket-assignment/scheduling coordinator
+    // runners would be permanent no-ops here — only heartbeat, the deletion/cleanup runners and the
+    // migrate runners apply. The migrate runners move jobs/schedules that landed after the switch to
+    // Archived (the scheduler's mode check isn't atomic with its write) to the stored TargetActiveClusterId.
+    // Jobs still in buckets of dead workers get there too: their buckets are marked Lost and the deadline
+    // runner returns them to OnMaster. Lost buckets aren't drained (no Drain/Full worker on Archived).
     // Reached for both Coordinator and Full workers on an Archived cluster (Full behaves exactly
-    // like Coordinator there — see PreValidation's ActsAsCoordinator check — so there's no agent
+    // like Coordinator there — see ValidateClusterDefinitions' ActsAsCoordinator check — so there's no agent
     // connection to load and nothing to drain either way).
     private async Task LoadArchivedRunnersAsync()
     {
@@ -175,6 +177,18 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var deleteOldLogsRunner = new DeleteOldLogsRunner(this);
         await deleteOldLogsRunner.StartAsync();
 
+        var markBucketAsLostRunner = new MarkBucketAsLostRunner(this);
+        await markBucketAsLostRunner.StartAsync();
+
+        var processDeadlineTimeoutRunner = new HeldOnMasterDeadlineTimeoutJobsRunner(this);
+        await processDeadlineTimeoutRunner.StartAsync();
+
+        var migrateJobsRunner = new MigrateJobsRunner(this);
+        await migrateJobsRunner.StartAsync();
+
+        var migrateRecurringSchedulesRunner = new MigrateRecurringSchedulesRunner(this);
+        await migrateRecurringSchedulesRunner.StartAsync();
+
         MarkInitialized();
     }
 
@@ -182,7 +196,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
     // (the online-migration scenario), so the full coordinator runner set is reused as-is —
     // AssignJobsToBucketsRunner/ScheduleRecurringJobsRunner are already self-gated to ClusterMode.Active
     // internally, so they no-op here rather than needing to be excluded. Coordinator-mode workers have
-    // no agent connection (enforced by PreValidation) and stop after that; Drain/Full workers continue
+    // no agent connection (enforced by ValidateClusterDefinitions) and stop after that; Drain/Full workers continue
     // on to drain out any pre-existing buckets, at a pace matching how busy that mode already is
     // elsewhere (fast for Drain, slower for Full, same intervals used on an Active cluster).
     private async Task LoadMigrateRunnersAsync()
@@ -417,13 +431,14 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var workerName = workerDefinition.WorkerName;
         var workerLane = workerDefinition.WorkerLane;
 
+        // Guaranteed by ClusterConfigBuilder.Finish (config created per cluster definition); kept as an assert.
         var clusterConfig = JobMasterClusterConnectionConfig.Get(clusterId, includeNotReady: true);
         if (clusterConfig == null)
         {
             throw new ArgumentException($"Cluster '{clusterId}' not found");
         }
 
-        // JobMasterRuntime.PreValidation already guarantees Coordinator workers have no
+        // JobMasterRuntime.ValidateClusterDefinitions already guarantees Coordinator workers have no
         // AgentConnectionName and every other mode has one that resolves to a registered
         // connection, so there's nothing left to validate here — just resolve it.
         var agentConfig = !string.IsNullOrEmpty(agentConnName) ?
@@ -446,7 +461,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
         var background = new JobMasterBackgroundAgentWorker()
         {
             ClusterConnConfig = clusterConfig,
-            ServiceProvider = serviceProvider,
+            MainServiceProvider = serviceProvider,
             BucketQty = new ReadOnlyDictionary<JobMasterPriority, int>(workerDefinition.BucketQty),
             TransferBatchSize = workerDefinition.TransferBatchSize,
             BucketBufferSize = workerDefinition.BucketBufferSize,
@@ -464,6 +479,10 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StartAsync()
     {
+        // Before any runner starts: each runner links its own stop control to this one.
+        var runtime = Runtime ?? throw new InvalidOperationException($"Worker {AgentWorkerId} has no runtime to get its stop control from.");
+        StopControl = runtime.StopControlFactory.ForWorker(this);
+
         var clusterMode = ResolveClusterMode();
 
         if (clusterMode == ClusterMode.Migrating)
@@ -482,11 +501,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public async Task StopImmediatelyAsync()
     {
-        foreach (var runner in new List<IJobMasterRunner>(this.Runners))
-        {
-            await runner.StopAsync();
-        }
-
         lock (this.mutex)
         {
             if (this.StopImmediatelyRequested)
@@ -495,43 +509,60 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
 
             this.StopImmediatelyRequested = true;
-
-            foreach (var bucket in this.BucketsCreatedOnRuntime)
-            {
-                if (bucket.Status == BucketStatus.Lost) continue;
-
-                WorkerClusterOperations.MarkBucketAsLost(bucket);
-            }
-
-            var buckets = this.masterBucketsService.QueryAllNoCache();
-            foreach (var bucket in buckets)
-            {
-                if (bucket.AgentWorkerId != this.AgentWorkerId) continue;
-                if (bucket.Status == BucketStatus.Lost) continue;
-
-                WorkerClusterOperations.MarkBucketAsLost(bucket);
-            }
         }
 
-        await RunnerDelayUtil.DelayAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+        // The worker's own stop reaches every runner's loop at once (linked); each runner's stop then waits for its
+        // cleanup. None: the worker never started, so it has no runners.
+        if (!this.StopControl.IsNone)
+        {
+            await this.StopControl.StopAsync();
+        }
 
-        await this.masterAgentWorkersService.DeleteWorkerAsync(this.AgentWorkerId);
+        await Task.WhenAll(this.Runners.Snapshot().Select(StopRunnerAsync));
+
+        await MarkOwnedBucketsAsLostAsync();
     }
 
-    public void RequestStop()
+    private async Task StopRunnerAsync(IJobMasterRunner runner)
     {
+        try
+        {
+            await runner.StopAsync();
+        }
+        catch (Exception e)
+        {
+            // One runner's failed cleanup mustn't skip the others or the bucket hand-over.
+            logger.Error($"Runner {runner.GetType().Name} failed to stop.", JobMasterLogCategory.AgentWorker, this.AgentWorkerId, exception: e);
+        }
+    }
 
-        var workerModel = this.masterAgentWorkersService.GetWorker(this.AgentWorkerId);
-        if (workerModel == null)
+    // The worker is going away: hand every bucket it still owns to another worker now (draining ones included, so
+    // their drain restarts elsewhere) instead of waiting for the dead-worker detection.
+    private async Task MarkOwnedBucketsAsLostAsync()
+    {
+        var buckets = await this.masterBucketsService.QueryAllNoCacheAsync();
+        foreach (var bucket in SelectBucketsToHandOver(buckets, this.AgentWorkerId))
         {
-            this.StopRequestedAt = DateTime.UtcNow;
-            this.StopGracePeriod = JobMasterConstants.DefaultGracefulStopPeriod;
+            await WorkerClusterOperations.MarkBucketAsLostAsync(bucket);
         }
-        else
+    }
+
+    internal static IList<BucketModel> SelectBucketsToHandOver(IEnumerable<BucketModel> buckets, string agentWorkerId) =>
+        buckets
+            .Where(b => b.AgentWorkerId == agentWorkerId)
+            .Where(b => b.Status is not (BucketStatus.Lost or BucketStatus.ReadyToDelete))
+            .ToList();
+
+    public void RequestGracefulStop(TimeSpan? period = null)
+    {
+        if (period < JobMasterConstants.MinGracefulStopPeriod)
         {
-            this.StopRequestedAt = workerModel.StopRequestedAt ?? DateTime.UtcNow;
-            this.StopGracePeriod = workerModel.StopGracePeriod ?? JobMasterConstants.DefaultGracefulStopPeriod;
+            throw new ArgumentOutOfRangeException(nameof(period), period,
+                $"A graceful stop period must be at least {JobMasterConstants.MinGracefulStopPeriod}.");
         }
+
+        this.GracefulStopRequestedAt = DateTime.UtcNow;
+        this.GracefulStopPeriod = period ?? JobMasterConstants.DefaultGracefulStopPeriod;
 
         foreach (var bucket in this.BucketsCreatedOnRuntime)
         {
@@ -542,7 +573,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             }
         }
 
-        this.StopRequested = true;
+        this.GracefulStopRequested = true;
     }
 
     public IJobsExecutionEngine? GetEngine(string bucketId)
@@ -550,7 +581,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
        return jobsExecutionEngineFactory.Get(bucketId);
     }
 
-    public IJobsExecutionEngine GetOrCreateEngine(JobMasterPriority priority, string bucketId)
+    public IJobsExecutionEngine GetOrCreateEngine(StopControl runnerStopControl, JobMasterPriority priority, string bucketId)
     {
         var bucket = BucketsCreatedOnRuntime.FirstOrDefault(b => b.Id == bucketId);
         if (bucket is null)
@@ -558,7 +589,7 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
             throw new ArgumentException("Bucket not found");
         }
 
-        return jobsExecutionEngineFactory.GetOrCreate(this, priority, bucketId);
+        return jobsExecutionEngineFactory.GetOrCreate(this, runnerStopControl, priority, bucketId);
     }
 
     public void RegisterRuntimeBucket(BucketModel bucket)
@@ -581,6 +612,6 @@ internal class JobMasterBackgroundAgentWorker : IDisposable, IJobMasterBackgroun
 
     public void Dispose()
     {
-        this.CancellationTokenSource.Dispose();
+        this.StopControl.Dispose();
     }
 }

@@ -1,5 +1,7 @@
 using System.Reflection;
 using JobMaster.Sdk.Abstractions.Ioc;
+using JobMaster.Sdk.Reflection;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Ioc.Setup;
 
@@ -20,70 +22,77 @@ internal sealed class JobMasterIocRegistrationAttribute : Attribute
     /// <summary>
     /// Registers all services from modules matching the specified repository type
     /// </summary>
-    public static void RegisterProviderExtensionsForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId) 
-    { 
+    public static void RegisterProviderExtensionsForMaster(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
+    {
+        RegisterProviderExtensions(clusterIocRegistration, repositoryType, clusterId, RegisterForMasterMethod, "master");
+    }
+
+    public static void RegisterProviderExtensionsForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
+    {
+        RegisterProviderExtensions(clusterIocRegistration, repositoryType, clusterId, RegisterForAgentMethod, "agent");
+    }
+
+    private static void RegisterProviderExtensions(
+        IClusterIocRegistration clusterIocRegistration,
+        string repositoryType,
+        string clusterId,
+        string registerMethodName,
+        string role)
+    {
+        RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryType);
+        repositoryType = ProviderAssemblies.ToKnownRepositoryType(repositoryType);
+        ProviderAssemblies.EnsureLoaded(repositoryType);
+
+        var providerFound = false;
+        var registered = 0;
         foreach (var type in GetRegistrationTypes())
         {
             try
             {
                 // Check repository type
-                var repoTypeProp = type.GetProperty(RepositoryTypeProperty, 
+                var repoTypeProp = type.GetProperty(RepositoryTypeProperty,
                     BindingFlags.Public | BindingFlags.Static);
-                
-                if (repoTypeProp?.GetValue(null)?.ToString() != repositoryType)
+
+                var candidateRepoType = repoTypeProp?.GetValue(null)?.ToString();
+                if (!string.IsNullOrEmpty(candidateRepoType))
+                {
+                    RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(candidateRepoType!);
+                }
+
+                if (candidateRepoType != repositoryType)
                     continue;
 
+                providerFound = true;
+
                 // Invoke the appropriate registration method
-                var method = type.GetMethod(RegisterForMasterMethod, 
+                var method = type.GetMethod(registerMethodName,
                     BindingFlags.Public | BindingFlags.Static);
-                
+
                 if (method == null)
                     continue;
-                
+
                 method.Invoke(null, new object[] { clusterIocRegistration, clusterId });
+                registered++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not InvalidOperationException)
             {
                 throw new InvalidOperationException(
                     $"Failed to register services from {type.FullName}", ex);
             }
         }
-    }
-    
-    public static void RegisterProviderExtensionsForAgent(IClusterIocRegistration clusterIocRegistration, string repositoryType, string clusterId)
-    {
-        foreach (var type in GetRegistrationTypes())
-        {
-            try
-            {
-                // Check repository type
-                var repoTypeProp = type.GetProperty(RepositoryTypeProperty, 
-                    BindingFlags.Public | BindingFlags.Static);
-                
-                if (repoTypeProp?.GetValue(null)?.ToString() != repositoryType)
-                    continue;
 
-                // Invoke the appropriate registration method
-                var method = type.GetMethod(RegisterForAgentMethod, 
-                    BindingFlags.Public | BindingFlags.Static);
-                
-                if (method == null)
-                    continue;
-                
-                method.Invoke(null, new object[] { clusterIocRegistration, clusterId });
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException(
-                    $"Failed to register services from {type.FullName}", ex);
-            }
+        if (registered == 0)
+        {
+            throw new InvalidOperationException(providerFound
+                ? $"The '{repositoryType}' provider can't be used as {role} (cluster '{clusterId}')."
+                : $"No JobMaster provider found for repository type '{repositoryType}' (cluster '{clusterId}'). " +
+                  ProviderAssemblies.MissingProviderHint(repositoryType));
         }
     }
 
     private static IEnumerable<Type> GetRegistrationTypes()
     {
-        return AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a => a.GetTypes())
-            .Where(t => t.GetCustomAttribute<JobMasterIocRegistrationAttribute>() != null);
+        return TypeDiscovery.AllTypes()
+            .Where(t => t.GetCachedAttribute<JobMasterIocRegistrationAttribute>() != null);
     }
 }

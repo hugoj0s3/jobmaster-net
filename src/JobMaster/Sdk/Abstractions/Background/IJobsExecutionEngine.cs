@@ -4,7 +4,7 @@ namespace JobMaster.Sdk.Abstractions.Background;
 
 /// <summary>
 /// Controls the full job-execution lifecycle within a single bucket: staging, onboarding,
-/// concurrent task queuing, and graceful shutdown. One engine instance exists per one active bucket.
+/// concurrent task queuing, and stopping. One engine instance exists per one active bucket.
 /// </summary>
 internal interface IJobsExecutionEngine
 {
@@ -47,7 +47,7 @@ internal interface IJobsExecutionEngine
     Task<OnBoardingResult> TryOnBoardingJobAsync(JobRawModel payload, bool forceIfNoCapacity = false);
 
     /// <summary>
-    /// Graceful-shutdown entry point. Collects all jobs still held in the onboarding buffer,
+    /// Stop entry point. Collects all jobs still held in the onboarding buffer,
     /// the task waiting queue, and the staging list, marks them as
     /// <see cref="JobMasterJobStatus.OnMaster"/>, and bulk-updates the master so they can be
     /// recovered by the next available bucket. Errors during bulk update are logged but not

@@ -16,7 +16,7 @@ public class StaticCronosProfile : IStaticRecurringSchedulesProfile
 
     public static void Config(RecurringScheduleDefinitionCollection collection)
     {
-        collection.Add<RecurringTickHandler>(
+        collection.CronosAdd<RecurringTickHandler>(
             "*/6 * * * *",
             metadata: WritableMetadata.New().SetStringValue("TestIdentifier", TestIdentifier));
     }

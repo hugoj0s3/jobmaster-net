@@ -4,6 +4,7 @@ using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Repositories;
@@ -11,6 +12,7 @@ using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
 using JobMaster.Sdk.Ioc.Markups;
 using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
 
 namespace JobMaster.Sdk.Services.Master;
 
@@ -82,6 +84,27 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
                 throw;
             }
         });
+    }
+
+    public async Task<IDictionary<BulkInsertStatus, IList<Guid>>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    {
+        if (jobs.Count == 0)
+        {
+            return new Dictionary<BulkInsertStatus, IList<Guid>>
+            {
+                [BulkInsertStatus.Inserted] = new List<Guid>(),
+                [BulkInsertStatus.AlreadyInserted] = new List<Guid>(),
+                [BulkInsertStatus.Unknow] = new List<Guid>(),
+            };
+        }
+
+        return await operationThrottler.ExecAsync(() => DoBulkInsertIfNotExistsAsync(jobs));
+    }
+
+    public async Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds)
+    {
+        if (jobIds.Count == 0) return new List<Guid>();
+        return await operationThrottler.ExecAsync(() => masterJobsRepository.QueryExistingIdsAsync(jobIds));
     }
 
     public async Task UpdateAsync(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
@@ -218,8 +241,31 @@ internal class MasterJobsService : JobMasterClusterAwareComponent, IMasterJobsSe
         if (jobs.Count == 0) return Array.Empty<JobRawModel>();
         return await (throttler ?? operationThrottler).ExecAsync(() => masterJobsRepository.BulkUpdateAsync(jobs));
     }
-    
-    
+
+    private async Task<IDictionary<BulkInsertStatus, IList<Guid>>> DoBulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+    {
+        var distinctJobs = jobs.DistinctBy(j => j.Id).ToList();
+        var insertedJobIds  = await masterJobsRepository.BulkInsertIfNotExistsAsync(distinctJobs, Array.Empty<JobExecution>());
+
+        var notInsertedIds = distinctJobs.Where(x => !insertedJobIds.Contains(x.Id)).Select(x => x.Id).ToList();
+        var existingIds = notInsertedIds.Count > 0
+            ? await masterJobsRepository.QueryExistingIdsAsync(notInsertedIds)
+            : new List<Guid>();
+
+        var unknownIds = notInsertedIds.Where(id => !existingIds.Contains(id)).ToList();
+        if (unknownIds.Count > 0)
+        {
+            logger.Warn($"{unknownIds.Count} job(s) not confirmed on master after bulk insert: {string.Join(", ", unknownIds.Select(id => id.ToBase64()))}", JobMasterLogCategory.Job);
+        }
+
+        return new Dictionary<BulkInsertStatus, IList<Guid>>
+        {
+            [BulkInsertStatus.Inserted] = insertedJobIds.ToList(),
+            [BulkInsertStatus.AlreadyInserted] = notInsertedIds.Where(id => existingIds.Contains(id)).ToList(),
+            [BulkInsertStatus.Unknow] = unknownIds,
+        };
+    }
+
     private static void ValidateJobExecutionOutcome(JobRawModel jobRaw, JobExecution? addJobExecution)
     {
         if (jobRaw.Status == JobMasterJobStatus.Succeeded &&

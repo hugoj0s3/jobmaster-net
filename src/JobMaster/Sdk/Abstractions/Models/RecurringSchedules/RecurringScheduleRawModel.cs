@@ -7,6 +7,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 
@@ -121,15 +122,12 @@ internal class RecurringScheduleRawModel : JobMasterBaseModel
         ClusterId = clusterId;
     }
 
+    // Never includes MsgData / Metadata content (user data); their sizes only.
     public string ToLogSummary()
     {
-        var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Type:{RecurringScheduleType} " +
-                     $"ExpressionTypeId:{ExpressionTypeId} BucketId:{BucketId} HasFailedOnLastPlanExecution:{HasFailedOnLastPlanExecution}";
-
-        result += $" MsgData:{(MsgData.Length > 500 ? MsgData.Substring(0, 500) + "...[truncated]" : MsgData)}";
-        result += $" Metadata:{(Metadata == null ? "[null]" : Metadata.Length > 500 ? Metadata.Substring(0, 500) + "...[truncated]" : Metadata)}";
-
-        return result;
+        return $"Id:{Id.ToBase64()} JobDefinitionId:{JobDefinitionId} Status:{Status} Type:{RecurringScheduleType} " +
+               $"ExpressionTypeId:{ExpressionTypeId} BucketId:{BucketId} HasFailedOnLastPlanExecution:{HasFailedOnLastPlanExecution} " +
+               $"MsgDataLength:{MsgData.Length} MetadataLength:{Metadata?.Length ?? 0}";
     }
 
 

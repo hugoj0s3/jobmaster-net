@@ -12,6 +12,9 @@ internal sealed class ClusterJsonConfig
     public string? TransientThreshold { get; set; }
     public string? DefaultJobTimeout { get; set; }
     public int? DefaultMaxRetryCount { get; set; }
+
+    /// <summary>Wait before each retry, e.g. <c>["00:00:30", "00:05:00", "01:00:00"]</c>; the last one repeats.</summary>
+    public List<string>? RetryDelays { get; set; }
     public int? MaxMessageByteSize { get; set; }
     public string? IanaTimeZoneId { get; set; }
     public string? DataRetentionTtl { get; set; }

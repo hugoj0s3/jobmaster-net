@@ -54,7 +54,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
             throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
         }
 
-        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainSavePendingJobsRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainSavePendingJobsRunner>(agentCnnConfig.TransportConfig.RepositoryTypeId, backgroundAgentWorker);
     }
 
     public IDrainProcessingJobsRunner NewDrainProcessingJobsRunner(
@@ -75,7 +75,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
             throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
         }
 
-        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainProcessingJobsRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainProcessingJobsRunner>(agentCnnConfig.ExecutionConfig.RepositoryTypeId, backgroundAgentWorker);
     }
 
     public IDrainSavePendingRecurringScheduleRunner NewDrainSavePendingRecurringScheduleRunner(
@@ -96,7 +96,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
             throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
         }
 
-        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainSavePendingRecurringScheduleRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        return this.AwareComponentFactory.GetBucketAwareRunner<IDrainSavePendingRecurringScheduleRunner>(agentCnnConfig.TransportConfig.RepositoryTypeId, backgroundAgentWorker);
     }
 
     public IJobsExecutionRunner NewJobsExecutionRunner(
@@ -121,7 +121,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
                 throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
             }
         
-            jobsExecutionRunner = this.AwareComponentFactory.GetBucketAwareRunner<IJobsExecutionRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+            jobsExecutionRunner = this.AwareComponentFactory.GetBucketAwareRunner<IJobsExecutionRunner>(agentCnnConfig.ExecutionConfig.RepositoryTypeId, backgroundAgentWorker);
 
         }
         
@@ -146,7 +146,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
             throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
         }
         
-        var savePendingJobsRunner = this.AwareComponentFactory.GetBucketAwareRunner<ISavePendingJobsRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        var savePendingJobsRunner = this.AwareComponentFactory.GetBucketAwareRunner<ISavePendingJobsRunner>(agentCnnConfig.TransportConfig.RepositoryTypeId, backgroundAgentWorker);
         return savePendingJobsRunner;
     }
 
@@ -165,7 +165,7 @@ internal class BucketRunnersFactory : JobMasterClusterAwareComponent, IBucketRun
             throw new InvalidOperationException($"Agent connection {agentConnectionId} not found");
         }
         
-        var savePendingJobsRunner = this.AwareComponentFactory.GetBucketAwareRunner<ISaveRecurringSchedulerRunner>(agentCnnConfig.RepositoryTypeId, backgroundAgentWorker);
+        var savePendingJobsRunner = this.AwareComponentFactory.GetBucketAwareRunner<ISaveRecurringSchedulerRunner>(agentCnnConfig.TransportConfig.RepositoryTypeId, backgroundAgentWorker);
         return savePendingJobsRunner;
     }
 }

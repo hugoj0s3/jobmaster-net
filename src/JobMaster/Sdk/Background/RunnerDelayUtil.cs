@@ -93,4 +93,15 @@ internal static class RunnerDelayUtil
 
         return TimeSpan.FromMilliseconds(jitterMs);
     }
+
+    /// <summary>
+    /// The delay between a cleanup runner's purges: half the cluster's data retention, between 5 minutes and 1 hour;
+    /// 1 hour when retention is off or unknown.
+    /// </summary>
+    internal static TimeSpan CalcCleanUpDelay(TimeSpan? dataRetentionTtl)
+    {
+        var ttl = dataRetentionTtl ?? TimeSpan.Zero;
+        if (ttl <= TimeSpan.Zero) return TimeSpan.FromHours(1);
+        return JobMasterMathUtil.Clamp(TimeSpan.FromTicks(ttl.Ticks / 2), TimeSpan.FromMinutes(5), TimeSpan.FromHours(1));
+    }
 }

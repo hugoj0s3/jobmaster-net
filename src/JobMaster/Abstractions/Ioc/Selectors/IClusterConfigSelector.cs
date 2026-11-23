@@ -50,6 +50,31 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     public IClusterConfigSelector ClusterDefaultMaxRetryCount(int defaultMaxRetryCount);
 
     /// <summary>
+    /// Sets the wait before each retry of a failed job: the first delay before the first retry, and so on; the last
+    /// delay repeats for every later retry. Each delay must be at least <see cref="JobMasterLimits.MinRetryDelay"/>.
+    /// Default: <see cref="JobMasterDefaults.RetryDelays"/>. A retry interceptor can keep these with
+    /// <see cref="JobRetryDecision.UseRetryDelays"/>.
+    /// </summary>
+    public IClusterConfigSelector RetryDelays(params TimeSpan[] delays);
+
+    /// <summary>
+    /// Intercepts the retry after each failed attempt with retries left: retry after another delay, keep
+    /// <see cref="RetryDelays"/>, or stop early (see <see cref="JobRetryDecision"/>). It never adds attempts:
+    /// <c>MaxNumberOfRetries</c> (per job, or <see cref="DefaultMaxRetryCount"/>) still caps them. Runs on the worker
+    /// that ran the job; keep it fast, and use <see cref="InterceptRetry{TInterceptor}"/> for anything that needs
+    /// dependencies or I/O. If it throws, the job is retried using <see cref="RetryDelays"/>. Only one retry
+    /// interceptor per cluster.
+    /// </summary>
+    public IClusterConfigSelector InterceptRetry(Func<JobRetryContext, JobRetryDecision> interceptor);
+
+    /// <summary>
+    /// Like <see cref="InterceptRetry(Func{JobRetryContext, JobRetryDecision})"/>, with an
+    /// <see cref="IJobMasterRetryInterceptor"/> resolved from DI in a new scope for each failed attempt (registered as
+    /// scoped unless you registered it yourself). Only one retry interceptor per cluster.
+    /// </summary>
+    public IClusterConfigSelector InterceptRetry<TInterceptor>() where TInterceptor : class, IJobMasterRetryInterceptor;
+
+    /// <summary>
     /// Sets the maximum byte size for job messages exchanged through the messaging layer.
     /// Jobs whose payload exceeds this limit will be rejected at submission time.
     /// Use -1 to disable the limit (not recommended in constrained environments).
@@ -81,7 +106,7 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     /// Default: <see cref="JobMasterDefaults.DataRetentionTtl"/> (infinite — no automatic purge).
     /// </summary>
     /// <param name="dataRetentionTtl">
-    /// The retention window. Must be ≥ <see cref="JobMasterDefaults.MinDataRetentionTtl"/> (10 minutes) when positive.
+    /// The retention window. Must be ≥ <see cref="JobMasterLimits.MinDataRetentionTtl"/> (10 minutes) when positive.
     /// Zero or negative is accepted as infinite retention (equivalent to <see cref="RetainDataForever"/>).
     /// Throws <see cref="ArgumentException"/> for positive values under 10 minutes.
     /// </param>
@@ -165,6 +190,26 @@ public interface IClusterConfigSelector : IBaseClusterConfigSelector<IClusterCon
     /// <see cref="ClusterMode.Active"/> cluster configured elsewhere in this app.
     /// </param>
     public IClusterConfigSelector MigrateTo(string targetActiveClusterId);
+
+    /// <summary>
+    /// Puts this cluster into <see cref="ClusterMode.Archived"/> mode: it no longer accepts new jobs or recurring
+    /// schedules, and scheduling or rescheduling on it throws an <see cref="System.InvalidOperationException"/>.
+    /// <para>
+    /// Unfinished jobs and active recurring schedules on it, including ones that reach it later, are moved to
+    /// <paramref name="targetActiveClusterId"/> and run there. When omitted, the target kept from an earlier
+    /// <see cref="MigrateTo"/> or <c>Archive</c> still applies.
+    /// </para>
+    /// <para>
+    /// Requires one worker of this cluster, running in an app that also configures the target.
+    /// </para>
+    /// <para>Without a target, startup fails while the cluster still holds unfinished jobs or schedules.</para>
+    /// Validated at startup only (target must resolve to a configured <see cref="ClusterMode.Active"/> cluster).
+    /// </summary>
+    /// <param name="targetActiveClusterId">
+    /// Id of the <see cref="ClusterMode.Active"/> cluster, configured elsewhere in this app, that takes over
+    /// jobs and recurring schedules reaching this cluster.
+    /// </param>
+    public IClusterConfigSelector Archive(string? targetActiveClusterId = null);
 
     /// <summary>
     /// Switches this cluster to standalone mode, where the master and worker run in the same process.

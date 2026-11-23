@@ -17,7 +17,7 @@
              actual ADO.NET driver at runtime, so the driver assembly must be present in the output
              directory even though no C# code here calls into Npgsql/MySqlConnector types. -->
         <PackageReference Include="Npgsql" Version="8.0.3" />
-        <PackageReference Include="MySqlConnector" Version="2.5.0" />
+        <PackageReference Include="MySqlConnector" Version="2.6.2" />
     </ItemGroup>
 
     <ItemGroup>

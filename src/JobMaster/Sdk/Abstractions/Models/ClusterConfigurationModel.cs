@@ -18,6 +18,11 @@ internal class ClusterConfigurationModel : JobMasterBaseModel
     public TimeSpan TransientThreshold { get; set; } = JobMasterDefaults.TransientThreshold;
     public int DefaultMaxOfRetryCount { get; set; } = JobMasterDefaults.MaxRetryCount;
 
+    // For information only (API / dashboard): retries always follow each worker's own code configuration.
+    // Written at startup by processes running jobs (Full / Execution workers), so it shows the last of those to start.
+    public IList<TimeSpan> RetryDelays { get; set; } = JobMasterDefaults.RetryDelays.ToList();
+    public string RetryInterceptor { get; set; } = JobMasterRetrySettings.NoInterceptor;
+
     public ClusterMode ClusterMode { get; set; } = JobMasterDefaults.DefaultClusterMode;
 
     /// <summary>

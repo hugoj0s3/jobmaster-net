@@ -51,7 +51,10 @@ internal interface IMasterRecurringSchedulesRepository : IJobMasterClusterAwareM
 
     /// <summary>
     /// Inserts each recurring schedule that doesn't already exist (by cluster id + id) in this
-    /// repository's cluster. Existing rows are left untouched. Every schedule must be in a final status.
+    /// repository's cluster. Existing rows are left untouched. Returns the ids actually inserted.
     /// </summary>
-    Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
+    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules);
+
+    /// <summary>Returns which of <paramref name="recurringScheduleIds"/> exist in this repository's cluster.</summary>
+    Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds);
 }

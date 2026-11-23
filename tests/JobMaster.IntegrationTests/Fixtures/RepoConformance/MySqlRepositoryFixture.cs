@@ -20,6 +20,8 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
     internal override IMasterGenericRecordRepository MasterGenericRecords { get;  set; } = null!;
     internal override IMasterDistributedLockerRepository MasterDistributedLocker { get; set; } = null!;
     internal override IMasterLogsRepository MasterLogs { get; set; } = null!;
+    internal override IMasterJobsRepository OtherClusterMasterJobs { get; set; } = null!;
+    internal override IMasterRecurringSchedulesRepository OtherClusterMasterRecurringSchedules { get; set; } = null!;
 
     internal override IAgentRawMessagesDispatcherRepository AgentMessages { get; set; } = null!;
 
@@ -38,6 +40,10 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
         MasterDistributedLocker = factory.GetMasterRepository<IMasterDistributedLockerRepository>();
         MasterLogs = factory.GetMasterRepository<IMasterLogsRepository>();
 
+        var otherFactory = JobMasterClusterAwareComponentFactories.GetFactory(RepoConformanceBootstrap.MySqlOtherClusterId);
+        OtherClusterMasterJobs = otherFactory.GetMasterRepository<IMasterJobsRepository>();
+        OtherClusterMasterRecurringSchedules = otherFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
+
         var agentConfig = JobMasterClusterConnectionConfig
             .Get(ClusterId, includeNotReady: true)
             .TryGetAgentConnectionConfig(RepoConformanceBootstrap.MySqlAgentConnectionName);
@@ -51,7 +57,7 @@ public sealed class MySqlRepositoryFixture : RepositoryFixtureBase
             .GetRequiredKeyedService<IAgentRawMessagesDispatcherRepository>(
                 ClusterServiceKeys.GetAgentRawJobsDispatcherProcessingKey(MySqlRepositoryConstants.RepositoryTypeId)
             );
-        rawRepo.Initialize(agentConfig);
+        rawRepo.Initialize(agentConfig.Id, agentConfig.TransportConfig);
         AgentMessages = rawRepo;
 
         AgentConnectionId = new AgentConnectionId(ClusterId, RepoConformanceBootstrap.MySqlAgentConnectionName);

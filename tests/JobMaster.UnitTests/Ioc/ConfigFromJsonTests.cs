@@ -4,6 +4,7 @@ using JobMaster.Abstractions.Ioc.Selectors;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions;
 using JobMaster.Sdk.Ioc.Setup;
+using JobMaster.SqlBase;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -170,6 +171,37 @@ public class ConfigFromJsonTests
     }
 
     // ── agent connections ────────────────────────────────────────────────────
+
+    [Fact]
+    public void ConfigFromJson_RepoTypesInAnyCasing_UseTheBuiltInCasing()
+    {
+        // Matched ignoring case (ConnectionOptions included, so the binder lookup is exercised too); stored with the
+        // built-in casing, hybrid id included.
+        const string json = """
+        {
+            "ClusterId": "Cluster-1",
+            "RepoType": "postgres",
+            "ConnectionString": "Host=localhost;",
+            "ConnectionOptions": { "TablePrefix": "Custom_" },
+            "AgentConnections": [
+                { "Name": "Nats-1", "RepositoryType": "NATSJETSTREAM", "ConnectionString": "nats://localhost" },
+                {
+                    "Name": "Hybrid-1",
+                    "Transport": { "RepositoryType": "natsjetstream", "ConnectionString": "nats://localhost" },
+                    "Execution": { "RepositoryType": "ravendb", "ConnectionString": "Urls=http://localhost:8080;Database=Db" }
+                }
+            ]
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+        var d = b.clusterDefinition;
+
+        d.RepoType.Should().Be("Postgres");
+        d.AgentConnections[0].AgentRepoType.Should().Be("NatsJetStream");
+        d.AgentConnections[1].AgentRepoType.Should().Be("hybrid:NatsJetStream&&RavenDB");
+    }
 
     [Fact]
     public void ConfigFromJson_String_MapsAgentConnections()
@@ -344,7 +376,7 @@ public class ConfigFromJsonTests
             "ConnectionString": "Host=localhost;",
             "IanaTimeZoneId": "UTC",
             "Workers": [
-                { "WorkerName": "sa-worker", "TransferBatchSize": 300 }
+                { "WorkerName": "sa-worker", "WorkerLane": "billing", "ParallelismFactor": 2.5, "TransferBatchSize": 300 }
             ]
         }
         """;
@@ -361,8 +393,32 @@ public class ConfigFromJsonTests
         d.IanaTimeZoneId.Should().Be("UTC");
         d.Workers.Should().HaveCount(1);
         d.Workers[0].WorkerName.Should().Be("sa-worker");
+        d.Workers[0].WorkerLane.Should().Be("billing");
+        d.Workers[0].ParallelismFactor.Should().Be(2.5);
         d.Workers[0].TransferBatchSize.Should().Be(300);
         d.AgentConnections.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ConfigFromJson_String_StandaloneCluster_AppliesConnectionOptions()
+    {
+        const string json = """
+        {
+            "Standalone": true,
+            "ClusterId": "Cluster-Standalone-1",
+            "RepoType": "Postgres",
+            "ConnectionString": "Host=localhost;",
+            "ConnectionOptions": { "TablePrefix": "Custom_" },
+            "Workers": [ { "WorkerName": "sa-worker" } ]
+        }
+        """;
+
+        var b = Builder();
+        b.ConfigFromJson(json);
+
+        b.clusterDefinition.AdditionalConnConfig!
+            .TryGetValue<string>(SqlBaseConfigKeys.NamespaceUniqueKey, SqlBaseConfigKeys.TablePrefixKey)
+            .Should().Be("Custom_");
     }
 
     // ── enum case-insensitivity ──────────────────────────────────────────────
@@ -585,7 +641,7 @@ public class ConfigFromJsonTests
     {
         var b = Builder();
         IClusterStandaloneConfigSelector standalone = b.UseStandaloneCluster();
-        standalone.ClusterDataRetentionTtl(TimeSpan.FromDays(14));
+        standalone.DataRetentionTtl(TimeSpan.FromDays(14));
 
         b.clusterDefinition.DataRetentionTtl.Should().Be(TimeSpan.FromDays(14));
     }

@@ -21,7 +21,7 @@ internal class MasterRecurringScheduleIntakeService : JobMasterClusterAwareCompo
         this.masterClusterConfigurationService = masterClusterConfigurationService;
     }
 
-    public async Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+    public async Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
     {
         var clusterMode = masterClusterConfigurationService.Get()?.ClusterMode;
 
@@ -62,6 +62,18 @@ internal class MasterRecurringScheduleIntakeService : JobMasterClusterAwareCompo
             schedule.ReassignToCluster(this.ClusterConnConfig.ClusterId);
         }
 
-        await masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(schedules);
+        var insertedIds = await masterRecurringSchedulesRepository.BulkInsertIfNotExistsAsync(schedules);
+
+        // Not inserted means already here, or a row the repository failed without throwing, so check:
+        // same rule as ConfirmOnMasterAsync.
+        var insertedSet = new HashSet<Guid>(insertedIds);
+        var notInserted = schedules.Select(s => s.Id).Where(id => !insertedSet.Contains(id)).ToList();
+        var confirmed = new List<Guid>(insertedIds);
+        if (notInserted.Count > 0)
+        {
+            confirmed.AddRange(await masterRecurringSchedulesRepository.QueryExistingIdsAsync(notInserted));
+        }
+
+        return confirmed;
     }
 }

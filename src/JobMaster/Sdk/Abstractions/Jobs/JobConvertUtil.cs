@@ -98,6 +98,7 @@ internal static class JobConvertUtil
             Priority = job.Priority,
             Timeout = job.Timeout,
             MaxNumberOfRetries = job.MaxNumberOfRetries,
+            NumberOfFailures = job.NumberOfFailures,
             ScheduledAt = job.ScheduledAt,
             CreatedAt = job.CreatedAt,
             SourceId = job.SourceId,

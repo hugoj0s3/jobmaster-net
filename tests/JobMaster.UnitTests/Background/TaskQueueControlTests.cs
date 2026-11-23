@@ -1,6 +1,7 @@
 using FluentAssertions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Background;
+using JobMaster.Sdk.Background.Cancellation;
 using JobMaster.Sdk.Background.Runners.JobsExecution;
 using JobMaster.Sdk.Utils;
 
@@ -499,6 +500,7 @@ public class TaskQueueControlTests
         var executed = false;
 
         var item = new TaskQueueItem<string>(
+            stopControl: StopControl.Create(),
             id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "my-job",
             timeout: TimeSpan.FromSeconds(5),
@@ -525,31 +527,29 @@ public class TaskQueueControlTests
     }
 
     [Fact]
-    public async Task Simulate_EnqueueTaskThatExceedsTimeout_ShouldBeCancelledAndReportTimedOut()
+    public async Task Simulate_TaskPastItsTimeout_ReportsTimedOut_ButOnlyAbortCancelsIt()
     {
-        // Arrange — timeout shorter than the work the task tries to do
+        // The slot's token has no timer (a job's timeout is the handler's own, in ExecuteJobAsync): past its Timeout
+        // the item only reports IsTimedOut; Abort (the worker stopping) is what cancels it.
         using var sut = CreateSingleSlot();
 
         var item = new TaskQueueItem<string>(
+            stopControl: StopControl.Create(),
             id: JobMasterRandomUtil.NewGuid4().ToString(),
             value: "slow-job",
             timeout: TimeSpan.FromMilliseconds(100),
-            action: async ct =>
-            {
-                // Respects cancellation — would run for 10 s without it
-                await Task.Delay(TimeSpan.FromSeconds(10), ct);
-            });
+            action: async ct => await Task.Delay(TimeSpan.FromSeconds(10), ct));
 
-        // Act
         sut.Enqueue(item);
         sut.StartQueuedTasksIfHasSlotAvailable();
+        await Task.Delay(TimeSpan.FromMilliseconds(300));
 
-        // Give the 100 ms timeout enough room to fire
-        await Task.WhenAny(item.Task, Task.Delay(TimeSpan.FromSeconds(2)));
-
-        // Assert — CancelAfter(100ms) should have fired, cancelling the delay
-        item.Task.IsCanceled.Should().BeTrue();
         item.IsTimedOut().Should().BeTrue();
+        item.Task.IsCompleted.Should().BeFalse();
+
+        item.Abort();
+        await Task.WhenAny(item.Task, Task.Delay(TimeSpan.FromSeconds(2)));
+        item.Task.IsCanceled.Should().BeTrue();
 
         // Slot is freed on the next pulse (IsCanceled triggers lazy cleanup)
         sut.StartQueuedTasksIfHasSlotAvailable();
@@ -616,7 +616,7 @@ internal sealed class FakeTaskQueueItem<T> : ITaskQueueItem<T>
     public TimeSpan Timeout { get; init; } = TimeSpan.FromMinutes(1);
     public DateTime EnqueuedAt { get; } = DateTime.UtcNow;
     public DateTime? StartedAt { get; private set; }
-    public CancellationTokenSource CancellationTokenSource { get; } = new();
+    public StopControl StopControl { get; } = StopControl.Create();
 
     public bool IsStarted { get; private set; }
     public int StartCallCount { get; private set; }

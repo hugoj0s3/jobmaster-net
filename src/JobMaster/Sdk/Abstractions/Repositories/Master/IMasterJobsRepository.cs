@@ -19,6 +19,9 @@ internal interface IMasterJobsRepository : IJobMasterClusterAwareMasterRepositor
     bool Exists(Guid jobId);
     Task<bool> ExistsAsync(Guid jobId);
 
+    /// <summary>Returns which of <paramref name="jobIds"/> exist in this repository's cluster.</summary>
+    Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds);
+
     IList<JobRawModel> Query(JobQueryCriteria queryCriteria);
     Task<IList<JobRawModel>> QueryAsync(JobQueryCriteria queryCriteria);
     

@@ -41,7 +41,7 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
     // inside CreateDrainRunners, where a bucket is claimed and transitioned to Draining.
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Skipped(this);
         }
@@ -55,12 +55,12 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
 
     private async Task CleanupDrainRunnersAsync(CancellationToken ct)
     {
-        var drainRunners = BackgroundAgentWorker.Runners
+        var drainRunners = BackgroundAgentWorker.Runners.Snapshot()
             .OfType<IDrainJobsRunner>()
             .Cast<IBucketAwareRunner>()
             .ToList();
 
-        var readyToDeleteRunners = BackgroundAgentWorker.Runners
+        var readyToDeleteRunners = BackgroundAgentWorker.Runners.Snapshot()
             .OfType<MarkBucketReadyToDeleteRunner>()
             .Cast<IBucketAwareRunner>()
             .ToList();
@@ -92,16 +92,16 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
             .Where(b => b.AgentWorkerId == BackgroundAgentWorker.AgentWorkerId)
             .ToList();
 
-        var savePendingRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingJobsRunner>().ToList();
-        var processingRunners = BackgroundAgentWorker.Runners.OfType<IDrainProcessingJobsRunner>().ToList();
-        var recurringScheduleRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
-        var readyToDeleteRunners = BackgroundAgentWorker.Runners.OfType<MarkBucketReadyToDeleteRunner>().ToList();
+        var savePendingRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainSavePendingJobsRunner>().ToList();
+        var processingRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainProcessingJobsRunner>().ToList();
+        var recurringScheduleRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
+        var readyToDeleteRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<MarkBucketReadyToDeleteRunner>().ToList();
 
         foreach (var bucket in bucketToDrain)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (BackgroundAgentWorker.StopRequested)
+            if (BackgroundAgentWorker.GracefulStopRequested)
             {
                 break;
             }
@@ -169,16 +169,16 @@ internal class DrainRunnersCoordinator : AgentConnectionAwareRunner
             .Where(b => b.AgentWorkerId == BackgroundAgentWorker.AgentWorkerId)
             .ToList();
 
-        var savePendingRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingJobsRunner>().ToList();
-        var processingRunners = BackgroundAgentWorker.Runners.OfType<IDrainProcessingJobsRunner>().ToList();
-        var recurringScheduleRunners = BackgroundAgentWorker.Runners.OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
-        var readyToDeleteRunners = BackgroundAgentWorker.Runners.OfType<MarkBucketReadyToDeleteRunner>().ToList();
+        var savePendingRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainSavePendingJobsRunner>().ToList();
+        var processingRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainProcessingJobsRunner>().ToList();
+        var recurringScheduleRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<IDrainSavePendingRecurringScheduleRunner>().ToList();
+        var readyToDeleteRunners = BackgroundAgentWorker.Runners.Snapshot().OfType<MarkBucketReadyToDeleteRunner>().ToList();
 
         foreach (var bucket in bucketsToRecover)
         {
             ct.ThrowIfCancellationRequested();
 
-            if (BackgroundAgentWorker.StopRequested)
+            if (BackgroundAgentWorker.GracefulStopRequested)
             {
                 break;
             }

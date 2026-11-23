@@ -27,9 +27,8 @@ internal static class JobMasterConstants
     public static readonly TimeSpan HostsAllowDiscrepancy = TimeSpan.FromSeconds(30);
 
     /// <summary>
-    /// Cache freshness window for the agent workers list. Kept short because
-    /// <c>StopRequestedAt</c> flows from this cache through to each agent's stop-graceful
-    /// path — stale reads here directly delay graceful shutdown.
+    /// Cache freshness window for the agent workers list. Kept short because worker
+    /// liveness read from it drives bucket assignment.
     /// </summary>
     public static readonly TimeSpan AgentWorkersAllowDiscrepancy = TimeSpan.FromSeconds(10);
 
@@ -62,15 +61,39 @@ internal static class JobMasterConstants
     
     public static readonly TimeSpan BucketNoJobsBeforeReadyToDelete = TimeSpan.FromMinutes(10);
 
-    public const int MaxAllowedRetries = 10;
-
     /// <summary>Max distinct agent connections dispatched to concurrently -- each is a separate DB/broker.</summary>
     public const int MaxParallelAgentConnectionDispatch = 10;
 
     /// <summary>Max buckets dispatched to concurrently within a single agent connection.</summary>
     public const int MaxParallelBucketDispatchPerAgentConnection = 5;
+    /// <summary>
+    /// Graceful stop (requested, e.g. by a signal): the worker takes no new jobs and runs the ones it has for this
+    /// long, then stops immediately.
+    /// </summary>
     public static readonly TimeSpan DefaultGracefulStopPeriod = TimeSpan.FromMinutes(15);
-    
+
+    /// <summary>The shortest graceful stop period a request may ask for.</summary>
+    public static readonly TimeSpan MinGracefulStopPeriod = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Immediate stop (SIGTERM, process exit, end of a graceful stop): how long a running job gets before it is
+    /// aborted and goes back to master. Sized for Docker's default 10 s before SIGKILL, leaving room for the cleanup.
+    /// </summary>
+    public static readonly TimeSpan ImmediateGracefulStopPeriod = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Immediate stop: the time after <see cref="ImmediateGracefulStopPeriod"/> for the cleanup (interrupted jobs
+    /// written back to master, the flush of buffered jobs).
+    /// </summary>
+    public static readonly TimeSpan ImmediateStopCleanupPeriod = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Immediate stop, the whole budget (<see cref="ImmediateGracefulStopPeriod"/> +
+    /// <see cref="ImmediateStopCleanupPeriod"/>): how long the runtime waits for each worker, and a task queue for its
+    /// running jobs. Leaves room in Docker's default 10 s before SIGKILL for the loggers' final flush.
+    /// </summary>
+    public static readonly TimeSpan ImmediateStopTimeout = ImmediateGracefulStopPeriod + ImmediateStopCleanupPeriod;
+
     /// <summary>
     /// The default process deadline duration for jobs.
     /// Jobs must be processed within this time from their scheduled time or current time (whichever is later).
@@ -92,6 +115,18 @@ internal static class JobMasterConstants
     public static readonly TimeSpan MinDelayWhenOnboardingBusy = TimeSpan.FromSeconds(15);
 
     public static readonly TimeSpan NoBucketFallbackThreshold = TimeSpan.FromMinutes(2.5);
+
+    /// <summary>
+    /// How long a bucket can stay Lost with no Full or Drain worker on its agent connection before it's logged as
+    /// Critical instead of Warn: longer than a restart or deploy takes.
+    /// </summary>
+    public static readonly TimeSpan LostBucketNoWorkerGracePeriod = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// Leases after which a save-pending message stops being retried: a job is saved on master as Failed, anything
+    /// else is moved to the terminated bucket.
+    /// </summary>
+    public const int MaxSavePendingLeaseCount = 1000;
 
     /// <summary>
     /// Default TTL for sentinel-backed cache entries. Sentinel invalidation handles freshness;

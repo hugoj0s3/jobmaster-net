@@ -100,9 +100,6 @@ internal static class RunnerFakes
             DeleteWorker(workerId);
             return Task.CompletedTask;
         }
-
-        public Task StopGracefulWorkerAsync(string workerId, TimeSpan? gracePeriod = null)
-            => throw new NotImplementedException();
     }
     
     internal sealed class FakeJobsService : IMasterJobsService
@@ -217,7 +214,47 @@ internal static class RunnerFakes
 
         public void Add(JobRawModel jobRaw) => Jobs.Add(jobRaw);
         public Task AddAsync(JobRawModel jobRaw) { Jobs.Add(jobRaw); return Task.CompletedTask; }
+        /// <summary>Ids <see cref="BulkInsertIfNotExistsAsync"/> reports as not confirmed (not inserted either).</summary>
+        public HashSet<Guid> UnknownOnInsert { get; } = new();
+        /// <summary>When set, <see cref="BulkInsertIfNotExistsAsync"/> throws it (e.g. master down).</summary>
+        public Exception? ThrowOnInsert { get; set; }
 
+        public Task<IDictionary<BulkInsertStatus, IList<Guid>>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs)
+        {
+            if (ThrowOnInsert is not null)
+            {
+                throw ThrowOnInsert;
+            }
+
+            var result = new Dictionary<BulkInsertStatus, IList<Guid>>
+            {
+                [BulkInsertStatus.Inserted] = new List<Guid>(),
+                [BulkInsertStatus.AlreadyInserted] = new List<Guid>(),
+                [BulkInsertStatus.Unknow] = new List<Guid>(),
+            };
+
+            foreach (var job in jobs.DistinctBy(j => j.Id))
+            {
+                if (UnknownOnInsert.Contains(job.Id))
+                {
+                    result[BulkInsertStatus.Unknow].Add(job.Id);
+                }
+                else if (Jobs.Any(j => j.Id == job.Id))
+                {
+                    result[BulkInsertStatus.AlreadyInserted].Add(job.Id);
+                }
+                else
+                {
+                    Jobs.Add(job);
+                    result[BulkInsertStatus.Inserted].Add(job.Id);
+                }
+            }
+
+            return Task.FromResult<IDictionary<BulkInsertStatus, IList<Guid>>>(result);
+        }
+
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds) =>
+            Task.FromResult<IList<Guid>>(jobIds.Where(id => Jobs.Any(j => j.Id == id)).ToList());
         public void Update(JobRawModel jobRaw, JobExecution? addJobExecution = null, OperationThrottler? throttler = null)
         {
             var idx = Jobs.FindIndex(j => j.Id == jobRaw.Id);
@@ -384,6 +421,9 @@ internal static class RunnerFakes
             foreach (var j in toRemove) Jobs.Remove(j);
             return Task.FromResult(toRemove.Count);
         }
+
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> jobIds) =>
+            Task.FromResult<IList<Guid>>(jobIds.Where(id => Jobs.Any(j => j.Id == id)).ToList());
 
         public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions)
         {
@@ -564,14 +604,20 @@ internal static class RunnerFakes
             return Task.FromResult(toRemove.Count);
         }
 
-        public Task BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+        public Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
         {
+            var insertedIds = new List<Guid>();
             foreach (var schedule in schedules)
             {
-                if (!Schedules.Any(s => s.Id == schedule.Id)) Schedules.Add(schedule);
+                if (Schedules.Any(s => s.Id == schedule.Id)) continue;
+                Schedules.Add(schedule);
+                insertedIds.Add(schedule.Id);
             }
-            return Task.CompletedTask;
+            return Task.FromResult<IList<Guid>>(insertedIds);
         }
+
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds) =>
+            Task.FromResult<IList<Guid>>(recurringScheduleIds.Where(id => Schedules.Any(s => s.Id == id)).ToList());
 
         public void Add(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
         public Task AddAsync(RecurringScheduleRawModel scheduleRaw) => throw new NotImplementedException();
@@ -619,63 +665,122 @@ internal static class RunnerFakes
         /// <summary>Return value for <see cref="HasJobsAsync"/>.</summary>
         public bool HasJobsResult { get; set; } = false;
 
-        public Task<IList<JobRawModel>> PullSavePendingJobsAsync(
-            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
+        /// <summary>Leased messages not acked yet, by ack key.</summary>
+        public Dictionary<string, JobRawModel> LeasedJobs { get; } = new();
+
+        /// <summary>Every ack key the runner acked.</summary>
+        public List<string> AckedKeys { get; } = new();
+
+        /// <summary>Jobs the runner published for processing.</summary>
+        public List<JobRawModel> PublishedForProcessing { get; } = new();
+
+        public Task<IList<(JobRawModel Job, string AckKey)>> LeaseSavePendingJobsAsync(
+            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, TimeSpan lease, OperationThrottler? throttler = null)
         {
-            var pulled = PendingQueue
+            var leased = PendingQueue
                 .Where(j => j.BucketId == bucketId)
                 .Take(numberOfJobs)
                 .ToList();
 
-            foreach (var j in pulled) PendingQueue.Remove(j);
-            return Task.FromResult<IList<JobRawModel>>(pulled);
+            var result = new List<(JobRawModel Job, string AckKey)>();
+            foreach (var j in leased)
+            {
+                PendingQueue.Remove(j);
+                var ackKey = Guid.NewGuid().ToString("N");
+                LeasedJobs[ackKey] = j;
+                result.Add((j, ackKey));
+            }
+
+            return Task.FromResult<IList<(JobRawModel Job, string AckKey)>>(result);
         }
 
-        public string AddSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null) { PendingQueue.Add(jobRaw); return "ok"; }
+        public Task AckSavePendingJobsAsync(
+            AgentConnectionId agentConnectionId, string bucketId, IList<string> ackKeys, OperationThrottler? throttler = null)
+        {
+            foreach (var key in ackKeys)
+            {
+                AckedKeys.Add(key);
+                LeasedJobs.Remove(key);
+            }
 
-        public Task<string> AddSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
+            return Task.CompletedTask;
+        }
+
+        public string PushSavePendingJob(JobRawModel jobRaw, OperationThrottler? throttler = null) { PendingQueue.Add(jobRaw); return "ok"; }
+
+        public Task<string> PushSavePendingJobAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
         {
             RequeuedJobs.Add(jobRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<IList<string>> BulkAddSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
+        public Task<IList<string>> BulkPushSavePendingJobAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public string AddSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
+        public string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<string> AddSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
+        public Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw, OperationThrottler? throttler = null)
         {
             RequeuedRecurSchedules.Add(recurringScheduleRaw);
             return Task.FromResult("ok");
         }
 
-        public Task<string> AddForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
+        public Task<string> PushForProcessingAsync(JobRawModel jobRaw, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<IList<string>> BulkAddForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
-            => throw new NotImplementedException();
+        public Task<IList<string>> BulkPushForProcessingAsync(AgentConnectionId agentConnectionId, string bucketId, List<JobRawModel> jobRawModels, OperationThrottler? throttler = null)
+        {
+            PublishedForProcessing.AddRange(jobRawModels);
+            return Task.FromResult<IList<string>>(jobRawModels.Select(j => j.Id.ToString("N")).ToList());
+        }
 
         public Task<IList<JobRawModel>> PullForProcessingAsync(
             AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, DateTime? scheduleTo, OperationThrottler? throttler = null)
             => throw new NotImplementedException();
 
-        public Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(
-            AgentConnectionId agentConnectionId, string bucketId, int numberOfJobs, OperationThrottler? throttler = null)
+
+        /// <summary>Leased recurring-schedule messages not acked yet, by ack key.</summary>
+        public Dictionary<string, RecurringScheduleRawModel> LeasedRecurSchedules { get; } = new();
+
+        /// <summary>Every recurring-schedule ack key the runner acked.</summary>
+        public List<string> AckedRecurKeys { get; } = new();
+
+        public Task<IList<(RecurringScheduleRawModel Schedule, string AckKey)>> LeaseSavePendingRecurAsync(
+            AgentConnectionId agentConnectionId, string bucketId, int numberOfSchedules, TimeSpan lease, OperationThrottler? throttler = null)
         {
-            var pulled = PendingRecurQueue.Take(numberOfJobs).ToList();
-            foreach (var s in pulled) PendingRecurQueue.Remove(s);
-            return Task.FromResult<IList<RecurringScheduleRawModel>>(pulled);
+            var leased = PendingRecurQueue.Take(numberOfSchedules).ToList();
+            var result = new List<(RecurringScheduleRawModel Schedule, string AckKey)>();
+            foreach (var s in leased)
+            {
+                PendingRecurQueue.Remove(s);
+                var ackKey = Guid.NewGuid().ToString("N");
+                LeasedRecurSchedules[ackKey] = s;
+                result.Add((s, ackKey));
+            }
+
+            return Task.FromResult<IList<(RecurringScheduleRawModel Schedule, string AckKey)>>(result);
         }
 
-        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task AckSavePendingRecurAsync(
+            AgentConnectionId agentConnectionId, string bucketId, IList<string> ackKeys, OperationThrottler? throttler = null)
+        {
+            foreach (var key in ackKeys)
+            {
+                AckedRecurKeys.Add(key);
+                LeasedRecurSchedules.Remove(key);
+            }
+
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> HasJobsAsync(AgentConnectionId agentConnectionId, string bucketId)
             => Task.FromResult(HasJobsResult);
 
-        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task CreateBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
             => throw new NotImplementedException();
 
-        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId, OperationThrottler? throttler = null)
+        public Task DestroyBucketAsync(AgentConnectionId agentConnectionId, string bucketId)
             => throw new NotImplementedException();
     }
 
@@ -848,6 +953,39 @@ internal static class RunnerFakes
             Schedules.Add(scheduleRaw);
         }
 
+        /// <summary>Ids <see cref="BulkInsertIfNotExistsAsync"/> reports as not confirmed (not inserted either).</summary>
+        public HashSet<Guid> UnknownOnInsert { get; } = new();
+
+        public Task<IDictionary<BulkInsertStatus, IList<Guid>>> BulkInsertIfNotExistsAsync(IList<RecurringScheduleRawModel> schedules)
+        {
+            var result = new Dictionary<BulkInsertStatus, IList<Guid>>
+            {
+                [BulkInsertStatus.Inserted] = new List<Guid>(),
+                [BulkInsertStatus.AlreadyInserted] = new List<Guid>(),
+                [BulkInsertStatus.Unknow] = new List<Guid>(),
+            };
+
+            foreach (var schedule in schedules.DistinctBy(s => s.Id))
+            {
+                if (UnknownOnInsert.Contains(schedule.Id))
+                {
+                    result[BulkInsertStatus.Unknow].Add(schedule.Id);
+                }
+                else if (Schedules.Any(s => s.Id == schedule.Id))
+                {
+                    result[BulkInsertStatus.AlreadyInserted].Add(schedule.Id);
+                }
+                else
+                {
+                    Schedules.Add(schedule);
+                    result[BulkInsertStatus.Inserted].Add(schedule.Id);
+                }
+            }
+
+            return Task.FromResult<IDictionary<BulkInsertStatus, IList<Guid>>>(result);
+        }
+        public Task<IList<Guid>> QueryExistingIdsAsync(IList<Guid> recurringScheduleIds) =>
+            Task.FromResult<IList<Guid>>(recurringScheduleIds.Where(id => Schedules.Any(s => s.Id == id)).ToList());
         public void UpsertStatic(StaticRecurringScheduleDefinition definition) => throw new NotImplementedException();
         public IList<RecurringScheduleRawModel> Query(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();
         public Task<IList<RecurringScheduleRawModel>> QueryAsync(RecurringScheduleQueryCriteria queryCriteria) => throw new NotImplementedException();

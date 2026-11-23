@@ -55,7 +55,8 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     private PollingJobsExecutionRunner? fallBackRunner;
     private BucketModel? fallbackBucket;
     private readonly SemaphoreSlim fallbackCreationLock = new(1, 1);
-    private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new();
+    // Ignore case: lanes do, so one fallback timer per lane whatever spelling each job carries.
+    private readonly Dictionary<string, DateTime> bucketAssignFirstFailure = new(StringComparer.OrdinalIgnoreCase);
 
     private DateTime LastAssignExecution = DateTime.MinValue;
 
@@ -79,7 +80,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
 
     public override async Task<OnTickResult> OnTickAsync(CancellationToken ct)
     {
-        if (BackgroundAgentWorker.StopRequested)
+        if (BackgroundAgentWorker.GracefulStopRequested)
         {
             return OnTickResult.Skipped(this);
         }
@@ -165,7 +166,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                 $"AssignJobsToBucketsRunner: {updatedJobs.Count} jobs assigned. " +
                 $"acquireMs={acquireSw.ElapsedMilliseconds} assignMs={assignSw.ElapsedMilliseconds} " +
                 $"bulkUpdateMs={bulkUpdateSw.ElapsedMilliseconds} dispatchMs={dispatchSw.ElapsedMilliseconds} " +
-                $"JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id))}",
+                $"JobIds: {string.Join(", ", updatedJobs.Select(x => x.Id.ToBase64()))}",
                 JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
 
             return OnTickResult.Success(this);
@@ -242,7 +243,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         if (jobs.Count > 0)
         {
             logger.Debug(
-                $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id))}",
+                $"AssignJobsToBucketsRunner: {jobs.Count} jobs found. JobIds: {string.Join(", ", jobs.Select(x => x.Id.ToBase64()))}",
                 JobMasterLogCategory.AgentWorker, BackgroundAgentWorker.AgentWorkerId);
         }
 
@@ -396,7 +397,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
                     async (entry, __) =>
                     {
                         var (bucket, bucketJobs) = entry;
-                        var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentMaxBatchSize(bucket.AgentConnectionId.IdValue);
+                        var agentMaxBatchSize = OperationThrottlerSettingsFactory.GetAgentExecutionMaxBatchSize(bucket.AgentConnectionId.IdValue);
                         foreach (var partition in bucketJobs.Partition(agentMaxBatchSize))
                         {
                             try
@@ -422,12 +423,6 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         await MarkFallbackBucketAsReadyToDeleteAsync();
     }
 
-    public override async Task OnTerminateFailureAsync(Exception ex)
-    {
-        await base.OnTerminateFailureAsync(ex);
-        await MarkFallbackBucketAsReadyToDeleteAsync();
-    }
-
     private async Task MarkFallbackBucketAsReadyToDeleteAsync()
     {
         if (!string.IsNullOrEmpty(this.fallbackBucket?.Id))
@@ -446,7 +441,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
     {
         if (job.Status != JobMasterJobStatus.OnMaster)
         {
-            logger.Error($"Job {job.Id} is not held on master. This is not allowed.", JobMasterLogCategory.Job,
+            logger.Error($"Job {job.Id.ToBase64()} is not held on master. This is not allowed.", JobMasterLogCategory.Job,
                 job.Id);
             jobIdsNeedingLockRelease.Add(job.Id);
             return (HandleJobBucketAssignmentResult.Failed, null);
@@ -497,7 +492,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
         if (elapsed >= JobMasterConstants.NoBucketFallbackThreshold)
         {
             logger.Warn(
-                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Using fallback bucket.",
+                $"No available bucket found for job {job.Id.ToBase64()} (Lane={job.WorkerLane}, Priority={job.Priority}). Using fallback bucket.",
                 JobMasterLogCategory.Job, job.Id);
 
             var bucket = await EnsureFallbackBucketAsync();
@@ -510,7 +505,7 @@ internal class AssignJobsToBucketsRunner : JobMasterRunner
             job.DelayNextExecutionPlan(JobMasterConstants.NoBucketFallbackThreshold.Add(TimeSpan.FromMinutes(1)));
             await masterJobsService.UpdateAsync(job);
             logger.Warn(
-                $"No available bucket found for job {job.Id} (Lane={job.WorkerLane}, Priority={job.Priority}). Retrying in {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes:F1} minutes.",
+                $"No available bucket found for job {job.Id.ToBase64()} (Lane={job.WorkerLane}, Priority={job.Priority}). Retrying in {JobMasterConstants.NoBucketFallbackThreshold.TotalMinutes:F1} minutes.",
                 JobMasterLogCategory.Job, job.Id);
         }
 

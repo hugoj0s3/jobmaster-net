@@ -1,6 +1,3 @@
-using JobMaster.Sdk.Abstractions.Config;
-using JobMaster.Sdk.Abstractions.Keys;
-
 namespace JobMaster.Abstractions.Ioc.Selectors;
 
 /// <summary>
@@ -10,7 +7,7 @@ namespace JobMaster.Abstractions.Ioc.Selectors;
 /// and optional protection settings.
 /// All methods return the same selector instance to allow method chaining.
 /// </summary>
-public interface IAgentConnectionConfigSelector
+public interface IAgentConnectionConfigSelector : IAgentConnectionProviderSelector
 {
     /// <summary>
     /// Sets the logical name of this agent connection.
@@ -29,10 +26,9 @@ public interface IAgentConnectionConfigSelector
     /// <param name="protectConnectionChanges"><c>true</c> to enable fingerprint protection; <c>false</c> to allow unrestricted changes.</param>
     public IAgentConnectionConfigSelector ProtectConnectionChanges(bool protectConnectionChanges);
 
-    internal IAgentConnectionConfigSelector AgentAdditionalConnConfig(JobMasterConfigDictionary additionalConnConfig);
-
-    internal IAgentConnectionConfigSelector AppendAdditionalConnConfigValue(JobMasterNamespaceUniqueKey namespaceKey, string key, object value);
-
-    internal IAgentConnectionConfigSelector AgentRepoType(string repoType);
-    internal IAgentConnectionConfigSelector AgentConnString(string connString);
+    /// <summary>
+    /// Switches this agent connection into hybrid mode, allowing separate providers to be configured
+    /// for <see cref="IHybridAgentConnectionConfigSelector.Transport"/> and <see cref="IHybridAgentConnectionConfigSelector.Execution"/>.
+    /// </summary>
+    public IHybridAgentConnectionConfigSelector UseHybrid();
 }

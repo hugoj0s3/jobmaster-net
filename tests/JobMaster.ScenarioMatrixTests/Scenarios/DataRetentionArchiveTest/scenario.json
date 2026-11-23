@@ -1,0 +1,7 @@
+{
+  "scenarioName": "data-retention-archive-test",
+  "phases": [
+    { "name": "phase-1", "containers": ["archive"] }
+  ],
+  "api": { "container": "api" }
+}

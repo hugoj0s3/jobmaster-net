@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Utils;
+
 namespace JobMaster.Sdk.Abstractions.Exceptions;
 
 internal sealed class JobMasterDuplicationException : Exception
@@ -6,7 +8,7 @@ internal sealed class JobMasterDuplicationException : Exception
     public string EntityName { get; }
 
     public JobMasterDuplicationException(Guid id, string entityName, Exception inner)
-        : base($"Job with Id {id} already exists.", inner)
+        : base($"Job with Id {id.ToBase64()} already exists.", inner)
     {
         Id = id;
         EntityName = entityName;

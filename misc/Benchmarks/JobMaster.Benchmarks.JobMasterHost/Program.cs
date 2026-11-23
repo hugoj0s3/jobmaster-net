@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
@@ -7,16 +6,6 @@ using JobMaster.Benchmarks.Common.Scheduling;
 using JobMaster.Benchmarks.JobMasterHost.Handlers;
 using JobMaster.Ioc.Extensions;
 using StackExchange.Redis;
-
-// ConfigFromJson only sets RepoType as a string -- it never calls a provider-specific method
-// directly, so the CLR would never actually load these assemblies into the AppDomain, and their
-// [JobMasterIocRegistration] providers would be invisible to the AppDomain-based reflection scan.
-// Same trick TargetTestScheduleApp uses.
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDb.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -76,14 +65,14 @@ app.MapPost("/schedule-now", async (ScheduleNowRequest req, IJobMasterScheduler 
         return Results.BadRequest("Count must be at least 1.");
     }
 
-    var tasks = new List<Task<JobContext>>(req.Count);
+    var tasks = new List<Task<JobScheduleReceipt>>(req.Count);
     for (var i = 0; i < req.Count; i++)
     {
         tasks.Add(scheduler.OnceNowAsync<NoOpBenchmarkHandler>());
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
 });
 
 app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterScheduler scheduler) =>
@@ -94,14 +83,14 @@ app.MapPost("/schedule-after", async (ScheduleAfterRequest req, IJobMasterSchedu
     }
 
     var delay = TimeSpan.FromMinutes(req.DelayMinutes);
-    var tasks = new List<Task<JobContext>>(req.Count);
+    var tasks = new List<Task<JobScheduleReceipt>>(req.Count);
     for (var i = 0; i < req.Count; i++)
     {
         tasks.Add(scheduler.OnceAfterAsync<NoOpBenchmarkHandler>(delay));
     }
 
     var jobs = await Task.WhenAll(tasks);
-    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Id).ToList()));
+    return Results.Ok(new ScheduleResponse(jobs.Select(j => j.Context.Id).ToList()));
 });
 
 await app.Services.StartJobMasterRuntimeAsync();

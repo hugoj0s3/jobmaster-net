@@ -21,6 +21,8 @@ internal interface IMasterJobIntakeService : IJobMasterClusterAwareService
     /// Existing rows are left untouched. <paramref name="jobExecutions"/> and
     /// <paramref name="jobExecutionLogs"/> travel alongside their parent job — only copied for jobs that
     /// were actually newly inserted here, silently dropped for jobs that already existed.
+    /// Returns the ids confirmed in this cluster (inserted now or already there). Callers must only delete
+    /// these from the source: a job missing from the result may not have been saved.
     /// </summary>
-    Task BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions, IList<LogItem> jobExecutionLogs);
+    Task<IList<Guid>> BulkInsertIfNotExistsAsync(IList<JobRawModel> jobs, IList<JobExecution> jobExecutions, IList<LogItem> jobExecutionLogs);
 }

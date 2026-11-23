@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Config;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
@@ -11,38 +11,47 @@ using JobMaster.Sdk.Ioc.Markups;
 
 namespace JobMaster.Sdk.Repositories;
 
-internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing> : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository<TSavePending, TProcessing>
-    where TSavePending : class, IAgentRawMessagesDispatcherRepository
-    where TProcessing : class, IAgentRawMessagesDispatcherRepository
+internal abstract class AgentJobsDispatcherRepository : JobMasterClusterAwareComponent, IAgentJobsDispatcherRepository
 {
-    private readonly TSavePending savePendingRepository;
-    private readonly TProcessing processingRepository;
+    private readonly IAgentRawMessagesDispatcherRepository savePendingRepository;
+    private readonly IAgentRawMessagesDispatcherRepository processingRepository;
     private readonly IJobMasterLogger logger;
-
-    protected JobMasterAgentConnectionConfig AgentConnConfig = null!;
-
+    private readonly object initializeLock = new();
+    private bool isInitialized;
 
     protected AgentJobsDispatcherRepository(
         JobMasterClusterConnectionConfig clusterConnConfig,
-        TSavePending savePendingRepository,
-        TProcessing processingRepository,
+        string agentRepoTypeId,
+        IAgentRawMessagesDispatcherRepository savePendingRepository,
+        IAgentRawMessagesDispatcherRepository processingRepository,
         IJobMasterLogger logger) : base(clusterConnConfig)
     {
+        AgentRepoTypeId = agentRepoTypeId;
         this.savePendingRepository = savePendingRepository ?? throw new ArgumentNullException(nameof(savePendingRepository));
         this.processingRepository = processingRepository ?? throw new ArgumentNullException(nameof(processingRepository));
         this.logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
-    
-    public abstract string AgentRepoTypeId { get; }
+
+    public string AgentRepoTypeId { get; }
 
     public void Initialize(JobMasterAgentConnectionConfig agentConnConfig)
     {
-        AgentConnConfig = agentConnConfig;
-        savePendingRepository.Initialize(agentConnConfig);
-        processingRepository.Initialize(agentConnConfig);
+        lock (initializeLock)
+        {
+            if (isInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+            // Single connections share one raw repo for both roles, so the second check skips it.
+            if (!savePendingRepository.IsInitialized)
+                savePendingRepository.Initialize(agentConnConfig.Id, agentConnConfig.TransportConfig);
+            if (!processingRepository.IsInitialized)
+                processingRepository.Initialize(agentConnConfig.Id, agentConnConfig.ExecutionConfig);
+
+            isInitialized = true;
+        }
     }
     
-    public string PushForSaving(RecurringScheduleRawModel recurringScheduleRaw)
+    public string PushSavePendingRecur(RecurringScheduleRawModel recurringScheduleRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(recurringScheduleRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);
@@ -51,7 +60,7 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         return savePendingRepository.PushMessage(fullBucketAddressId, json, recurringScheduleRaw.CreatedAt, correlationId);
     }
 
-    public async Task<string> PushForSavingAsync(RecurringScheduleRawModel recurringScheduleRaw)
+    public async Task<string> PushSavePendingRecurAsync(RecurringScheduleRawModel recurringScheduleRaw)
     {
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(recurringScheduleRaw.BucketId);
         var json = InternalJobMasterSerializer.Serialize(recurringScheduleRaw);
@@ -135,51 +144,87 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
 
         return await savePendingRepository.BulkPushMessageAsync(fullBucketAddressId, messages);
     }
-    
-    public async Task<IList<RecurringScheduleRawModel>> PullSavePendingRecurAsync(string bucketId, int numberOfJobs)
+    public async Task<IList<(RecurringScheduleRawModel Schedule, string AckKey)>> LeaseSavePendingRecurAsync(string bucketId, int numberOfSchedules, TimeSpan lease)
     {
         if (!IsPollingBasedForSaving)
         {
-            return new List<RecurringScheduleRawModel>();
+            return new List<(RecurringScheduleRawModel Schedule, string AckKey)>();
         }
 
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
-        var messages = await savePendingRepository.PullMessagesAsync(fullBucketAddressId, numberOfJobs);
+        var messages = await savePendingRepository.LeaseMessagesAsync(fullBucketAddressId, numberOfSchedules, lease);
 
-        var results = new List<RecurringScheduleRawModel>();
+        // Kept in the terminated bucket (never pulled or destroyed), so it can be looked at.
+        var exhausted = messages.Where(x => x.LeaseCount >= JobMasterConstants.MaxSavePendingLeaseCount).ToList();
+        if (exhausted.Count > 0)
+        {
+            var terminatedAddress = FullBucketAddressIdsUtil.GetTerminatedBucketAddress(fullBucketAddressId);
+            foreach (var message in exhausted)
+            {
+                logger.Critical($"Recurring schedule message leased {message.LeaseCount} times without being saved: moved to {terminatedAddress}. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId);
+            }
+
+            await savePendingRepository.CreateBucketIfNotExistsAsync(terminatedAddress);
+            await savePendingRepository.UpdateBucketAsync(fullBucketAddressId, exhausted.Select(x => x.MessageId).ToList(), terminatedAddress);
+        }
+
+        var results = new List<(RecurringScheduleRawModel Schedule, string AckKey)>();
+        messages = messages.Except(exhausted).ToList();
+        
         foreach (var message in messages)
         {
             try
             {
-                var recurringSchedule = InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(message.Payload);
-                results.Add(recurringSchedule);
+                var schedule = InternalJobMasterSerializer.Deserialize<RecurringScheduleRawModel>(message.Payload);
+                results.Add((schedule, message.MessageId));
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize recurring schedule. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                logger.Critical($"Failed to deserialize recurring schedule. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
         return results;
     }
 
-    /// <summary>
-    /// Dispatch jobs from the save pending queue
-    /// </summary>
-    /// <param name="bucketId">The bucket ID</param>
-    /// <param name="numberOfJobs">Number of jobs to dequeue</param>
-    /// <returns>List of dequeued job records</returns>
-    public async Task<IList<JobRawModel>> PullSavePendingJobsAsync(string bucketId, int numberOfJobs)
+    public async Task AckSavePendingRecurAsync(string bucketId, IList<string> ackKeys)
+    {
+        if (!IsPollingBasedForSaving || ackKeys.Count == 0)
+        {
+            return;
+        }
+
+        var fullBucketAddressId = FullBucketAddressIdsUtil.GetRecurringScheduleSavePendingBucketAddress(bucketId);
+        await savePendingRepository.AckAsync(fullBucketAddressId, ackKeys);
+    }
+
+    public async Task<IList<(JobRawModel Job, string AckKey)>> LeaseSavePendingJobsAsync(string bucketId, int numberOfJobs, TimeSpan lease)
     {
         if (!IsPollingBasedForSaving)
         {
-            return new List<JobRawModel>();
+            return new List<(JobRawModel Job, string AckKey)>();
         }
 
         var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(bucketId);
-        var messages = await savePendingRepository.PullMessagesAsync(fullBucketAddressId, numberOfJobs);
+        var messages = await savePendingRepository.LeaseMessagesAsync(fullBucketAddressId, numberOfJobs, lease);
 
-        var results = new List<JobRawModel>();
+        // Kept in the terminated bucket (never pulled or destroyed), so it can be looked at.
+        var exhausted = messages.Where(x => x.LeaseCount >= JobMasterConstants.MaxSavePendingLeaseCount).ToList();
+        if (exhausted.Count > 0)
+        {
+            var terminatedAddress = FullBucketAddressIdsUtil.GetTerminatedBucketAddress(fullBucketAddressId);
+            foreach (var message in exhausted)
+            {
+                logger.Critical($"Job message leased {message.LeaseCount} times without being saved: moved to {terminatedAddress}. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId);
+            }
+
+            await savePendingRepository.CreateBucketIfNotExistsAsync(terminatedAddress);
+            await savePendingRepository.UpdateBucketAsync(fullBucketAddressId, exhausted.Select(x => x.MessageId).ToList(), terminatedAddress);
+        }
+
+        var results = new List<(JobRawModel Job, string AckKey)>();
+        messages = messages.Except(exhausted).ToList();
+
         foreach (var message in messages)
         {
             try
@@ -187,16 +232,27 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
                 var job = InternalJobMasterSerializer.Deserialize<JobRawModel>(message.Payload);
                 if (job != null)
                 {
-                    results.Add(job);
+                    results.Add((job, message.MessageId));
                 }
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                logger.Critical($"Failed to deserialize job. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
         return results;
+    }
+
+    public async Task AckSavePendingJobsAsync(string bucketId, IList<string> ackKeys)
+    {
+        if (!IsPollingBasedForSaving || ackKeys.Count == 0)
+        {
+            return;
+        }
+
+        var fullBucketAddressId = FullBucketAddressIdsUtil.GetJobSavePendingBucketAddress(bucketId);
+        await savePendingRepository.AckAsync(fullBucketAddressId, ackKeys);
     }
 
     public bool IsPollingBasedForSaving => savePendingRepository.IsPollingBased;
@@ -219,9 +275,10 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
                 var job = InternalJobMasterSerializer.Deserialize<JobRawModel>(message.Payload);
                 results.Add(job);
             }
-            catch (JsonException e)
+            catch (Exception e)
             {
-                logger.Critical($"Failed to deserialize job. Payload: {message.Payload}", JobMasterLogCategory.Bucket, bucketId, exception: e);
+                // Any exception: the batch is already pulled (deleted on SQL/RavenDB), so one bad message must not lose the rest.
+                logger.Critical($"Failed to deserialize job. {message.ToLogSummary()}", JobMasterLogCategory.Bucket, bucketId, exception: e);
             }
         }
 
@@ -262,8 +319,6 @@ internal abstract class AgentJobsDispatcherRepository<TSavePending, TProcessing>
         await savePendingRepository.DestroyBucketAsync(recurringScheduleAddress);
         await processingRepository.DestroyBucketAsync(processingAddress);
     }
-
-    
 
     private static string GetCorrelationId(JobRawModel job)
     {

@@ -1,5 +1,6 @@
 using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Api.ApiModels;
 

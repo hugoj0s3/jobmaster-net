@@ -5,6 +5,7 @@ using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Buckets;
 using JobMaster.Sdk.Abstractions.Models.GenericRecords;
 using JobMaster.Sdk.Abstractions.Models.Hosts;
+using JobMaster.Sdk.Utils;
 
 namespace JobMaster.Sdk.Abstractions.Models.Jobs;
 
@@ -107,16 +108,12 @@ internal class JobRawModel : JobMasterBaseModel
         return Job.FromModel(this);
     }
 
+    // Never includes MsgData / Metadata content (user data); their sizes only.
     public string ToLogSummary()
     {
-        var result = $"Id:{Id} JobDefinitionId:{JobDefinitionId} Status:{Status} Priority:{Priority} " +
-               $"NumberOfFailures:{NumberOfFailures} ScheduledAt:{ScheduledAt:O} BucketId:{BucketId}";
-        
-        result += $"\nMsgData:{(MsgData.Length > 500 ? MsgData.Substring(0, 500) + "...[truncated]" : MsgData)}";
-        result += $"\nMetadata:{(Metadata == null ? "[null]" : 
-            Metadata.Length > 500 ? Metadata.Substring(0, 500) + "..[truncated]" : Metadata)}";
-        
-        return result;
+        return $"Id:{Id.ToBase64()} JobDefinitionId:{JobDefinitionId} Status:{Status} Priority:{Priority} " +
+               $"NumberOfFailures:{NumberOfFailures} ScheduledAt:{ScheduledAt:O} BucketId:{BucketId} " +
+               $"MsgDataLength:{MsgData.Length} MetadataLength:{Metadata?.Length ?? 0}";
     }
 
 
@@ -224,7 +221,21 @@ internal class JobRawModel : JobMasterBaseModel
         FinalizedAt = DateTime.UtcNow;
         return true;
     }
-    
+
+    // Cancelled before it reached master (still PendingSave on the agent transport), so no worker has it yet.
+    public void MarkAsCancelledBeforeSave()
+    {
+        AgentConnectionId = null;
+        BucketId = null;
+        AgentWorkerId = null;
+        ProcessDeadline = null;
+        NextPlanExecutionAt = null;
+        PartitionLockId = null;
+        PartitionLockExpiresAt = null;
+        Status = JobMasterJobStatus.Cancelled;
+        FinalizedAt = DateTime.UtcNow;
+    }
+
     public void DelayNextExecutionPlan(TimeSpan delay)
     {
         var baseDate = ScheduledAt > DateTime.UtcNow ? ScheduledAt : DateTime.UtcNow;
@@ -237,20 +248,15 @@ internal class JobRawModel : JobMasterBaseModel
         NextPlanExecutionAt = advanced > ScheduledAt ? advanced : ScheduledAt;
     }
     
-    public bool TryRetry()
+    public bool HasRetriesLeft()
     {
-        var maxNumberOfRetries = this.MaxNumberOfRetries;
-        if (NumberOfFailures >= maxNumberOfRetries)
-        {
-            MarkAsFailed();
-            return false;
-        }
-        
-        var secondsToWait = 30 * Math.Pow(2, this.NumberOfFailures - 1);
-        var timeToWait = TimeSpan.FromSeconds(secondsToWait);
-        timeToWait += JobMasterConstants.JobProcessDeadlineDefaultDuration;
-        
-        DelayNextExecutionPlan(timeToWait);
+        return NumberOfFailures < MaxNumberOfRetries;
+    }
+
+    // The delay comes from the cluster's retry settings (JobRetryDecider), at least JobMasterLimits.MinRetryDelay.
+    public void ScheduleRetry(TimeSpan delay)
+    {
+        DelayNextExecutionPlan(delay);
         ProcessDeadline = null;
         Status = JobMasterJobStatus.OnMaster;
         AgentConnectionId = null;
@@ -258,9 +264,8 @@ internal class JobRawModel : JobMasterBaseModel
         BucketId = null;
         NumberOfFailures++;
         FinalizedAt = DateTime.UtcNow;
-        return true;
     }
-    
+
     public void MarkAsFailed()
     {
         Status = JobMasterJobStatus.Failed;
@@ -288,7 +293,7 @@ internal class JobRawModel : JobMasterBaseModel
         PartitionLockExpiresAt = null;
     }
     
-    public void ReSchedule(DateTime scheduledAt)
+    public void Reschedule(DateTime scheduledAt)
     {
         if (!this.Status.IsFinalStatus())
         {
@@ -310,7 +315,7 @@ internal class JobRawModel : JobMasterBaseModel
         this.NumberOfFailures = 0;
     }
     
-    public bool CanReSchedule()
+    public bool CanReschedule()
     {
         if (!this.Status.IsFinalStatus())
         {

@@ -18,6 +18,19 @@ public static class JobMasterDefaults
     /// <summary>Default maximum number of automatic retries per failed job: 3.</summary>
     public const int MaxRetryCount = 3;
 
+    /// <summary>
+    /// Default wait before each retry when a cluster sets no <c>RetryDelays</c>: 30 seconds, 2 minutes, 10 minutes,
+    /// 30 minutes, then 1 hour for every later retry.
+    /// </summary>
+    public static readonly IReadOnlyList<TimeSpan> RetryDelays = new[]
+    {
+        TimeSpan.FromSeconds(30),
+        TimeSpan.FromMinutes(2),
+        TimeSpan.FromMinutes(10),
+        TimeSpan.FromMinutes(30),
+        TimeSpan.FromHours(1),
+    };
+
     /// <summary>Default maximum job message size: 128 KB (131,072 bytes).</summary>
     public const int MaxMessageByteSize = 128 * 1024;
 
@@ -26,9 +39,6 @@ public static class JobMasterDefaults
 
     /// <summary>Default data retention window: infinite (no automatic purge).</summary>
     public static readonly TimeSpan DataRetentionTtl = TimeSpan.Zero;
-
-    /// <summary>Minimum accepted positive data retention TTL: 10 minutes. Cleanup runners check at TTL/2, so the minimum check interval is 5 minutes.</summary>
-    public static readonly TimeSpan MinDataRetentionTtl = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Default configuration values for individual workers.

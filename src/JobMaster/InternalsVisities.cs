@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 // Tests.
 [assembly: InternalsVisibleTo("JobMaster.UnitTests")]
+[assembly: InternalsVisibleTo("JobMaster.UnitTests.NetStandard")]
 [assembly: InternalsVisibleTo("JobMaster.IntegrationTests")]
 
 // Mocking frameworks
@@ -15,5 +16,5 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("JobMaster.SqlServer")]
 [assembly: InternalsVisibleTo("JobMaster.NatsJetStream")]
 [assembly: InternalsVisibleTo("JobMaster.Api")]
-[assembly: InternalsVisibleTo("JobMaster.RavenDb")]
+[assembly: InternalsVisibleTo("JobMaster.RavenDB")]
 

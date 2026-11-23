@@ -439,6 +439,42 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "dec", Operation = GenericFilterOperation.Lte, Value = 20.5m }, a.Id, b.Id);
     }
 
+    [Fact]
+    public async Task Query_MetadataFilter_KeyIgnoresCase()
+    {
+        var def = "defMetaCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var a = NewJob(jobDefinitionId: def);
+        a.Metadata = "{\"Category\":\"billing\"}";
+        var b = NewJob(jobDefinitionId: def);
+        b.Metadata = "{\"Category\":\"other\"}";
+
+        await Fixture.MasterJobs.AddAsync(a);
+        await Fixture.MasterJobs.AddAsync(b);
+        await SettleAsync();
+
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "category", Operation = GenericFilterOperation.Eq, Value = "billing" }, a.Id);
+        await AssertMetadataFilter(def, new GenericRecordValueFilter { Key = "CATEGORY", Operation = GenericFilterOperation.Neq, Value = "billing" }, b.Id);
+    }
+
+    [Fact]
+    public async Task Query_WorkerLane_Filter_IgnoresCase()
+    {
+        var def = "defLaneCase-" + JobMasterRandomUtil.NewGuid4();
+
+        var billing = NewJob(jobDefinitionId: def, workerLane: "Lane_Billing");
+        var other = NewJob(jobDefinitionId: def, workerLane: "Lane_Other");
+
+        await Fixture.MasterJobs.AddAsync(billing);
+        await Fixture.MasterJobs.AddAsync(other);
+        await SettleAsync();
+
+        var queried = await Fixture.MasterJobs.QueryAsync(new JobQueryCriteria { JobDefinitionId = def, WorkerLane = "lane_billing", CountLimit = 100 });
+
+        Assert.Equal(new[] { billing.Id }, queried.Select(j => j.Id).ToArray());
+        Assert.Equal("Lane_Billing", queried[0].WorkerLane);
+    }
+
     internal async Task AssertMetadataFilter(string jobDefinitionId, GenericRecordValueFilter filter, params Guid[] expectedIds)
     {
         var criteria = new JobQueryCriteria
@@ -1104,7 +1140,7 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
-    public async Task BulkUpdate_Request_HeldOnMaster_ShouldSkip_AlreadyOnMasterJobs()
+    public async Task BulkUpdate_Request_HeldOnMaster_ShouldSkip_OnMasterAndFinalJobs()
     {
         var def = "defBulkHeld-" + JobMasterRandomUtil.NewGuid4();
         var now = DateTime.UtcNow;
@@ -1122,11 +1158,15 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         var j2 = NewJob(def, JobMasterJobStatus.OnMaster, now.AddMinutes(2));
         j2.ProcessDeadline = now.AddMinutes(20);
 
+        // j3 Succeeded (final) — should NOT be revived
+        var j3 = NewJob(def, JobMasterJobStatus.Succeeded, now.AddMinutes(3));
+
         await Fixture.MasterJobs.AddAsync(j1);
         await Fixture.MasterJobs.AddAsync(j2);
+        await Fixture.MasterJobs.AddAsync(j3);
         var j2VersionBefore = (await Fixture.MasterJobs.GetAsync(j2.Id))!.Version;
 
-        var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id });
+        var request = BulkJobUpdateRequest.HeldOnMaster(new[] { j1.Id, j2.Id, j3.Id });
         await SettleAsync();
         await Fixture.MasterJobs.BulkUpdateAsync(request);
 
@@ -1144,6 +1184,8 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         // j2 was OnMaster — excluded, version and ProcessDeadline must be unchanged
         Assert.Equal(j2VersionBefore, fromDb2!.Version);
         Assert.NotNull(fromDb2.ProcessDeadline);
+
+        Assert.Equal(JobMasterJobStatus.Succeeded, (await Fixture.MasterJobs.GetAsync(j3.Id))!.Status);
     }
 
     // -----------------------------------------------------------------------
@@ -1564,16 +1606,20 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         j1.Metadata = "{\"testIdentifier\":\"bulk-insert-j1\"}";
         var j2 = NewJob(def, JobMasterJobStatus.Failed);
         j2.Metadata = "{\"testIdentifier\":\"bulk-insert-j2\"}";
+        // Receipt cancel inserts a not-yet-saved job already cancelled.
+        var j3 = NewJob(def, JobMasterJobStatus.Cancelled);
 
-        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2 }, Array.Empty<JobExecution>());
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { j1, j2, j3 }, Array.Empty<JobExecution>());
 
         var fromDb1 = await Fixture.MasterJobs.GetAsync(j1.Id);
         var fromDb2 = await Fixture.MasterJobs.GetAsync(j2.Id);
+        var fromDb3 = await Fixture.MasterJobs.GetAsync(j3.Id);
 
         Assert.NotNull(fromDb1);
         Assert.NotNull(fromDb2);
         Assert.Equal(JobMasterJobStatus.Succeeded, fromDb1!.Status);
         Assert.Equal(JobMasterJobStatus.Failed, fromDb2!.Status);
+        Assert.Equal(JobMasterJobStatus.Cancelled, Assert.IsType<JobRawModel>(fromDb3).Status);
         Assert.False(string.IsNullOrEmpty(fromDb1.Version));
         Assert.False(string.IsNullOrEmpty(fromDb2.Version));
 
@@ -1735,6 +1781,113 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
     }
 
     [Fact]
+    public async Task BulkInsertIfNotExists_ShouldInsert_OnMasterJobs_AndReturnOnlyInsertedIds()
+    {
+        // ConfirmOnMaster path: non-final (held on master) rows, and the return value must tell which were inserted.
+        var def = "defBulkInsertOnMaster-" + JobMasterRandomUtil.NewGuid4();
+
+        var existing = NewJob(def, JobMasterJobStatus.OnMaster);
+        await Fixture.MasterJobs.AddAsync(existing);
+
+        var new1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        var new2 = NewJob(def, JobMasterJobStatus.OnMaster);
+
+        var inserted = await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(
+            new[] { Clone(existing), new1, new2 }, Array.Empty<JobExecution>());
+
+        Assert.Equal(new[] { new1.Id, new2.Id }.OrderBy(x => x), inserted.OrderBy(x => x));
+        Assert.Equal(JobMasterJobStatus.OnMaster, (await Fixture.MasterJobs.GetAsync(new1.Id))!.Status);
+        Assert.Equal(JobMasterJobStatus.OnMaster, (await Fixture.MasterJobs.GetAsync(new2.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_InsertedModels_CanBeBulkUpdatedRightAway()
+    {
+        // The save path dispatches the models it just inserted; the engine's version-checked update must match them.
+        var def = "defBulkInsertThenUpdate-" + JobMasterRandomUtil.NewGuid4();
+        var job1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        var job2 = NewJob(def, JobMasterJobStatus.OnMaster);
+
+        await Fixture.MasterJobs.BulkInsertIfNotExistsAsync(new[] { job1, job2 }, Array.Empty<JobExecution>());
+
+        var updated = await Fixture.MasterJobs.BulkUpdateAsync(new List<JobRawModel> { job1, job2 });
+
+        Assert.Equal(new[] { job1.Id, job2.Id }.OrderBy(x => x), updated.Select(x => x.Id).OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task BulkInsertIfNotExists_ConcurrentWritersOfTheSameRows_ShouldNotThrow_AndInsertEachRowOnce()
+    {
+        // Several writers insert the same rows at once, each in its own order, so some of them hit another's commit
+        // between the pre-read and the insert (duplicate key / deadlock): that must fall back, not throw.
+        // Metadata on every row: its entries are what collide when the guarded row insert alone would skip silently.
+        const int rows = 30, writers = 6, rounds = 5;
+        var def = "defBulkInsertConcurrent-" + JobMasterRandomUtil.NewGuid4();
+
+        for (var round = 0; round < rounds; round++)
+        {
+            var jobs = Enumerable.Range(0, rows).Select(_ => NewJobWithMetadata(def)).ToList();
+
+            var results = await Task.WhenAll(Enumerable.Range(0, writers).Select(_ => Task.Run(() =>
+                Fixture.MasterJobs.BulkInsertIfNotExistsAsync(
+                    jobs.Select(j => Clone(j)).OrderBy(_ => Guid.NewGuid()).ToList(), Array.Empty<JobExecution>()))));
+
+            var reportedInserted = results.SelectMany(r => r).ToList();
+            var ids = jobs.Select(j => j.Id).ToList();
+            Assert.Equal(ids.OrderBy(x => x), reportedInserted.OrderBy(x => x)); // each row by exactly one writer
+            Assert.Equal(rows, (await Fixture.MasterJobs.QueryExistingIdsAsync(ids)).Count);
+        }
+    }
+
+    private JobRawModel NewJobWithMetadata(string def)
+    {
+        var job = NewJob(def, JobMasterJobStatus.OnMaster);
+        job.Metadata = "{\"race\":\"yes\"}";
+        return job;
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_ShouldReturnOnlyIdsOnMaster()
+    {
+        var def = "defQueryExistingIds-" + JobMasterRandomUtil.NewGuid4();
+        var j1 = NewJob(def, JobMasterJobStatus.OnMaster);
+        var j2 = NewJob(def, JobMasterJobStatus.Succeeded);
+        await Fixture.MasterJobs.AddAsync(j1);
+        await Fixture.MasterJobs.AddAsync(j2);
+        var missing = JobMasterRandomUtil.NewGuid4();
+
+        var existing = await Fixture.MasterJobs.QueryExistingIdsAsync(new[] { j1.Id, missing, j2.Id });
+
+        Assert.Equal(new[] { j1.Id, j2.Id }.OrderBy(x => x), existing.OrderBy(x => x));
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_ShouldIgnore_OtherClusterIds()
+    {
+        // Same database and tables, another cluster: its rows must not count as existing here.
+        var def = "defQueryExistingIdsOther-" + JobMasterRandomUtil.NewGuid4();
+        var mine = NewJob(def, JobMasterJobStatus.OnMaster);
+        await Fixture.MasterJobs.AddAsync(mine);
+
+        var otherClusterId = Fixture.OtherClusterMasterJobs.ClusterConnConfig.ClusterId;
+        var others = Clone(NewJob(def, JobMasterJobStatus.OnMaster), otherClusterId);
+        await Fixture.OtherClusterMasterJobs.AddAsync(others);
+        Assert.NotNull(await Fixture.OtherClusterMasterJobs.GetAsync(others.Id));
+
+        var existing = await Fixture.MasterJobs.QueryExistingIdsAsync(new[] { mine.Id, others.Id });
+
+        Assert.Equal(new[] { mine.Id }, existing);
+    }
+
+    [Fact]
+    public async Task QueryExistingIds_EmptyList_ShouldReturnEmpty()
+    {
+        var existing = await Fixture.MasterJobs.QueryExistingIdsAsync(Array.Empty<Guid>());
+
+        Assert.Empty(existing);
+    }
+
+    [Fact]
     public async Task BulkInsertIfNotExists_ShouldCopy_JobExecutions_ForNewlyInsertedJobs()
     {
         var def = "defBulkInsertExec-" + JobMasterRandomUtil.NewGuid4();
@@ -1830,9 +1983,9 @@ public abstract class RepositoryJobsConformanceTests<TFixture>
         Assert.DoesNotContain(results, e => e.Id == execUnrelated.Id);
     }
 
-    private static JobRawModel Clone(JobRawModel job)
+    private static JobRawModel Clone(JobRawModel job, string? clusterId = null)
     {
-        return new JobRawModel(job.ClusterId)
+        return new JobRawModel(clusterId ?? job.ClusterId)
         {
             Id = job.Id,
             JobDefinitionId = job.JobDefinitionId,

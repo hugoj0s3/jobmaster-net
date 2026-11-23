@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
@@ -9,15 +8,6 @@ using StackExchange.Redis;
 using TargetTestRecurringApp;
 using TargetTestRecurringApp.Handlers;
 using TargetTestRecurringApp.Redis;
-
-// See TargetTestScheduleApp/Program.cs for why this is necessary: ConfigFromJson only sets
-// RepoType as a string, so the CLR never naturally loads the provider assembly, and the
-// [JobMasterIocRegistration] AppDomain-reflection scan can't see types in an unloaded assembly.
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.Postgres.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.MySql.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.SqlServer.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.NatsJetStream.dll"));
-Assembly.LoadFrom(Path.Combine(AppContext.BaseDirectory, "JobMaster.RavenDb.dll"));
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -44,21 +34,26 @@ foreach (var clusterConfig in clusterConfigs)
 var redisConnectionString = Environment.GetEnvironmentVariable("REDIS_CONNECTION_STRING")
     ?? throw new InvalidOperationException("REDIS_CONNECTION_STRING environment variable must be set.");
 
-builder.Services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnectionString));
+// Connected at startup, not lazily by the first job: under the first burst of jobs the connect can time out and
+// fail them. /health stays 503 until connected, so the harness doesn't schedule before Redis is ready.
+var redisOptions = ConfigurationOptions.Parse(redisConnectionString);
+redisOptions.AbortOnConnectFail = false;
+builder.Services.AddSingleton<IConnectionMultiplexer>(await ConnectionMultiplexer.ConnectAsync(redisOptions));
 builder.Services.AddSingleton<IExecutionRecorder, RedisExecutionRecorder>();
 
 var app = builder.Build();
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+app.MapGet("/health", (IConnectionMultiplexer redis) =>
+    redis.IsConnected ? Results.Ok(new { status = "ok" }) : Results.StatusCode(StatusCodes.Status503ServiceUnavailable));
 
 app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, RecurringScheduleRequest req, IJobMasterScheduler scheduler) =>
 {
     var metadata = WritableMetadata.New().SetStringValue("TestIdentifier", req.TestIdentifier);
 
-    RecurringScheduleContext context;
+    RecurringScheduleReceipt receipt;
     if (string.Equals(handlerType, "tick", StringComparison.OrdinalIgnoreCase))
     {
-        context = await scheduler.RecurringAsync<RecurringTickHandler>(
+        receipt = await scheduler.RecurringAsync<RecurringTickHandler>(
             req.ExpressionTypeId, req.Expression, metadata: metadata, clusterId: req.ClusterId);
     }
     else if (string.Equals(handlerType, "advanced-tick", StringComparison.OrdinalIgnoreCase))
@@ -66,7 +61,7 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         // Scheduled via IJobMasterScheduler.Advanced.RecurringAsync<TDefinition>() instead of the
         // classic handler-typed overload -- proves the JobDefinitionConfigAttribute path end-to-end
         // for recurring schedules too, not just in-process/mocked.
-        context = await scheduler.Advanced.RecurringAsync<AdvancedTickDefinitionAttribute>(
+        receipt = await scheduler.Advanced.RecurringAsync<AdvancedTickDefinitionAttribute>(
             req.ExpressionTypeId, req.Expression, metadata: metadata, clusterId: req.ClusterId);
     }
     else
@@ -74,12 +69,12 @@ app.MapPost("/recurring-schedule/{handlerType}", async (string handlerType, Recu
         return Results.BadRequest($"Unknown handlerType '{handlerType}'. Expected 'tick' or 'advanced-tick'.");
     }
 
-    return Results.Ok(new RecurringScheduleResponse(context.Id));
+    return Results.Ok(new RecurringScheduleResponse(receipt.Context.Id));
 });
 
 app.MapDelete("/recurring-schedule/{id}", async (Guid id, string? clusterId, IJobMasterScheduler scheduler) =>
 {
-    var cancelled = await scheduler.TryCancelRecurringAsync(id, clusterId);
+    var cancelled = await scheduler.CancelRecurringAsync(id, clusterId);
     return cancelled ? Results.Ok() : Results.NotFound();
 });
 

@@ -3,6 +3,7 @@ using JobMaster;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Serialization;
 using JobMaster.Sdk.Abstractions.Jobs;
+using JobMaster.Serialization;
 
 namespace JobMaster.UnitTests.Sdk.Contracts;
 
@@ -12,7 +13,7 @@ public class KeyValueBagUtilTests
     // is normally set up during host startup -- initialize it here so a bare unit test can exercise it.
     static KeyValueBagUtilTests()
     {
-        JobMasterMessageJson.SetMessageSerializerIfNotSet(new DefaultJobMasterMessageJsonSerializer());
+        JobMasterMessageJson.SetMessageSerializerIfNotSet(new SystemTextJsonMessageSerializer());
     }
 
     private enum TestColor
@@ -22,10 +23,93 @@ public class KeyValueBagUtilTests
         Blue
     }
 
+    [Flags]
+    private enum TestPermissions
+    {
+        None = 0,
+        Read = 1,
+        Write = 2,
+        Delete = 4
+    }
+
+    private enum TestSmallCode : byte
+    {
+        A = 1,
+        B = 44
+    }
+
     private class TestPayload
     {
         public string Name { get; set; } = string.Empty;
         public int Count { get; set; }
+    }
+
+    [Fact]
+    public void Metadata_And_MessageData_ReadKeysIgnoringCase()
+    {
+        var metadata = WritableMetadata.New().SetStringValue("Category", "billing");
+        var data = WriteableMessageData.New().SetIntValue("OrderId", 7);
+
+        metadata.ToReadable().GetStringValue("CATEGORY").Should().Be("billing");
+        data.ToReadable().GetIntValue("orderid").Should().Be(7);
+    }
+
+    [Fact]
+    public void Set_SameKeyOtherCase_OverwritesValue_KeepsFirstSpelling()
+    {
+        var metadata = WritableMetadata.New()
+            .SetStringValue("Category", "a")
+            .SetStringValue("category", "b");
+
+        metadata.ToDictionary().Should().Equal(new Dictionary<string, object?> { ["Category"] = "b" });
+    }
+
+    [Fact]
+    public void Set_SameKeyOtherCase_KeepsKeyOrder()
+    {
+        var metadata = WritableMetadata.New()
+            .SetStringValue("First", "1")
+            .SetStringValue("Second", "2")
+            .SetStringValue("Third", "3")
+            .SetStringValue("FIRST", "1b");
+
+        metadata.ToDictionary().Keys.Should().Equal("First", "Second", "Third");
+    }
+
+    [Fact]
+    public void Constructor_FromCaseSensitiveDictionary_CollapsesSpellings_LastValueWins()
+    {
+        var stored = new Dictionary<string, object?>(StringComparer.Ordinal) { ["Category"] = "a", ["CATEGORY"] = "b" };
+
+        var metadata = new Metadata(stored);
+
+        metadata.ToDictionary().Should().Equal(new Dictionary<string, object?> { ["Category"] = "b" });
+        metadata.ToReadable().GetStringValue("category").Should().Be("b");
+    }
+
+    [Fact]
+    public void FromDictionary_CopiesTheDictionary_ForMetadataAndMessageData()
+    {
+        var source = new Dictionary<string, object?> { ["Key"] = "a" };
+
+        var metadata = WritableMetadata.FromDictionary(source).SetStringValue("Other", "m");
+        var data = WriteableMessageData.FromDictionary(source).SetStringValue("Other", "d");
+        source["Key"] = "changed";
+
+        source.Keys.Should().Equal("Key");
+        metadata.ToReadable().GetStringValue("key").Should().Be("a");
+        data.ToReadable().GetStringValue("key").Should().Be("a");
+    }
+
+    [Fact]
+    public void Serialize_ThenDeserializeMetadata_KeepsKeySpelling_AndReadsIgnoringCase()
+    {
+        var json = KeyValueBagUtil.Serialize(WritableMetadata.New().SetStringValue("Category", "billing"));
+
+        var metadata = KeyValueBagUtil.DeserializeMetadata(json);
+
+        metadata.ToDictionary().Keys.Should().Equal("Category");
+        metadata.ToReadable().GetStringValue("category").Should().Be("billing");
     }
 
     [Fact]
@@ -117,22 +201,184 @@ public class KeyValueBagUtilTests
     }
 
     [Fact]
-    public void Serialize_MessageData_ThenDeserializeMessageData_ByteArray_DoesNotRoundTrip()
+    public void Serialize_MessageData_ThenDeserializeMessageData_ByteArray_ShouldRoundTrip()
     {
-        // Documents a real, known limitation (not asserting desired behavior): System.Text.Json
-        // encodes byte[] as a base64 string, and the JSON round-trip has no way to distinguish that
-        // from an ordinary string on the way back in -- same ambiguity that got byte[] support
-        // removed from Metadata entirely. MessageData still exposes SetByteArrayValue/GetByteArrayValue,
-        // but only for callers that never serialize in between (e.g. same-process use before the
-        // MsgData ever becomes a persisted JSON string) -- once serialized, GetByteArrayValue throws.
-        IWriteableMessageData msgData = new MessageData()
-            .SetByteArrayValue("blob", new byte[] { 1, 2, 3, 255 });
+        // System.Text.Json writes byte[] as a base64 string; GetByteArrayValue decodes it back.
+        var bytes = new byte[] { 1, 2, 3, 255 };
+        IWriteableMessageData msgData = new MessageData().SetByteArrayValue("blob", bytes);
 
         var json = KeyValueBagUtil.Serialize(msgData);
         var recovered = KeyValueBagUtil.DeserializeMessageData(json).ToReadable();
 
-        var act = () => recovered.GetByteArrayValue("blob");
-        act.Should().Throw<KeyNotFoundException>();
+        recovered.GetByteArrayValue("blob").Should().Equal(bytes);
+    }
+
+    [Fact]
+    public void Serialize_MessageData_ThenDeserializeMessageData_RandomByteArrays_ShouldRoundTrip()
+    {
+        // Guards the outer layer's DateTime/Guid string normalization from ever claiming a base64 value.
+        var random = new Random(12345);
+        for (var i = 0; i < 20_000; i++)
+        {
+            var bytes = new byte[random.Next(0, 48)];
+            random.NextBytes(bytes);
+            IWriteableMessageData msgData = new MessageData().SetByteArrayValue("blob", bytes);
+
+            var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+            recovered.GetByteArrayValue("blob").Should().Equal(bytes, $"base64 '{Convert.ToBase64String(bytes)}'");
+        }
+    }
+
+    [Theory]
+    [InlineData("Blue")]
+    [InlineData("blue")]
+    [InlineData("2")]
+    public void TryGetEnumValue_WhenStringIsMember_ReturnsIt(string stored)
+    {
+        var msgData = new MessageData().SetStringValue("color", stored).ToReadable();
+
+        msgData.TryGetEnumValue<TestColor>("color").Should().Be(TestColor.Blue);
+    }
+
+    [Theory]
+    [InlineData("WRONG")]
+    [InlineData("7")]
+    [InlineData("Red, Blue")] // ORs to a member value; still not a single member of a non-[Flags] enum
+    public void TryGetEnumValue_WhenStringIsNotMember_Throws(string stored)
+    {
+        var msgData = new MessageData().SetStringValue("color", stored).ToReadable();
+
+        var act = () => msgData.TryGetEnumValue<TestColor>("color");
+
+        act.Should().Throw<InvalidOperationException>();
+        msgData.TryGetEnumValue<TestColor>("color", ignoreInvalidValues: true).Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenSetAsIntegerType_ReadsMemberInMemoryAndAfterPersistence()
+    {
+        IWriteableMessageData msgData = new MessageData()
+            .SetByteValue("byte", 1).SetByteValue("byteInvalid", 7)
+            .SetShortValue("short", 1).SetShortValue("shortInvalid", 7)
+            .SetIntValue("int", 1).SetIntValue("intInvalid", 7)
+            .SetLongValue("long", 1L).SetLongValue("longInvalid", 7L);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            foreach (var key in new[] { "byte", "short", "int", "long" })
+            {
+                readable.TryGetEnumValue<TestColor>(key).Should().Be(TestColor.Green, key);
+                var act = () => readable.TryGetEnumValue<TestColor>(key + "Invalid");
+                act.Should().Throw<InvalidOperationException>(key + "Invalid");
+            }
+        }
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenValueIsNotIntegral_ThrowsInsteadOfRounding()
+    {
+        // 1.6 would round to 2 (Blue); persisted it comes back as decimal 1.6. true / 'a' would become 1 / 97.
+        IWriteableMessageData msgData = new MessageData()
+            .SetDoubleValue("double", 1.6)
+            .SetDecimalValue("decimal", 1.6m)
+            .SetBoolValue("bool", true)
+            .SetCharValue("char", (char)1);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            foreach (var key in new[] { "double", "decimal", "bool", "char" })
+            {
+                var act = () => readable.TryGetEnumValue<TestColor>(key);
+                act.Should().Throw<InvalidOperationException>(key);
+            }
+        }
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenNumberOverflowsUnderlyingType_ThrowsInsteadOfTruncating()
+    {
+        // 300 truncated to a byte is 44, which is a defined member.
+        IWriteableMessageData msgData = new MessageData().SetIntValue("code", 300).SetIntValue("valid", 44);
+        var inMemory = msgData.ToReadable();
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        foreach (var readable in new[] { inMemory, recovered })
+        {
+            var act = () => readable.TryGetEnumValue<TestSmallCode>("code");
+            act.Should().Throw<InvalidOperationException>();
+            readable.TryGetEnumValue<TestSmallCode>("valid").Should().Be(TestSmallCode.B);
+        }
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenPersistedNumberIsNotMember_Throws()
+    {
+        // SetEnumValue stores a number; a member removed in a later version comes back as an undefined one.
+        IWriteableMessageData msgData = new MessageData().SetEnumValue("color", (TestColor)7);
+        var recovered = KeyValueBagUtil.DeserializeMessageData(KeyValueBagUtil.Serialize(msgData)).ToReadable();
+
+        var act = () => recovered.GetEnumValue<TestColor>("color");
+
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void TryGetEnumValue_WhenFlagsCombination_AcceptsDefinedBitsOnly()
+    {
+        var valid = new MessageData().SetEnumValue("p", TestPermissions.Read | TestPermissions.Delete).ToReadable();
+        var validString = new MessageData().SetStringValue("p", "Read, Write").ToReadable();
+        var unknownBit = new MessageData().SetIntValue("p", 8).ToReadable();
+
+        valid.TryGetEnumValue<TestPermissions>("p").Should().Be(TestPermissions.Read | TestPermissions.Delete);
+        validString.TryGetEnumValue<TestPermissions>("p").Should().Be(TestPermissions.Read | TestPermissions.Write);
+        var act = () => unknownBit.TryGetEnumValue<TestPermissions>("p");
+        act.Should().Throw<InvalidOperationException>();
+    }
+
+    [Fact]
+    public void TryGetJson_WhenValueIsNotValidForType_Throws()
+    {
+        var msgData = new MessageData().SetStringValue("payload", "{\"Count\":\"not-a-number\"}").ToReadable();
+
+        var act = () => msgData.TryGetJson<TestPayload>("payload");
+
+        act.Should().Throw<InvalidOperationException>().Which.Message.Should().NotContain("not-a-number");
+    }
+
+    [Fact]
+    public void TryGetJson_WhenIgnoringDeserializationErrors_ReturnsNull()
+    {
+        var msgData = new MessageData().SetStringValue("payload", "{\"Count\":\"not-a-number\"}").ToReadable();
+
+        msgData.TryGetJson<TestPayload>("payload", ignoreDeserializationErrors: true).Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("null")]
+    [InlineData(" null ")]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void TryGetJson_WhenStoredValueIsEmptyOrJsonNull_ReturnsNull(string stored)
+    {
+        // A stored JSON null literal or an empty value reads as missing, not as a broken payload.
+        var json = KeyValueBagUtil.Serialize(new MessageData().SetStringValue("payload", stored));
+        var recovered = KeyValueBagUtil.DeserializeMessageData(json).ToReadable();
+
+        recovered.TryGetJson<TestPayload>("payload").Should().BeNull();
+    }
+
+    [Fact]
+    public void TryGetJson_WhenKeyMissingOrSetToNull_ReturnsNull()
+    {
+        var msgData = new MessageData().SetJson<TestPayload>("payload", null).ToReadable();
+
+        msgData.TryGetJson<TestPayload>("payload").Should().BeNull();
+        msgData.TryGetJson<TestPayload>("missing").Should().BeNull();
     }
 
     [Fact]

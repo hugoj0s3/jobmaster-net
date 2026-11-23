@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Reflection;
 using JobMaster.Abstractions;
 using JobMaster.Abstractions.Models;
 using JobMaster.Abstractions.Models.Attributes;
@@ -11,27 +10,43 @@ using JobMaster.Sdk.Abstractions.Exceptions;
 using JobMaster.Sdk.Abstractions.Extensions;
 using JobMaster.Sdk.Abstractions.Ioc;
 using JobMaster.Sdk.Abstractions.Ioc.Definitions;
+using JobMaster.Sdk.Abstractions.Jobs;
 using JobMaster.Sdk.Abstractions.Keys;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Agents;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Abstractions.Models.Logs;
 using JobMaster.Sdk.Abstractions.Models.RecurringSchedules;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Abstractions.Repositories.Master;
 using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Background.Cancellation;
+using JobMaster.Sdk.Reflection;
 using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace JobMaster.Sdk.Background;
 
-internal class JobMasterRuntime : IJobMasterRuntime
+// Disposed by the app's container (registered by factory, so the container owns it), which stops the workers: in a
+// hosted app that's when the host stops.
+internal class JobMasterRuntime : IJobMasterRuntime, IAsyncDisposable, IDisposable
 {
     private readonly List<JobMasterBackgroundAgentWorker> Workers = new List<JobMasterBackgroundAgentWorker>();
+
+    // Values one StartAsync run computes and reads later in the same run; cleared when it ends.
+    private readonly StartupState State = new StartupState();
 
     public bool Started { get; private set; } = false;
     public DateTime? StartedAt { get; private set; }
 
     public DateTime? StartingAt { get; private set; }
+
+    public StopControl StopControl { get; }
+
+    public JobMasterStopControlFactory StopControlFactory { get; }
+
+    // Running jobs' 5 s plus the cleanup; leaves room in Docker's default 10 s for the loggers' final flush after it.
+    internal static readonly TimeSpan ShutdownStopTimeout = JobMasterConstants.ImmediateStopTimeout;
 
     public IReadOnlyList<IJobMasterBackgroundAgentWorker> GetAllWorkers() =>
         new List<IJobMasterBackgroundAgentWorker>(Workers);
@@ -45,9 +60,25 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
     public JobMasterRuntime()
     {
+        StopControlFactory = new JobMasterStopControlFactory();
+        StopControl = StopControlFactory.ForRoot();
     }
 
     public async Task StartAsync(IServiceProvider serviceProvider)
+    {
+        try
+        {
+            await DoStartAsync(serviceProvider);
+        }
+        finally
+        {
+            // Also after a failed start, so a retry doesn't see its values.
+            State.Clear();
+        }
+    }
+
+
+    private async Task DoStartAsync(IServiceProvider serviceProvider)
     {
         this.StartingAt = DateTime.UtcNow;
         if (serviceProvider == null) throw new ArgumentNullException(nameof(serviceProvider));
@@ -59,28 +90,41 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
         using var scope = serviceProvider.CreateScope();
 
+        ValidateClusterDefinitions(State.ValidationMessages);
+
+        // All validation must complete before anything starts provisioning/side-effecting, and is reported as one list.
         var runtimeSetups = scope.ServiceProvider.GetServices<IJobMasterRuntimeSetup>().ToList();
-        var validationMessages = new List<string>();
         foreach (var runtimeSetup in runtimeSetups)
         {
-            validationMessages.AddRange(await runtimeSetup.ValidateAsync(scope.ServiceProvider));
+            State.ValidationMessages.AddRange(await runtimeSetup.ValidateAsync(scope.ServiceProvider));
         }
 
-        if (validationMessages.Count > 0)
+        // Built now so a broken profile or definition fails here; saved after the workers start. No default means its
+        // error is already in the list.
+        var defaultClusterId = JobMasterClusterConnectionConfig.Default?.ClusterId;
+        if (defaultClusterId != null)
         {
-            throw new InvalidOperationException(
-                $"JobMasterRuntime failed validation:{Environment.NewLine}{string.Join(Environment.NewLine, validationMessages)}");
+            var staticSchedules = StaticRecurringScheduleDefinitionsBuilder.Build(defaultClusterId, BootstrapBlueprintDefinitions.Clusters);
+            State.ValidationMessages.AddRange(staticSchedules.Errors);
+            State.StaticSchedules = staticSchedules.Definitions;
         }
 
-        // All validation (both the per-setup ValidateAsync above and the structural checks below)
-        // must complete before anything starts actually provisioning/side-effecting — OnBeforeStartAsync
-        // assumes it's only ever reached once the whole configuration is known-good.
-        PreValidation();
+        ThrowIfFailed(State.ValidationMessages);
+
+        // Read-only, so before provisioning: nothing is created until every other check passed. Only once the
+        // configuration is valid, so a misconfigured cluster is never queried.
+        await ValidateArchivedStorageAsync();
+        ThrowIfFailed(State.ValidationMessages);
 
         foreach (var runtimeSetup in runtimeSetups)
         {
             await runtimeSetup.OnBeforeStartAsync(scope.ServiceProvider);
         }
+
+        // After provisioning: it writes each agent's own fingerprint (get-or-create) and needs its tables. Still before
+        // any save.
+        await ValidateFingerprintAsync();
+        ThrowIfFailed(State.ValidationMessages);
 
         foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
         {
@@ -99,38 +143,28 @@ internal class JobMasterRuntime : IJobMasterRuntime
             var agentDefinitions = clusterDefinition.AgentConnections;
             foreach (var agentDefinition in agentDefinitions)
             {
-                var agentConfig = clusterCnnCfg.TryGetAgentConnectionConfig(agentDefinition.AgentConnectionName);
-                if (agentConfig == null)
+                // Guaranteed by ClusterConfigBuilder.Finish, which registers a config per agent definition.
+                var agentConfig = clusterCnnCfg.GetAgentConnectionConfig(agentDefinition.AgentConnectionName);
+                
+                // ValidateFingerprintAsync resolves one per agent definition of every cluster.
+                // The agent connection id already includes the cluster id.
+                if (!State.AgentFingerprints.TryGetValue(agentConfig.Id, out var fingerprint))
+                    throw new InvalidOperationException($"Fingerprint not resolved for agent connection {agentDefinition.AgentConnectionName}.");
+
+                // A protected connection fails on ValidateFingerprintAsync
+                if (fingerprint.MasterFingerprint != null && fingerprint.MasterFingerprint != fingerprint.AgentFingerprint)
                 {
-                    throw new Exception($"Agent connection {agentDefinition.AgentConnectionName} not found");
-                }
-
-                var agentConnectionId = new AgentConnectionId(agentConfig.Id);
-                var existingConnection =
-                    await masterAgentConnectionService.GetConnectionAsync(agentConnectionId, useCache: false);
-
-                var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(agentConfig.Id);
-                var fingerprint =
-                    await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
-
-                if (existingConnection != null && existingConnection.Fingerprint != fingerprint)
-                {
-                    if (agentDefinition.ProtectConnectionChanges)
-                    {
-                        throw new Exception(
-                            $"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, " +
-                            $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
-                    }
-
                     logger.Warn(
                         $"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, updating...");
                 }
 
-                await masterAgentConnectionService.SaveConnectionAsync(agentConnectionId, agentConfig.RepositoryTypeId,
-                    fingerprint, agentDefinition.ProtectConnectionChanges);
+                await masterAgentConnectionService.SaveConnectionAsync(new AgentConnectionId(agentConfig.Id),
+                    agentConfig.RepositoryTypeId, fingerprint.AgentFingerprint, agentDefinition.ProtectConnectionChanges);
             }
 
-            if (isStandalone)
+            // An archived standalone cluster has no agent connection (ClusterConfigBuilder.Finish); the lookup below
+            // would create it on demand.
+            if (isStandalone && (clusterDefinition.ClusterMode ?? modelToSave.ClusterMode) != ClusterMode.Archived)
             {
                 var standaloneConfig = clusterCnnCfg.TryGetAgentConnectionConfig(JobMasterConstants.StandaloneAgentConnName);
                 if (standaloneConfig != null)
@@ -156,12 +190,26 @@ internal class JobMasterRuntime : IJobMasterRuntime
             modelToSave.DefaultJobTimeout = clusterDefinition.DefaultJobTimeout ?? modelToSave.DefaultJobTimeout;
             modelToSave.DefaultMaxOfRetryCount =
                 clusterDefinition.DefaultMaxRetryCount ?? modelToSave.DefaultMaxOfRetryCount;
+            // Informational, never read back. Only a process that executes jobs reports its retry settings: a
+            // publisher or coordinator-only process would show settings no job runs under.
+            if (workerDefinitions.Any(w => w.Mode.IsFullOr(AgentWorkerMode.Execution)))
+            {
+                var replacedLog = clusterCnnCfg.RetrySettings.ReplacedStoredSettingsLog(modelToSave.RetryDelays, modelToSave.RetryInterceptor);
+                if (replacedLog != null)
+                {
+                    logger.Info(replacedLog, JobMasterLogCategory.Cluster, clusterCnnCfg.ClusterId);
+                }
+
+                modelToSave.RetryDelays = clusterCnnCfg.RetrySettings.Delays.ToList();
+                modelToSave.RetryInterceptor = clusterCnnCfg.RetrySettings.InterceptorDescription;
+            }
             modelToSave.IanaTimeZoneId = clusterDefinition.IanaTimeZoneId ?? modelToSave.IanaTimeZoneId;
             modelToSave.MaxMessageByteSize = clusterDefinition.MaxMessageByteSize ?? modelToSave.MaxMessageByteSize;
             modelToSave.AdditionalConfig = clusterDefinition.AdditionalConfig ?? modelToSave.AdditionalConfig;
             modelToSave.TransientThreshold = clusterDefinition.TransientThreshold ?? modelToSave.TransientThreshold;
             modelToSave.DataRetentionTtl = clusterDefinition.DataRetentionTtl ?? modelToSave.DataRetentionTtl;
             modelToSave.TargetArchivedClusterId = clusterDefinition.TargetArchivedClusterId ?? modelToSave.TargetArchivedClusterId;
+            // Never cleared, only replaced: an archived cluster moves late jobs/schedules there.
             modelToSave.TargetActiveClusterId = clusterDefinition.TargetActiveClusterId ?? modelToSave.TargetActiveClusterId;
             modelToSave.ClusterMode = clusterDefinition.ClusterMode ?? modelToSave.ClusterMode;
             modelToSave.IsStandalone = isStandalone;
@@ -172,44 +220,25 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     clusterDefinition.MirrorLogMaxBufferItems ?? 500, clusterDefinition.MirrorLogFlushInterval);
             }
 
+            // Archived without a target holding unfinished data already failed in ValidateArchivedStorageAsync.
             masterConfigService.Save(modelToSave);
 
-            if (modelToSave.ClusterMode == ClusterMode.Archived)
+            if (modelToSave.ClusterMode == ClusterMode.Archived && !string.IsNullOrEmpty(modelToSave.TargetActiveClusterId))
             {
-                var jobsRepo = componentFactory.GetMasterRepository<IMasterJobsRepository>();
-                var nonFinalJobStatuses = Enum.GetValues(typeof(JobMasterJobStatus))
-                    .Cast<JobMasterJobStatus>()
-                    .Where(s => !s.IsFinalStatus())
-                    .ToList();
-                var nonFinalJobs = await jobsRepo.QueryAsync(new JobQueryCriteria
+                // Every worker allowed on an Archived cluster acts as its Coordinator.
+                if (!workerDefinitions.Any())
                 {
-                    Statuses = nonFinalJobStatuses,
-                    CountLimit = 1
-                });
-                if (nonFinalJobs.Any())
-                {
-                    throw new InvalidOperationException(
-                        $"Archived cluster '{clusterDefinition.ClusterId}' contains jobs in a non-final status. " +
-                        "Archive clusters may only hold finalized data.");
+                    logger.Warn(
+                        $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
+                        $"'{modelToSave.TargetActiveClusterId}' only while a worker of it runs. This app has none;" +
+                        "make sure one runs in an app that also configures that cluster.");
                 }
-
-                var recurringRepo = componentFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>();
-                var nonFinalRecurringStatuses = Enum.GetValues(typeof(RecurringScheduleStatus))
-                    .Cast<RecurringScheduleStatus>()
-                    .Where(s => !s.IsFinalStatus());
-                foreach (var status in nonFinalRecurringStatuses)
+                else if (JobMasterClusterAwareComponentFactories.TryGetFactory(modelToSave.TargetActiveClusterId!) == null)
                 {
-                    var nonFinalSchedules = await recurringRepo.QueryAsync(new RecurringScheduleQueryCriteria
-                    {
-                        Status = status,
-                        CountLimit = 1
-                    });
-                    if (nonFinalSchedules.Any())
-                    {
-                        throw new InvalidOperationException(
-                            $"Archived cluster '{clusterDefinition.ClusterId}' contains recurring schedules in a non-final status. " +
-                            "Archive clusters may only hold finalized data.");
-                    }
+                    logger.Warn(
+                        $"Archived cluster '{clusterDefinition.ClusterId}' moves late jobs and recurring schedules to " +
+                        $"'{modelToSave.TargetActiveClusterId}', but that cluster isn't configured in this app. " +
+                        "Configure it here, next to a worker of the archived cluster, or they stay on the archived cluster.");
                 }
             }
 
@@ -225,7 +254,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 {
                     var lanes = existingBuckets.Where(x => x.IsStandaloneBucket(clusterDefinition.ClusterId!))
                         .Select(x => x.WorkerLane)
-                        .Distinct()
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
                     foreach (var lane in lanes)
@@ -271,7 +300,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             await worker.StartAsync();
         }
 
-        BootstrapStaticRecurringSchedules(JobMasterClusterConnectionConfig.Default!.ClusterId);
+        SaveStaticRecurringSchedules(State.StaticSchedules);
 
         Started = true;
         StartedAt = DateTime.UtcNow;
@@ -281,20 +310,223 @@ internal class JobMasterRuntime : IJobMasterRuntime
         await Task.Delay(TimeSpan.FromSeconds(1));
     }
 
-    private static void PreValidation()
+    private static void ThrowIfFailed(IList<string> validationMessages)
     {
-        // Default cluster handling
+        if (validationMessages.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"JobMasterRuntime failed validation:{Environment.NewLine}{string.Join(Environment.NewLine, validationMessages)}");
+        }
+    }
+    
+    private sealed class StartupState
+    {
+        public List<string> ValidationMessages { get; } = new List<string>();
+
+        public IReadOnlyList<StaticRecurringScheduleDefinition> StaticSchedules { get; set; } =
+            Array.Empty<StaticRecurringScheduleDefinition>();
+
+        // By agent connection id, which already includes the cluster id.
+        public Dictionary<string, ResolvedAgentFingerprint> AgentFingerprints { get; } =
+            new Dictionary<string, ResolvedAgentFingerprint>(StringComparer.OrdinalIgnoreCase);
+
+        public void Clear()
+        {
+            ValidationMessages.Clear();
+            StaticSchedules = Array.Empty<StaticRecurringScheduleDefinition>();
+            AgentFingerprints.Clear();
+        }
+    }
+
+    /// <summary>An agent connection's fingerprint as saved on master and as resolved at startup.</summary>
+    private sealed class ResolvedAgentFingerprint
+    {
+        public ResolvedAgentFingerprint(string clusterId, string agentConnectionId, string? masterFingerprint, string agentFingerprint)
+        {
+            ClusterId = clusterId;
+            AgentConnectionId = agentConnectionId;
+            MasterFingerprint = masterFingerprint;
+            AgentFingerprint = agentFingerprint;
+        }
+
+        public string ClusterId { get; }
+        public string AgentConnectionId { get; }
+
+        /// <summary>The fingerprint saved on master; <c>null</c> when the connection isn't saved yet.</summary>
+        public string? MasterFingerprint { get; }
+
+        public string AgentFingerprint { get; }
+    }
+
+    /// <summary>
+    /// An agent connection whose fingerprint changed while protected, for every cluster. Keeps the master's and the
+    /// agent's fingerprint per agent connection in <see cref="State"/> for the save that follows.
+    /// </summary>
+    private async Task ValidateFingerprintAsync()
+    {
+        foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
+        {
+            var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
+            var agentComponentFactory = componentFactory.GetComponent<IAgentComponentFactory>();
+            var masterAgentConnectionService = componentFactory.GetComponent<IMasterAgentConnectionService>();
+
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c =>
+                string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var agentDefinition in clusterDefinition.AgentConnections)
+            {
+                var agentConfig = clusterCnnCfg.GetAgentConnectionConfig(agentDefinition.AgentConnectionName);
+                var masterConnection = await masterAgentConnectionService.GetConnectionAsync(
+                    new AgentConnectionId(agentConfig.Id), useCache: false);
+
+                var fingerprintResolver = agentComponentFactory.GetFingerprintResolver(agentConfig.Id);
+                var agentFingerprint = await fingerprintResolver.GiveYourFingerprintAsync(agentDefinition.ClusterId, agentConfig.Id);
+
+                if (!RepoTypeAndFingerprintUtil.IsValid(agentConfig.RepositoryTypeId, agentFingerprint))
+                {
+                    throw new InvalidOperationException(
+                        $"Agent connection '{agentDefinition.AgentConnectionName}' has an invalid repository type ('{agentConfig.RepositoryTypeId}') or fingerprint ('{agentFingerprint}').");
+                }
+
+                State.AgentFingerprints[agentConfig.Id] 
+                    = new ResolvedAgentFingerprint(clusterCnnCfg.ClusterId, agentConfig.Id, masterConnection?.Fingerprint, agentFingerprint);
+
+                if (agentDefinition.ProtectConnectionChanges &&
+                    masterConnection != null &&
+                    masterConnection.Fingerprint != agentFingerprint)
+                {
+                    State.ValidationMessages.Add(
+                        $"Agent connection {agentDefinition.AgentConnectionName} fingerprint has changed, " +
+                        $"please ensure the connection {agentDefinition.AgentConnectionName} is not modified.");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Prevents lost jobs: refuses to start an archived cluster without a target that still holds unfinished jobs or
+    /// recurring schedules. An archived cluster runs nothing, and without a target nothing moves them elsewhere, so they
+    /// would never run and nobody would be told. With a target, the migrate runners move them to it, so that cluster is
+    /// not checked.
+    /// Read-only, and runs before provisioning: a schema that doesn't exist yet holds nothing.
+    /// </summary>
+    private async Task ValidateArchivedStorageAsync()
+    {
+        foreach (var clusterCnnCfg in JobMasterClusterConnectionConfig.GetAllConfigs())
+        {
+            var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterCnnCfg.ClusterId);
+            var masterConfigService = componentFactory.GetComponent<IMasterClusterConfigurationService>();
+
+            var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.Single(c =>
+                string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
+
+            // Same resolution as the save that follows.
+            var stored = GetFreshClusterConfig(componentFactory, masterConfigService);
+            var clusterMode = clusterDefinition.ClusterMode ?? stored?.ClusterMode;
+            var targetActiveClusterId = clusterDefinition.TargetActiveClusterId ?? stored?.TargetActiveClusterId;
+            if (clusterMode == ClusterMode.Archived && string.IsNullOrEmpty(targetActiveClusterId))
+            {
+                var archivedError = await CheckArchivedHoldsOnlyFinalDataAsync(
+                    clusterCnnCfg.ClusterId,
+                    componentFactory.GetMasterRepository<IMasterJobsRepository>(),
+                    componentFactory.GetMasterRepository<IMasterRecurringSchedulesRepository>(),
+                    componentFactory.GetComponent<IKnownExceptionIdentifier>());
+                if (archivedError != null)
+                {
+                    State.ValidationMessages.Add(archivedError);
+                }
+            }
+        }
+    }
+
+    /// <summary>An error when an archived cluster (without a target) still holds a job or recurring schedule that isn't final.</summary>
+    private static async Task<string?> CheckArchivedHoldsOnlyFinalDataAsync(
+        string clusterId,
+        IMasterJobsRepository jobsRepo,
+        IMasterRecurringSchedulesRepository recurringRepo,
+        IKnownExceptionIdentifier knownExceptionIdentifier)
+    {
+        var nonFinalJobStatuses = Enum.GetValues(typeof(JobMasterJobStatus))
+            .Cast<JobMasterJobStatus>()
+            .Where(s => !s.IsFinalStatus())
+            .ToList();
+
+        var hasNonFinalJobs = await AnyUnlessSchemaNotProvisionedAsync(knownExceptionIdentifier, async () =>
+            (await jobsRepo.QueryAsync(new JobQueryCriteria { Statuses = nonFinalJobStatuses, CountLimit = 1 })).Any());
+
+        if (hasNonFinalJobs)
+        {
+            return $"Archived cluster '{clusterId}' contains jobs in a non-final status. " +
+                   "Archive clusters without a target may only hold finalized data; use Archive(targetActiveClusterId) to move them.";
+        }
+
+        var nonFinalRecurringStatuses = Enum.GetValues(typeof(RecurringScheduleStatus))
+            .Cast<RecurringScheduleStatus>()
+            .Where(s => !s.IsFinalStatus());
+
+        foreach (var status in nonFinalRecurringStatuses)
+        {
+            var hasNonFinalSchedules = await AnyUnlessSchemaNotProvisionedAsync(knownExceptionIdentifier, async () =>
+                (await recurringRepo.QueryAsync(new RecurringScheduleQueryCriteria { Status = status, CountLimit = 1 })).Any());
+
+            if (hasNonFinalSchedules)
+            {
+                return $"Archived cluster '{clusterId}' contains recurring schedules in a non-final status. " +
+                       "Archive clusters without a target may only hold finalized data; use Archive(targetActiveClusterId) to move them.";
+            }
+        }
+
+        return null;
+    }
+
+    // Like GetFreshClusterConfig: on a first start the table doesn't exist yet, which means nothing is stored.
+    private static async Task<bool> AnyUnlessSchemaNotProvisionedAsync(
+        IKnownExceptionIdentifier knownExceptionIdentifier,
+        Func<Task<bool>> query)
+    {
+        try
+        {
+            return await query();
+        }
+        catch (Exception ex) when (knownExceptionIdentifier.Identify(ex) == JobMasterKnownExceptionId.SchemaNotProvisioned)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Structural checks of every configured cluster, collected into <paramref name="errors"/> instead of thrown:
+    /// <list type="bullet">
+    /// <item>a default cluster exists (the only cluster becomes the default when none is marked);</item>
+    /// <item>no duplicate cluster ids, agent connection names, worker names or worker lanes;</item>
+    /// <item>connection string and repository type set for the cluster and each agent connection;</item>
+    /// <item>reserved agent connection names not used; Coordinators without a connection, every other worker on a
+    /// declared one;</item>
+    /// <item>mode rules: Migrating / Archived without buckets, Archived without agent connections and only Coordinator
+    /// (or Full) workers, Migrating without Execution workers, standalone without agent connections;</item>
+    /// <item>targets: a Migrating cluster has a <c>MigrateTo</c> target, targets point to a configured cluster in the
+    /// right mode, never to itself;</item>
+    /// <item>the time zone matches the one saved on master.</item>
+    /// </list>
+    /// Reads the saved cluster configuration but writes nothing; only sets the default cluster.
+    /// </summary>
+    private static void ValidateClusterDefinitions(List<string> errors)
+    {
+        // A single cluster is the default when none is marked. Set here, before the runtime validators: they resolve a
+        // handler without its own cluster to the default.
         if (JobMasterClusterConnectionConfig.Default == null)
         {
             if (JobMasterClusterConnectionConfig.ClusterCount == 1)
             {
-                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs()
-                    .First().ClusterId);
+                JobMasterClusterConnectionConfig.SetDefaultConfig(JobMasterClusterConnectionConfig.GetAllConfigs().Single().ClusterId);
             }
-            else if (JobMasterClusterConnectionConfig.ClusterCount > 1)
+            else if (JobMasterClusterConnectionConfig.ClusterCount == 0)
             {
-                throw new InvalidOperationException(
-                    "Multiple clusters configured but no default cluster defined. Mark one as default.");
+                errors.Add("No cluster configured. Add one with AddJobMasterCluster(...).");
+            }
+            else
+            {
+                errors.Add("Multiple clusters configured but no default cluster defined. Mark one as default.");
             }
         }
 
@@ -305,7 +537,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
         if (clusterDupes.Any())
         {
-            throw new InvalidOperationException(
+            errors.Add(
                 $"Multiple clusters configured with the same id. {string.Join(", ", clusterDupes.Select(x => x.Key))}");
         }
 
@@ -316,27 +548,30 @@ internal class JobMasterRuntime : IJobMasterRuntime
             var clusterDefinition = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c =>
                 string.Equals(c.ClusterId, clusterCnnCfg.ClusterId, StringComparison.OrdinalIgnoreCase));
 
+            // The checks below need the definition and a reachable master.
             if (clusterDefinition == null)
             {
-                throw new InvalidOperationException("Cluster definition not found");
+                errors.Add("Cluster definition not found");
+                continue;
             }
 
             if (string.IsNullOrWhiteSpace(clusterDefinition.ConnString) ||
                 string.IsNullOrWhiteSpace(clusterDefinition.RepoType))
             {
-                throw new InvalidOperationException(
-                    "Cluster definition is missing connection string or repository type");
+                errors.Add("Cluster definition is missing connection string or repository type");
+                continue;
             }
 
             var agentDefinitions = clusterDefinition.AgentConnections;
 
-            var missingCnnStringOrRepoType = agentDefinitions.Where(x =>
-                string.IsNullOrWhiteSpace(x.AgentConnString) || string.IsNullOrWhiteSpace(x.AgentRepoType)).ToList();
-            if (missingCnnStringOrRepoType.Any())
+            // Safety net: ClusterConfigBuilder.Finish() already ran Validate() on every agent connection.
+            foreach (var agentDefinition in agentDefinitions)
             {
-                var agentNames = string.Join(", ", missingCnnStringOrRepoType.Select(x => x.AgentConnectionName));
-                throw new InvalidOperationException(
-                    @$"Agent connection is missing connection string or repository type. Connection: {agentNames}");
+                var (isValid, error) = agentDefinition.IsValid();
+                if (!isValid)
+                {
+                    errors.Add(error!);
+                }
             }
 
             var workerDefinitions = clusterDefinition.Workers;
@@ -351,14 +586,11 @@ internal class JobMasterRuntime : IJobMasterRuntime
             // StartAsync uses later (clusterDefinition.IsStandalone ?? modelToSave.IsStandalone).
             var isStandalone = clusterDefinition.IsStandalone ?? existingClusterConfig?.IsStandalone ?? false;
 
-            if (clusterDefinition.IanaTimeZoneId != null &&
-                existingTimezoneId != TimeZoneUtils.GetLocalIanaTimeZoneId())
+            var timeZoneError = ValidateOmittedTimeZone(clusterDefinition.ClusterId!, clusterDefinition.IanaTimeZoneId,
+                existingTimezoneId, TimeZoneUtils.GetLocalIanaTimeZoneId());
+            if (timeZoneError != null && !clusterDefinition.AllowOmittedTimeZone)
             {
-                throw new InvalidOperationException(
-                    "if you want to use agents in different regions please explicitly set the IanaTimeZoneId for the cluster. " +
-                    "The cluster IanaTimeZoneId does not match the local timezone" +
-                    " ClusterId: " + clusterDefinition.ClusterId + ", Defined IanaTimeZoneId: " +
-                    clusterDefinition.IanaTimeZoneId + ", Existing IanaTimeZoneId Configured: " + existingTimezoneId);
+                errors.Add(timeZoneError);
             }
 
             // Ensure no duplicates
@@ -367,7 +599,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .Where(x => x.ToList().Count > 1).ToList();
             if (agentDupes.Any())
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Duplicate agent connection names found. {string.Join(", ", agentDupes.Select(x => x.Key))}");
             }
 
@@ -375,12 +607,12 @@ internal class JobMasterRuntime : IJobMasterRuntime
                  clusterDefinition.ClusterMode == ClusterMode.Archived) &&
                 workerDefinitions.Any(x => x.BucketQty.Any(y => y.Value >= 1)))
             {
-                throw new InvalidOperationException("Migrating and Archived clusters can not have buckets defined");
+                errors.Add("Migrating and Archived clusters can not have buckets defined");
             }
 
             if (clusterDefinition.ClusterMode == ClusterMode.Archived && agentDefinitions.Any())
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Archived cluster '{clusterDefinition.ClusterId}' cannot have agent connections defined. " +
                     "Archive clusters only run Coordinator (or Full, which behaves identically there) workers.");
             }
@@ -391,7 +623,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             if (clusterDefinition.ClusterMode == ClusterMode.Archived &&
                 workerDefinitions.Any(x => !x.Mode.IsFullOr(AgentWorkerMode.Coordinator)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Archived cluster '{clusterDefinition.ClusterId}' may only have Coordinator.");
             }
 
@@ -401,7 +633,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             if (clusterDefinition.ClusterMode == ClusterMode.Migrating &&
                 workerDefinitions.Any(x => x.Mode == AgentWorkerMode.Execution))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Migrating cluster '{clusterDefinition.ClusterId}' may not have Execution-mode workers.");
             }
 
@@ -409,7 +641,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             {
                 if (string.Equals(clusterDefinition.TargetArchivedClusterId, clusterDefinition.ClusterId, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' cannot use itself as its own TargetArchivedClusterId.");
                 }
 
@@ -418,14 +650,13 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
                 if (targetClusterDefinition == null)
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' has TargetArchivedClusterId '{clusterDefinition.TargetArchivedClusterId}' " +
                         "which does not match any configured cluster.");
                 }
-
-                if (targetClusterDefinition.ClusterMode != ClusterMode.Archived)
+                else if (targetClusterDefinition.ClusterMode != ClusterMode.Archived)
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' has TargetArchivedClusterId '{clusterDefinition.TargetArchivedClusterId}', " +
                         "but that cluster is not configured with ClusterMode.Archived.");
                 }
@@ -433,22 +664,24 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
             if (clusterDefinition.ClusterMode == ClusterMode.Migrating && string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Migrating cluster '{clusterDefinition.ClusterId}' must have a TargetActiveClusterId configured (use MigrateTo(...)).");
             }
 
-            if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId) && clusterDefinition.ClusterMode != ClusterMode.Migrating)
+            if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId) &&
+                clusterDefinition.ClusterMode != ClusterMode.Migrating &&
+                clusterDefinition.ClusterMode != ClusterMode.Archived)
             {
-                throw new InvalidOperationException(
-                    $"Cluster '{clusterDefinition.ClusterId}' has a TargetActiveClusterId configured but is not in ClusterMode.Migrating. " +
-                    "TargetActiveClusterId only applies to Migrating clusters (use MigrateTo(...) instead of setting it directly).");
+                errors.Add(
+                    $"Cluster '{clusterDefinition.ClusterId}' has a TargetActiveClusterId configured but is not in ClusterMode.Migrating or ClusterMode.Archived. " +
+                    "TargetActiveClusterId only applies to Migrating and Archived clusters (use MigrateTo(...) or Archive(...) instead of setting it directly).");
             }
 
             if (!string.IsNullOrEmpty(clusterDefinition.TargetActiveClusterId))
             {
                 if (string.Equals(clusterDefinition.TargetActiveClusterId, clusterDefinition.ClusterId, StringComparison.OrdinalIgnoreCase))
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' cannot use itself as its own TargetActiveClusterId.");
                 }
 
@@ -457,17 +690,16 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
                 if (targetClusterDefinition == null)
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' has TargetActiveClusterId '{clusterDefinition.TargetActiveClusterId}' " +
                         "which does not match any configured cluster.");
                 }
-
                 // Active is the framework default, so a target that never calls Mode(...) at all is
                 // still validly Active — unlike TargetArchivedClusterId's check, a null mode here is not
                 // an error.
-                if ((targetClusterDefinition.ClusterMode ?? ClusterMode.Active) != ClusterMode.Active)
+                else if ((targetClusterDefinition.ClusterMode ?? ClusterMode.Active) != ClusterMode.Active)
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"Cluster '{clusterDefinition.ClusterId}' has TargetActiveClusterId '{clusterDefinition.TargetActiveClusterId}', " +
                         "but that cluster is not configured with ClusterMode.Active.");
                 }
@@ -476,7 +708,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
             if (agentDefinitions.Any(x =>
                     JobMasterConstants.IsReservedAgentConnectionName(x.AgentConnectionName)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     "One or more agent connections use a reserved agent connection name.");
             }
 
@@ -485,7 +717,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     JobMasterConstants.MasterFallbackAgentConnName,
                     StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"{JobMasterConstants.MasterFallbackAgentConnName} is reserved for fallback buckets. Cannot be used as a worker's AgentConnectionName.");
             }
 
@@ -494,13 +726,13 @@ internal class JobMasterRuntime : IJobMasterRuntime
                     JobMasterConstants.StandaloneAgentConnName,
                     StringComparison.OrdinalIgnoreCase)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"{JobMasterConstants.StandaloneAgentConnName} is reserved for standalone clusters. Cannot be used as a worker's AgentConnectionName in a non-standalone cluster.");
             }
 
             if (workerDefinitions.Any(x => ActsAsCoordinator(x, clusterDefinition) && !string.IsNullOrEmpty(x.AgentConnectionName)))
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     "Coordinator workers (and Full workers on an Archived cluster) must not have an AgentConnectionName configured.");
             }
 
@@ -516,14 +748,14 @@ internal class JobMasterRuntime : IJobMasterRuntime
 
                 if (invalidWorkers.Any())
                 {
-                    throw new InvalidOperationException(
+                    errors.Add(
                         $"The following workers have an AgentConnectionName that does not match any registered agent connection: {string.Join(", ", invalidWorkers)}");
                 }
             }
 
             if (isStandalone && agentDefinitions.Any())
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     "Standalone clusters cannot have agents defined. The standalone stays in the master db together with the cluster");
             }
 
@@ -535,7 +767,7 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .ToList();
             if (workDupes.Any())
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Duplicate worker names found {string.Join(", ", workDupes.Select(x => x.Key))}");
             }
 
@@ -549,47 +781,37 @@ internal class JobMasterRuntime : IJobMasterRuntime
                 .Where(x => x.ToList().Count > 1).ToList();
             if (workLanesDupes.Any())
             {
-                throw new InvalidOperationException(
+                errors.Add(
                     $"Duplicate worker lanes found {string.Join(", ", workLanesDupes.Select(x => x.Key))}");
             }
 
-            if (clusterDefinition.DisabledPriorities.Any())
-            {
-                var handlerTypes = AppDomain.CurrentDomain.GetAssemblies()
-                    .SelectMany(a =>
-                    {
-                        try { return a.GetTypes(); }
-                        catch { return Array.Empty<Type>(); }
-                    })
-                    .Where(t => !t.IsAbstract && !t.IsInterface && typeof(IJobMasterHandler).IsAssignableFrom(t));
-
-                foreach (var handlerType in handlerTypes)
-                {
-                    var p = handlerType.GetCustomAttributes(false)
-                        .OfType<JobMasterPriorityAttribute>()
-                        .FirstOrDefault()?.Priority ?? JobMasterPriority.Medium;
-
-                    if (clusterDefinition.DisabledPriorities.Contains(p))
-                    {
-                        throw new InvalidOperationException(
-                            $"Handler '{handlerType.FullName}' uses priority {p}, which is disabled " +
-                            $"on cluster '{clusterDefinition.ClusterId}'. " +
-                            $"Remove or change the [JobMasterPriority] attribute on that handler.");
-                    }
-                }
-            }
+            // Handler priorities vs DisabledPriorities: per handler cluster, in DefaultRuntimeValidatorSetup.
         }
     }
 
     // A Full worker on an Archived cluster behaves exactly like Coordinator (no connection at all --
     // see JobMasterBackgroundAgentWorker.StartAsync), so it shares the same exemptions used by
-    // PreValidation's AgentConnectionName checks.
-    private static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
+    // ValidateClusterDefinitions' AgentConnectionName checks.
+    internal static bool ActsAsCoordinator(WorkerDefinition w, ClusterDefinition clusterDefinition) =>
         w.Mode == AgentWorkerMode.Coordinator ||
         (clusterDefinition.ClusterMode == ClusterMode.Archived && w.Mode == AgentWorkerMode.Full);
 
+    // Only a process that didn't set the zone can silently disagree with the cluster: one that sets it saves it.
+    internal static string? ValidateOmittedTimeZone(string clusterId, string? definedTimeZoneId, string existingTimeZoneId, string localTimeZoneId)
+    {
+        if (definedTimeZoneId != null || existingTimeZoneId == localTimeZoneId)
+        {
+            return null;
+        }
+
+        return $"Cluster '{clusterId}' uses the time zone '{existingTimeZoneId}', but this machine's local time zone is " +
+               $"'{localTimeZoneId}'. When instances run in different local time zones, every instance must set " +
+               $"IanaTimeZoneId explicitly (here: IanaTimeZoneId(\"{existingTimeZoneId}\")), including instances that " +
+               "never set it before.";
+    }
+
     /// <summary>
-    /// Reads the cluster's previously-saved configuration, if any -- used by <see cref="PreValidation"/>
+    /// Reads the cluster's previously-saved configuration, if any -- used by <see cref="ValidateClusterDefinitions"/>
     /// to check cross-run consistency (timezone, IsStandalone, etc.) before schema auto-provisioning
     /// (<c>OnBeforeStartAsync</c>, which runs strictly after all validation) has had a chance to run.
     /// On a cluster's very first startup against a brand-new database, the underlying table doesn't
@@ -612,165 +834,54 @@ internal class JobMasterRuntime : IJobMasterRuntime
         }
     }
 
-    public int CountWorkersForCluster(string clusterId)
+    /// <summary>
+    /// Process exit: stops every worker the way any immediate stop does (its runners' cleanup, then its buckets handed
+    /// over), all in parallel, each within <paramref name="timeout"/>.
+    /// </summary>
+    public async ValueTask DisposeAsync()
     {
-        if (string.IsNullOrEmpty(clusterId))
-        {
-            return 0;
-        }
-
-        return Workers.Count(w => w.ClusterConnConfig.ClusterId == clusterId);
+        await StopWorkersAsync(ShutdownStopTimeout);
     }
 
-    public void Stop()
+    // For a container disposed synchronously; the host disposes asynchronously (DisposeAsync).
+    public void Dispose()
     {
-        List<JobMasterBackgroundAgentWorker> toStop;
-        toStop = new List<JobMasterBackgroundAgentWorker>(Workers);
-        Workers.Clear();
+        StopWorkersAsync(ShutdownStopTimeout).GetAwaiter().GetResult();
+    }
 
-        foreach (var w in toStop)
+    internal async Task StopWorkersAsync(TimeSpan timeout)
+    {
+        // The root's stop reaches every worker, runner and job at once (linked), a worker still starting included; each
+        // worker's own stop then waits for its runners' cleanup.
+        await StopControl.StopAsync();
+
+        var workers = new List<JobMasterBackgroundAgentWorker>(Workers);
+        await Task.WhenAll(workers.Select(w => StopWorkerAsync(w, timeout)));
+    }
+
+    private static async Task StopWorkerAsync(JobMasterBackgroundAgentWorker worker, TimeSpan timeout)
+    {
+        var stopping = worker.StopImmediatelyAsync();
+        if (await Task.WhenAny(stopping, Task.Delay(timeout)) != stopping)
         {
-            try
-            {
-                w.RequestStop();
-                w.Dispose();
-            }
-            catch
-            {
-                // Swallow to attempt stopping others; consider logging hook later
-            }
+            worker.GetClusterAwareService<IJobMasterLogger>().Warn(
+                $"Process exit: worker didn't finish stopping within {timeout}; the process ends with it still stopping.",
+                JobMasterLogCategory.AgentWorker, worker.AgentWorkerId);
         }
     }
 
-    private void BootstrapStaticRecurringSchedules(string defaultClusterId)
+    // Built and validated by StaticRecurringScheduleDefinitionsBuilder before anything started; this only saves them.
+    private static void SaveStaticRecurringSchedules(IReadOnlyList<StaticRecurringScheduleDefinition> definitions)
     {
-        // 1) Discover profile types (static interface)
-        var profileTypes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a =>
-            {
-                try
-                {
-                    return a.GetTypes();
-                }
-                catch
-                {
-                    return Array.Empty<Type>();
-                } // skip dynamic/unloaded
-            })
-            .Where(t => !t.IsAbstract &&
-                        t.GetInterfaces().Any(i => i.Name == nameof(IStaticRecurringSchedulesProfile)));
-
-        IList<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection)>
-            profileInfos =
-                new List<(StaticRecurringSchedulesProfileInfo info, RecurringScheduleDefinitionCollection collection
-                    )>();
-
-
-        foreach (var pt in profileTypes)
-        {
-            // 2) Read static members
-            var profileId =
-                (string?)pt.GetProperty("ProfileId", BindingFlags.Public | BindingFlags.Static)?.GetValue(null)
-                ?? throw new InvalidOperationException($"ProfileId missing on {pt.FullName}");
-            var profileCluster = (string?)pt.GetProperty("ClusterId", BindingFlags.Public | BindingFlags.Static)
-                ?.GetValue(null);
-            var effectiveCluster = string.IsNullOrWhiteSpace(profileCluster) ? defaultClusterId : profileCluster;
-
-            var workerLane = (string?)pt.GetProperty("WorkerLane", BindingFlags.Public | BindingFlags.Static)
-                ?.GetValue(null);
-
-            // Validate profile info
-            var info = new StaticRecurringSchedulesProfileInfo(profileId, effectiveCluster!, workerLane);
-            if (!info.IsValid)
-                throw new InvalidOperationException($"Invalid ProfileId/ClusterId on profile {pt.FullName}");
-
-            // 3) Build collection and invoke static Config
-            var collection = new RecurringScheduleDefinitionCollection(info, effectiveCluster!);
-
-            var configMethod = pt.GetMethod("Config", BindingFlags.Public | BindingFlags.Static);
-            if (configMethod == null)
-                throw new InvalidOperationException($"Config(...) not found on profile {pt.FullName}");
-
-            configMethod.Invoke(null, new object[] { collection });
-
-            profileInfos.Add((info, collection));
-        }
-
-        // 1b) Discover handler classes decorated with a RecurringScheduleAttribute (the lighter,
-        // profile-free alternative) and synthesize an equivalent (info, collection) pair for each so
-        // everything below (priority validation, upsert, locking, keep-alive) is reused unchanged.
-        var handlerTypesWithScheduleAttributes = AppDomain.CurrentDomain.GetAssemblies()
-            .SelectMany(a =>
-            {
-                try
-                {
-                    return a.GetTypes();
-                }
-                catch
-                {
-                    return Array.Empty<Type>();
-                }
-            })
-            .Where(t => !t.IsAbstract && t.GetCustomAttributes<RecurringScheduleAttribute>().Any())
-            .ToList();
-
-        foreach (var handlerType in handlerTypesWithScheduleAttributes)
-        {
-            if (!typeof(IJobMasterHandler).IsAssignableFrom(handlerType))
-            {
-                throw new InvalidOperationException(
-                    $"{handlerType.FullName} has a RecurringScheduleAttribute but does not implement IJobMasterHandler.");
-            }
-
-            var jobDefinitionId = JobMasterDefinitionIdAttribute.GetJobDefinitionId(handlerType);
-            var info = new StaticRecurringSchedulesProfileInfo($"attr:{jobDefinitionId}", defaultClusterId, workerLane: null);
-            if (!info.IsValid)
-                throw new InvalidOperationException($"Invalid synthesized ProfileId for {handlerType.FullName}.");
-
-            var collection = new RecurringScheduleDefinitionCollection(info, defaultClusterId);
-            foreach (var attr in handlerType.GetCustomAttributes<RecurringScheduleAttribute>())
-            {
-                collection.Add(handlerType, attr.ExpressionTypeId, attr.Expression);
-            }
-
-            profileInfos.Add((info, collection));
-        }
-
-        // Validate schedule priorities against disabled priorities before upserting
-        foreach (var cfg in profileInfos)
-        {
-            var clusterDef = BootstrapBlueprintDefinitions.Clusters.SingleOrDefault(c =>
-                string.Equals(c.ClusterId, cfg.info.ClusterId, StringComparison.OrdinalIgnoreCase));
-
-            if (clusterDef?.DisabledPriorities.Any() != true) continue;
-
-            foreach (var def in cfg.collection.ToReadOnly())
-            {
-                // null priority defers to the handler attribute — already validated in PreValidation.
-                // Only reject an explicitly-set disabled priority here.
-                if (def.Priority.HasValue && clusterDef.DisabledPriorities.Contains(def.Priority.Value))
-                {
-                    throw new InvalidOperationException(
-                        $"Static recurring schedule '{def.Id}' uses priority {def.Priority.Value}, " +
-                        $"which is disabled on cluster '{cfg.info.ClusterId}'.");
-                }
-            }
-        }
-
         // Upsert each desired (one-by-one)
-        foreach (var cfg in profileInfos)
+        foreach (var byCluster in definitions.GroupBy(x => x.ClusterId, StringComparer.OrdinalIgnoreCase))
         {
-            var clusterId = cfg.info.ClusterId;
-            if (string.IsNullOrEmpty(clusterId))
-            {
-                clusterId = defaultClusterId;
-            }
-
+            var clusterId = byCluster.Key;
             var componentFactory = JobMasterClusterAwareComponentFactories.GetFactory(clusterId);
             var masterRecurringService = componentFactory.GetService<IMasterRecurringSchedulesService>();
             var masterDistributedLockerService = componentFactory.GetService<IMasterDistributedLockerService>();
             var jobMasterLockKeys = new JobMasterLockKeys(clusterId);
-            foreach (var config in cfg.collection.ToReadOnly())
+            foreach (var config in byCluster)
             {
                 var lockKey = jobMasterLockKeys.RecurringScheduleUpsertStatic(config.Id);
                 var lockToken = masterDistributedLockerService.TryLock(lockKey, TimeSpan.FromMinutes(1));

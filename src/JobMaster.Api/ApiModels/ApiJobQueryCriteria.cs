@@ -2,6 +2,7 @@ using JobMaster.Abstractions.Models;
 using JobMaster.Api.Endpoints;
 using JobMaster.Sdk.Abstractions.Models;
 using JobMaster.Sdk.Abstractions.Models.Jobs;
+using JobMaster.Sdk.Utils;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JobMaster.Api.ApiModels;
@@ -57,10 +58,10 @@ public class ApiJobQueryCriteria
         Guid? sourceId = null;
         if (!string.IsNullOrWhiteSpace(SourceId))
         {
-            sourceId = SourceId!.ParseFlexible();
+            sourceId = GuidBase64Util.ParseFlexible(SourceId!);
         }
 
-        var sourceIds = (SourceIds ?? Array.Empty<string>()).Select(s => s.ParseFlexible()).ToArray();
+        var sourceIds = (SourceIds ?? Array.Empty<string>()).Select(GuidBase64Util.ParseFlexible).ToArray();
 
         var triggerSourceTypes = (TriggerSourceTypes ?? Array.Empty<JobMasterTriggerSourceType>()).ToList();
         

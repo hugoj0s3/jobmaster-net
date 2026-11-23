@@ -2,6 +2,7 @@ using System.Linq;
 using System;
 using System.Threading.Tasks;
 using JobMaster.Abstractions.Models;
+using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 
 namespace JobMaster.Sdk.Background.Runners.JobsExecution;
@@ -222,19 +223,19 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
     /// <inheritdoc/>
     public async Task<IList<T>> ShutdownAsync()
     {
-        IList<T> result = new List<T>();
+        List<ITaskQueueItem<T>> waitingItems;
         lock (syncLock)
         {
             isShuttingDown = true;
-            result = WaitingQueue
-                .Select(x => x.Value)
-                .ToList();
-            
+            waitingItems = WaitingQueue.ToList();
+
             WaitingQueue.Clear();
             itemIds.Clear();
-        } 
-            
-        await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+
+        // Never started: only their values go back; their stop controls are linked to the runner's, so release them.
+        IList<T> result = waitingItems.Select(x => x.Value).ToList();
+        waitingItems.ForEach(x => x.Dispose());
 
         ITaskQueueItem<T>[] taskSnapshot;
         lock (syncLock)
@@ -245,7 +246,9 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
         var tasksToStop = taskSnapshot.Where(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted).ToList();
         if (tasksToStop.Count > 0)
         {
-            var timeoutAt = DateTime.UtcNow.AddSeconds(5);
+            // A stopped job gets the immediate graceful stop period, then goes back to master (the cleanup); past that,
+            // what still runs is aborted here, as a last resort.
+            var timeoutAt = DateTime.UtcNow.Add(JobMasterConstants.ImmediateStopTimeout);
             while (tasksToStop.Any(x => !x.Task.IsCompleted && !x.Task.IsCanceled && !x.Task.IsFaulted))
             {
                 if (DateTime.UtcNow >= timeoutAt)
@@ -261,7 +264,11 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
 
             if (tasksToStop.Count > 0)
             {
-                tasksToStop.ForEach(x => x?.Dispose());
+                tasksToStop.ForEach(x =>
+                {
+                    x?.Abort();
+                    x?.Dispose();
+                });
             }
         }
         
@@ -322,8 +329,8 @@ internal class TaskQueueControl<T> : ITaskQueueControl<T>, IDisposable
 
     /// <summary>
     /// Disposes all items currently held in running slots and clears all internal state.
-    /// Does not wait for running tasks to finish; use <see cref="ShutdownAsync"/> for a
-    /// graceful drain before calling this.
+    /// Does not wait for running tasks to finish; use <see cref="ShutdownAsync"/> to drain the
+    /// waiting queue before calling this.
     /// </summary>
     public void Dispose()
     {

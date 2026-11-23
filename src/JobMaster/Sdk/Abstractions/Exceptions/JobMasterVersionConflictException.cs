@@ -1,3 +1,5 @@
+using JobMaster.Sdk.Utils;
+
 namespace JobMaster.Sdk.Abstractions.Exceptions;
 
 internal class JobMasterVersionConflictException : Exception
@@ -8,7 +10,7 @@ internal class JobMasterVersionConflictException : Exception
     public string EntityName { get; }
     
     public JobMasterVersionConflictException(Guid id, string entityName, string? expectedVersion) 
-        : base($"{entityName} {id} version conflict. Expected version: {expectedVersion ?? "null"}")
+        : base($"{entityName} {id.ToBase64()} version conflict. Expected version: {expectedVersion ?? "null"}")
     {
         Id = id;
         EntityName = entityName;
@@ -16,7 +18,7 @@ internal class JobMasterVersionConflictException : Exception
     }
     
     public JobMasterVersionConflictException(Guid id, string entityName, string? expectedVersion, Exception innerException) 
-        : base($"{entityName} {id} version conflict. Expected version: {expectedVersion ?? "null"}", innerException)
+        : base($"{entityName} {id.ToBase64()} version conflict. Expected version: {expectedVersion ?? "null"}", innerException)
     {
         Id = id;
         EntityName = entityName;

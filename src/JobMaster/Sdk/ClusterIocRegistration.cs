@@ -1,4 +1,4 @@
-﻿using JobMaster.Abstractions;
+using JobMaster.Abstractions;
 using JobMaster.Sdk.Abstractions;
 using JobMaster.Sdk.Abstractions.Background;
 using JobMaster.Sdk.Abstractions.Config;
@@ -8,7 +8,9 @@ using JobMaster.Sdk.Abstractions.Ioc.Markups;
 using JobMaster.Sdk.Abstractions.Repositories.Agent;
 using JobMaster.Sdk.Background;
 using JobMaster.Sdk.Ioc;
+using JobMaster.Sdk.Utils;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace JobMaster.Sdk;
 
@@ -26,20 +28,22 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         this.mainServices = mainServices;
         
         ClusterServices.AddSingleton<JobMasterClusterConnectionConfig>(sp => JobMasterClusterConnectionConfig.Get(ClusterId, includeNotReady: true));
-        ClusterServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        ClusterServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
-        ClusterServices.AddSingleton<IJobMasterRuntime>(BootstrapBlueprintDefinitions.JobMasterRuntime!);
     }
     
     public IJobMasterClusterAwareComponentFactory BuildFactory()
     {
+        ValidateTransientAgentRegistrations();
+
         var serviceProvider = ClusterServices.BuildServiceProvider();
             
         var clusterComponentFactory = new JobMasterClusterAwareComponentFactory(ClusterId, serviceProvider);
         
         mainServices.AddKeyedSingleton<IJobMasterClusterAwareComponentFactory>(ClusterServiceKeys.GetClusterServiceProviderKey(ClusterId), clusterComponentFactory);
-        mainServices.AddSingleton<IJobMasterScheduler>(BootstrapBlueprintDefinitions.JobMasterScheduler!);
-        mainServices.AddSingleton<IJobMasterSchedulerAdvanced>(BootstrapBlueprintDefinitions.JobMasterScheduler!.Advanced);
+        mainServices.AddSingleton<IJobMasterScheduler>(JobMasterScheduler.Instance);
+        mainServices.AddSingleton<IJobMasterSchedulerAdvanced>(JobMasterScheduler.Instance.Advanced);
+        // By factory, not instance: the container disposes only what it created, and disposing the runtime stops the
+        // workers. Once, whatever the number of clusters.
+        mainServices.TryAddSingleton<IJobMasterRuntime>(_ => JobMasterRuntimeSingleton.Instance);
         return clusterComponentFactory;
     }
     
@@ -63,16 +67,19 @@ internal class ClusterIocRegistration : IClusterIocRegistration
     }
     
     public void AddFingerprintResolver<TFingerprintResolver>(string repositoryTypeId) 
-        where TFingerprintResolver : class, IAgentFingerprintResolver
+        where TFingerprintResolver : class, IAgentRawFingerprintResolver
     {
-        ClusterServices.AddKeyedTransient<IAgentFingerprintResolver, TFingerprintResolver>(ClusterServiceKeys.GetFingerprintResolverKey(repositoryTypeId));
+        RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryTypeId);
+
+        ClusterServices.AddKeyedTransient<IAgentRawFingerprintResolver, TFingerprintResolver>(ClusterServiceKeys.GetFingerprintResolverKey(repositoryTypeId));
     }
     
-    public void AddRepositoryDispatcher<TRepositoryDispatcher, TSavePendingRepository, TProcessingRepository>(string repositoryTypeId) 
-        where TRepositoryDispatcher : class, IAgentJobsDispatcherRepository<TSavePendingRepository, TProcessingRepository>
+    public void AddRepositoryDispatcher<TSavePendingRepository, TProcessingRepository>(string repositoryTypeId)
         where TSavePendingRepository : class, IAgentRawMessagesDispatcherRepository
         where TProcessingRepository : class, IAgentRawMessagesDispatcherRepository
     {
+        RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryTypeId);
+
         ClusterServices.AddKeyedTransient<IAgentRawMessagesDispatcherRepository, TSavePendingRepository>(
             ClusterServiceKeys.GetAgentRawJobsDispatcherSavingKey(repositoryTypeId));
         ClusterServices.AddKeyedTransient<IAgentRawMessagesDispatcherRepository, TProcessingRepository>(
@@ -80,16 +87,6 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         
         ClusterServices.AddTransient<TSavePendingRepository>();
         ClusterServices.AddTransient<TProcessingRepository>();
-        
-        ClusterServices.AddKeyedTransient<IAgentJobsDispatcherRepository, TRepositoryDispatcher>(
-            ClusterServiceKeys.GetAgentJobsDispatcherKey(repositoryTypeId));
-    }
-    
-    public void AddRepositoryDispatcher<TRepositoryDispatcher>(string repositoryTypeId) 
-        where TRepositoryDispatcher : class, IAgentJobsDispatcherRepository
-    {
-        ClusterServices.AddKeyedTransient<IAgentJobsDispatcherRepository, TRepositoryDispatcher>(
-            ClusterServiceKeys.GetAgentJobsDispatcherKey(repositoryTypeId));
     }
     
     /// <summary>
@@ -100,6 +97,8 @@ internal class ClusterIocRegistration : IClusterIocRegistration
         where TRunner : class, IBucketAwareRunner
         where TImplementation : class, TRunner
     {
+        RepoTypeAndFingerprintUtil.ValidateSingleRepoTypeId(repositoryTypeId);
+
         // We register a Func<Worker, TRunner> keyed by the repo type ID.
         // When resolved, this func uses ActivatorUtilities to create the TImplementation,
         // injecting the 'worker' passed at runtime and resolving everything else (Loggers, Configs, Repos) from the container.
@@ -113,5 +112,31 @@ internal class ClusterIocRegistration : IClusterIocRegistration
             ClusterServiceKeys.GetAgentJobsDispatcherKey(repositoryTypeId),
             (sp, key) => (worker) => ActivatorUtilities.CreateInstance<TImplementation>(sp, worker)
         );
+    }
+
+    private void ValidateTransientAgentRegistrations()
+    {
+        foreach (var descriptor in ClusterServices)
+        {
+            var serviceType = descriptor.ServiceType;
+            var implType = descriptor.IsKeyedService ? descriptor.KeyedImplementationType : descriptor.ImplementationType;
+
+            if (IsAgentTransientRequiredType(serviceType) || (implType != null && IsAgentTransientRequiredType(implType)))
+            {
+                if (descriptor.Lifetime != ServiceLifetime.Transient)
+                {
+                    throw new InvalidOperationException(
+                        $"Agent service '{serviceType.FullName}' (implementation '{implType?.FullName}') must be registered as Transient, but was registered as {descriptor.Lifetime}.");
+                }
+            }
+        }
+    }
+
+    private static bool IsAgentTransientRequiredType(Type type)
+    {
+        return typeof(IAgentJobsDispatcherRepository).IsAssignableFrom(type) ||
+               typeof(IAgentRawMessagesDispatcherRepository).IsAssignableFrom(type) ||
+               typeof(IAgentFingerprintResolver).IsAssignableFrom(type) ||
+               typeof(IAgentRawFingerprintResolver).IsAssignableFrom(type);
     }
 }

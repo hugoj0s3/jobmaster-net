@@ -1,0 +1,461 @@
+using System.Collections.Concurrent;
+using System.Data;
+using System.Text;
+using Dapper;
+using JobMaster.SqlBase.Extensions;
+using JobMaster.Sdk.Utils;
+using JobMaster.Sdk.Utils.Extensions;
+using JobMaster.Sdk.Abstractions;
+using JobMaster.Sdk.Abstractions.Config;
+using JobMaster.Sdk.Abstractions.Connections;
+using JobMaster.Sdk.Abstractions.Extensions;
+using JobMaster.Sdk.Abstractions.Models.GenericRecords;
+using JobMaster.Sdk.Abstractions.Repositories;
+using JobMaster.Sdk.Abstractions.Repositories.Agent;
+using JobMaster.Sdk.Abstractions.Services.Master;
+using JobMaster.Sdk.Ioc.Markups;
+using JobMaster.Sdk.Services.Master;
+using JobMaster.SqlBase.Connections;
+using JobMaster.SqlBase.Scripts;
+
+namespace JobMaster.SqlBase.Agents;
+
+internal abstract class SqlRawMessagesDispatcherRepositoryBase : JobMasterClusterAwareComponent, IAgentRawMessagesDispatcherRepository
+{
+    protected IDbConnectionManager connManager;
+    protected readonly IJobMasterLogger logger;
+    protected JobMasterConfigDictionary additionalConnConfig = null!;
+    protected string connString = null!;
+    protected ISqlGenerator sql = null!;
+
+
+    protected SqlRawMessagesDispatcherRepositoryBase(
+        JobMasterClusterConnectionConfig clusterConnConfig,
+        IDbConnectionManager connManager,
+        IJobMasterLogger logger) : base(clusterConnConfig)
+    {
+        this.connManager = connManager;
+        this.logger = logger;
+    }
+
+    private readonly object initializeLock = new();
+
+    public bool IsInitialized { get; private set; }
+
+    public void Initialize(string agentConnectionId, JobMasterAgentProviderConfig config)
+    {
+        lock (initializeLock)
+        {
+            if (IsInitialized)
+                throw new InvalidOperationException($"{GetType().Name} is already initialized.");
+
+            this.connString = config.ConnectionString;
+            this.additionalConnConfig = config.AdditionalConnConfig;
+            this.sql = SqlGeneratorFactory.Get(this.AgentRepoTypeId);
+            IsInitialized = true;
+        }
+    }
+
+    protected string MessageTableName()
+    {
+        var tablePrefix = sql.GetTablePrefix(additionalConnConfig);
+        var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
+        return $"{prefix}message_dispatcher";
+    }
+
+    protected string BucketTableName()
+    {
+        var tablePrefix = sql.GetTablePrefix(additionalConnConfig);
+        var prefix = string.IsNullOrEmpty(tablePrefix) ? string.Empty : tablePrefix;
+        return $"{prefix}bucket_dispatcher";
+    }
+
+    public virtual bool IsPollingBased => true;
+    public abstract string AgentRepoTypeId { get; }
+    
+    public virtual string PushMessage(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)
+    {
+        using var cnn = connManager.Open(connString, additionalConnConfig);
+        using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+        try
+        {
+            var sqlText = GetInsertSql();
+            var messageId = GenerateMessageId();
+            cnn.Execute(sqlText, new
+            {
+                BucketId = fullBucketAddressId,
+                MessageId = messageId,
+                Payload = payload,
+                RefTime = referenceTime.ToUniversalTime(),
+                CorrelationId = correlationId,
+                EnqueuedAt = DateTime.UtcNow,
+            }, transaction);
+            transaction.Commit();
+            return messageId;
+        }
+        catch (Exception)
+        {
+            transaction.SafeRollback();
+            throw;
+        }
+    }
+
+    protected virtual (string Table, string ColMsgId, string ColBucket, string SelectSql) GetDequeueSelectSql(
+        int numberOfJobs,
+        bool referenceTimeToHasValue)
+    {
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var colPayload = sql.ColumnNameFor<JobMasterRawMessage>(x => x.Payload);
+        var colRefTime = sql.ColumnNameFor<JobMasterRawMessage>(x => x.ReferenceTime);
+        var colCorrId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.CorrelationId);
+        var colEnqAt = sql.ColumnNameFor<JobMasterRawMessage>(x => x.EnqueuedAt);
+        var colBucket = "bucket_address_id";
+
+        var selectSql = $@"SELECT {colMsgId}, {colPayload}, {colRefTime}, {colCorrId}, {colEnqAt}
+FROM {table}
+WHERE {colBucket} = @Bucket";
+
+        if (referenceTimeToHasValue)
+        {
+            selectSql += $" AND {colRefTime} <= @RefTo";
+        }
+
+        selectSql += $" ORDER BY {colRefTime} ASC, {colMsgId} ASC";
+        selectSql += sql.OffsetQueryFor(numberOfJobs);
+
+        return (table, colMsgId, colBucket, selectSql);
+    }
+    
+    public virtual async Task<IList<string>> BulkPushMessageAsync(string fullBucketAddressId, IList<(string payload, DateTime referenceTime, string correlationId)> messages)
+    {
+        using var cnn = await this.connManager.OpenAsync(this.connString, additionalConnConfig);
+        
+        using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+
+        try
+        {
+            var ids = new List<string>(messages.Count);
+            var partitions = messages.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId));
+            foreach (var partition in partitions)
+            {
+                var parameters = new Dictionary<string, object>
+                {
+                    { "BucketId", fullBucketAddressId }
+                };
+                var sqlTextBuilder = new StringBuilder();
+                sqlTextBuilder.AppendLine(GetInsertHeaderSql());
+                sqlTextBuilder.AppendLine("VALUES");
+
+                for (int i = 0; i < partition.Count; i++)
+                {
+                    var (payload, referenceTime, correlationId) = partition.ElementAt(i);
+                    var msgId = GenerateMessageId();
+                    ids.Add(msgId);
+
+                    var payloadParameter = $"Payload_{i}";
+                    var refTimeParameter = $"RefTime_{i}";
+                    var corrIdParameter = $"CorrelationId_{i}";
+                    var enqAtParameter = $"EnqAt_{i}";
+                    var msgIdParameter = $"MessageId_{i}";
+
+                    parameters.Add(msgIdParameter, msgId);
+                    parameters.Add(payloadParameter, payload);
+                    parameters.Add(refTimeParameter, referenceTime.ToUniversalTime());
+                    parameters.Add(corrIdParameter, correlationId);
+                    parameters.Add(enqAtParameter, DateTime.UtcNow);
+
+                    var valuesClause = $"@BucketId, @{msgIdParameter}, @{payloadParameter}, @{refTimeParameter}, @{corrIdParameter}, @{enqAtParameter}";
+                    sqlTextBuilder.Append("(").Append(valuesClause).Append(")");
+                    if (i < partition.Count - 1)
+                    {
+                        sqlTextBuilder.AppendLine(",");
+                    }
+                    else
+                    {
+                        sqlTextBuilder.AppendLine();
+                    }
+                }
+
+                var bulkSqlText = sqlTextBuilder.ToString();
+                await cnn.ExecuteAsync(bulkSqlText, parameters, transaction);
+            }
+
+            transaction.Commit();
+            return ids;
+        }
+        catch (Exception)
+        {
+            transaction.SafeRollback();
+            throw;
+        }
+    }
+    
+    public virtual async Task<string> PushMessageAsync(string fullBucketAddressId, string payload, DateTime referenceTime, string correlationId)
+    {
+        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
+        
+        using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+        
+        try
+        {
+            var sqlText = GetInsertSql();
+            var messageId = GenerateMessageId();
+            await cnn.ExecuteAsync(sqlText, new
+            {
+                BucketId = fullBucketAddressId,
+                MessageId = messageId,
+                Payload = payload,
+                RefTime = referenceTime.ToUniversalTime(),
+                CorrelationId = correlationId,
+                EnqueuedAt = DateTime.UtcNow
+            }, transaction);
+            transaction.Commit();
+            return messageId;
+        }
+        catch (Exception)
+        {
+            transaction.SafeRollback();
+            throw;
+        }
+    }
+    
+    public virtual async Task<IList<JobMasterRawMessage>> PullMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    {
+        const int maxAttempts = 3;
+        const int retryDelayMs = 100;
+        
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await AttemptDequeueMessagesAsync(fullBucketAddressId, numberOfJobs, referenceTimeTo);
+            }
+            catch when (attempt < maxAttempts)
+            {
+                await Task.Delay(retryDelayMs);
+            }
+        }
+        
+        // This line is unreachable but satisfies compiler
+        throw new InvalidOperationException("Dequeue retry logic failed unexpectedly");
+    }
+    
+    // Skipping rows another lease is taking, and the database's UTC clock, have no portable SQL form.
+    public abstract Task<IList<JobMasterRawMessage>> LeaseMessagesAsync(string fullBucketAddressId, int numberOfJobs, TimeSpan lease);
+
+    public virtual async Task AckAsync(string fullBucketAddressId, IList<string> messageIds)
+    {
+        if (messageIds.Count == 0) return;
+
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var deleteSql = $"DELETE FROM {table} WHERE bucket_address_id = @Bucket AND {sql.InClauseFor(colMsgId, "@Ids")}";
+
+        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var partition in messageIds.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId)))
+        {
+            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = partition.ToArray() });
+        }
+    }
+
+    public virtual async Task UpdateBucketAsync(string fullBucketAddressId, IList<string> messageIds, string newFullBucketAddressId)
+    {
+        if (messageIds.Count == 0) return;
+
+        var table = MessageTableName();
+        var colMsgId = sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId);
+        var colLeasedUntil = AgentTableCreatorScripts.LeasedUntilColumn;
+        var updateSql = $"UPDATE {table} SET bucket_address_id = @NewBucket, {colLeasedUntil} = NULL WHERE bucket_address_id = @Bucket AND {sql.InClauseFor(colMsgId, "@Ids")}";
+
+        using var cnn = await connManager.OpenAsync(connString, additionalConnConfig);
+        foreach (var partition in messageIds.Partition(OperationThrottlerSettingsTemplateFactory.GetAgentMaxBatchSize(AgentRepoTypeId)))
+        {
+            await cnn.ExecuteAsync(updateSql, new { Bucket = fullBucketAddressId, NewBucket = newFullBucketAddressId, Ids = partition.ToArray() });
+        }
+    }
+
+    public abstract Task CreateBucketIfNotExistsAsync(string fullBucketAddressId);
+
+    protected virtual async Task<IList<JobMasterRawMessage>> AttemptDequeueMessagesAsync(string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    {
+        using var cnn = await this.connManager.OpenAsync(this.connString, additionalConnConfig);
+        using var tx = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            var result = await DequeueMessagesAsyncCore(cnn, tx, fullBucketAddressId, numberOfJobs, referenceTimeTo);
+            tx.Commit();
+            return result;
+        }
+        catch
+        {
+            tx.SafeRollback();
+            throw;
+        }
+    }
+
+    protected virtual bool HasJobsCore(IDbConnection cnn, string fullBucketAddressId)
+    {
+        var table = MessageTableName();
+        var colBucket = "bucket_address_id";
+        var count = cnn.ExecuteScalar<long>($"SELECT COUNT(1) FROM {table} WHERE {colBucket} = @Bucket",
+            new { Bucket = fullBucketAddressId });
+        return count > 0;
+    }
+    
+    private bool HasJobs(string fullBucketAddressId) // TODO remove after async version is implemented.
+    {
+        using var cnn = this.connManager.Open(this.connString, additionalConnConfig);
+        return HasJobsCore(cnn, fullBucketAddressId);
+    }
+
+    public Task<bool> HasJobsAsync(string fullBucketAddressId) // TODO remove after async version is implemented.
+    {
+        // TODO implement real async version.
+        var result = HasJobs(fullBucketAddressId);
+        return Task.FromResult(result);
+    }
+
+    protected virtual void CreateBucketCore(IDbConnection cnn, IDbTransaction transaction, string fullBucketAddressId)
+    {
+        var bucketQueueTable = BucketTableName();
+        var colBucket = "bucket_address_id";
+        var insertSql = $"INSERT INTO {bucketQueueTable} ({colBucket}) VALUES (@Bucket)";
+        cnn.Execute(insertSql, new { Bucket = fullBucketAddressId }, transaction);
+    }
+    
+    public Task CreateBucketAsync(string fullBucketAddressId) // TODO remove after async version is implemented.
+    {
+        // TODO implement real async version.
+        CreateBucket(fullBucketAddressId);
+        return Task.CompletedTask;
+    }
+    
+    public Task DestroyBucketAsync(string fullBucketAddressId) // TODO remove after async version is implemented.
+    {
+        // TODO implement real async version.
+        DestroyBucket(fullBucketAddressId);
+        return Task.CompletedTask;
+    }
+    
+    private void CreateBucket(string fullBucketAddressId)
+    {
+        using var cnn = this.connManager.Open(this.connString, additionalConnConfig);
+        using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            CreateBucketCore(cnn, transaction, fullBucketAddressId);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.SafeRollback();
+            throw;
+        }
+    }
+
+    protected virtual void DestroyBucketCore(IDbConnection cnn, IDbTransaction transaction, string fullBucketAddressId)
+    {
+        var table = MessageTableName();
+        var colBucket = "bucket_address_id";
+        var deleteSql = $"DELETE FROM {table} WHERE {colBucket} = @Bucket";
+
+        cnn.Execute(deleteSql, new { Bucket = fullBucketAddressId }, transaction);
+        cnn.Execute($"DELETE FROM {BucketTableName()} WHERE bucket_address_id = @Bucket", new { Bucket = fullBucketAddressId }, transaction);
+    }
+    
+    public virtual void DestroyBucket(string fullBucketAddressId)
+    {
+        using var cnn = this.connManager.Open(this.connString, additionalConnConfig);
+        using var transaction = cnn.BeginTransaction(IsolationLevel.ReadCommitted);
+        try
+        {
+            DestroyBucketCore(cnn, transaction, fullBucketAddressId);
+            transaction.Commit();
+        }
+        catch
+        {
+            transaction.SafeRollback();
+            throw;
+        }
+    }
+
+
+    // Helpers
+    protected virtual string GetInsertSql(string? payloadParameter = null, string? refTimeParameter = null, string? corrIdParameter = null, string? enqAtParameter = null)
+    {
+        payloadParameter ??= "@Payload";
+        refTimeParameter ??= "@RefTime";
+        corrIdParameter ??= "@CorrelationId";
+        enqAtParameter ??= "@EnqueuedAt";
+
+        if (!payloadParameter.StartsWith("@"))
+        {
+            payloadParameter = $"@{payloadParameter}";
+        }
+        
+        if (!refTimeParameter.StartsWith("@"))
+        {
+            refTimeParameter = $"@{refTimeParameter}";
+        }
+        
+        if (!corrIdParameter.StartsWith("@"))
+        {
+            corrIdParameter = $"@{corrIdParameter}";
+        }
+        
+        if (!enqAtParameter.StartsWith("@"))
+        {
+            enqAtParameter = $"@{enqAtParameter}";
+        }
+        
+        return $"{GetInsertHeaderSql()} VALUES ({GetInsertValuesClause(payloadParameter, refTimeParameter, corrIdParameter, enqAtParameter)})"; 
+    }
+
+    protected virtual string GenerateMessageId() => JobMasterRandomUtil.NewGuid4().ToString("D");
+    
+    protected virtual async Task<IList<JobMasterRawMessage>> DequeueMessagesAsyncCore(IDbConnection cnn, IDbTransaction tx, string fullBucketAddressId, int numberOfJobs, DateTime? referenceTimeTo = null)
+    {
+        var q = GetDequeueSelectSql(numberOfJobs, referenceTimeTo.HasValue);
+
+        var rows = await cnn.QueryAsync<JobMasterRawMessagePersistenceRecord>(q.SelectSql, new
+        {
+            Bucket = fullBucketAddressId,
+            RefTo = (referenceTimeTo ?? DateTime.UtcNow).ToUniversalTime()
+        }, tx);
+
+        var picked = rows.Take(numberOfJobs).ToList();
+        var ids = picked.Select(r => r.MessageId).ToList();
+
+        if (ids.Count > 0)
+        {
+            var deleteSql = $"DELETE FROM {q.Table} WHERE {q.ColBucket} = @Bucket AND {this.sql.InClauseFor(q.ColMsgId, "@Ids")}";
+            await cnn.ExecuteAsync(deleteSql, new { Bucket = fullBucketAddressId, Ids = ids }, tx);
+        }
+
+        return picked.Select(r => JobMasterRawMessage.RecoverFromDb(r)).ToList();
+    }
+
+    // New helpers to compose INSERTs and reuse in bulk
+    protected virtual string GetInsertHeaderSql()
+    {
+        return @$"INSERT INTO {MessageTableName()} (
+bucket_address_id,
+{sql.ColumnNameFor<JobMasterRawMessage>(x => x.MessageId)},
+{sql.ColumnNameFor<JobMasterRawMessage>(x => x.Payload)},
+{sql.ColumnNameFor<JobMasterRawMessage>(x => x.ReferenceTime)},
+{sql.ColumnNameFor<JobMasterRawMessage>(x => x.CorrelationId)},
+{sql.ColumnNameFor<JobMasterRawMessage>(x => x.EnqueuedAt)})";
+    }
+
+    protected virtual string GetInsertValuesClause(string payloadParameter = "@Payload", string refTimeParameter = "@RefTime", string corrIdParameter = "@CorrelationId", string enqAtParameter = "@EnqueuedAt")
+    {
+        if (!payloadParameter.StartsWith("@")) payloadParameter = $"@{payloadParameter}";
+        if (!refTimeParameter.StartsWith("@")) refTimeParameter = $"@{refTimeParameter}";
+        if (!corrIdParameter.StartsWith("@")) corrIdParameter = $"@{corrIdParameter}";
+        if (!enqAtParameter.StartsWith("@")) enqAtParameter = $"@{enqAtParameter}";
+
+        return $"@BucketId, @MessageId, {payloadParameter}, {refTimeParameter}, {corrIdParameter}, {enqAtParameter}";
+    }
+} 

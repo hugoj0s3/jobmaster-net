@@ -54,7 +54,7 @@ public class StaticRecurringScheduleDefinition
     /// <summary>The schedule will not fire before this UTC date. <c>null</c> means no lower bound.</summary>
     public DateTime? StartAfter { get; private set; }
 
-    /// <summary>The schedule will not fire after this UTC date. <c>null</c> means no upper bound.</summary>
+    /// <summary>The schedule fires only before this UTC time, never at or after it. <c>null</c> means no upper bound.</summary>
     public DateTime? EndBefore { get; private set; }
 
     /// <summary>The cluster this schedule is scoped to.</summary>

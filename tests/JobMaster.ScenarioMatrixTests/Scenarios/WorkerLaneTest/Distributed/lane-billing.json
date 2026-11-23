@@ -1,0 +1,20 @@
+{
+  "containerName": "mx-{{flavor}}-dist-lane-billing",
+  "dockerfilePath": "tests/TargetTestScheduleApp/Dockerfile",
+  "networkAlias": "mx-{{flavor}}-dist-lane-billing",
+  "httpPort": 8080,
+  "healthCheckPath": "/health",
+  "clusterConfigTemplates": [
+    {
+      "ClusterId": "mx-{{flavor}}-dist-lane",
+      "Default": true,
+      "RepoType": "{{master:RepoType}}",
+      "ConnectionString": "{{master:ConnectionString:LaneDistributed}}",
+      "TransientThreshold": "00:02:00",
+      "AgentConnections": [
+        { "Name": "agent-1", "Connection": "{{agent:1}}" }
+      ],
+      "Workers": [ { "WorkerName": "w-billing", "AgentConnectionName": "agent-1", "WorkerLane": "billing" } ]
+    }
+  ]
+}
