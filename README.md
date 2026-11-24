@@ -109,7 +109,7 @@ await jobScheduler.RecurringAsync<HelloJobHandler>(NaturalCronExprCompiler.TypeI
 
 JobMaster ships a browser-based dashboard and a REST API for monitoring clusters, jobs, workers, buckets, and agent connections in real time.
 
-🚀 **[Live sandbox](https://sandbox.jobmaster.hugoj0s3.dev/jm-dashboard)** — sign in with GitHub and explore a realistic multi-cluster deployment.
+🚀 **[Live sandbox](https://sandbox.jobmaster.hugoj0s3.dev/jm-dashboard/?utm_source=github&utm_content=readme)** — sign in with GitHub and explore a realistic multi-cluster deployment.
 
 ```bash
 dotnet add package JobMaster.Api
